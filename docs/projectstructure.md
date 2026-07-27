@@ -42,6 +42,10 @@ jJoey/
 │   │   │   ├── accounts/page.tsx # Connected social accounts
 │   │   │   ├── agent/page.tsx    # Agent chat interface
 │   │   │   └── settings/page.tsx # Settings (API keys, persona, schedule)
+│   │   ├── actions/              # Next.js Server Actions
+│   │   │   ├── drafts.ts         # Draft CRUD and approvals
+│   │   │   ├── publisher.ts      # Zernio publishing pipeline
+│   │   │   ├── zernio.ts         # OAuth and account sync
 │   │   └── api/                  # API routes
 │   │       ├── auth/[...all]/route.ts    # BetterAuth handler
 │   │       ├── validate-key/route.ts     # Zernio key validation

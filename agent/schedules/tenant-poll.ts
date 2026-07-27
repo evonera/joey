@@ -28,7 +28,7 @@ export default defineSchedule({
           message: "It is time to draft a new social media post. Please review the brand persona and goals, generate a relevant draft, and use the draft_post tool to save it.",
           target: { }, // Base target, Eve handles session isolation via auth
           auth: {
-            authenticator: "placeholderAuth",
+            authenticator: "cron",
             principalType: "user",
             principalId: config.ownerId,
             attributes: { tenantId: config.tenantId },
@@ -41,9 +41,11 @@ export default defineSchedule({
       try {
         const schedule = config.postingSchedule as any;
         if (schedule && Array.isArray(schedule.times) && schedule.times.length > 0) {
-            // Very naive calculation: just take the first configured time tomorrow
+            // Naive fallback: schedule for tomorrow at the configured time (UTC).
+            // TODO: honour schedule.timezone for accurate local-time scheduling.
             const [hours, minutes] = schedule.times[0].split(':').map(Number);
-            nextDate.setHours(hours + 24, minutes, 0, 0);
+            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+            nextDate.setUTCHours(hours, minutes, 0, 0);
         } else {
             nextDate.setHours(nextDate.getHours() + 24);
         }

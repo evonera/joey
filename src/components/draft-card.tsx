@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { updateDraft, approveDraft, rejectDraft } from "@/app/actions/drafts";
+import { publishDraft } from "@/app/actions/publisher";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 
@@ -20,6 +21,17 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
         await approveDraft(draft.id);
         setLoading(false);
         onActionComplete();
+    };
+
+    const handlePublish = async () => {
+        setLoading(true);
+        const res = await publishDraft(draft.id);
+        setLoading(false);
+        if (res.error) {
+            alert(res.error);
+        } else {
+            onActionComplete();
+        }
     };
 
     const handleReject = async () => {
@@ -65,6 +77,14 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
             {draft.errorMessage && draft.status === 'rejected' && (
                 <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">
                     <strong>Feedback:</strong> {draft.errorMessage}
+                </div>
+            )}
+
+            {!isEditing && !isRejecting && draft.status === 'approved' && (
+                <div className="flex gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                    <Button onClick={handlePublish} disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
+                        {loading ? "Publishing..." : "Publish Now"}
+                    </Button>
                 </div>
             )}
 
