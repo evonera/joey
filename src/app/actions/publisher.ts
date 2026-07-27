@@ -24,28 +24,41 @@ export async function getZernioClientForTenant(tenantId: string) {
 }
 
 // Reusable core logic for publishing a draft
-export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio) {
+export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio, skipPreflight: boolean = false) {
     // 1. Fetch the draft
     const draft = await db.query.drafts.findFirst({
         where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId))
     });
 
-    if (!draft || (draft.status !== "approved" && draft.status !== "failed")) {
-        return { error: "Draft not found or not ready to publish." };
+    if (!skipPreflight) {
+        if (!draft || (draft.status !== "approved" && draft.status !== "failed")) {
+            return { error: "Draft not found or not ready to publish." };
+        }
     }
 
     try {
 
     const platformOpts = draft.platformOptions as any;
     const targetPlatform = platformOpts?.platform;
+    const accountId = platformOpts?.accountId;
 
     // 2. Look up the corresponding Zernio account ID from socialAccounts
-    const account = await db.query.socialAccounts.findFirst({
-        where: and(
-            eq(socialAccounts.tenantId, tenantId),
-            eq(socialAccounts.platform, targetPlatform)
-        )
-    });
+    let account = null;
+    if (accountId) {
+        account = await db.query.socialAccounts.findFirst({
+            where: and(
+                eq(socialAccounts.tenantId, tenantId),
+                eq(socialAccounts.id, accountId)
+            )
+        });
+    } else {
+        account = await db.query.socialAccounts.findFirst({
+            where: and(
+                eq(socialAccounts.tenantId, tenantId),
+                eq(socialAccounts.platform, targetPlatform)
+            )
+        });
+    }
 
     if (!account) {
         return { error: `No connected account found for platform: ${targetPlatform}` };
@@ -57,10 +70,12 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         url
     })) || [];
 
-    // Pre-flight: Mark as publishing to prevent double-execution
-    await db.update(drafts)
-        .set({ status: "publishing" })
-        .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+    if (!skipPreflight) {
+        // Pre-flight: Mark as publishing to prevent double-execution
+        await db.update(drafts)
+            .set({ status: "publishing" })
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+    }
 
     // 4. Call Zernio API with synchronous retries
     let lastError: any = null;

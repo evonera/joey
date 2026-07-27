@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { getConnectedAccounts } from "@/app/actions/zernio";
 import { createManualPost } from "@/app/actions/compose";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,7 +43,7 @@ export default function ComposePage() {
   const charCount = content.length;
   const charLimit = 280; // Basic check
 
-  const canSubmit = selectedAccountIds.length > 0 && (content.trim().length > 0) && !isSubmitting;
+  const canSubmit = selectedAccountIds.length > 0 && (content.trim().length > 0) && charCount <= charLimit && !isSubmitting;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -50,9 +51,7 @@ export default function ComposePage() {
 
     let scheduledFor: string | undefined;
     if (scheduleType === "scheduled" && scheduledDate) {
-      const [hours, minutes] = scheduledTime.split(":").map(Number);
-      const date = new Date(scheduledDate);
-      date.setHours(hours, minutes, 0, 0);
+      const date = new Date(`${scheduledDate}T${scheduledTime}:00.000Z`);
       scheduledFor = date.toISOString();
     }
 
@@ -67,9 +66,9 @@ export default function ComposePage() {
     setIsSubmitting(false);
 
     if (res.error) {
-      alert(res.error);
+      toast.error(res.error);
     } else {
-      alert(scheduleType === "now" ? "Posts published successfully!" : "Posts scheduled successfully!");
+      toast.success(scheduleType === "now" ? "Posts published successfully!" : "Posts scheduled successfully!");
       setContent("");
       setMediaUrl("");
       setSelectedAccountIds([]);

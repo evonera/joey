@@ -10,25 +10,23 @@ export default defineSchedule({
   async run({ receive, waitUntil }) {
     
     // --- 1. Publish Scheduled Drafts ---
-    const pendingDrafts = await db.select({
-      id: drafts.id,
-      tenantId: drafts.tenantId
-    })
-    .from(drafts)
-    .where(
+    const pendingDrafts = await db.update(drafts)
+      .set({ status: 'publishing' })
+      .where(
         and(
             eq(drafts.status, "approved"),
             isNotNull(drafts.scheduledFor),
             lte(drafts.scheduledFor, new Date())
         )
-    );
+      )
+      .returning({ id: drafts.id, tenantId: drafts.tenantId });
 
     for (const draft of pendingDrafts) {
       try {
         const { zernio } = await getZernioClientForTenant(draft.tenantId);
         // Fire and forget (or await it depending on how many we expect)
         // We await to avoid throttling the DB/Zernio connection pool if there are hundreds
-        await executePublishDraft(draft.id, draft.tenantId, zernio);
+        await executePublishDraft(draft.id, draft.tenantId, zernio, true);
       } catch (error) {
         console.error(`Failed to publish scheduled draft ${draft.id} for tenant ${draft.tenantId}:`, error);
       }
