@@ -57,22 +57,37 @@ export async function getAgentConfig() {
     }
 }
 
+export interface PostingSchedule {
+    timezone: string;
+    activeDays: string[];
+    times: string[];
+    selectedAccountIds: string[];
+}
+
 export async function saveAgentConfig(data: {
     brandVoice: string;
     postingGoals: string;
-    postingSchedule: any;
+    postingSchedule: PostingSchedule;
 }) {
     try {
         const tenantId = await getTenantId();
         
-        await db.update(agentConfigs)
-            .set({
+        await db.insert(agentConfigs)
+            .values({
+                tenantId,
                 brandVoice: data.brandVoice,
                 postingGoals: data.postingGoals,
                 postingSchedule: data.postingSchedule,
-                updatedAt: new Date()
             })
-            .where(eq(agentConfigs.tenantId, tenantId));
+            .onConflictDoUpdate({
+                target: agentConfigs.tenantId,
+                set: {
+                    brandVoice: data.brandVoice,
+                    postingGoals: data.postingGoals,
+                    postingSchedule: data.postingSchedule,
+                    updatedAt: new Date()
+                }
+            });
 
         return { success: true };
     } catch (error: any) {
