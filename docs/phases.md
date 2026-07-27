@@ -48,11 +48,11 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: Keys are encrypted before saving to DB, correctly decrypted when used, validation API accurately checks key validity.
 
 ### Phase 1.4: Social Account Connection (1-2 days)
-- [ ] Implement Zernio OAuth callback handler
-- [ ] Build account connection UI (platform picker)
-- [ ] Fetch and display connected accounts from Zernio
-- [ ] Implement sub-entity fetching (Pages, Boards, Company Pages)
-- [ ] Build entity selector component
+- [x] Implement Zernio OAuth callback handler
+- [x] Build account connection UI (platform picker)
+- [x] Fetch and display connected accounts from Zernio
+- [x] Implement sub-entity fetching (Pages, Boards, Company Pages)
+- [x] Build entity selector component
 **Dependencies**: Phase 1.2
 **Reference Repos**: Zernio SDK docs
 **Acceptance Criteria**: Users can connect multiple social platforms and select specific sub-entities (e.g., a specific Facebook page) to manage.
