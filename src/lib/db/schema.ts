@@ -123,6 +123,19 @@ export const posts = pgTable("posts", {
   metrics: jsonb("metrics"), // views, likes, etc., updated via analytics tool
 });
 
+export const webhookEvents = pgTable("webhook_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "set null" }),
+  eventId: text("event_id").notNull().unique(),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  platform: varchar("platform", { length: 50 }),
+  payload: jsonb("payload").notNull(),
+  status: varchar("status", { length: 50 }).default("pending").notNull(),
+  processedAt: timestamp("processed_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const usageTracking = pgTable("usage_tracking", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),

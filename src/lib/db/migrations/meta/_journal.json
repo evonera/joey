@@ -15,6 +15,13 @@
       "when": 1785184806236,
       "tag": "0001_glamorous_franklin_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785195138951,
+      "tag": "0002_nosy_mandarin",
+      "breakpoints": true
     }
   ]
 }
