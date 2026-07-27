@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `phases.md` — Granular phase plan (30+ micro-phases)
   - `changelog.md` — This changelog
 
+### Changed
+- **Phase 1.11 (Publishing Pipeline)**: Successfully decoupled the publishing execution from the background Eve Agent. Instead of pausing the cron task with `approval: always()`, drafting is now handled asynchronously by the agent, and actual publishing to Zernio is triggered directly by a Next.js Server Action (`publishDraft`) via the Dashboard UI when the user clicks "Publish Now".
+
 ### Decided
 - **Tech Stack**: Next.js 16 + Eve framework + Zernio SDK + Neon Postgres + BetterAuth + shadcn/ui
 - **Architecture**: Centralized multi-tenant deployment on Vercel
