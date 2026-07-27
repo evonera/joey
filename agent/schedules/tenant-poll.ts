@@ -1,12 +1,41 @@
 import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
-import { agentConfigs, tenants } from "@/lib/db/schema";
-import { eq, and, lte } from "drizzle-orm";
+import { agentConfigs, tenants, drafts } from "@/lib/db/schema";
+import { eq, and, lte, isNotNull } from "drizzle-orm";
+import { executePublishDraft, getZernioClientForTenant } from "@/app/actions/publisher";
 
 export default defineSchedule({
   cron: "*/5 * * * *",
   async run({ receive, waitUntil }) {
+    
+    // --- 1. Publish Scheduled Drafts ---
+    const pendingDrafts = await db.select({
+      id: drafts.id,
+      tenantId: drafts.tenantId
+    })
+    .from(drafts)
+    .where(
+        and(
+            eq(drafts.status, "approved"),
+            isNotNull(drafts.scheduledFor),
+            lte(drafts.scheduledFor, new Date())
+        )
+    );
+
+    for (const draft of pendingDrafts) {
+      try {
+        const { zernio } = await getZernioClientForTenant(draft.tenantId);
+        // Fire and forget (or await it depending on how many we expect)
+        // We await to avoid throttling the DB/Zernio connection pool if there are hundreds
+        await executePublishDraft(draft.id, draft.tenantId, zernio);
+      } catch (error) {
+        console.error(`Failed to publish scheduled draft ${draft.id} for tenant ${draft.tenantId}:`, error);
+      }
+    }
+
+
+    // --- 2. Trigger AI Drafting ---
     const dueConfigs = await db.select({
         tenantId: agentConfigs.tenantId,
         ownerId: tenants.ownerId,
