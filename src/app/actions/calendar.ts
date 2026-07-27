@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts } from "@/lib/db/schema";
-import { and, eq, gte, lte, isNotNull } from "drizzle-orm";
+import { and, eq, gte, lte, isNotNull, inArray } from "drizzle-orm";
 import { getZernioClient } from "./zernio";
 
 export type CalendarPost = {
@@ -53,8 +53,6 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
 
         let draftMap = new Map();
         if (postDraftIds.length > 0) {
-            // Import inArray for this to work
-            const { inArray } = await import("drizzle-orm");
             const resolvedDrafts = await db.query.drafts.findMany({
                 where: inArray(drafts.id, postDraftIds)
             });

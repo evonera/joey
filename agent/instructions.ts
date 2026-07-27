@@ -19,7 +19,7 @@ Your task is to manage content creation, but no specific tenant context was prov
       }
 
       const config = await db.query.agentConfigs.findFirst({
-        where: eq(agentConfigs.tenantId, tenantId)
+        where: eq(agentConfigs.tenantId, tenantId as string)
       });
 
       if (!config) {

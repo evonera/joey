@@ -1,49 +1,60 @@
-# joey
+# Joey - Autonomous Social Media Agent Platform
 
-> Open-source social media agent platform — add your API key, pick your platforms, get an autonomous AI agent.
+Joey is a multi-tenant, autonomous social media management platform built on Next.js 16, powered by the Eve Agent Framework and the Zernio SDK. It allows users to define a brand persona, set a posting schedule, and let an AI agent draft, evaluate, and (upon human approval) publish content across platforms like Twitter, LinkedIn, and Facebook.
 
-## What is this?
-
-Joey is an open-source platform where users bring their own [Zernio](https://zernio.com) API key, connect their social media accounts, and get an AI agent that autonomously drafts, schedules, and publishes content — with human approval before anything goes live.
+## Features (Phase 1 MVP)
+- **Multi-Tenant Architecture**: Supports multiple users with their own agent configurations, schedules, and social accounts.
+- **Better Auth Integration**: Secure, robust authentication with support for database sessions and OAuth providers.
+- **Zernio Integration**: Connect multiple social platforms and seamlessly publish content via a unified API.
+- **Eve Agent**: Core intelligence powered by `eve`, generating contextual drafts based on specific platform constraints and brand guidelines.
+- **Human-in-the-Loop (HITL)**: Approval dashboard and visual content calendar for reviewing, editing, and scheduling drafts.
+- **LLM Token Tracking**: Granular tracking and visualization of input/output token usage per tenant.
+- **Evaluations**: Built-in Eve Evals for CI/CD regression testing on agent draft quality and approval gate logic.
 
 ## Tech Stack
+- **Framework**: Next.js 16 (App Router)
+- **Database**: PostgreSQL (Neon) with Drizzle ORM
+- **Authentication**: Better Auth
+- **Agent Framework**: Eve
+- **Social API**: Zernio SDK
+- **Styling**: Tailwind CSS v4, Shadcn UI
+- **Deployment**: Vercel Ready
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 16, shadcn/ui, Tailwind CSS v4 |
-| Agent | Eve framework (Vercel), Vercel AI SDK |
-| Social APIs | Zernio Node SDK (14+ platforms) |
-| Database | Neon Serverless Postgres, Drizzle ORM |
-| Auth | BetterAuth |
-| Hosting | Vercel |
+## Getting Started
 
-## Documentation
+### Prerequisites
+- Node.js 24.x or higher
+- A Neon PostgreSQL Database
+- Zernio API Key
+- Anthropic/OpenAI API Keys
 
-All project documentation lives in [`/docs`](./docs/):
+### Installation
 
-- [`prd.md`](./docs/prd.md) — Product Requirements Document
-- [`trd.md`](./docs/trd.md) — Technical Requirements Document
-- [`dependencies.md`](./docs/dependencies.md) — Dependency list & risk matrix
-- [`projectstructure.md`](./docs/projectstructure.md) — Project structure guide
-- [`phases.md`](./docs/phases.md) — Granular build phases (47 micro-phases)
-- [`changelog.md`](./docs/changelog.md) — Change log
+1. Clone the repository and install dependencies:
+```bash
+npm install
+```
 
-## Reference Repos
+2. Copy `.env.example` to `.env` and fill in your variables:
+```bash
+cp .env.example .env
+```
 
-The `repos/` directory contains cloned reference repositories used during architecture research:
+3. Run database migrations:
+```bash
+npx drizzle-kit push
+```
 
-- `zernio-node` — Zernio SDK
-- `zernflow` — Visual flow builder
-- `latewiz` — Social media dashboard
-- `eve-agents` — Eve agent + builder
-- `adam` — Durable agent runtime
-- `awesome-eve-agents` — Agent templates
-- `zernio-claude-plugin` — MCP plugin
+4. Start the development server:
+```bash
+npm run dev
+```
 
-## Status
-
-🚧 **In Development** — Currently in Phase 1.0 (Project Scaffolding)
+5. Run Agent Evals:
+```bash
+npm run eval
+```
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

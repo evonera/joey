@@ -11,7 +11,13 @@ export async function proxy(request: NextRequest) {
 	
 	// Paths that require authentication
 	const isProtectedRoute = 
-		request.nextUrl.pathname === '/' || 
+		request.nextUrl.pathname.startsWith('/dashboard') ||
+		request.nextUrl.pathname.startsWith('/drafts') ||
+		request.nextUrl.pathname.startsWith('/posts') ||
+		request.nextUrl.pathname.startsWith('/analytics') ||
+		request.nextUrl.pathname.startsWith('/calendar') ||
+		request.nextUrl.pathname.startsWith('/compose') ||
+		request.nextUrl.pathname.startsWith('/agent') ||
 		request.nextUrl.pathname.startsWith('/onboarding') ||
 		request.nextUrl.pathname.startsWith('/accounts') ||
 		request.nextUrl.pathname.startsWith('/settings') ||
@@ -23,14 +29,14 @@ export async function proxy(request: NextRequest) {
 		}
 	} else {
 		if (isAuthRoute || request.nextUrl.pathname === '/') {
-			return NextResponse.redirect(new URL("/onboarding", request.url));
+			return NextResponse.redirect(new URL("/dashboard", request.url));
 		}
 	}
 
 	return NextResponse.next();
 }
 
+
 export const config = {
-    runtime: "nodejs",
 	matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
 };

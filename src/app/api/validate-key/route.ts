@@ -27,8 +27,8 @@ export async function POST(req: NextRequest) {
         const zernio = new Zernio({ apiKey });
         let isValid = false;
         try {
-            // Ping an endpoint to verify (e.g. list platforms or get current user)
-            await zernio.connect.listAvailablePlatforms();
+            // Test the Zernio connection using the API key directly (not fully initialized)
+            const { data } = await (zernio.connect as any).listAvailablePlatforms();
             isValid = true;
         } catch (e) {
             return NextResponse.json({ error: "Invalid API key or unauthorized" }, { status: 401 });

@@ -116,17 +116,17 @@ export async function handleZernioCallback(searchParams: Record<string, string>)
             let entities: any[] = [];
             
             if (platform === "facebook" && step === "select_page") {
-                const { data } = await zernio.connect.listFacebookPages({
+                const { data } = await (zernio.connect as any).getFacebookPages({
                     headers: { "X-Connect-Token": connectToken },
                 });
                 entities = data.pages || [];
             } else if (platform === "linkedin" && step === "select_organization") {
-                const { data } = await zernio.connect.getPendingOAuthData({
+                const { data } = await (zernio.connect as any).getPendingOAuthData({
                     query: { token: pendingDataToken },
                 });
                 entities = data.organizations || [];
             } else if (platform === "pinterest" && step === "select_board") {
-                const { data } = await zernio.connect.listPinterestBoardsForSelection({
+                const { data } = await (zernio.connect as any).getPinterestBoards({
                     query: { tempToken },
                     headers: { "X-Connect-Token": connectToken },
                 });
@@ -165,15 +165,15 @@ export async function selectEntityAndFinalize(platform: string, entityId: string
         cookieStore.delete('zernio_oauth_session'); // Clean up
 
         if (platform === "facebook") {
-            await zernio.connect.selectFacebookPage({
+            await (zernio.connect as any).selectFacebookPage({
                 body: { tempToken, userProfile, pageId: entityId }
             });
         } else if (platform === "linkedin") {
-            await zernio.connect.selectLinkedInOrganization({
+            await (zernio.connect as any).selectLinkedInOrganization({
                 body: { tempToken, userProfile, organizationId: entityId }
             });
         } else if (platform === "pinterest") {
-            await zernio.connect.selectPinterestBoard({
+            await (zernio.connect as any).selectPinterestBoard({
                 body: { tempToken, userProfile, boardId: entityId }
             });
         }

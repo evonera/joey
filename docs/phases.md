@@ -447,10 +447,126 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: External developers can build custom integrations via API tokens.
 
 ### Phase 3.14: Final Security & Performance Audit (2 days)
--[x] Run load testing
--[x] Security audit (Rate limiting, CSRF, XSS checks)
--[x] Final bug squashing
--[x] Release v1.0.0
+- [x] Run load testing
+- [x] Security audit (Rate limiting, CSRF, XSS checks)
+- [x] Final bug squashing
+- [x] Release v1.0.0
 **Dependencies**: All previous phases
 **Reference Repos**: None
 **Acceptance Criteria**: Platform is robust, secure, and ready for public launch.
+
+---
+
+## Phase 4: SEO & AI Search (GEO)
+
+### Phase 4.0: On-Page SEO Pass (1 day)
+- [x] Audit metadata: canonical, Open Graph, Twitter Cards, robots, meta description
+- [x] Fix heading hierarchy on landing page (H1→H2→H3)
+- [x] Add `<nav>` landmark with `aria-label` to header
+- [x] Add security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`) in `next.config.ts`
+- [x] Clean up sitemap (remove login/signup, set homepage as sole entry)
+- [x] Add `noindex` to auth pages via `robots.ts`
+- [x] Add `metadataBase` to root layout
+**Dependencies**: Phase 1.19
+**Reference Repos**: Next.js Metadata API docs, claude-seo technical report
+**Acceptance Criteria**: Lighthouse SEO audit passes all basic checks; social share preview renders correctly.
+
+### Phase 4.1: Structured Data (JSON-LD) (1 day)
+- [x] Inject combined `Organization` + `WebSite` + `WebApplication` JSON-LD schema into `layout.tsx`
+- [x] Set `applicationCategory`, `operatingSystem`, `offers`, `featureList` on WebApplication
+- [x] Validate with Google Rich Results Test
+**Dependencies**: Phase 4.0
+**Reference Repos**: schema.org docs, Google Search Central
+**Acceptance Criteria**: All schema types pass Google Rich Results Test with no errors or warnings.
+
+### Phase 4.2: Content Depth & E-E-A-T (2 days)
+- [x] Expand meta description from 51 chars to 150–160 chars
+- [x] Add "What is Joey?" section (~160 words) after hero
+- [x] Add "How it Works" section with 3-step explanation
+- [x] Add FAQ section with 5+ common questions
+- [x] Expand feature card body text to 50–60 words each (was 15–25)
+- [x] Create `/privacy` and `/terms` pages (P0 trust gap)
+- [x] Link privacy/terms in footer
+**Dependencies**: Phase 4.0
+**Reference Repos**: None
+**Acceptance Criteria**: Landing page word count > 600 words; FAQ answers address common user objections.
+
+### Phase 4.3: AI Search Readiness (GEO) (1 day)
+- [x] Create `public/llms.txt` with brand description, key pages, FAQ, and tech details
+- [x] Fix OG image URL (rely on Next.js `opengraph-image.tsx` file convention instead of dead static file)
+- [x] Add question-based H2 headings ("What is Joey?", "How does it work?")
+- [ ] Review and add to sitemap if `llms.txt` should be crawlable
+**Dependencies**: Phase 4.2
+**Reference Repos**: llmstxt.org protocol
+**Acceptance Criteria**: `https://joey.evonera.com/llms.txt` returns valid markdown; AI crawlers can cite structured answers.
+
+### Phase 4.4: Content Security Policy (1 day)
+- [ ] Research CSP requirements: which external domains Joey connects to (Zernio, LLM providers, image services)
+- [ ] Add `Content-Security-Policy` header to `next.config.ts` with appropriate `script-src`, `style-src`, `connect-src`, `img-src`, `frame-src`
+- [ ] Test all dashboard functionality with CSP active
+- [ ] Fallback to `Content-Security-Policy-Report-Only` first, iterate on violations
+**Dependencies**: Phase 4.0
+**Reference Repos**: MDN CSP docs, securityheaders.com
+**Acceptance Criteria**: CSP header returned on all responses; no console errors from first-party scripts; no blocked requests during normal app usage.
+
+### Phase 4.5: Social Proof & Entity Signals (1-2 days)
+- [ ] Add GitHub star badge to nav header (use `shields.io` badge or GitHub API + cache)
+- [ ] Add "Open Source — MIT License" badge in open-source section
+- [ ] Add social profile links (GitHub, Twitter) to footer
+- [ ] Link "Evonera" in footer to evonera.com (or create `/about` page)
+- [ ] Add `sameAs` URLs to Organization JSON-LD schema
+**Dependencies**: Phase 4.1, Phase 4.2
+**Reference Repos**: shields.io, GitHub REST API
+**Acceptance Criteria**: GitHub star count displays in nav; footer has verified social links; Schema.org `sameAs` is populated.
+
+### Phase 4.6: Visual Media for Experience Signals (1-2 days)
+- [ ] Capture product screenshots: dashboard, approval flow, calendar view, composer
+- [ ] Create product demo video (30-60 sec) or animated GIF of the approve→publish flow
+- [ ] Add screenshots to landing page feature cards with descriptive alt text
+- [ ] Update `opengraph-image.tsx` to include product screenshot instead of abstract logo
+- [ ] Consider adding video schema markup (`VideoObject`)
+**Dependencies**: Phase 4.2
+**Reference Repos**: None
+**Acceptance Criteria**: Landing page includes at least 3 product screenshots; OG image shows real product UI; alt text is descriptive.
+
+### Phase 4.7: Blog & Content Engine (2-3 days)
+- [ ] Create blog route group (`/blog/[slug]`) with proper metadata and breadcrumb schema
+- [ ] Implement blog with MDX or CMS integration
+- [ ] Publish 3-5 pillar articles targeting informational keywords:
+  - "How to automate social media with AI in 2026"
+  - "Open-source social media management: Joey vs Buffer vs Hootsuite"
+  - "What is BYOK AI? Bring your own key explained"
+- [ ] Add internal links from landing page to relevant blog posts
+- [ ] Add blog posts to sitemap
+**Dependencies**: Phase 4.2
+**Reference Repos**: Next.js MDX blog examples, Contentlayer
+**Acceptance Criteria**: Blog section is live with 3+ articles; articles rank for targeted long-tail keywords within 30 days.
+
+### Phase 4.8: About / Team Page (1 day)
+- [ ] Create `/about` page with team member bios, photos, and relevant experience
+- [ ] Add Person schema for each team member (with `sameAs` to LinkedIn/GitHub)
+- [ ] Link "Evonera" in footer to `/about`
+- [ ] Add about page to sitemap
+**Dependencies**: Phase 4.1
+**Reference Repos**: None
+**Acceptance Criteria**: About page displays team credentials; Person schema validates in Rich Results Test.
+
+### Phase 4.9: Performance Budget & Core Web Vitals (1-2 days)
+- [ ] Run Lighthouse CI on landing page and dashboard
+- [ ] Implement `next/dynamic` for heavy dashboard components (charts, calendar, dnd-kit)
+- [ ] Lazy-load recharts and react-big-calendar off critical path
+- [ ] Audit bundle size with `@next/bundle-analyzer`
+- [ ] Add image optimization for any new screenshots
+**Dependencies**: Phase 4.6, Phase 4.7
+**Reference Repos**: Next.js bundle analyzer, Lighthouse CI docs
+**Acceptance Criteria**: Landing page Lighthouse Performance score ≥ 95; dashboard pages ≥ 70 on mobile.
+
+### Phase 4.10: GEO Monitoring & Iteration (ongoing)
+- [ ] Set up monthly GEO citability re-scoring with claude-seo
+- [ ] Monitor AI search appearances (Perplexity page search, ChatGPT Browse output)
+- [ ] Expand FAQ schema with new questions from user support tickets
+- [ ] Keep `llms.txt` in sync with new features and pages
+- [ ] Track organic traffic growth and keyword rankings
+**Dependencies**: All Phase 4 phases
+**Reference Repos**: Google Search Console, Perplexity
+**Acceptance Criteria**: GEO citability score ≥ 75/100; organic traffic shows upward trend quarter-over-quarter.
