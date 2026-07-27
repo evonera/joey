@@ -118,11 +118,11 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: Users can review, edit, approve, or reject drafts. Feedback is routed back to the agent.
 
 ### Phase 1.11: Publishing Pipeline (1-2 days)
--[x] Create `publish_post` tool with `approval: always()` (Eve HITL)
--[x] Implement Zernio SDK publish call (`posts.create`)
--[x] Handle platform-specific options (YouTube title, TikTok privacy, etc.)
--[x] Update post status in database
--[x] Show published posts in posts page
+-[x] ~~Create `publish_post` tool with `approval: always()` (Eve HITL)~~
+-[x] Create `publishDraft` Next.js Server Action in `src/app/actions/publisher.ts`
+-[x] Implement Zernio SDK publish call (`zernio.posts.create`) mapping DB accounts to Zernio `accountId`
+-[x] Build "Publish Now" button in `draft-card.tsx`
+-[x] Update draft status to `published` and insert into `posts` table
 **Dependencies**: Phase 1.10
 **Reference Repos**: Zernio SDK examples
 **Acceptance Criteria**: Approved drafts are successfully pushed to social networks via Zernio.
