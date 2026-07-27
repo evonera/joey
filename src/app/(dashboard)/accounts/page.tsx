@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from "react";
-import { generateConnectUrl, getConnectedAccounts } from "@/app/actions/zernio";
+import { generateConnectUrl, getConnectedAccounts, disconnectAccount } from "@/app/actions/zernio";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 
 const PLATFORMS = [
@@ -19,6 +19,7 @@ export default function AccountsPage() {
   const [connecting, setConnecting] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAccounts();
@@ -45,6 +46,23 @@ export default function AccountsPage() {
     } else {
       alert(error || "Failed to initiate connection");
       setConnecting(null);
+    }
+  };
+
+  const handleDisconnect = async (accountId: string) => {
+    if (!confirm("Are you sure you want to disconnect this account?")) return;
+    setDisconnectingId(accountId);
+    try {
+      const res = await disconnectAccount(accountId);
+      if (res.error) {
+        alert(res.error);
+      } else {
+        setAccounts(prev => prev.filter(a => a.id !== accountId));
+      }
+    } catch (e) {
+      alert("Failed to disconnect account");
+    } finally {
+      setDisconnectingId(null);
     }
   };
 
@@ -107,8 +125,16 @@ export default function AccountsPage() {
                     <p className="font-medium truncate capitalize">{acc.accountName}</p>
                     <p className="text-xs text-zinc-500 capitalize">{acc.platform}</p>
                   </div>
-                  <button className="p-2 text-zinc-400 hover:text-red-500 transition-colors">
-                    <Trash2 className="h-4 w-4" />
+                  <button 
+                    onClick={() => handleDisconnect(acc.id)}
+                    disabled={disconnectingId === acc.id}
+                    className="p-2 text-zinc-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                  >
+                    {disconnectingId === acc.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </button>
                 </div>
               ))}

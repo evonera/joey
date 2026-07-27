@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
         const { apiKey } = await req.json();
 
-        if (!apiKey || !apiKey.startsWith('sk_')) {
+        if (!apiKey || typeof apiKey !== 'string' || !apiKey.startsWith('sk_')) {
             return NextResponse.json({ error: "Invalid API key format" }, { status: 400 });
         }
 
@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: true });
         }
     } catch (error: any) {
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+        console.error("[validate-key]", error);
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

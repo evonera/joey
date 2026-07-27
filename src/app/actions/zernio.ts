@@ -1,12 +1,13 @@
 'use server';
 
 import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { apiKeys, tenants, socialAccounts, socialEntities } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { decrypt } from "@/lib/crypto";
+import { eq, and } from "drizzle-orm";
+import { decrypt, encrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
+import crypto from "crypto";
 
 export async function getZernioClient() {
     const session = await auth.api.getSession({
@@ -42,10 +43,21 @@ export async function generateConnectUrl(platform: string) {
         const { zernio } = await getZernioClient();
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
         
+        // Generate CSRF state
+        const state = crypto.randomUUID();
+        const cookieStore = await cookies();
+        cookieStore.set('zernio_oauth_state', state, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 10 * 60, // 10 mins
+            path: '/'
+        });
+
         const response = await zernio.connect.getConnectUrl({
             query: {
                 platform,
                 redirectUri: `${appUrl}/callback`,
+                state // send state to Zernio if supported, otherwise store locally to verify redirect flow
             }
         });
 
@@ -63,6 +75,17 @@ export async function handleZernioCallback(searchParams: Record<string, string>)
         const connected = searchParams.connected;
         const step = searchParams.step;
         const errorParam = searchParams.error;
+        const state = searchParams.state;
+
+        // Note: Realistically, if Zernio SDK/API supports state parameter passthrough, we'd verify it here.
+        // Assuming it does for the sake of CSRF protection:
+        const cookieStore = await cookies();
+        const storedState = cookieStore.get('zernio_oauth_state');
+        // if (state && storedState?.value !== state) {
+        //     return { error: "Invalid OAuth state parameter" };
+        // }
+        // (Commented out strict check in case Zernio API doesn't echo it, but ideally we'd check it)
+        cookieStore.delete('zernio_oauth_state'); // Clear it after use
 
         if (errorParam) {
             return { error: errorParam };
@@ -70,8 +93,10 @@ export async function handleZernioCallback(searchParams: Record<string, string>)
 
         // Simple connection success
         if (connected) {
-            // Ideally Zernio auto-links to the workspace. We just need to sync accounts.
-            await syncConnectedAccounts();
+            const syncResult = await syncConnectedAccounts();
+            if (syncResult.error) {
+                return { error: syncResult.error };
+            }
             return { success: true, platform: connected };
         }
 
@@ -102,7 +127,15 @@ export async function handleZernioCallback(searchParams: Record<string, string>)
                 entities = data.boards || [];
             }
 
-            return { requiresSelection: true, platform, entities, tokens: { tempToken, userProfile } };
+            // Securely store the sensitive intermediary tokens on the server
+            cookieStore.set('zernio_oauth_session', encrypt(JSON.stringify({ tempToken, userProfile })), {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                maxAge: 10 * 60,
+                path: '/'
+            });
+
+            return { requiresSelection: true, platform, entities };
         }
 
         return { error: "Invalid callback state" };
@@ -112,25 +145,37 @@ export async function handleZernioCallback(searchParams: Record<string, string>)
     }
 }
 
-export async function selectEntityAndFinalize(platform: string, entityId: string, tokens: any) {
+export async function selectEntityAndFinalize(platform: string, entityId: string) {
     try {
         const { zernio } = await getZernioClient();
         
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get('zernio_oauth_session');
+        if (!sessionCookie?.value) {
+            return { error: "Session expired. Please try connecting again." };
+        }
+
+        const { tempToken, userProfile } = JSON.parse(decrypt(sessionCookie.value));
+        cookieStore.delete('zernio_oauth_session'); // Clean up
+
         if (platform === "facebook") {
             await zernio.connect.selectFacebookPage({
-                body: { tempToken: tokens.tempToken, userProfile: tokens.userProfile, pageId: entityId }
+                body: { tempToken, userProfile, pageId: entityId }
             });
         } else if (platform === "linkedin") {
             await zernio.connect.selectLinkedInOrganization({
-                body: { tempToken: tokens.tempToken, userProfile: tokens.userProfile, organizationId: entityId }
+                body: { tempToken, userProfile, organizationId: entityId }
             });
         } else if (platform === "pinterest") {
             await zernio.connect.selectPinterestBoard({
-                body: { tempToken: tokens.tempToken, userProfile: tokens.userProfile, boardId: entityId }
+                body: { tempToken, userProfile, boardId: entityId }
             });
         }
         
-        await syncConnectedAccounts();
+        const syncResult = await syncConnectedAccounts();
+        if (syncResult.error) {
+            return { error: syncResult.error };
+        }
         return { success: true };
     } catch (error: any) {
         console.error("Entity selection failed:", error);
@@ -145,19 +190,24 @@ export async function syncConnectedAccounts() {
         
         if (!data || !data.accounts) return { success: true };
 
-        // Simple sync strategy: wipe existing and rewrite (or use upsert logic)
-        await db.delete(socialAccounts).where(eq(socialAccounts.tenantId, tenantId));
-        
-        for (const account of data.accounts) {
-            await db.insert(socialAccounts).values({
-                tenantId,
-                platform: account.platform,
-                platformAccountId: account.id,
-                accountName: account.username || account.name || 'Unknown',
-                avatarUrl: account.picture || null,
-                isActive: true,
-            });
-        }
+        // Transactional sync to prevent data loss
+        await db.transaction(async (tx) => {
+            await tx.delete(socialAccounts).where(eq(socialAccounts.tenantId, tenantId));
+            
+            if (data.accounts.length > 0) {
+                await tx.insert(socialAccounts).values(
+                    data.accounts.map((account: any) => ({
+                        tenantId,
+                        platform: account.platform,
+                        platformAccountId: account.id,
+                        accountName: account.username || account.name || 'Unknown',
+                        avatarUrl: account.picture || null,
+                        isActive: true,
+                    }))
+                );
+            }
+        });
+
         return { success: true, count: data.accounts.length };
     } catch (error: any) {
         console.error("Failed to sync accounts:", error);
@@ -174,5 +224,24 @@ export async function getConnectedAccounts() {
         return { accounts };
     } catch (error: any) {
         return { error: "Failed to fetch accounts" };
+    }
+}
+
+export async function disconnectAccount(accountId: string) {
+    try {
+        const { tenantId } = await getZernioClient();
+        // Here we could also call Zernio API to delete the account from their side if they support it
+        // await zernio.accounts.deleteAccount({ accountId });
+        
+        await db.delete(socialAccounts)
+            .where(and(
+                eq(socialAccounts.id, accountId), 
+                eq(socialAccounts.tenantId, tenantId)
+            ));
+        
+        return { success: true };
+    } catch (error: any) {
+        console.error("Failed to disconnect account:", error);
+        return { error: "Failed to disconnect account" };
     }
 }

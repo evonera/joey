@@ -2,7 +2,7 @@ import { betterFetch } from "@better-fetch/fetch";
 import type { Session } from "better-auth/types";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
 	const { data: session } = await betterFetch<Session>(
 		"/api/auth/get-session",
 		{
@@ -14,14 +14,22 @@ export async function middleware(request: NextRequest) {
 	);
 
 	const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup');
+	
+	// Paths that require authentication
+	const isProtectedRoute = 
+		request.nextUrl.pathname === '/' || 
+		request.nextUrl.pathname.startsWith('/onboarding') ||
+		request.nextUrl.pathname.startsWith('/accounts') ||
+		request.nextUrl.pathname.startsWith('/settings') ||
+		request.nextUrl.pathname.startsWith('/callback');
 
 	if (!session) {
-		if (!isAuthRoute && request.nextUrl.pathname.startsWith('/dashboard')) {
+		if (isProtectedRoute) {
 			return NextResponse.redirect(new URL("/login", request.url));
 		}
 	} else {
-		if (isAuthRoute) {
-			return NextResponse.redirect(new URL("/dashboard", request.url));
+		if (isAuthRoute || request.nextUrl.pathname === '/') {
+			return NextResponse.redirect(new URL("/onboarding", request.url));
 		}
 	}
 

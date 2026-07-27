@@ -31,7 +31,6 @@ export function CallbackClient() {
         setEntityData({
           platform: result.platform,
           entities: result.entities,
-          tokens: result.tokens,
         });
         setStep("select_entity");
       }
@@ -52,8 +51,7 @@ export function CallbackClient() {
     try {
       const result = await selectEntityAndFinalize(
         entityData.platform,
-        entityId,
-        entityData.tokens
+        entityId
       );
 
       if (result.error) {

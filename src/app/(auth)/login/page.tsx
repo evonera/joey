@@ -17,9 +17,9 @@ export default function LoginPage() {
       password,
     });
     if (error) {
-      setError(error.message);
+      setError(error.message ?? "Sign in failed");
     } else {
-      router.push("/dashboard");
+      router.push("/onboarding");
     }
   };
 
