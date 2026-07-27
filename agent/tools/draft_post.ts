@@ -5,7 +5,7 @@ import { drafts } from "@/lib/db/schema";
 
 export default defineTool({
   description: "Save a generated social media draft for the user to review.",
-  parameters: z.object({
+  inputSchema: z.object({
     platform: z.string().describe("The social media platform this draft is intended for (e.g., twitter, linkedin)."),
     content: z.string().describe("The content of the post."),
     mediaUrls: z.array(z.string()).optional().describe("Optional array of media URLs attached to the post."),
@@ -19,7 +19,7 @@ export default defineTool({
 
     try {
       await db.insert(drafts).values({
-        tenantId,
+        tenantId: tenantId as string,
         content,
         platformOptions: { platform, mediaUrls },
         status: "pending_review",

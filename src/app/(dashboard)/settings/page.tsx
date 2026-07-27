@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { getAgentConfig, saveAgentConfig } from "@/app/actions/agent";
 import { getConnectedAccounts } from "@/app/actions/zernio";
-import { Loader2, Save, CheckCircle2 } from "lucide-react";
+import { getUsage } from "@/app/actions/usage";
+import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle } from "lucide-react";
 
 const DAYS_OF_WEEK = [
   { id: "mon", label: "Monday" },
@@ -27,16 +28,28 @@ export default function SettingsPage() {
   const [activeDays, setActiveDays] = useState<string[]>([]);
   const [timesText, setTimesText] = useState("");
   
-  const [accounts, setAccounts] = useState<{ id: string; platform: string; accountName: string; avatarUrl?: string | null }[]>([]);
+  const [accounts, setAccounts] = useState<{ id: string; platform: string; accountName: string | null; avatarUrl?: string | null }[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+
+  const [usageStats, setUsageStats] = useState<{
+    inputTokensUsed: number;
+    outputTokensUsed: number;
+    estimatedCostUsd: string;
+    budgetLimitUsd: string | null;
+  } | null>(null);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [configRes, accountsRes] = await Promise.all([
+        const [configRes, accountsRes, usageRes] = await Promise.all([
           getAgentConfig(),
-          getConnectedAccounts()
+          getConnectedAccounts(),
+          getUsage()
         ]);
+
+        if (usageRes.usage) {
+          setUsageStats(usageRes.usage as any);
+        }
 
         if (accountsRes.accounts) {
           setAccounts(accountsRes.accounts);
@@ -48,10 +61,11 @@ export default function SettingsPage() {
           setPostingGoals(cfg.postingGoals || "");
           
           if (cfg.postingSchedule) {
-            setTimezone(cfg.postingSchedule.timezone || "UTC");
-            setActiveDays(cfg.postingSchedule.activeDays || []);
-            setTimesText((cfg.postingSchedule.times || []).join(", "));
-            setSelectedAccountIds(cfg.postingSchedule.selectedAccountIds || []);
+            const schedule = cfg.postingSchedule as any;
+            setTimezone(schedule.timezone || "UTC");
+            setActiveDays(schedule.activeDays || []);
+            setTimesText((schedule.times || []).join(", "));
+            setSelectedAccountIds(schedule.selectedAccountIds || []);
           }
         }
       } catch (err) {
@@ -271,7 +285,7 @@ export default function SettingsPage() {
                     />
                     {acc.avatarUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={acc.avatarUrl} alt={acc.accountName} className="h-8 w-8 rounded-full object-cover" />
+                      <img src={acc.avatarUrl} alt={acc.accountName || ""} className="h-8 w-8 rounded-full object-cover" />
                     ) : (
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 capitalize text-xs">
                         {acc.platform.charAt(0)}
@@ -283,6 +297,69 @@ export default function SettingsPage() {
                     </div>
                   </label>
                 ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Usage & Billing Section */}
+        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
+          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
+            <div>
+              <h2 className="font-semibold text-zinc-900 dark:text-white">Usage & Billing</h2>
+              <p className="text-xs text-zinc-500 mt-1">Track your LLM token usage for the current billing period.</p>
+            </div>
+            <TrendingUp className="h-5 w-5 text-zinc-400" />
+          </div>
+          <div className="p-6">
+            {usageStats ? (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
+                    <p className="text-sm text-zinc-500 mb-1">Input Tokens</p>
+                    <p className="text-2xl font-bold">{usageStats.inputTokensUsed.toLocaleString()}</p>
+                  </div>
+                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
+                    <p className="text-sm text-zinc-500 mb-1">Output Tokens</p>
+                    <p className="text-2xl font-bold">{usageStats.outputTokensUsed.toLocaleString()}</p>
+                  </div>
+                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
+                    <p className="text-sm text-zinc-500 mb-1">Estimated Cost</p>
+                    <p className="text-2xl font-bold">${Number(usageStats.estimatedCostUsd).toFixed(4)}</p>
+                  </div>
+                </div>
+
+                {usageStats.budgetLimitUsd && (
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="font-medium text-zinc-700 dark:text-zinc-300">Monthly Budget</span>
+                      <span className="text-zinc-500">${Number(usageStats.estimatedCostUsd).toFixed(2)} / ${Number(usageStats.budgetLimitUsd).toFixed(2)}</span>
+                    </div>
+                    <div className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2.5">
+                      <div 
+                        className={`h-2.5 rounded-full ${
+                          Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.9 
+                            ? 'bg-red-500' 
+                            : Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.7 
+                              ? 'bg-yellow-500' 
+                              : 'bg-indigo-600'
+                        }`}
+                        style={{ width: `${Math.min(100, (Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd)) * 100)}%` }}
+                      ></div>
+                    </div>
+                    {Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.9 && (
+                      <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        You are approaching your monthly budget limit. Agent activity will be paused if you exceed this limit.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm text-zinc-500 py-4 flex items-center justify-center">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Loading usage stats...
               </div>
             )}
           </div>
