@@ -35,19 +35,27 @@ export async function getUsage() {
         });
 
         if (!usage) {
-            // Create a default empty usage tracking for the current period
             const now = new Date();
             const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-            const [newUsage] = await db.insert(usageTracking).values({
+            const inserted = await db.insert(usageTracking).values({
                 tenantId,
                 periodStart: firstDayOfMonth,
                 inputTokensUsed: 0,
                 outputTokensUsed: 0,
                 estimatedCostUsd: '0',
-                budgetLimitUsd: '5.00', // Default $5 limit
-            }).returning();
-            usage = newUsage;
+                budgetLimitUsd: '5.00',
+            })
+            .onConflictDoNothing()
+            .returning();
+            
+            if (inserted.length > 0) {
+                usage = inserted[0];
+            } else {
+                usage = await db.query.usageTracking.findFirst({
+                    where: eq(usageTracking.tenantId, tenantId)
+                });
+            }
         }
 
         return { usage };

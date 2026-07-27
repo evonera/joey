@@ -165,15 +165,15 @@ export async function selectEntityAndFinalize(platform: string, entityId: string
         cookieStore.delete('zernio_oauth_session'); // Clean up
 
         if (platform === "facebook") {
-            await (zernio.connect as any).getFacebookPages({
+            await (zernio.connect as any).selectFacebookPage({
                 body: { tempToken, userProfile, pageId: entityId }
             });
         } else if (platform === "linkedin") {
-            await (zernio.connect as any).getLinkedInOrganizations({
+            await (zernio.connect as any).selectLinkedInOrganization({
                 body: { tempToken, userProfile, organizationId: entityId }
             });
         } else if (platform === "pinterest") {
-            await (zernio.connect as any).getPinterestBoards({
+            await (zernio.connect as any).selectPinterestBoard({
                 body: { tempToken, userProfile, boardId: entityId }
             });
         }

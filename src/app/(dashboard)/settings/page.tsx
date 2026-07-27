@@ -32,9 +32,9 @@ export default function SettingsPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
 
   const [usageStats, setUsageStats] = useState<{
-    inputTokensUsed: number;
-    outputTokensUsed: number;
-    estimatedCostUsd: string;
+    inputTokensUsed: number | null;
+    outputTokensUsed: number | null;
+    estimatedCostUsd: string | null;
     budgetLimitUsd: string | null;
   } | null>(null);
 
@@ -48,7 +48,7 @@ export default function SettingsPage() {
         ]);
 
         if (usageRes.usage) {
-          setUsageStats(usageRes.usage as any);
+          setUsageStats(usageRes.usage);
         }
 
         if (accountsRes.accounts) {
@@ -317,15 +317,15 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
                     <p className="text-sm text-zinc-500 mb-1">Input Tokens</p>
-                    <p className="text-2xl font-bold">{usageStats.inputTokensUsed.toLocaleString()}</p>
+                    <p className="text-2xl font-bold">{(usageStats.inputTokensUsed ?? 0).toLocaleString()}</p>
                   </div>
                   <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
                     <p className="text-sm text-zinc-500 mb-1">Output Tokens</p>
-                    <p className="text-2xl font-bold">{usageStats.outputTokensUsed.toLocaleString()}</p>
+                    <p className="text-2xl font-bold">{(usageStats.outputTokensUsed ?? 0).toLocaleString()}</p>
                   </div>
                   <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
                     <p className="text-sm text-zinc-500 mb-1">Estimated Cost</p>
-                    <p className="text-2xl font-bold">${Number(usageStats.estimatedCostUsd).toFixed(4)}</p>
+                    <p className="text-2xl font-bold">${Number(usageStats.estimatedCostUsd ?? 0).toFixed(4)}</p>
                   </div>
                 </div>
 
