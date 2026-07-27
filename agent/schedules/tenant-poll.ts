@@ -4,12 +4,25 @@ import { db } from "@/lib/db";
 import { agentConfigs, tenants, drafts, webhookEvents } from "@/lib/db/schema";
 import { eq, and, lte, isNotNull } from "drizzle-orm";
 import { executePublishDraft, getZernioClientForTenant } from "@/app/actions/publisher";
+import { syncTenantMemories } from "@/lib/ingest-memories";
 
 export default defineSchedule({
   cron: "*/5 * * * *",
   async run({ receive, waitUntil }) {
 
-    // --- 0. Process Pending Webhook Events ---
+    // --- 0. Sync Memories for Active Tenants ---
+    const activeTenants = await db.select({ id: agentConfigs.tenantId })
+      .from(agentConfigs)
+      .where(eq(agentConfigs.isPaused, false));
+    for (const t of activeTenants) {
+      try {
+        await syncTenantMemories(t.id);
+      } catch (err) {
+        console.error(`[memory-sync] Failed to sync memories for tenant ${t.id}:`, err);
+      }
+    }
+
+    // --- 1. Process Pending Webhook Events ---
     const pendingEvents = await db.query.webhookEvents.findMany({
       where: and(
         eq(webhookEvents.status, "pending"),
@@ -69,7 +82,7 @@ export default defineSchedule({
         .where(eq(webhookEvents.id, event.id));
     }
 
-    // --- 1. Publish Scheduled Drafts ---
+    // --- 2. Publish Scheduled Drafts ---
     const pendingDrafts = await db.select({
       id: drafts.id,
       tenantId: drafts.tenantId
@@ -95,7 +108,7 @@ export default defineSchedule({
     }
 
 
-    // --- 2. Trigger AI Drafting ---
+    // --- 3. Trigger AI Drafting ---
     const dueConfigs = await db.select({
         tenantId: agentConfigs.tenantId,
         ownerId: tenants.ownerId,
