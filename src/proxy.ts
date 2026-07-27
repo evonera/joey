@@ -1,17 +1,11 @@
-import { betterFetch } from "@better-fetch/fetch";
-import type { Session } from "better-auth/types";
 import { NextResponse, type NextRequest } from "next/server";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
-	const { data: session } = await betterFetch<Session>(
-		"/api/auth/get-session",
-		{
-			baseURL: request.nextUrl.origin,
-			headers: {
-				cookie: request.headers.get("cookie") || "",
-			},
-		},
-	);
+	const session = await auth.api.getSession({
+		headers: await headers()
+	});
 
 	const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup');
 	
@@ -37,5 +31,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
+    runtime: "nodejs",
 	matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
 };
