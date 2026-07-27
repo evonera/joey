@@ -81,14 +81,20 @@ export async function handleZernioCallback(searchParams: Record<string, string>)
         // Assuming it does for the sake of CSRF protection:
         const cookieStore = await cookies();
         const storedState = cookieStore.get('zernio_oauth_state');
-        // if (state && storedState?.value !== state) {
-        //     return { error: "Invalid OAuth state parameter" };
-        // }
-        // (Commented out strict check in case Zernio API doesn't echo it, but ideally we'd check it)
+        
+        if (!storedState?.value) {
+            return { error: "Invalid OAuth state: Missing CSRF session" };
+        }
+        
+        if (state && storedState.value !== state) {
+            return { error: "Invalid OAuth state parameter" };
+        }
+        
         cookieStore.delete('zernio_oauth_state'); // Clear it after use
 
         if (errorParam) {
-            return { error: errorParam };
+            console.error("Zernio OAuth returned error:", errorParam);
+            return { error: "Authentication failed on the provider. Please try again." };
         }
 
         // Simple connection success
