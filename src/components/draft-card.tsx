@@ -88,6 +88,19 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
                 </div>
             )}
 
+            {draft.status === 'failed' && (
+                <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                    <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm border border-red-100">
+                        <strong>Publish Failed:</strong> {draft.errorMessage || "Unknown error occurred"}
+                    </div>
+                    <div className="flex gap-2">
+                        <Button onClick={handlePublish} disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
+                            {loading ? "Retrying..." : "Retry Publish"}
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             {!isEditing && !isRejecting && draft.status === 'pending_review' && (
                 <div className="flex gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                     <Button onClick={handleApprove} disabled={loading} className="flex-1 bg-green-600 hover:bg-green-700 text-white">Approve</Button>
