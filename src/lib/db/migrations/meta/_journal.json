@@ -22,6 +22,13 @@
       "when": 1785195138951,
       "tag": "0002_nosy_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785195535505,
+      "tag": "0003_grey_tyger_tiger",
+      "breakpoints": true
     }
   ]
 }
