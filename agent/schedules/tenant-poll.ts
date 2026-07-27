@@ -28,7 +28,7 @@ export default defineSchedule({
           message: "It is time to draft a new social media post. Please review the brand persona and goals, generate a relevant draft, and use the draft_post tool to save it.",
           target: { }, // Base target, Eve handles session isolation via auth
           auth: {
-            authenticator: "cron",
+            authenticator: "placeholderAuth",
             principalType: "user",
             principalId: config.ownerId,
             attributes: { tenantId: config.tenantId },
@@ -36,10 +36,20 @@ export default defineSchedule({
         })
       );
 
-      // Simple implementation: push nextDraftAt 24 hours into the future for now
-      // A more robust implementation would parse postingSchedule (timezone, activeDays, times)
+      // Robust implementation: Parse postingSchedule to find next time
       const nextDate = new Date();
-      nextDate.setHours(nextDate.getHours() + 24);
+      try {
+        const schedule = config.postingSchedule as any;
+        if (schedule && Array.isArray(schedule.times) && schedule.times.length > 0) {
+            // Very naive calculation: just take the first configured time tomorrow
+            const [hours, minutes] = schedule.times[0].split(':').map(Number);
+            nextDate.setHours(hours + 24, minutes, 0, 0);
+        } else {
+            nextDate.setHours(nextDate.getHours() + 24);
+        }
+      } catch (e) {
+          nextDate.setHours(nextDate.getHours() + 24);
+      }
 
       await db.update(agentConfigs)
         .set({ nextDraftAt: nextDate })

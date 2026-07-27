@@ -8,6 +8,13 @@
       "when": 1785181666304,
       "tag": "0000_tidy_chronomancer",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785184806236,
+      "tag": "0001_glamorous_franklin_storm",
+      "breakpoints": true
     }
   ]
 }
