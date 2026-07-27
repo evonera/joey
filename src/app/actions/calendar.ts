@@ -44,7 +44,22 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
         const accounts = await db.query.socialAccounts.findMany({
             where: eq(socialAccounts.tenantId, tenantId)
         });
-        const accountMap = new Map(accounts.map(a => [a.platform, a]));
+        const accountMap = new Map(accounts.map(a => [a.id, a]));
+
+        // 4. Batch fetch drafts for published posts to avoid N+1 query
+        const postDraftIds = publishedPosts
+            .map(p => p.draftId)
+            .filter((id): id is string => id !== null);
+
+        let draftMap = new Map();
+        if (postDraftIds.length > 0) {
+            // Import inArray for this to work
+            const { inArray } = await import("drizzle-orm");
+            const resolvedDrafts = await db.query.drafts.findMany({
+                where: inArray(drafts.id, postDraftIds)
+            });
+            draftMap = new Map(resolvedDrafts.map(d => [d.id, d]));
+        }
 
         const calendarEvents: CalendarPost[] = [];
 
@@ -52,7 +67,8 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
         for (const draft of scheduledDrafts) {
             const opts = draft.platformOptions as any;
             const platform = opts?.platform || 'unknown';
-            const acc = accountMap.get(platform);
+            const accountId = opts?.accountId;
+            const acc = accountId ? accountMap.get(accountId) : Array.from(accountMap.values()).find(a => a.platform === platform);
             
             if (draft.scheduledFor) {
                 calendarEvents.push({
@@ -61,9 +77,9 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
                     start: new Date(draft.scheduledFor),
                     end: new Date(draft.scheduledFor),
                     status: draft.status,
-                    platform,
+                    platform: acc ? acc.platform : platform,
                     mediaUrls: opts?.mediaUrls || [],
-                    accountName: acc?.accountName,
+                    accountName: acc?.accountName || undefined,
                     avatarUrl: acc?.avatarUrl || undefined,
                 });
             }
@@ -71,24 +87,21 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
 
         // Map posts
         for (const post of publishedPosts) {
-            // For posts, we might need to look up the draft to get platform opts, 
-            // or if we store platform on the post, use that.
-            // Currently our posts table doesn't have a platform column, 
-            // but we can join with drafts or just assume we'll fix it later.
-            // Let's fetch the draft for this post to get its platform options.
             let platform = 'unknown';
             let mediaUrls: string[] = [];
+            let accountId: string | undefined = undefined;
             
             if (post.draftId) {
-                const draft = await db.query.drafts.findFirst({ where: eq(drafts.id, post.draftId) });
+                const draft = draftMap.get(post.draftId);
                 if (draft) {
                     const opts = draft.platformOptions as any;
                     platform = opts?.platform || 'unknown';
                     mediaUrls = opts?.mediaUrls || [];
+                    accountId = opts?.accountId;
                 }
             }
 
-            const acc = accountMap.get(platform);
+            const acc = accountId ? accountMap.get(accountId) : Array.from(accountMap.values()).find(a => a.platform === platform);
 
             calendarEvents.push({
                 id: post.id,
@@ -96,9 +109,9 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
                 start: new Date(post.publishedAt),
                 end: new Date(post.publishedAt),
                 status: post.status, // "published"
-                platform,
+                platform: acc ? acc.platform : platform,
                 mediaUrls,
-                accountName: acc?.accountName,
+                accountName: acc?.accountName || undefined,
                 avatarUrl: acc?.avatarUrl || undefined,
             });
         }

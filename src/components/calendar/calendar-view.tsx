@@ -6,6 +6,7 @@ import { PostCalendar } from "./post-calendar";
 import { getCalendarPosts, CalendarPost } from "@/app/actions/calendar";
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 export function CalendarView() {
   const router = useRouter();
@@ -16,6 +17,8 @@ export function CalendarView() {
   const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
+    let ignore = false;
+
     async function loadPosts() {
       setIsPending(true);
       
@@ -30,12 +33,22 @@ export function CalendarView() {
       }
 
       const res = await getCalendarPosts(start, end);
-      if (res.posts) {
-        setPosts(res.posts);
+      
+      if (!ignore) {
+        if (res.error) {
+          toast.error(res.error);
+        } else if (res.posts) {
+          setPosts(res.posts);
+        }
+        setIsPending(false);
       }
-      setIsPending(false);
     }
+    
     loadPosts();
+
+    return () => {
+      ignore = true;
+    };
   }, [currentDate, view]);
 
   const handlePostClick = (post: CalendarPost) => {
