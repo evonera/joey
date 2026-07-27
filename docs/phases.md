@@ -58,10 +58,10 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: Users can connect multiple social platforms and select specific sub-entities (e.g., a specific Facebook page) to manage.
 
 ### Phase 1.5: Agent Persona Configuration (1-2 days)
-- [ ] Build persona config form (brand voice, posting goals, tone)
-- [ ] Build posting schedule selector (timezone-aware)
-- [ ] Build platform selection (which platforms to post to)
-- [ ] Store agent config in database
+- [x] Build persona config form (brand voice, posting goals, tone)
+- [x] Build posting schedule selector (timezone-aware)
+- [x] Build platform selection (which platforms to post to)
+- [x] Store agent config in database
 **Dependencies**: Phase 1.1, Phase 1.4
 **Reference Repos**: None
 **Acceptance Criteria**: Config is correctly persisted and linked to the user's tenant/account.
