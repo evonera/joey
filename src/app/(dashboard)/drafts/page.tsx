@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getDrafts } from "@/app/actions/drafts";
 import { DraftCard } from "@/components/draft-card";
 
@@ -9,18 +9,18 @@ export default function DraftsPage() {
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState<string>("pending_review");
 
-    const fetchDrafts = async () => {
+    const fetchDrafts = useCallback(async () => {
         setLoading(true);
         const res = await getDrafts(statusFilter);
         if (res.drafts) {
             setDrafts(res.drafts);
         }
         setLoading(false);
-    };
+    }, [statusFilter]);
 
     useEffect(() => {
         fetchDrafts();
-    }, [statusFilter]);
+    }, [fetchDrafts]);
 
     const tabs = [
         { id: "pending_review", label: "Pending" },
