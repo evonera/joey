@@ -1,14 +1,74 @@
 import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
-import { agentConfigs, tenants, drafts } from "@/lib/db/schema";
-import { eq, and, lte, isNotNull } from "drizzle-orm";
+import { agentConfigs, tenants, drafts, webhookEvents } from "@/lib/db/schema";
+import { eq, and, lte, isNotNull, isNull } from "drizzle-orm";
 import { executePublishDraft, getZernioClientForTenant } from "@/app/actions/publisher";
 
 export default defineSchedule({
   cron: "*/5 * * * *",
   async run({ receive, waitUntil }) {
-    
+
+    // --- 0. Process Pending Webhook Events ---
+    const pendingEvents = await db.query.webhookEvents.findMany({
+      where: and(
+        eq(webhookEvents.status, "pending"),
+        isNotNull(webhookEvents.tenantId)
+      ),
+      limit: 20,
+    });
+
+    for (const event of pendingEvents) {
+      const payload = event.payload as any;
+      const resolvedTenantId = event.tenantId!;
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, resolvedTenantId),
+      });
+      if (!tenant) {
+        await db.update(webhookEvents)
+          .set({ status: "failed", errorMessage: "Tenant not found" })
+          .where(eq(webhookEvents.id, event.id));
+        continue;
+      }
+
+      let agentMessage = "";
+      switch (event.eventType) {
+        case "comment.received":
+          agentMessage = `A new comment was received on a post: "${payload.comment?.text ?? "(no text)"}". Review the comment and draft an appropriate response.`;
+          break;
+        case "message.received":
+          agentMessage = "A new direct message was received. Review the conversation and draft a response if needed.";
+          break;
+        case "post.failed":
+          agentMessage = "A post failed to publish. Review the error and determine if any action is needed.";
+          break;
+        case "post.partial":
+          agentMessage = "A post was only partially published across platforms. Check which platforms succeeded and which failed.";
+          break;
+        default:
+          continue;
+      }
+
+      if (agentMessage) {
+        waitUntil(
+          receive(eveChannel, {
+            message: agentMessage,
+            target: {},
+            auth: {
+              authenticator: "cron",
+              principalType: "user",
+              principalId: tenant.ownerId,
+              attributes: { tenantId: resolvedTenantId },
+            },
+          })
+        );
+      }
+
+      await db.update(webhookEvents)
+        .set({ status: "processed", processedAt: new Date() })
+        .where(eq(webhookEvents.id, event.id));
+    }
+
     // --- 1. Publish Scheduled Drafts ---
     const pendingDrafts = await db.select({
       id: drafts.id,
