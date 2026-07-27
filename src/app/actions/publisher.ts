@@ -30,9 +30,11 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId))
     });
 
-    if (!draft || draft.status !== "approved") {
-        return { error: "Draft not found or not approved." };
+    if (!draft || (draft.status !== "approved" && draft.status !== "failed")) {
+        return { error: "Draft not found or not ready to publish." };
     }
+
+    try {
 
     const platformOpts = draft.platformOptions as any;
     const targetPlatform = platformOpts?.platform;
@@ -101,7 +103,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     }
 
     if (lastError) {
-        const errorMessage = lastError.message || typeof lastError === 'string' ? lastError : "Failed to publish to social networks after retries.";
+        const errorMessage = lastError.message || (typeof lastError === 'string' ? lastError : "Failed to publish to social networks after retries.");
         
         await db.update(drafts)
             .set({ 
@@ -128,7 +130,16 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         });
     });
 
-    return { success: true };
+        return { success: true };
+    } catch (unexpectedError: any) {
+        console.error("Unexpected error during publish:", unexpectedError);
+        // Reset status to failed on unexpected errors (e.g. DB transaction failure)
+        await db.update(drafts)
+            .set({ status: "failed", errorMessage: unexpectedError.message || "An unexpected system error occurred." })
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+            
+        return { error: unexpectedError.message || "An unexpected system error occurred." };
+    }
 }
 
 // Server Action for UI
