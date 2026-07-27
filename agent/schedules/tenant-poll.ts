@@ -47,10 +47,10 @@ export default defineSchedule({
             nextDate.setUTCDate(nextDate.getUTCDate() + 1);
             nextDate.setUTCHours(hours, minutes, 0, 0);
         } else {
-            nextDate.setHours(nextDate.getHours() + 24);
+            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
         }
       } catch (e) {
-          nextDate.setHours(nextDate.getHours() + 24);
+          nextDate.setUTCDate(nextDate.getUTCDate() + 1);
       }
 
       await db.update(agentConfigs)

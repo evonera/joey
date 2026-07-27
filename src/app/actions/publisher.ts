@@ -41,6 +41,11 @@ export async function publishDraft(draftId: string) {
             url
         })) || [];
 
+        // Pre-flight: Mark as publishing to prevent double-execution
+        await db.update(drafts)
+            .set({ status: "publishing" })
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+
         // 4. Call Zernio API with synchronous retries
         let lastError: any = null;
         let response: any = null;
@@ -93,7 +98,7 @@ export async function publishDraft(draftId: string) {
                     status: "failed", 
                     errorMessage 
                 })
-                .where(eq(drafts.id, draftId));
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
                 
             return { error: errorMessage };
         }
@@ -103,7 +108,7 @@ export async function publishDraft(draftId: string) {
             // Mark draft as published
             await tx.update(drafts)
                 .set({ status: "published", errorMessage: null })
-                .where(eq(drafts.id, draftId));
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
 
             // Create post record
             await tx.insert(posts).values({
