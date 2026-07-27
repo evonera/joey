@@ -2,7 +2,7 @@ import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
 import { agentConfigs, tenants, drafts, webhookEvents } from "@/lib/db/schema";
-import { eq, and, lte, isNotNull, isNull } from "drizzle-orm";
+import { eq, and, lte, isNotNull } from "drizzle-orm";
 import { executePublishDraft, getZernioClientForTenant } from "@/app/actions/publisher";
 
 export default defineSchedule({
