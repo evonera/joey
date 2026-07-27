@@ -4,7 +4,8 @@ import * as React from "react";
 import { Calendar, dateFnsLocalizer, Views } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay, addHours, isBefore, startOfDay } from "date-fns";
 import { enUS } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus, Twitter, Linkedin, Facebook, Instagram, Image as ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Image as ImageIcon } from "lucide-react";
+import { IconBrandTwitter as Twitter, IconBrandLinkedin as Linkedin, IconBrandFacebook as Facebook, IconBrandInstagram as Instagram } from "@tabler/icons-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "./post-calendar.css";
 import { cn } from "@/lib/utils";
@@ -85,7 +86,7 @@ export function PostCalendar({
 
   const isWeekView = view === "week";
 
-  const CustomToolbar = (toolbar: any) => {
+  const CustomToolbar = React.useCallback((toolbar: any) => {
     return (
       <div className="flex flex-col gap-4 mb-4">
         <div className="flex items-center justify-between">
@@ -123,7 +124,7 @@ export function PostCalendar({
         </div>
       </div>
     )
-  };
+  }, [view, onViewChange, rightActions]);
 
   return (
     <div className={cn("h-full relative flex flex-col min-h-[700px] bg-background")}>
