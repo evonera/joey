@@ -20,9 +20,8 @@ export default defineTool({
     try {
       await db.insert(drafts).values({
         tenantId,
-        platform,
         content,
-        mediaUrls,
+        platformOptions: { platform, mediaUrls },
         status: "pending_review",
       });
       return { success: true, message: "Draft saved successfully." };
