@@ -27,7 +27,7 @@ export default function SettingsPage() {
   const [activeDays, setActiveDays] = useState<string[]>([]);
   const [timesText, setTimesText] = useState("");
   
-  const [accounts, setAccounts] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<{ id: string; platform: string; accountName: string; avatarUrl?: string | null }[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -64,8 +64,7 @@ export default function SettingsPage() {
     loadData();
   }, []);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitSave = async () => {
     setIsSaving(true);
     setSaveSuccess(false);
 
@@ -97,6 +96,11 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitSave();
+  };
+
   const toggleDay = (dayId: string) => {
     setActiveDays(prev => 
       prev.includes(dayId) ? prev.filter(d => d !== dayId) : [...prev, dayId]
@@ -126,7 +130,8 @@ export default function SettingsPage() {
         </div>
         
         <button
-          onClick={handleSave}
+          type="button"
+          onClick={() => submitSave()}
           disabled={isSaving}
           className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
         >
@@ -141,7 +146,7 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-8">
+      <form onSubmit={handleSaveForm} className="space-y-8">
         
         {/* Persona Section */}
         <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
