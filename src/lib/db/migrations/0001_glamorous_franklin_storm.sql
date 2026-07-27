@@ -1,0 +1,1 @@
+ALTER TABLE "agent_configs" ADD COLUMN "is_paused" boolean DEFAULT false NOT NULL;
