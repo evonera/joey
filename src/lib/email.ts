@@ -39,10 +39,13 @@ export interface NotificationEmailOptions {
 }
 
 export async function sendNotificationEmail({ to, subject, body, tenantId, link }: NotificationEmailOptions) {
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
       <h2 style="color: #333; margin-top: 0;">Joey</h2>
-      <p style="color: #555; font-size: 16px; line-height: 1.5;">${body}</p>
+      <p style="color: #555; font-size: 16px; line-height: 1.5;">${escapeHtml(body)}</p>
       ${link ? `
         <div style="margin-top: 24px;">
           <a href="${link}" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 500; display: inline-block;">

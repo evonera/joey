@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts, agentConfigs, apiKeys } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getZernioClient } from "./zernio";
-import { createNotification } from "./notifications";
+import { createNotification } from "@/lib/notifications";
 import { decrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
 

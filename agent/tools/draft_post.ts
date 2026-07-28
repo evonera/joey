@@ -25,7 +25,7 @@ export default defineTool({
         status: "pending_review",
       });
       
-      const { createNotification } = await import('@/app/actions/notifications');
+      const { createNotification } = await import('@/lib/notifications');
       await createNotification(tenantId as string, 'draft_ready', 'New Draft Ready', 'Your AI agent has drafted a new post for your review.', { link: '/drafts' });
 
       return { success: true, message: "Draft saved successfully." };

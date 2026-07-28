@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getNotifications, markAsRead, markAllAsRead } from '@/app/actions/notifications';
 import { IconBell, IconCheck, IconAlertTriangle, IconEdit, IconMessageDots, IconBroadcast } from '@tabler/icons-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -12,7 +12,7 @@ export default function NotificationsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  const fetchNotifs = async () => {
+  const fetchNotifs = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await getNotifications({ limit: 100, unreadOnly: filter === 'unread' });
@@ -24,11 +24,11 @@ export default function NotificationsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filter]);
 
   useEffect(() => {
     fetchNotifs();
-  }, [filter]);
+  }, [fetchNotifs]);
 
   const handleMarkAllAsRead = async () => {
     await markAllAsRead();

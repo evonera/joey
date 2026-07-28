@@ -1,0 +1,1 @@
+CREATE INDEX "notifications_tenant_id_idx" ON "notifications" USING btree ("tenant_id","is_read","created_at" DESC NULLS LAST);
