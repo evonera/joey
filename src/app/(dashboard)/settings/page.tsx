@@ -5,7 +5,8 @@ import { getAgentConfig, saveAgentConfig } from "@/app/actions/agent";
 import { getConnectedAccounts } from "@/app/actions/zernio";
 import { getUsage } from "@/app/actions/usage";
 import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
-import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle, Sparkles, Eye, EyeOff, Trash2, PlugZap } from "lucide-react";
+import { getNotificationPreferences, saveNotificationPreferences } from "@/app/actions/notifications";
+import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle, Sparkles, Eye, EyeOff, Trash2, PlugZap, Bell } from "lucide-react";
 import { ConnectionsPanel } from "./connections-panel";
 
 const DAYS_OF_WEEK = [
@@ -50,13 +51,18 @@ export default function SettingsPage() {
   const [openaiSaved, setOpenaiSaved] = useState(false);
   const [falSaved, setFalSaved] = useState(false);
 
+  const [notificationPrefs, setNotificationPrefs] = useState<any>(null);
+  const [savingNotifications, setSavingNotifications] = useState(false);
+  const [notificationsSaved, setNotificationsSaved] = useState(false);
+
   useEffect(() => {
     async function loadData() {
       try {
-        const [configRes, accountsRes, usageRes] = await Promise.all([
+        const [configRes, accountsRes, usageRes, prefsRes] = await Promise.all([
           getAgentConfig(),
           getConnectedAccounts(),
-          getUsage()
+          getUsage(),
+          getNotificationPreferences()
         ]);
 
         if (usageRes.usage) {
@@ -74,6 +80,10 @@ export default function SettingsPage() {
 
         if (accountsRes.accounts) {
           setAccounts(accountsRes.accounts);
+        }
+
+        if (prefsRes.preferences) {
+          setNotificationPrefs(prefsRes.preferences);
         }
 
         if (configRes.config) {
@@ -173,6 +183,26 @@ export default function SettingsPage() {
       alert("Failed to save fal.ai key");
     } finally {
       setSavingFal(false);
+    }
+  };
+
+  const handleSaveNotifications = async () => {
+    if (!notificationPrefs) return;
+    setSavingNotifications(true);
+    setNotificationsSaved(false);
+    try {
+      const res = await saveNotificationPreferences(notificationPrefs);
+      if (res.preferences) {
+        setNotificationPrefs(res.preferences);
+        setNotificationsSaved(true);
+        setTimeout(() => setNotificationsSaved(false), 3000);
+      } else {
+        alert(res.error || "Failed to save notification preferences");
+      }
+    } catch (err) {
+      alert("Failed to save notification preferences");
+    } finally {
+      setSavingNotifications(false);
     }
   };
 
@@ -434,6 +464,100 @@ export default function SettingsPage() {
               <div className="text-sm text-zinc-500 py-4 flex items-center justify-center">
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 Loading usage stats...
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Notifications Section */}
+        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
+          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
+            <div>
+              <h2 className="font-semibold text-zinc-900 dark:text-white">Notifications</h2>
+              <p className="text-xs text-zinc-500 mt-1">Manage how and when you receive updates.</p>
+            </div>
+            <Bell className="h-5 w-5 text-zinc-400" />
+          </div>
+          <div className="p-6 space-y-6">
+            {notificationPrefs ? (
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={notificationPrefs.emailAddress || ""}
+                    onChange={(e) => setNotificationPrefs({ ...notificationPrefs, emailAddress: e.target.value })}
+                    placeholder="you@example.com"
+                    className="w-full max-w-md rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                  />
+                  <p className="text-xs text-zinc-500 mt-1">Where we should send email notifications.</p>
+                </div>
+                
+                <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden flex overflow-x-auto">
+                  <table className="w-full text-sm text-left min-w-[600px]">
+                    <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Event</th>
+                        <th className="px-4 py-3 font-medium text-center">In-App</th>
+                        <th className="px-4 py-3 font-medium text-center">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                      {[
+                        { key: "DraftReady", label: "New Draft Ready" },
+                        { key: "EngagementReply", label: "Comment Needs Reply" },
+                        { key: "PublishSuccess", label: "Post Published Successfully" },
+                        { key: "PublishFailed", label: "Post Failed to Publish" },
+                        { key: "ApiFailure", label: "API Connection Failure" },
+                      ].map((item) => (
+                        <tr key={item.key} className="bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                          <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.label}</td>
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={notificationPrefs[`inApp${item.key}`]}
+                              onChange={(e) => setNotificationPrefs({ ...notificationPrefs, [`inApp${item.key}`]: e.target.checked })}
+                              className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-600"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={notificationPrefs[`email${item.key}`]}
+                              onChange={(e) => setNotificationPrefs({ ...notificationPrefs, [`email${item.key}`]: e.target.checked })}
+                              className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-600"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveNotifications}
+                    disabled={savingNotifications}
+                    className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {savingNotifications ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : notificationsSaved ? (
+                      <CheckCircle2 className="mr-2 h-4 w-4 text-green-300" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    {notificationsSaved ? "Saved!" : "Save Preferences"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-zinc-500 py-4 flex items-center justify-center">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Loading preferences...
               </div>
             )}
           </div>

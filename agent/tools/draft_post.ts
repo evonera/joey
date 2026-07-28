@@ -24,6 +24,10 @@ export default defineTool({
         platformOptions: { platform, mediaUrls },
         status: "pending_review",
       });
+      
+      const { createNotification } = await import('@/app/actions/notifications');
+      await createNotification(tenantId as string, 'draft_ready', 'New Draft Ready', 'Your AI agent has drafted a new post for your review.', { link: '/drafts' });
+
       return { success: true, message: "Draft saved successfully." };
     } catch (error: any) {
       throw new Error(`Failed to save draft: ${error.message}`);

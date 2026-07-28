@@ -45,6 +45,9 @@ export default defineTool({
       status: "pending_review",
     }).returning();
 
+    const { createNotification } = await import('@/app/actions/notifications');
+    await createNotification(tenantId as string, 'engagement_reply_needed', 'Comment Needs Reply', 'Your AI agent has drafted a reply to a comment for your review.', { link: '/engagement' });
+
     return { success: true, replyDraftId: draft.id, message: "Reply draft saved for review." };
   },
 });
