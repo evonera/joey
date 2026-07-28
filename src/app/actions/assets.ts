@@ -4,8 +4,9 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { assets, tenants } from "@/lib/db/schema";
-import { eq, and, like, or, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { generateUploadUrl, deleteObject } from "@/lib/storage";
+import { queryAssets } from "@/lib/assets";
 
 async function getTenantId(): Promise<string> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -37,6 +38,10 @@ export async function registerAsset(data: {
 }) {
   const tenantId = await getTenantId();
 
+  if (!data.key.startsWith(tenantId + "/")) {
+    throw new Error("Invalid asset key: namespace mismatch");
+  }
+
   const [asset] = await db.insert(assets).values({
     tenantId,
     filename: data.filename,
@@ -51,42 +56,6 @@ export async function registerAsset(data: {
   }).returning();
 
   return { asset };
-}
-
-export async function queryAssets(tenantId: string, opts?: {
-  tags?: string[];
-  search?: string;
-  mimeType?: string;
-  limit?: number;
-  offset?: number;
-}) {
-  const conditions = [eq(assets.tenantId, tenantId)];
-
-  if (opts?.tags && opts.tags.length > 0) {
-    conditions.push(sql`${assets.tags} && ${opts.tags}`);
-  }
-
-  if (opts?.search) {
-    conditions.push(like(assets.filename, `%${opts.search}%`));
-  }
-
-  if (opts?.mimeType) {
-    if (opts.mimeType.endsWith("/*")) {
-      const prefix = opts.mimeType.slice(0, -2);
-      conditions.push(like(assets.mimeType, `${prefix}%`));
-    } else {
-      conditions.push(eq(assets.mimeType, opts.mimeType));
-    }
-  }
-
-  const rows = await db.query.assets.findMany({
-    where: and(...conditions),
-    orderBy: (assets, { desc }) => [desc(assets.createdAt)],
-    limit: opts?.limit ?? 50,
-    offset: opts?.offset ?? 0,
-  });
-
-  return rows;
 }
 
 export async function listAssets(opts?: {

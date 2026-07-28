@@ -44,21 +44,37 @@ export default function AssetsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [filterMime, setFilterMime] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadAssets = useCallback(async () => {
     setLoading(true);
-    const res = await listAssets({
-      search: search || undefined,
-      mimeType: filterMime || undefined,
-    });
-    setAssets(res.assets);
-    setLoading(false);
+    setError(null);
+    try {
+      const res = await listAssets({
+        search: search || undefined,
+        mimeType: filterMime || undefined,
+      });
+      setAssets(res.assets);
+    } catch (err: any) {
+      setError(err.message || "Failed to load assets");
+      setAssets([]);
+    } finally {
+      setLoading(false);
+    }
   }, [search, filterMime]);
 
   useEffect(() => { loadAssets(); }, [loadAssets]);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setSearch(searchInput), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchInput]);
 
   async function handleFileUpload(file: File) {
     setUploading(true);
@@ -154,8 +170,8 @@ export default function AssetsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search assets..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
           />
         </div>
@@ -179,6 +195,12 @@ export default function AssetsPage() {
           })}
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 text-sm text-red-700 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

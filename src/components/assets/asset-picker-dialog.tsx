@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { listAssets } from "@/app/actions/assets";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -21,17 +21,33 @@ export function AssetPickerDialog({
 }) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   const loadAssets = useCallback(async () => {
     setLoading(true);
-    const res = await listAssets({ search: search || undefined, mimeType: "image/*" });
-    setAssets(res.assets);
-    setLoading(false);
+    setError(null);
+    try {
+      const res = await listAssets({ search: search || undefined, mimeType: "image/*" });
+      setAssets(res.assets);
+    } catch (err: any) {
+      setError(err.message || "Failed to load assets");
+      setAssets([]);
+    } finally {
+      setLoading(false);
+    }
   }, [search]);
 
   useEffect(() => { loadAssets(); }, [loadAssets]);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setSearch(searchInput), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchInput]);
 
   const toggleAsset = (url: string) => {
     setSelected((prev) => {
@@ -65,13 +81,18 @@ export function AssetPickerDialog({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search assets..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
           />
         </div>
 
         <div className="flex-1 overflow-y-auto min-h-0">
+          {error && (
+            <div className="p-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg mb-4">
+              {error}
+            </div>
+          )}
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

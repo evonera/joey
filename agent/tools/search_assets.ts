@@ -1,6 +1,6 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { queryAssets } from "@/app/actions/assets";
+import { queryAssets } from "@/lib/assets";
 
 export default defineTool({
   description:
