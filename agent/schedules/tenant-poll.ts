@@ -92,7 +92,12 @@ export default defineSchedule({
       const ownerMember = await db.query.member.findFirst({
         where: and(eq(member.organizationId, resolvedTenantId), eq(member.role, "owner"))
       });
-      if (!ownerMember) continue;
+      if (!ownerMember) {
+        await db.update(webhookEvents)
+          .set({ status: "failed", errorMessage: "Organization has no owner member" })
+          .where(eq(webhookEvents.id, event.id));
+        continue;
+      }
       if (!tenant) {
         await db.update(webhookEvents)
           .set({ status: "failed", errorMessage: "Tenant not found" })
@@ -172,12 +177,10 @@ export default defineSchedule({
     // --- 3. Trigger AI Drafting ---
     const dueConfigs = await db.select({
         tenantId: agentConfigs.tenantId,
-        ownerId: member.userId,
         postingSchedule: agentConfigs.postingSchedule,
     })
     .from(agentConfigs)
     .innerJoin(tenants, eq(tenants.id, agentConfigs.tenantId))
-    .innerJoin(member, and(eq(member.organizationId, agentConfigs.tenantId), eq(member.role, "owner")))
     .where(
         and(
             eq(agentConfigs.isPaused, false),
@@ -186,6 +189,10 @@ export default defineSchedule({
     );
 
     for (const config of dueConfigs) {
+      const ownerMember = await db.query.member.findFirst({
+        where: and(eq(member.organizationId, config.tenantId), eq(member.role, "owner"))
+      });
+      if (!ownerMember) continue;
       // Spawn an agent task for this tenant
       waitUntil(
         receive(eveChannel, {
@@ -194,7 +201,7 @@ export default defineSchedule({
           auth: {
             authenticator: "cron",
             principalType: "user",
-            principalId: config.ownerId,
+            principalId: ownerMember.userId,
             attributes: { tenantId: config.tenantId },
           },
         })
