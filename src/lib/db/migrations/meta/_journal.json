@@ -92,6 +92,13 @@
       "when": 1785242294993,
       "tag": "0012_magenta_justice",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785244724014,
+      "tag": "0013_normal_golden_guardian",
+      "breakpoints": true
     }
   ]
 }
