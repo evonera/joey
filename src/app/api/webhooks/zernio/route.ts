@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { verifyWebhookSignature, storeWebhookEvent, resolveTenantFromPayload, type ZernioWebhookPayload } from "@/lib/webhooks";
+import { verifyWebhookSignature, storeWebhookEvent, markWebhookProcessed, resolveTenantFromPayload, type ZernioWebhookPayload } from "@/lib/webhooks";
 import { webhookEvents } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -39,9 +39,13 @@ export async function POST(req: NextRequest) {
           await db.update(webhookEvents)
             .set({ tenantId })
             .where(eq(webhookEvents.eventId, payload.id));
+          await markWebhookProcessed(payload.id);
+        } else {
+          await markWebhookProcessed(payload.id, "No tenant resolved");
         }
       } catch (err) {
-        console.error(`[webhooks/zernio] Failed to resolve tenant for event ${payload.id}:`, err);
+        console.error(`[webhooks/zernio] Failed to process event ${payload.id}:`, err);
+        await markWebhookProcessed(payload.id, err instanceof Error ? err.message : "Unknown error");
       }
     });
 

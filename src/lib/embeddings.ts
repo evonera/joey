@@ -1,13 +1,13 @@
 import OpenAI from "openai";
 import { db } from "@/lib/db";
 import { apiKeys } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { decrypt } from "@/lib/crypto";
 
 async function getOpenAIClient(tenantId?: string): Promise<OpenAI> {
   if (tenantId) {
     const key = await db.query.apiKeys.findFirst({
-      where: eq(apiKeys.tenantId, tenantId),
+      where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, "openai")),
     });
     if (key?.encryptedKey) {
       return new OpenAI({ apiKey: decrypt(key.encryptedKey) });
