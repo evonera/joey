@@ -7,8 +7,12 @@ import { db } from "./db";
 import * as schema from "./db/schema";
 import { eq, desc } from "drizzle-orm";
 
+if (!process.env.DODO_PAYMENTS_API_KEY) {
+    throw new Error("DODO_PAYMENTS_API_KEY is missing. Please check your environment variables.");
+}
+
 export const dodoPayments = new DodoPayments({
-    bearerToken: process.env.DODO_PAYMENTS_API_KEY!,
+    bearerToken: process.env.DODO_PAYMENTS_API_KEY,
     environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as "test_mode" | "live_mode") || "test_mode",
 });
 
