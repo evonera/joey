@@ -6,7 +6,7 @@ export default defineEval({
         if (typeof response === "string" && response.includes("SaaS") && response.includes("code completion")) {
             t.succeeded();
         } else {
-            throw new Error("Draft quality regression: Missing required terms 'SaaS' or 'code completion', or empty response.");
+            t.failed("Draft quality regression: Missing required terms 'SaaS' or 'code completion', or empty response.");
         }
     }
 });

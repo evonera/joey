@@ -85,6 +85,13 @@
       "when": 1785239340476,
       "tag": "0011_panoramic_azazel",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785242294993,
+      "tag": "0012_magenta_justice",
+      "breakpoints": true
     }
   ]
 }

@@ -54,7 +54,23 @@ export default function DraftsPage() {
                     <div className="text-center py-8 text-zinc-500">Loading drafts...</div>
                 ) : drafts.length === 0 ? (
                     <div className="text-center py-12 bg-white dark:bg-zinc-900 rounded-xl border border-dashed">
-                        <p className="text-zinc-500">No {statusFilter.replace('_', ' ')} drafts found.</p>
+                        <p className="text-zinc-500 mb-6">No {statusFilter.replace('_', ' ')} drafts found.</p>
+                        {statusFilter === "pending_review" && (
+                            <div className="flex flex-col items-center gap-3">
+                                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Try asking your agent to:</p>
+                                <div className="flex flex-wrap justify-center gap-2 max-w-lg">
+                                    <button className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                        Draft a thread about our new product launch
+                                    </button>
+                                    <button className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                        Summarize our latest blog post for LinkedIn
+                                    </button>
+                                    <button className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                        Write a punchy tweet about AI trends
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     drafts.map(draft => (
