@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb, vector, json } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // --- BetterAuth Required Tables ---
@@ -187,7 +187,10 @@ export const engagementItems = pgTable("engagement_items", {
   status: varchar("status", { length: 50 }).default("pending").notNull(), // 'pending', 'replied', 'skipped'
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  tenantStatusIdx: index("engagement_items_tenant_status_idx").on(table.tenantId, table.status),
+  platformCommentIdx: uniqueIndex("engagement_items_platform_comment_idx").on(table.platformCommentId),
+}));
 
 export const replyDrafts = pgTable("reply_drafts", {
   id: uuid("id").primaryKey().defaultRandom(),

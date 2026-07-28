@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { webhookEvents, socialAccounts, engagementItems } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export function verifyWebhookSignature(rawBody: string, signature: string, secret: string): boolean {
   const computed = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
@@ -59,9 +59,12 @@ export async function storeEngagementItem(payload: ZernioWebhookPayload, tenantI
   const comment = data.comment || data.mention || {};
   const account = data.account || {};
 
-  // Dedup by platform comment id (or webhook event id)
+  // Dedup by platform comment id (or webhook event id) scoped by tenant
   const existing = await db.query.engagementItems.findFirst({
-    where: eq(engagementItems.platformCommentId, comment.id || payload.id),
+    where: and(
+      eq(engagementItems.tenantId, tenantId),
+      eq(engagementItems.platformCommentId, comment.id || payload.id)
+    ),
   });
   if (existing) return existing;
 

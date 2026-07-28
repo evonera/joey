@@ -165,7 +165,10 @@ export async function sendReply(replyDraftId: string) {
     const item = await db.query.engagementItems.findFirst({
       where: eq(engagementItems.id, draft.engagementItemId),
     });
-    if (!item) return { error: "Engagement item not found" };
+    if (!item) {
+      await db.update(replyDrafts).set({ status: "pending_review" }).where(eq(replyDrafts.id, replyDraftId));
+      return { error: "Engagement item not found" };
+    }
 
     const { zernio } = await getZernioClient();
 
@@ -175,11 +178,17 @@ export async function sendReply(replyDraftId: string) {
         eq(socialAccounts.platform, item.platform)
       ),
     });
-    if (!account) return { error: `No connected account found for ${item.platform}` };
+    if (!account) {
+      await db.update(replyDrafts).set({ status: "pending_review" }).where(eq(replyDrafts.id, replyDraftId));
+      return { error: `No connected account found for ${item.platform}` };
+    }
 
     const platformPostId = item.metadata as any;
     const postId = item.platformPostId || platformPostId?.comment?.postId;
-    if (!postId) return { error: "No post ID available for reply" };
+    if (!postId) {
+      await db.update(replyDrafts).set({ status: "pending_review" }).where(eq(replyDrafts.id, replyDraftId));
+      return { error: "No post ID available for reply" };
+    }
 
     let lastError: any = null;
     const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
