@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { verifyWebhookSignature, storeWebhookEvent, markWebhookProcessed, resolveTenantFromPayload, type ZernioWebhookPayload } from "@/lib/webhooks";
+import { verifyWebhookSignature, storeWebhookEvent, markWebhookProcessed, resolveTenantFromPayload, storeEngagementItem, type ZernioWebhookPayload } from "@/lib/webhooks";
 import { webhookEvents } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -39,6 +39,12 @@ export async function POST(req: NextRequest) {
           await db.update(webhookEvents)
             .set({ tenantId })
             .where(eq(webhookEvents.eventId, payload.id));
+
+          // Store engagement item for comment.received events
+          if (payload.event === "comment.received") {
+            await storeEngagementItem(payload, tenantId);
+          }
+
           await markWebhookProcessed(payload.id);
         } else {
           await markWebhookProcessed(payload.id, "No tenant resolved");
