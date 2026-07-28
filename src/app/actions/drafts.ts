@@ -78,12 +78,18 @@ export async function updateDraft(draftId: string, content: string) {
     }
 }
 
-export async function approveDraft(draftId: string) {
+export async function approveDraft(draftId: string, variantName?: string, content?: string) {
     try {
         const tenantId = await getTenantId();
         
+        const updateData: any = { status: "approved", errorMessage: null };
+        if (variantName && content) {
+            updateData.selectedVariantId = variantName;
+            updateData.content = content;
+        }
+
         await db.update(drafts)
-            .set({ status: "approved", errorMessage: null })
+            .set(updateData)
             .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
 
         return { success: true };

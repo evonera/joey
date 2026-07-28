@@ -71,7 +71,7 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
             if (draft.scheduledFor) {
                 calendarEvents.push({
                     id: draft.id,
-                    title: draft.content,
+                    title: draft.content || "Draft variants pending review",
                     start: new Date(draft.scheduledFor),
                     end: new Date(draft.scheduledFor),
                     status: draft.status,

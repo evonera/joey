@@ -5,6 +5,8 @@ import { updateDraft, approveDraft, rejectDraft } from "@/app/actions/drafts";
 import { publishDraft } from "@/app/actions/publisher";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "./ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 export function DraftCard({ draft, onActionComplete }: { draft: any, onActionComplete: () => void }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -13,12 +15,16 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
     const [feedback, setFeedback] = useState("");
     const [loading, setLoading] = useState(false);
 
+    const [isSheetOpen, setIsSheetOpen] = useState(false);
+
     const platformOpts = draft.platformOptions as any;
     const platform = platformOpts?.platform || "Unknown";
+    const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
 
-    const handleApprove = async () => {
+    const handleApprove = async (variantName?: string, contentToApprove?: string) => {
         setLoading(true);
-        await approveDraft(draft.id);
+        setIsSheetOpen(false);
+        await approveDraft(draft.id, variantName, contentToApprove);
         setLoading(false);
         onActionComplete();
     };
@@ -71,7 +77,15 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
                     </div>
                 </div>
             ) : (
-                <p className="text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap">{draft.content}</p>
+                <div className="text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap text-sm">
+                    {draft.content ? (
+                        draft.content
+                    ) : hasVariants ? (
+                        <div className="italic text-zinc-500">Multiple draft variants generated. Click Review Variants to select one.</div>
+                    ) : (
+                        <span className="italic text-zinc-400">No content available</span>
+                    )}
+                </div>
             )}
 
             {draft.errorMessage && draft.status === 'rejected' && (
@@ -103,7 +117,47 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
 
             {!isEditing && !isRejecting && draft.status === 'pending_review' && (
                 <div className="flex gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                    <Button onClick={handleApprove} disabled={loading} className="flex-1 bg-green-600 hover:bg-green-700 text-white">Approve</Button>
+                    {hasVariants ? (
+                        <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+                            <SheetTrigger asChild>
+                                <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white">Review Variants</Button>
+                            </SheetTrigger>
+                            <SheetContent className="sm:max-w-xl overflow-y-auto">
+                                <SheetHeader className="mb-6">
+                                    <SheetTitle>Review Draft Variants</SheetTitle>
+                                    <SheetDescription>
+                                        Your agent generated multiple variations for this post. Review and approve the best one.
+                                    </SheetDescription>
+                                </SheetHeader>
+                                
+                                <Tabs defaultValue={draft.variants[0].name}>
+                                    <TabsList className="w-full">
+                                        {draft.variants.map((v: any) => (
+                                            <TabsTrigger key={v.name} value={v.name} className="flex-1">{v.name}</TabsTrigger>
+                                        ))}
+                                    </TabsList>
+                                    
+                                    {draft.variants.map((v: any) => (
+                                        <TabsContent key={v.name} value={v.name} className="mt-4 space-y-4">
+                                            <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-lg border whitespace-pre-wrap text-sm min-h-[150px]">
+                                                {v.content}
+                                            </div>
+                                            <Button 
+                                                onClick={() => handleApprove(v.name, v.content)} 
+                                                disabled={loading}
+                                                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                                            >
+                                                {loading ? "Approving..." : `Approve ${v.name} Variant`}
+                                            </Button>
+                                        </TabsContent>
+                                    ))}
+                                </Tabs>
+                            </SheetContent>
+                        </Sheet>
+                    ) : (
+                        <Button onClick={() => handleApprove()} disabled={loading} className="flex-1 bg-green-600 hover:bg-green-700 text-white">Approve</Button>
+                    )}
+                    
                     <Button variant="outline" onClick={() => setIsEditing(true)} disabled={loading}>Edit</Button>
                     <Button variant="outline" onClick={() => setIsRejecting(true)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50">Reject</Button>
                 </div>

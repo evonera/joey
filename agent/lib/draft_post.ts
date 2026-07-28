@@ -7,10 +7,13 @@ export default defineTool({
   description: "Save a generated social media draft for the user to review.",
   inputSchema: z.object({
     platform: z.string().describe("The social media platform this draft is intended for (e.g., twitter, linkedin)."),
-    content: z.string().describe("The content of the post."),
+    variants: z.array(z.object({
+      name: z.string().describe("The name of the variant (e.g., 'Professional', 'Bold', 'Data-Driven')."),
+      content: z.string().describe("The content of the variant."),
+    })).length(3).describe("An array of exactly 3 distinct variants of the post."),
     mediaUrls: z.array(z.string()).optional().describe("Optional array of media URLs attached to the post."),
   }),
-  execute: async ({ platform, content, mediaUrls }, ctx) => {
+  execute: async ({ platform, variants, mediaUrls }, ctx) => {
     const tenantId = ctx.session.auth.current?.attributes?.tenantId;
 
     if (!tenantId) {
@@ -20,7 +23,7 @@ export default defineTool({
     try {
       await db.insert(drafts).values({
         tenantId: tenantId as string,
-        content,
+        variants,
         platformOptions: { platform, mediaUrls },
         status: "pending_review",
       });
