@@ -44,7 +44,7 @@ describe('storage', () => {
       delete process.env.CLOUDFLARE_ACCOUNT_ID;
 
       await expect(generateUploadUrl('f.png', 'image/png', 't-1')).rejects.toThrow(
-        'Missing CLOUDFLARE_ACCOUNT_ID'
+        'Missing R2 credentials'
       );
     });
   });

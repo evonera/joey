@@ -16,7 +16,8 @@ export async function queryAssets(tenantId: string, opts?: {
   }
 
   if (opts?.search) {
-    conditions.push(like(assets.filename, `%${opts.search}%`));
+    const escaped = opts.search.replace(/[%_]/g, "\\$&");
+    conditions.push(like(assets.filename, `%${escaped}%`));
   }
 
   if (opts?.mimeType) {

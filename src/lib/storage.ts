@@ -27,9 +27,6 @@ function getBucketName() {
 }
 
 export async function generateUploadUrl(filename: string, contentType: string, tenantId: string) {
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  if (!accountId) throw new Error("Missing CLOUDFLARE_ACCOUNT_ID");
-
   const ext = filename.split(".").pop() || "bin";
   const key = `${tenantId}/${crypto.randomUUID()}.${ext}`;
 
@@ -42,9 +39,7 @@ export async function generateUploadUrl(filename: string, contentType: string, t
 
   const uploadUrl = await getSignedUrl(client, command, { expiresIn: 3600 });
 
-  const publicUrl = `https://${getBucketName()}.${accountId}.r2.cloudflarestorage.com/${key}`;
-
-  return { uploadUrl, key, publicUrl };
+  return { uploadUrl, key, publicUrl: buildPublicUrl(key) };
 }
 
 export async function headObject(key: string) {
@@ -54,6 +49,16 @@ export async function headObject(key: string) {
     Key: key,
   });
   return client.send(command);
+}
+
+function getAccountId() {
+  const id = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!id) throw new Error("Missing CLOUDFLARE_ACCOUNT_ID");
+  return id;
+}
+
+export function buildPublicUrl(key: string) {
+  return `https://${getBucketName()}.${getAccountId()}.r2.cloudflarestorage.com/${key}`;
 }
 
 export async function deleteObject(key: string) {

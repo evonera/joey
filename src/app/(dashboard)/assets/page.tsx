@@ -79,7 +79,7 @@ export default function AssetsPage() {
   async function handleFileUpload(file: File) {
     setUploading(true);
     try {
-      const { uploadUrl, key, publicUrl } = await requestUploadUrl(
+      const { uploadUrl, key } = await requestUploadUrl(
         file.name,
         file.type
       );
@@ -106,7 +106,6 @@ export default function AssetsPage() {
         key,
         mimeType: file.type,
         size: file.size,
-        publicUrl,
         width,
         height,
       });

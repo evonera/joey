@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { assets, tenants } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { generateUploadUrl, deleteObject } from "@/lib/storage";
+import { generateUploadUrl, deleteObject, buildPublicUrl } from "@/lib/storage";
 import { queryAssets } from "@/lib/assets";
 
 async function getTenantId(): Promise<string> {
@@ -30,7 +30,6 @@ export async function registerAsset(data: {
   key: string;
   mimeType: string;
   size: number;
-  publicUrl: string;
   width?: number | null;
   height?: number | null;
   tags?: string[];
@@ -48,7 +47,7 @@ export async function registerAsset(data: {
     key: data.key,
     mimeType: data.mimeType,
     size: data.size,
-    publicUrl: data.publicUrl,
+    publicUrl: buildPublicUrl(data.key),
     width: data.width ?? null,
     height: data.height ?? null,
     tags: data.tags ?? [],
@@ -79,8 +78,13 @@ export async function deleteAsset(id: string) {
 
   if (!asset) throw new Error("Asset not found");
 
-  await deleteObject(asset.key);
   await db.delete(assets).where(eq(assets.id, id));
+
+  try {
+    await deleteObject(asset.key);
+  } catch (err) {
+    console.error(`[assets] Failed to delete R2 object ${asset.key}:`, err);
+  }
 
   return { success: true };
 }
