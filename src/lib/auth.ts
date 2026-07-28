@@ -5,10 +5,10 @@ import { dodopayments, checkout, portal, webhooks, usage } from "@dodopayments/b
 import DodoPayments from "dodopayments";
 import { db } from "./db";
 import * as schema from "./db/schema";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export const dodoPayments = new DodoPayments({
-    bearerToken: process.env.DODO_PAYMENTS_API_KEY || "",
+    bearerToken: process.env.DODO_PAYMENTS_API_KEY!,
     environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as "test_mode" | "live_mode") || "test_mode",
 });
 
@@ -30,6 +30,7 @@ async function resolveTenantId(payload: any): Promise<string | null> {
     if (meta.userId) {
         const tenant = await db.query.tenants.findFirst({
             where: eq(schema.tenants.ownerId, meta.userId as string),
+            orderBy: [desc(schema.tenants.createdAt)],
             columns: { id: true },
         });
         return tenant?.id ?? null;
