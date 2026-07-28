@@ -76,5 +76,15 @@ ALTER TABLE "invitation" ADD CONSTRAINT "invitation_organizationId_tenants_id_fk
 ALTER TABLE "invitation" ADD CONSTRAINT "invitation_inviterId_user_id_fk" FOREIGN KEY ("inviterId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "member" ADD CONSTRAINT "member_organizationId_tenants_id_fk" FOREIGN KEY ("organizationId") REFERENCES "public"."tenants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "member" ADD CONSTRAINT "member_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+INSERT INTO "member" ("id", "organizationId", "userId", "role", "createdAt")
+SELECT
+    gen_random_uuid()::text,
+    id,
+    owner_id,
+    'owner',
+    COALESCE(created_at, NOW())
+FROM "tenants"
+WHERE owner_id IS NOT NULL;
+--> statement-breakpoint
 ALTER TABLE "tenants" DROP COLUMN "owner_id";--> statement-breakpoint
 ALTER TABLE "tenants" ADD CONSTRAINT "tenants_slug_unique" UNIQUE("slug");
