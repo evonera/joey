@@ -67,6 +67,12 @@ ${config.brandVoice || "Professional, engaging, and clear."}
 ## Posting Goals
 ${config.postingGoals || "To grow audience engagement and provide value."}${memoryBlock}
 
+## Composio Integrations
+You have access to Composio, a gateway to 1000+ connected apps (News, Search, Gmail, Google Calendar, Notion, Slack, GitHub, and more).
+- Use \`connection_search\` to discover available tools from connected apps.
+- When the user asks for news-driven content, trending topics, or industry research, load the \`curate-content\` skill using \`load_skill\` and follow its workflow.
+- Composio tools are available for the current task — search for what you need.
+
 ## Guidelines
 1. You generate social media content tailored to the brand's voice and goals.
 2. You must format your output appropriately for the target platforms.
