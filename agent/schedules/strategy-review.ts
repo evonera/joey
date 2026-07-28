@@ -17,11 +17,12 @@ export default defineSchedule({
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     for (const t of activeTenants) {
-      const ownerMember = await db.query.member.findFirst({
-        where: and(eq(member.organizationId, t.tenantId), eq(member.role, "owner"))
-      });
-      if (!ownerMember) continue;
       try {
+        const ownerMember = await db.query.member.findFirst({
+          where: and(eq(member.organizationId, t.tenantId), eq(member.role, "owner"))
+        });
+        if (!ownerMember) continue;
+        
         const recentPosts = await db.query.posts.findFirst({
           where: and(
             eq(posts.tenantId, t.tenantId),
