@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb, vector } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // --- BetterAuth Required Tables ---
@@ -143,5 +143,15 @@ export const usageTracking = pgTable("usage_tracking", {
   inputTokensUsed: bigint("input_tokens_used", { mode: "number" }).default(0),
   outputTokensUsed: bigint("output_tokens_used", { mode: "number" }).default(0),
   estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 4 }).default('0'),
-  budgetLimitUsd: numeric("budget_limit_usd", { precision: 10, scale: 4 }), // null = unlimited (e.g. BYOK)
+  budgetLimitUsd: numeric("budget_limit_usd", { precision: 10, scale: 4 }),
+});
+
+export const memories = pgTable("memories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  type: varchar("type", { length: 50 }).notNull(),
+  metadata: jsonb("metadata"),
+  embedding: vector("embedding", { dimensions: 1536 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });

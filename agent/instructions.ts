@@ -2,6 +2,7 @@ import { defineDynamic, defineInstructions } from "eve/instructions";
 import { db } from "@/lib/db";
 import { agentConfigs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { searchMemories } from "@/lib/memories";
 
 export default defineDynamic({
   events: {
@@ -32,6 +33,29 @@ Please wait for the user to configure their Persona and Schedule.
         });
       }
 
+      let memoryBlock = "";
+      try {
+        const brandMemories = await searchMemories(tenantId as string, "brand voice and posting guidelines", 3, "brand_guideline");
+        const topPosts = await searchMemories(tenantId as string, "high performing posts", 3, "published_post");
+        if (brandMemories.length > 0 || topPosts.length > 0) {
+          memoryBlock = "\n## Relevant Memories\n";
+          if (brandMemories.length > 0) {
+            memoryBlock += "\n### Brand Guidelines\n";
+            for (const m of brandMemories) {
+              memoryBlock += `- ${m.content}\n`;
+            }
+          }
+          if (topPosts.length > 0) {
+            memoryBlock += "\n### Top Past Posts (similar to current context)\n";
+            for (const m of topPosts) {
+              memoryBlock += `- "${m.content}" (relevance: ${(m.similarity * 100).toFixed(0)}%)\n`;
+            }
+          }
+        }
+      } catch {
+        memoryBlock = "";
+      }
+
       return defineInstructions({
         markdown: `
 # Identity
@@ -41,12 +65,13 @@ You are Joey, a highly capable AI social media manager acting on behalf of a bra
 ${config.brandVoice || "Professional, engaging, and clear."}
 
 ## Posting Goals
-${config.postingGoals || "To grow audience engagement and provide value."}
+${config.postingGoals || "To grow audience engagement and provide value."}${memoryBlock}
 
 ## Guidelines
 1. You generate social media content tailored to the brand's voice and goals.
 2. You must format your output appropriately for the target platforms.
-3. Once you draft content, use the \`draft_post\` tool to save it for user review. Do NOT post directly.
+3. Before drafting, use \`search_memory\` to find relevant past posts and brand guidelines so your content builds on what has worked before.
+4. Once you draft content, use the \`draft_post\` tool to save it for user review. Do NOT post directly.
 `
       });
     },

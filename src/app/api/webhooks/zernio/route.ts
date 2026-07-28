@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyWebhookSignature, storeWebhookEvent, markWebhookProcessed, resolveTenantFromPayload, type ZernioWebhookPayload } from "@/lib/webhooks";
+import { after } from "next/server";
+import { verifyWebhookSignature, storeWebhookEvent, resolveTenantFromPayload, type ZernioWebhookPayload } from "@/lib/webhooks";
 import { webhookEvents } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -31,8 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true, message: "Webhook test successful" });
     }
 
-    // Fire and forget: resolve tenant and process the event
-    Promise.resolve().then(async () => {
+    after(async () => {
       try {
         const tenantId = await resolveTenantFromPayload(payload);
         if (tenantId) {
@@ -40,10 +40,8 @@ export async function POST(req: NextRequest) {
             .set({ tenantId })
             .where(eq(webhookEvents.eventId, payload.id));
         }
-        await handleEngagementEvent(payload, tenantId);
       } catch (err) {
-        console.error(`[webhooks/zernio] Failed to process event ${payload.id}:`, err);
-        await markWebhookProcessed(payload.id, err instanceof Error ? err.message : "Unknown error");
+        console.error(`[webhooks/zernio] Failed to resolve tenant for event ${payload.id}:`, err);
       }
     });
 
@@ -51,23 +49,5 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("[webhooks/zernio]", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-  }
-}
-
-async function handleEngagementEvent(payload: ZernioWebhookPayload, tenantId: string | null) {
-  switch (payload.event) {
-    case "comment.received":
-      await markWebhookProcessed(payload.id, tenantId ? undefined : "No tenant resolved");
-      break;
-    case "message.received":
-    case "conversation.started":
-      await markWebhookProcessed(payload.id, tenantId ? undefined : "No tenant resolved");
-      break;
-    case "post.failed":
-    case "post.partial":
-      await markWebhookProcessed(payload.id);
-      break;
-    default:
-      await markWebhookProcessed(payload.id);
   }
 }

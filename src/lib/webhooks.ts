@@ -5,7 +5,10 @@ import { eq } from "drizzle-orm";
 
 export function verifyWebhookSignature(rawBody: string, signature: string, secret: string): boolean {
   const computed = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
-  return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature));
+  const computedBuf = Buffer.from(computed);
+  const signatureBuf = Buffer.from(signature);
+  if (computedBuf.length !== signatureBuf.length) return false;
+  return crypto.timingSafeEqual(computedBuf, signatureBuf);
 }
 
 export type ZernioWebhookPayload = {
