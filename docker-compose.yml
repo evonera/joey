@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/joey
+      - BETTER_AUTH_SECRET=changeme_in_production
+      - NODE_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - joey_network
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=joey
+    ports:
+      - "5432:5432"
+    volumes:
+      - joey_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d joey"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - joey_network
+
+networks:
+  joey_network:
+
+volumes:
+  joey_postgres_data:
