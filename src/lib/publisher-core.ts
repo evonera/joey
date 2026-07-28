@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts, agentConfigs, apiKeys } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { createNotification } from "@/lib/notifications";
 import { decrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
@@ -23,14 +23,23 @@ export async function getZernioClientForTenant(tenantId: string) {
 
 // Reusable core logic for publishing a draft
 export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio) {
-    // 1. Fetch the draft
-    const draft = await db.query.drafts.findFirst({
-        where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId))
-    });
+    // 1. Atomically claim the draft for publishing
+    const updateResult = await db.update(drafts)
+        .set({ status: "publishing" })
+        .where(
+            and(
+                eq(drafts.id, draftId), 
+                eq(drafts.tenantId, tenantId),
+                inArray(drafts.status, ["approved", "failed"])
+            )
+        )
+        .returning();
 
-    if (!draft || (draft.status !== "approved" && draft.status !== "failed")) {
-        return { error: "Draft not found or not ready to publish." };
+    if (updateResult.length === 0) {
+        return { error: "Draft not found, not ready to publish, or already being published." };
     }
+    
+    const draft = updateResult[0];
 
     try {
 
@@ -46,6 +55,8 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     });
 
     if (!account) {
+        // Revert status since we couldn't publish
+        await db.update(drafts).set({ status: "failed", errorMessage: `No connected account found for platform: ${targetPlatform}` }).where(eq(drafts.id, draftId));
         return { error: `No connected account found for platform: ${targetPlatform}` };
     }
 
@@ -54,11 +65,6 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         type: "image", // Basic implementation, would need logic for video vs image
         url
     })) || [];
-
-    // Pre-flight: Mark as publishing to prevent double-execution
-    await db.update(drafts)
-        .set({ status: "publishing" })
-        .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
 
     // 4. Call Zernio API with synchronous retries
     let lastError: any = null;
@@ -98,7 +104,11 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
                         .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
                 });
                 
-                await createNotification(tenantId, 'api_failure', 'API Connection Failure', 'Your Zernio API key is invalid or revoked. Agent activity has been paused.', { link: '/settings' });
+                try {
+                    await createNotification(tenantId, 'api_failure', 'API Connection Failure', 'Your Zernio API key is invalid or revoked. Agent activity has been paused.', { link: '/settings' });
+                } catch (notifErr) {
+                    console.error("Failed to send api_failure notification", notifErr);
+                }
                 return { error: "API connection failed. Key is invalid or revoked." };
             }
             
@@ -118,7 +128,11 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
             })
             .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
             
-        await createNotification(tenantId, 'publish_failed', 'Post Failed to Publish', errorMessage, { link: '/drafts' });
+        try {
+            await createNotification(tenantId, 'publish_failed', 'Post Failed to Publish', errorMessage, { link: '/drafts' });
+        } catch (notifErr) {
+            console.error("Failed to send publish_failed notification", notifErr);
+        }
         return { error: errorMessage };
     }
 
@@ -137,7 +151,11 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         });
     });
 
-        await createNotification(tenantId, 'publish_success', 'Post Published Successfully', 'Your post was successfully published to your connected accounts.');
+        try {
+            await createNotification(tenantId, 'publish_success', 'Post Published Successfully', 'Your post was successfully published to your connected accounts.');
+        } catch (notifErr) {
+            console.error("Failed to send publish_success notification", notifErr);
+        }
         return { success: true };
     } catch (unexpectedError: any) {
         console.error("Unexpected error during publish:", unexpectedError);
