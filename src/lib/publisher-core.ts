@@ -41,6 +41,15 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     
     const draft = updateResult[0];
 
+    if (!draft.content) {
+        // Should never happen if approval flow sets the content
+        await db.update(drafts).set({ status: "failed", errorMessage: "Draft has no content to publish." }).where(eq(drafts.id, draftId));
+        return { error: "Draft has no content to publish." };
+    }
+
+    // Type casting to ensure TypeScript knows it's a string from here on
+    const postContent = draft.content as string;
+
     try {
 
     const platformOpts = draft.platformOptions as any;
@@ -74,7 +83,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         try {
             response = await zernio.posts.createPost({
                 body: {
-                    content: draft.content,
+                    content: postContent,
                     mediaItems: mediaItems.length > 0 ? mediaItems : undefined,
                     platforms: [{
                         platform: account.platform,
@@ -146,7 +155,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
             tenantId,
             draftId: draft.id,
             zernioPostId: response?.data?.id || 'unknown',
-            content: draft.content,
+            content: postContent,
             status: "published",
         });
     });

@@ -104,7 +104,9 @@ export const agentConfigs = pgTable("agent_configs", {
 export const drafts = pgTable("drafts", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
-  content: text("content").notNull(),
+  content: text("content"),
+  variants: jsonb("variants"),
+  selectedVariantId: text("selected_variant_id"),
   status: varchar("status", { length: 50 }).default('pending_review').notNull(), // 'pending_review', 'approved', 'rejected', 'published', 'failed'
   platformOptions: jsonb("platform_options"), // target platforms/entities and specific configs
   scheduledFor: timestamp("scheduled_for"), // null means publish immediately upon approval
