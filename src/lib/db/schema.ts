@@ -146,6 +146,21 @@ export const usageTracking = pgTable("usage_tracking", {
   budgetLimitUsd: numeric("budget_limit_usd", { precision: 10, scale: 4 }),
 });
 
+export const assets = pgTable("assets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  key: text("key").notNull().unique(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  size: bigint("size", { mode: "number" }).notNull(),
+  publicUrl: text("public_url").notNull(),
+  width: bigint("width", { mode: "number" }),
+  height: bigint("height", { mode: "number" }),
+  tags: text("tags").array().default([]),
+  altText: text("alt_text"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const memories = pgTable("memories", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),

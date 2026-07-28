@@ -36,6 +36,20 @@
       "when": 1743199200000,
       "tag": "0004_add_webhook_events_index",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785197882915,
+      "tag": "0005_add_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0006_ensure_memories_hnsw_index",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,7 @@ import {
   IconUsers,
   IconBook,
   IconBulb,
+  IconPhoto,
 } from "@tabler/icons-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -47,6 +48,11 @@ export function AppSidebar({ pendingDraftCount, ...props }: React.ComponentProps
       title: "Insights",
       url: "/insights",
       icon: IconBulb,
+    },
+    {
+      title: "Assets",
+      url: "/assets",
+      icon: IconPhoto,
     },
     {
       title: "Settings",

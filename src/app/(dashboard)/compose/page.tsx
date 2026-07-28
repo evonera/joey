@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { PlatformSelector } from "@/components/compose/platform-selector";
 import { SchedulePicker, type ScheduleType } from "@/components/compose/schedule-picker";
 import { PlatformPreviews } from "@/components/compose/platform-previews";
-import { Loader2, Send, PenSquare, Users, Calendar, ImageIcon } from "lucide-react";
+import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
+import { Loader2, Send, PenSquare, Users, Calendar, ImageIcon, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export default function ComposePage() {
@@ -20,12 +21,14 @@ export default function ComposePage() {
 
   // Form state
   const [content, setContent] = useState("");
-  const [mediaUrl, setMediaUrl] = useState(""); // Simplified for MVP: just a direct URL input
+  const [mediaUrls, setMediaUrls] = useState<string[]>([]);
+  const [externalUrl, setExternalUrl] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [scheduleType, setScheduleType] = useState<ScheduleType>("now");
   const [scheduledDate, setScheduledDate] = useState<string>();
   const [scheduledTime, setScheduledTime] = useState("09:00");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     async function loadAccounts() {
@@ -37,12 +40,19 @@ export default function ComposePage() {
   }, []);
 
   const selectedAccounts = accounts.filter(a => selectedAccountIds.includes(a.id));
-  const mediaUrls = mediaUrl.trim() ? [mediaUrl.trim()] : [];
 
   const charCount = content.length;
-  const charLimit = 280; // Basic check
+  const charLimit = 280;
 
   const canSubmit = selectedAccountIds.length > 0 && (content.trim().length > 0) && !isSubmitting;
+
+  const addExternalUrl = () => {
+    const url = externalUrl.trim();
+    if (url && !mediaUrls.includes(url)) {
+      setMediaUrls((prev) => [...prev, url]);
+      setExternalUrl("");
+    }
+  };
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -71,7 +81,8 @@ export default function ComposePage() {
     } else {
       alert(scheduleType === "now" ? "Posts published successfully!" : "Posts scheduled successfully!");
       setContent("");
-      setMediaUrl("");
+      setMediaUrls([]);
+      setExternalUrl("");
       setSelectedAccountIds([]);
     }
   };
@@ -132,18 +143,69 @@ export default function ComposePage() {
             </div>
           </div>
           
-          <div className="bg-zinc-50 dark:bg-zinc-900/50 p-4 rounded-xl border border-dashed space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <ImageIcon className="h-4 w-4 text-zinc-500" />
-              Attach Media URL
+          {/* Media Section */}
+          <div className="bg-zinc-50 dark:bg-zinc-900/50 p-4 rounded-xl border border-dashed space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <ImageIcon className="h-4 w-4 text-zinc-500" />
+                Media
+                {mediaUrls.length > 0 && (
+                  <span className="text-muted-foreground font-normal">({mediaUrls.length})</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <AssetPickerDialog
+                  open={pickerOpen}
+                  onOpenChange={setPickerOpen}
+                  onSelect={(urls) => {
+                    setMediaUrls((prev) => {
+                      const existing = new Set(prev);
+                      const newUrls = urls.filter((u) => !existing.has(u));
+                      return [...prev, ...newUrls];
+                    });
+                  }}
+                />
+              </div>
             </div>
-            <Input 
-              placeholder="https://example.com/image.jpg" 
-              value={mediaUrl}
-              onChange={(e) => setMediaUrl(e.target.value)}
-              className="bg-white dark:bg-zinc-950"
-            />
-            <p className="text-xs text-zinc-500">For the MVP, provide a direct public URL to an image.</p>
+
+            {mediaUrls.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {mediaUrls.map((url, i) => (
+                  <div key={url} className="group relative">
+                    {url.match(/\.(png|jpe?g|gif|webp|svg)/i) ? (
+                      <img
+                        src={url}
+                        alt=""
+                        className="h-16 w-16 object-cover rounded-lg border"
+                      />
+                    ) : (
+                      <div className="h-16 w-16 flex items-center justify-center bg-muted rounded-lg border">
+                        <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setMediaUrls((prev) => prev.filter((_, j) => j !== i))}
+                      className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Or paste an external URL..."
+                value={externalUrl}
+                onChange={(e) => setExternalUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExternalUrl(); } }}
+                className="bg-white dark:bg-zinc-950"
+              />
+              <Button variant="outline" size="sm" onClick={addExternalUrl} disabled={!externalUrl.trim()}>
+                Add
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
