@@ -1,7 +1,7 @@
 import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
-import { agentConfigs, tenants, posts } from "@/lib/db/schema";
+import { agentConfigs, tenants, posts, member } from "@/lib/db/schema";
 import { eq, and, gte } from "drizzle-orm";
 
 export default defineSchedule({
@@ -9,10 +9,11 @@ export default defineSchedule({
   async run({ receive, waitUntil }) {
     const activeTenants = await db.select({
       tenantId: agentConfigs.tenantId,
-      ownerId: tenants.id,
+      ownerId: member.userId,
     })
     .from(agentConfigs)
     .innerJoin(tenants, eq(tenants.id, agentConfigs.tenantId))
+    .innerJoin(member, and(eq(member.organizationId, agentConfigs.tenantId), eq(member.role, "owner")))
     .where(eq(agentConfigs.isPaused, false));
 
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);

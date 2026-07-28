@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
             let tenantId: string;
             try {
                 tenantId = await getActiveTenantId();
-            } catch (e) {
+            } catch (e: any) {
+                if (e?.message !== "No active workspace found") throw e;
                 // Create a new organization if they don't have one
                 const newOrg = await auth.api.createOrganization({
                     headers: await headers(),

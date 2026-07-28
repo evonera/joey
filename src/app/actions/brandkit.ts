@@ -22,7 +22,7 @@ export async function getBrandKit() {
         });
 
         const typeCounts = await db.execute(
-            sql`SELECT type, COUNT(*)::int as count FROM memories WHERE tenant_id = ${tenantId}::uuid GROUP BY type`
+            sql`SELECT type, COUNT(*)::int as count FROM memories WHERE tenant_id = ${tenantId} GROUP BY type`
         );
         const rows = ((typeCounts as any).rows ?? typeCounts) as { type: string; count: number }[];
         const summary = {

@@ -12,6 +12,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -24,6 +35,10 @@ export function WorkspaceSwitcher() {
   const { isMobile } = useSidebar()
   const { data: orgs } = authClient.useListOrganizations()
   const { data: activeOrg } = authClient.useActiveOrganization()
+  
+  const [showNewWorkspaceDialog, setShowNewWorkspaceDialog] = React.useState(false)
+  const [newWorkspaceName, setNewWorkspaceName] = React.useState("")
+  const [isCreating, setIsCreating] = React.useState(false)
 
   const handleSetActive = async (organizationId: string) => {
     await authClient.organization.setActive({ organizationId })
@@ -31,11 +46,19 @@ export function WorkspaceSwitcher() {
   }
 
   const handleCreateNew = async () => {
-    const name = prompt("Enter new workspace name")
-    if (name) {
+    if (!newWorkspaceName.trim()) return
+    setIsCreating(true)
+    try {
+      const name = newWorkspaceName.trim()
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(7)
       await authClient.organization.create({ name, slug })
+      setShowNewWorkspaceDialog(false)
+      setNewWorkspaceName("")
       window.location.reload()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -88,7 +111,10 @@ export function WorkspaceSwitcher() {
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 p-2" onClick={handleCreateNew}>
+            <DropdownMenuItem className="gap-2 p-2" onSelect={(e) => {
+              e.preventDefault()
+              setShowNewWorkspaceDialog(true)
+            }}>
               <div className="flex size-6 items-center justify-center rounded-md border bg-background">
                 <IconPlus className="size-4" />
               </div>
@@ -97,6 +123,33 @@ export function WorkspaceSwitcher() {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
+
+      <Dialog open={showNewWorkspaceDialog} onOpenChange={setShowNewWorkspaceDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Workspace</DialogTitle>
+            <DialogDescription>
+              Create a new team workspace to collaborate with others.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input 
+              placeholder="Workspace Name" 
+              value={newWorkspaceName}
+              onChange={(e) => setNewWorkspaceName(e.target.value)}
+              disabled={isCreating}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewWorkspaceDialog(false)} disabled={isCreating}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateNew} disabled={!newWorkspaceName.trim() || isCreating}>
+              {isCreating ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarMenu>
   )
 }
