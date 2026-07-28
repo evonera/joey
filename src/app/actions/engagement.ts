@@ -3,8 +3,14 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { replyDrafts, engagementItems, socialAccounts, tenants, agentConfigs } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import {
+  replyDrafts,
+  engagementItems,
+  socialAccounts,
+  tenants,
+  agentConfigs,
+} from "@/lib/db/schema";
+import { eq, and, desc, asc, inArray } from "drizzle-orm";
 import { getZernioClient } from "./zernio";
 
 async function getTenantId() {
@@ -58,8 +64,9 @@ export async function getEngagementItems(status?: string) {
       ? await db.query.replyDrafts.findMany({
           where: and(
             eq(replyDrafts.tenantId, tenantId),
+            inArray(replyDrafts.engagementItemId, replyDraftIds),
           ),
-          orderBy: [desc(replyDrafts.createdAt)],
+          orderBy: [asc(replyDrafts.createdAt)],
         })
       : [];
 
@@ -211,6 +218,12 @@ export async function sendReply(replyDraftId: string) {
         }
         if (attempt < 3) await delay(1000 * attempt);
       }
+    }
+
+    if (lastError) {
+      await db.update(replyDrafts)
+        .set({ status: "pending_review" })
+        .where(eq(replyDrafts.id, replyDraftId));
     }
 
     return { error: lastError?.message || "Failed to send reply after retries" };

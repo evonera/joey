@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { approveReply, rejectReply, sendReply, updateReplyDraft, skipEngagementItem } from "@/app/actions/engagement";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,6 +51,10 @@ export function ReplyCard({
   const [isRejecting, setIsRejecting] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setDraftContent(item.replyDraft?.content || "");
+  }, [item.replyDraft?.content]);
 
   const pendingReply = item.replyDraft && item.replyDraft.status === "pending_review";
   const hasSentReply = item.replyDraft?.status === "sent";
