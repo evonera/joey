@@ -51,7 +51,10 @@ export function WorkspaceSwitcher() {
     try {
       const name = newWorkspaceName.trim()
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(7)
-      await authClient.organization.create({ name, slug })
+      const res = await authClient.organization.create({ name, slug })
+      if (res?.data?.id) {
+        await authClient.organization.setActive({ organizationId: res.data.id })
+      }
       setShowNewWorkspaceDialog(false)
       setNewWorkspaceName("")
       window.location.reload()

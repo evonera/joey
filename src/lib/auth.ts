@@ -6,7 +6,7 @@ import { organization } from "better-auth/plugins";
 import DodoPayments from "dodopayments";
 import { db } from "./db";
 import * as schema from "./db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 if (!process.env.DODO_PAYMENTS_API_KEY) {
     throw new Error("DODO_PAYMENTS_API_KEY is missing. Please check your environment variables.");
@@ -190,7 +190,15 @@ export async function getActiveTenantId(): Promise<string> {
 
     // Try to get the active organization from the session
     if (session.session.activeOrganizationId) {
-        return session.session.activeOrganizationId;
+        const activeMembership = await db.query.member.findFirst({
+            where: and(
+                eq(schema.member.userId, session.user.id),
+                eq(schema.member.organizationId, session.session.activeOrganizationId)
+            )
+        });
+        if (activeMembership) {
+            return session.session.activeOrganizationId;
+        }
     }
 
     // Fallback: finding the first organization they are a member of
