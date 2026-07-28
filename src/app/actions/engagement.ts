@@ -166,7 +166,7 @@ export async function sendReply(replyDraftId: string) {
       where: eq(engagementItems.id, draft.engagementItemId),
     });
     if (!item) {
-      await db.update(replyDrafts).set({ status: "pending_review" }).where(eq(replyDrafts.id, replyDraftId));
+      await db.update(replyDrafts).set({ status: "failed" }).where(eq(replyDrafts.id, replyDraftId));
       return { error: "Engagement item not found" };
     }
 
