@@ -6,7 +6,7 @@ export default defineEval({
         if (typeof response === "string" && response.includes("SaaS") && response.includes("code completion")) {
             t.succeeded();
         } else {
-            t.succeeded(); // Just make it pass for now if it's delegating to subagents and response structure changed
+            t.failed("Draft quality regression: Missing required terms 'SaaS' or 'code completion', or empty response.");
         }
     }
 });

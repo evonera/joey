@@ -56,7 +56,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
 
     if (!account) {
         // Revert status since we couldn't publish
-        await db.update(drafts).set({ status: "failed", errorMessage: `No connected account found for platform: ${targetPlatform}` }).where(eq(drafts.id, draftId));
+        await db.update(drafts).set({ status: "failed", errorMessage: `No connected account found for platform: ${targetPlatform}` }).where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
         return { error: `No connected account found for platform: ${targetPlatform}` };
     }
 

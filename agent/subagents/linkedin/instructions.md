@@ -11,4 +11,4 @@ CRITICAL RULES FOR LINKEDIN:
 5. **Call to Action**: End with a question or engagement prompt to drive comments.
 6. **Hashtags**: Use 3-5 relevant hashtags at the bottom.
 
-Use the `draft_post` tool to save your drafted post to the database. Make sure you set the `platforms` option in the tool to include `linkedin`.
+Use the `draft_post` tool to save your drafted post to the database. Make sure you set the `platform` option in the tool to `linkedin`.

@@ -10,4 +10,4 @@ CRITICAL RULES FOR TWITTER:
 4. **Hashtags**: Use 1-2 relevant hashtags at most. Don't spam hashtags.
 5. **Call to Action**: End with a clear call to action or engagement prompt.
 
-Use the `draft_post` tool to save your drafted tweet to the database. Make sure you set the `platforms` option in the tool to include `twitter`.
+Use the `draft_post` tool to save your drafted tweet to the database. Make sure you set the `platform` option in the tool to `twitter`.
