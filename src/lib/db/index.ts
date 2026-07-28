@@ -6,13 +6,15 @@ import * as schema from './schema';
 
 const connectionString = process.env.DATABASE_URL!;
 
+const isNeon = process.env.DATABASE_PROVIDER === 'neon' || connectionString.includes('neon.tech');
+
 const createDbClient = () => {
-    if (connectionString.includes('neon.tech')) {
+    if (isNeon) {
         const sql = neon(connectionString);
-        return drizzleNeon({ client: sql, schema }) as any;
+        return drizzleNeon({ client: sql, schema });
     } else {
         const queryClient = postgres(connectionString);
-        return drizzleNode({ client: queryClient, schema }) as any;
+        return drizzleNode({ client: queryClient, schema });
     }
 };
 
