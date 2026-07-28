@@ -23,7 +23,8 @@ export async function proxy(request: NextRequest) {
 		request.nextUrl.pathname.startsWith('/settings') ||
 		request.nextUrl.pathname.startsWith('/callback') ||
 		request.nextUrl.pathname.startsWith('/brandkit') ||
-		request.nextUrl.pathname.startsWith('/insights');
+		request.nextUrl.pathname.startsWith('/insights') ||
+		request.nextUrl.pathname.startsWith('/assets');
 
 	if (!session) {
 		if (isProtectedRoute) {

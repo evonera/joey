@@ -7,12 +7,15 @@ import { Loader2, Lightbulb, TrendingUp, Clock, Target } from "lucide-react";
 export default function InsightsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [insights, setInsights] = useState<{ id: string; content: string; createdAt: Date; metadata: unknown }[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       const res = await getInsights();
-      if (!res.error && res.insights) {
-        setInsights(res.insights as any);
+      if (res.error) {
+        setError(res.error);
+      } else if (res.insights) {
+        setInsights(res.insights);
       }
       setIsLoading(false);
     }
@@ -34,6 +37,12 @@ export default function InsightsPage() {
         <p className="text-muted-foreground mt-1">Weekly AI-powered analysis of your content performance and strategic recommendations</p>
       </div>
 
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 mb-6 text-sm text-red-700 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
       <div className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden mb-8">
         <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex items-center gap-2">
           <Clock className="h-4 w-4 text-zinc-400" />
@@ -45,7 +54,7 @@ export default function InsightsPage() {
         </div>
       </div>
 
-      {insights.length === 0 ? (
+      {insights.length === 0 && !error ? (
         <div className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
           <div className="p-12 text-center">
             <Lightbulb className="h-12 w-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />

@@ -18,27 +18,31 @@ export default defineSchedule({
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     for (const t of activeTenants) {
-      const recentPosts = await db.query.posts.findFirst({
-        where: and(
-          eq(posts.tenantId, t.tenantId),
-          gte(posts.publishedAt, oneWeekAgo),
-        ),
-        columns: { id: true },
-      });
-      if (!recentPosts) continue;
+      try {
+        const recentPosts = await db.query.posts.findFirst({
+          where: and(
+            eq(posts.tenantId, t.tenantId),
+            gte(posts.publishedAt, oneWeekAgo),
+          ),
+          columns: { id: true },
+        });
+        if (!recentPosts) continue;
 
-      waitUntil(
-        receive(eveChannel, {
-          message: "Time for your weekly strategy review. Analyze last week's published posts — their content, engagement metrics, and platform performance. Use `get_analytics` to fetch the data, then save your key observations with `remember` (type: strategy_insight). Focus on actionable patterns: best posting times, content themes that resonated, platform trends, and concrete recommendations for the coming week.",
-          target: {},
-          auth: {
-            authenticator: "cron",
-            principalType: "user",
-            principalId: t.ownerId,
-            attributes: { tenantId: t.tenantId },
-          },
-        })
-      );
+        waitUntil(
+          receive(eveChannel, {
+            message: "Time for your weekly strategy review. Analyze last week's published posts — their content, engagement metrics, and platform performance. Use `get_analytics` to fetch the data, then save your key observations with `remember` (type: strategy_insight). Focus on actionable patterns: best posting times, content themes that resonated, platform trends, and concrete recommendations for the coming week.",
+            target: {},
+            auth: {
+              authenticator: "cron",
+              principalType: "user",
+              principalId: t.ownerId,
+              attributes: { tenantId: t.tenantId },
+            },
+          })
+        );
+      } catch (err) {
+        console.error(`[strategy-review] Failed to process tenant ${t.tenantId}:`, err);
+      }
     }
   },
 });
