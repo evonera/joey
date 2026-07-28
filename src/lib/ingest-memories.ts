@@ -35,15 +35,18 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
       : 0;
 
     if (updatedAt <= existingUpdatedAt) return;
+  }
 
+  await insertMemory(tenantId, content, "brand_guideline", metadata);
+
+  if (existing) {
     await db.delete(memories)
       .where(and(
         eq(memories.tenantId, tenantId),
         eq(memories.type, "brand_guideline"),
+        eq(memories.id, existing.id),
       ));
   }
-
-  await insertMemory(tenantId, content, "brand_guideline", metadata);
 }
 
 export async function syncTenantPublishedPosts(tenantId: string) {
