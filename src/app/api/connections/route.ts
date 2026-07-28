@@ -32,9 +32,12 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const entityId = session.user.id;
+
   try {
     const data = await manageConnections(
       CANDIDATE_TOOLKITS.map((name) => ({ name, action: "list" as const })),
+      entityId,
     );
     const results = (data.results ?? {}) as Record<string, ToolkitResult>;
     const connections = Object.values(results)
@@ -61,13 +64,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const entityId = session.user.id;
+
   const body = (await req.json().catch(() => null)) as { toolkit?: unknown } | null;
   if (body === null || typeof body.toolkit !== "string" || !/^[a-z0-9_-]+$/.test(body.toolkit)) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
   try {
-    const data = await manageConnections([{ name: body.toolkit, action: "add" }]);
+    const data = await manageConnections([{ name: body.toolkit, action: "add" }], entityId);
     const results = (data.results ?? {}) as Record<string, ToolkitResult>;
     const entry = results[body.toolkit];
     if (entry?.redirect_url) return NextResponse.json({ url: entry.redirect_url });
@@ -87,6 +92,8 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const entityId = session.user.id;
+
   const body = (await req.json().catch(() => null)) as {
     toolkit?: unknown;
     accountId?: unknown;
@@ -104,7 +111,7 @@ export async function DELETE(req: NextRequest) {
   try {
     await manageConnections([
       { name: body.toolkit, action: "remove", account_id: body.accountId },
-    ]);
+    ], entityId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Connection remove failed:", error);

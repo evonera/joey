@@ -52,6 +52,7 @@ export function ConnectionsPanel() {
         return response.json() as Promise<{ url: string }>;
       })
       .then(({ url }) => {
+        if (!url.startsWith("https://")) throw new Error("Invalid redirect URL");
         window.open(url, "_blank", "noopener");
       })
       .catch((error: unknown) => {
@@ -61,6 +62,7 @@ export function ConnectionsPanel() {
   }
 
   function disconnect(toolkit: string, accountId: string) {
+    const snapshot = connections;
     setConnections(
       (prev) =>
         prev?.map((entry) =>
@@ -73,6 +75,8 @@ export function ConnectionsPanel() {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ toolkit, accountId }),
+    }).catch(() => {
+      setConnections(snapshot);
     });
   }
 

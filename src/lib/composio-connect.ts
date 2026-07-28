@@ -53,14 +53,19 @@ async function mcpFetch(body: object, sessionId?: string): Promise<Response> {
 async function parseMcpBody(response: Response): Promise<McpToolResponse> {
   const text = await response.text();
   if (text.startsWith("{")) return JSON.parse(text) as McpToolResponse;
+  let lastData: McpToolResponse | null = null;
   for (const line of text.split("\n")) {
-    if (line.startsWith("data: ")) return JSON.parse(line.slice(6)) as McpToolResponse;
+    if (line.startsWith("data: ")) {
+      lastData = JSON.parse(line.slice(6)) as McpToolResponse;
+    }
   }
+  if (lastData) return lastData;
   throw new Error(`Unparseable MCP response (${response.status})`);
 }
 
 export async function manageConnections(
   toolkits: { name: string; action: "list" | "add" | "remove"; account_id?: string }[],
+  entityId?: string,
 ): Promise<Record<string, unknown>> {
   const init = await mcpFetch({
     jsonrpc: "2.0",
@@ -82,7 +87,13 @@ export async function manageConnections(
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
-      params: { name: "COMPOSIO_MANAGE_CONNECTIONS", arguments: { toolkits } },
+      params: {
+        name: "COMPOSIO_MANAGE_CONNECTIONS",
+        arguments: {
+          toolkits,
+          ...(entityId ? { entityId } : {}),
+        },
+      },
     },
     sessionId,
   );
