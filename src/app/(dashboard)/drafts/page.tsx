@@ -59,13 +59,13 @@ export default function DraftsPage() {
                             <div className="flex flex-col items-center gap-3">
                                 <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Try asking your agent to:</p>
                                 <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-                                    <button className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                    <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
                                         Draft a thread about our new product launch
                                     </button>
-                                    <button className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                    <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
                                         Summarize our latest blog post for LinkedIn
                                     </button>
-                                    <button className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                    <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
                                         Write a punchy tweet about AI trends
                                     </button>
                                 </div>

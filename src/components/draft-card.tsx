@@ -151,26 +151,26 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
                                             {v.content}
                                         </div>
                                         
-                                        <div className="py-3 border-t border-b border-zinc-100 dark:border-zinc-800">
-                                            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Retrieved Context</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                <span className="text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1 rounded-md flex items-center gap-1 border border-indigo-100 dark:border-indigo-800">
-                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                                    Brand Guidelines v2
-                                                </span>
-                                                <span className="text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1 rounded-md flex items-center gap-1 border border-indigo-100 dark:border-indigo-800">
-                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                                                    Successful Post (Jan 12)
-                                                </span>
+                                        {v.context && v.context.length > 0 && (
+                                            <div className="py-3 border-t border-b border-zinc-100 dark:border-zinc-800">
+                                                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Retrieved Context</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {v.context.map((ctx: any, idx: number) => (
+                                                        <span key={idx} className="text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1 rounded-md flex items-center gap-1 border border-indigo-100 dark:border-indigo-800">
+                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                            {ctx.title || "Retrieved Source"}
+                                                        </span>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
 
                                         <div className="space-y-2">
                                             <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Agent Follow-ups</p>
                                             <div className="flex flex-wrap gap-2">
-                                                <button className="text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">✨ Make it punchier</button>
-                                                <button className="text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">📊 Add more data points</button>
-                                                <button className="text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">🐦 Rewrite for Twitter</button>
+                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">✨ Make it punchier</button>
+                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">📊 Add more data points</button>
+                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">🐦 Rewrite for Twitter</button>
                                             </div>
                                         </div>
 

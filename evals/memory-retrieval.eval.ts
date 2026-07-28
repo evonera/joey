@@ -8,7 +8,7 @@ export default defineEval({
         
         const responseStr = JSON.stringify(response);
         // Assert that emojis are absent
-        if (responseStr.match(/[\u{1F300}-\u{1F9FF}]/u)) {
+        if (responseStr.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u)) {
             throw new Error("Memory regression: Agent failed to adhere to the updated static profile regarding emojis.");
         } else {
             t.succeeded();
