@@ -173,6 +173,16 @@ export const memories = pgTable("memories", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const tenantMemoryProfiles = pgTable("tenant_memory_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }).unique(),
+  staticContext: text("static_context").notNull().default(''),
+  dynamicContext: text("dynamic_context").notNull().default(''),
+  lastCompactedAt: timestamp("last_compacted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // --- Engagement Tables (Phase 2.7) ---
 
 export const engagementItems = pgTable("engagement_items", {

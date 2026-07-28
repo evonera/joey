@@ -82,10 +82,18 @@ export async function approveDraft(draftId: string, variantName?: string, conten
     try {
         const tenantId = await getTenantId();
         
-        const updateData: any = { status: "approved", errorMessage: null };
+        const updateData: Partial<typeof drafts.$inferInsert> & { status: string; errorMessage: null } = { status: "approved", errorMessage: null };
         if (variantName && content) {
             updateData.selectedVariantId = variantName;
             updateData.content = content;
+        } else {
+            const existing = await db.query.drafts.findFirst({
+                where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
+                columns: { content: true }
+            });
+            if (!existing?.content) {
+                return { error: "Cannot approve a draft without content. Please select a variant." };
+            }
         }
 
         await db.update(drafts)
