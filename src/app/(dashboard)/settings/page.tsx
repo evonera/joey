@@ -4,7 +4,9 @@ import { useState, useEffect } from "react";
 import { getAgentConfig, saveAgentConfig } from "@/app/actions/agent";
 import { getConnectedAccounts } from "@/app/actions/zernio";
 import { getUsage } from "@/app/actions/usage";
-import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle } from "lucide-react";
+import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
+import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle, Sparkles, Eye, EyeOff, Trash2, PlugZap } from "lucide-react";
+import { ConnectionsPanel } from "./connections-panel";
 
 const DAYS_OF_WEEK = [
   { id: "mon", label: "Monday" },
@@ -37,6 +39,16 @@ export default function SettingsPage() {
     estimatedCostUsd: string | null;
     budgetLimitUsd: string | null;
   } | null>(null);
+  
+  const [apiKeys, setApiKeys] = useState<Record<string, { id: string; provider: string; status: string }>>({});
+  const [openaiKeyInput, setOpenaiKeyInput] = useState("");
+  const [falKeyInput, setFalKeyInput] = useState("");
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showFalKey, setShowFalKey] = useState(false);
+  const [savingOpenai, setSavingOpenai] = useState(false);
+  const [savingFal, setSavingFal] = useState(false);
+  const [openaiSaved, setOpenaiSaved] = useState(false);
+  const [falSaved, setFalSaved] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -50,6 +62,15 @@ export default function SettingsPage() {
         if (usageRes.usage) {
           setUsageStats(usageRes.usage);
         }
+
+        const [openaiKey, falKey] = await Promise.all([
+          getApiKey("openai"),
+          getApiKey("fal"),
+        ]);
+        const keyMap: Record<string, { id: string; provider: string; status: string }> = {};
+        if (openaiKey) keyMap["openai"] = openaiKey;
+        if (falKey) keyMap["fal"] = falKey;
+        setApiKeys(keyMap);
 
         if (accountsRes.accounts) {
           setAccounts(accountsRes.accounts);
@@ -113,6 +134,59 @@ export default function SettingsPage() {
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     await submitSave();
+  };
+
+  const handleSaveOpenaiKey = async () => {
+    if (!openaiKeyInput.trim()) return;
+    setSavingOpenai(true);
+    setOpenaiSaved(false);
+    try {
+      await saveApiKey("openai", openaiKeyInput.trim());
+      setApiKeys((prev) => ({
+        ...prev,
+        openai: { id: "saved", provider: "openai", status: "active" },
+      }));
+      setOpenaiKeyInput("");
+      setOpenaiSaved(true);
+      setTimeout(() => setOpenaiSaved(false), 3000);
+    } catch {
+      alert("Failed to save OpenAI key");
+    } finally {
+      setSavingOpenai(false);
+    }
+  };
+
+  const handleSaveFalKey = async () => {
+    if (!falKeyInput.trim()) return;
+    setSavingFal(true);
+    setFalSaved(false);
+    try {
+      await saveApiKey("fal", falKeyInput.trim());
+      setApiKeys((prev) => ({
+        ...prev,
+        fal: { id: "saved", provider: "fal", status: "active" },
+      }));
+      setFalKeyInput("");
+      setFalSaved(true);
+      setTimeout(() => setFalSaved(false), 3000);
+    } catch {
+      alert("Failed to save fal.ai key");
+    } finally {
+      setSavingFal(false);
+    }
+  };
+
+  const handleDeleteKey = async (provider: string) => {
+    try {
+      await deleteApiKey(provider);
+      setApiKeys((prev) => {
+        const next = { ...prev };
+        delete next[provider];
+        return next;
+      });
+    } catch {
+      alert("Failed to delete key");
+    }
   };
 
   const toggleDay = (dayId: string) => {
@@ -362,6 +436,142 @@ export default function SettingsPage() {
                 Loading usage stats...
               </div>
             )}
+          </div>
+        </section>
+
+        {/* Connected Apps (Composio) Section */}
+        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
+          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
+            <div>
+              <h2 className="font-semibold text-zinc-900 dark:text-white">Connected Apps</h2>
+              <p className="text-xs text-zinc-500 mt-1">Connect external services for news, search, email, calendar, and more. Joey can use these to research and curate content.</p>
+            </div>
+            <PlugZap className="h-5 w-5 text-zinc-400" />
+          </div>
+          <div className="p-6">
+            <ConnectionsPanel />
+          </div>
+        </section>
+
+        {/* Image Generation API Keys Section */}
+        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
+          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
+            <div>
+              <h2 className="font-semibold text-zinc-900 dark:text-white">Image Generation API Keys</h2>
+              <p className="text-xs text-zinc-500 mt-1">Bring your own API key to generate images from the compose page or agent.</p>
+            </div>
+            <Sparkles className="h-5 w-5 text-zinc-400" />
+          </div>
+          <div className="p-6 space-y-6">
+            {/* OpenAI */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  OpenAI (DALL-E 3)
+                </label>
+                {apiKeys["openai"] && (
+                  <span className="flex items-center gap-1 text-xs text-green-600">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Configured
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteKey("openai")}
+                      className="ml-2 text-zinc-400 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showOpenaiKey ? "text" : "password"}
+                    value={openaiKeyInput}
+                    onChange={(e) => setOpenaiKeyInput(e.target.value)}
+                    placeholder={apiKeys["openai"] ? "sk-... (replace existing)" : "sk-..."}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOpenaiKey(!showOpenaiKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                  >
+                    {showOpenaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveOpenaiKey}
+                  disabled={!openaiKeyInput.trim() || savingOpenai}
+                  className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {savingOpenai ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : openaiSaved ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-300" />
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">Your OpenAI API key with access to DALL-E 3. Stored encrypted.</p>
+            </div>
+
+            {/* fal.ai */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  fal.ai (Flux)
+                </label>
+                {apiKeys["fal"] && (
+                  <span className="flex items-center gap-1 text-xs text-green-600">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Configured
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteKey("fal")}
+                      className="ml-2 text-zinc-400 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showFalKey ? "text" : "password"}
+                    value={falKeyInput}
+                    onChange={(e) => setFalKeyInput(e.target.value)}
+                    placeholder={apiKeys["fal"] ? "FAL_KEY (replace existing)" : "FAL_KEY"}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowFalKey(!showFalKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                  >
+                    {showFalKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveFalKey}
+                  disabled={!falKeyInput.trim() || savingFal}
+                  className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {savingFal ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : falSaved ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-300" />
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">Your fal.ai API key (FAL_KEY). Get one at <a href="https://fal.ai/dashboard" target="_blank" className="text-indigo-600 hover:underline">fal.ai/dashboard</a>. Stored encrypted.</p>
+            </div>
           </div>
         </section>
 
