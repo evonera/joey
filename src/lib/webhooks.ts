@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { db } from "@/lib/db";
-import { webhookEvents, socialAccounts } from "@/lib/db/schema";
+import { webhookEvents, socialAccounts, engagementItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 export function verifyWebhookSignature(rawBody: string, signature: string, secret: string): boolean {
@@ -52,4 +52,36 @@ export async function resolveTenantFromPayload(payload: ZernioWebhookPayload): P
     where: eq(socialAccounts.platformAccountId, account.id),
   });
   return socialAccount?.tenantId ?? null;
+}
+
+export async function storeEngagementItem(payload: ZernioWebhookPayload, tenantId: string) {
+  const data = payload as any;
+  const comment = data.comment || data.mention || {};
+  const account = data.account || {};
+
+  // Dedup by platform comment id (or webhook event id)
+  const existing = await db.query.engagementItems.findFirst({
+    where: eq(engagementItems.platformCommentId, comment.id || payload.id),
+  });
+  if (existing) return existing;
+
+  const eventType = payload.event; // 'comment.received' or 'message.received'
+
+  if (eventType !== "comment.received") return null;
+
+  const [item] = await db.insert(engagementItems).values({
+    tenantId,
+    platform: account.platform || data.platform || "unknown",
+    platformPostId: comment.postId || comment.mediaId,
+    platformCommentId: comment.id || payload.id,
+    commenterName: comment.fromName || comment.username,
+    commenterHandle: comment.fromHandle || comment.fromUsername,
+    commenterAvatar: comment.fromAvatar,
+    text: comment.text || comment.message || "",
+    type: "comment",
+    status: "pending",
+    metadata: payload as any,
+  }).returning();
+
+  return item;
 }

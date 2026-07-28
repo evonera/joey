@@ -6,12 +6,14 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar"
 import { getPendingDraftCount } from "@/app/actions/drafts"
+import { getPendingReplyCount } from "@/app/actions/engagement"
 import { getAgentConfig } from "@/app/actions/agent"
 import { AlertCircle } from "lucide-react"
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const { count } = await getPendingDraftCount()
   const { config } = await getAgentConfig()
+  const { count: pendingReplyCount } = await getPendingReplyCount()
   const isPaused = config?.isPaused
 
   return (
@@ -23,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" pendingDraftCount={count || 0} />
+      <AppSidebar variant="inset" pendingDraftCount={count || 0} pendingReplyCount={pendingReplyCount || 0} />
       <SidebarInset>
         <SiteHeader />
         {isPaused && (

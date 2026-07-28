@@ -170,3 +170,32 @@ export const memories = pgTable("memories", {
   embedding: vector("embedding", { dimensions: 1536 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// --- Engagement Tables (Phase 2.7) ---
+
+export const engagementItems = pgTable("engagement_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  platform: varchar("platform", { length: 50 }).notNull(),
+  platformPostId: text("platform_post_id"),
+  platformCommentId: text("platform_comment_id"),
+  commenterName: text("commenter_name"),
+  commenterHandle: text("commenter_handle"),
+  commenterAvatar: text("commenter_avatar"),
+  text: text("text").notNull(),
+  type: varchar("type", { length: 20 }).notNull().default("comment"), // 'comment' | 'mention'
+  status: varchar("status", { length: 50 }).default("pending").notNull(), // 'pending', 'replied', 'skipped'
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const replyDrafts = pgTable("reply_drafts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  engagementItemId: uuid("engagement_item_id").notNull().references(() => engagementItems.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  status: varchar("status", { length: 50 }).default("pending_review").notNull(), // 'pending_review', 'approved', 'rejected', 'sent'
+  feedback: text("feedback"),
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

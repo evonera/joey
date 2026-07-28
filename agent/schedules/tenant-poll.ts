@@ -1,8 +1,8 @@
 import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
-import { agentConfigs, tenants, drafts, webhookEvents } from "@/lib/db/schema";
-import { eq, and, lte, isNotNull } from "drizzle-orm";
+import { agentConfigs, tenants, drafts, webhookEvents, engagementItems, replyDrafts, socialAccounts } from "@/lib/db/schema";
+import { eq, and, lte, isNotNull, isNull, asc } from "drizzle-orm";
 import { executePublishDraft, getZernioClientForTenant } from "@/app/actions/publisher";
 import { syncTenantMemories } from "@/lib/ingest-memories";
 
@@ -22,7 +22,52 @@ export default defineSchedule({
       }
     }
 
-    // --- 1. Process Pending Webhook Events ---
+    // --- 1. Process Pending Engagement Items (Phase 2.7) ---
+    const pendingItems = await db.select({
+      id: engagementItems.id,
+      tenantId: engagementItems.tenantId,
+      platform: engagementItems.platform,
+      text: engagementItems.text,
+      commenterName: engagementItems.commenterName,
+      commenterHandle: engagementItems.commenterHandle,
+      platformPostId: engagementItems.platformPostId,
+    })
+    .from(engagementItems)
+    .leftJoin(replyDrafts, eq(replyDrafts.engagementItemId, engagementItems.id))
+    .where(
+      and(
+        eq(engagementItems.status, "pending"),
+        isNull(replyDrafts.id)
+      )
+    )
+    .orderBy(asc(engagementItems.createdAt))
+    .limit(20);
+
+    for (const item of pendingItems) {
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, item.tenantId),
+      });
+      if (!tenant) continue;
+
+      const agentConfig = await db.query.agentConfigs.findFirst({
+        where: eq(agentConfigs.tenantId, item.tenantId),
+      });
+
+      waitUntil(
+        receive(eveChannel, {
+          message: `A new comment was received on ${item.platform}. Comment by @${item.commenterHandle || item.commenterName || "unknown"}: "${item.text}". Use the reply_to_comment tool to draft an on-brand response. The engagement item ID is: ${item.id}. ${agentConfig?.brandVoice ? `Brand voice: ${agentConfig.brandVoice}` : ""}`,
+          target: {},
+          auth: {
+            authenticator: "cron",
+            principalType: "user",
+            principalId: tenant.ownerId,
+            attributes: { tenantId: item.tenantId },
+          },
+        })
+      );
+    }
+
+    // --- 2. Process Pending Webhook Events (legacy) ---
     const pendingEvents = await db.query.webhookEvents.findMany({
       where: and(
         eq(webhookEvents.status, "pending"),
@@ -44,11 +89,16 @@ export default defineSchedule({
         continue;
       }
 
+      // Skip comment.received — now handled by engagement items above
+      if (event.eventType === "comment.received") {
+        await db.update(webhookEvents)
+          .set({ status: "processed", processedAt: new Date() })
+          .where(eq(webhookEvents.id, event.id));
+        continue;
+      }
+
       let agentMessage = "";
       switch (event.eventType) {
-        case "comment.received":
-          agentMessage = `A new comment was received on a post: "${payload.comment?.text ?? "(no text)"}". Review the comment and draft an appropriate response.`;
-          break;
         case "message.received":
           agentMessage = "A new direct message was received. Review the conversation and draft a response if needed.";
           break;

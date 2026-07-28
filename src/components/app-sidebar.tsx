@@ -9,6 +9,7 @@ import {
   IconBook,
   IconBulb,
   IconPhoto,
+  IconMessage,
 } from "@tabler/icons-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -21,7 +22,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
-export function AppSidebar({ pendingDraftCount, ...props }: React.ComponentProps<typeof Sidebar> & { pendingDraftCount?: number }) {
+export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: React.ComponentProps<typeof Sidebar> & { pendingDraftCount?: number; pendingReplyCount?: number }) {
   const navMain = [
     {
       title: "Dashboard",
@@ -33,6 +34,12 @@ export function AppSidebar({ pendingDraftCount, ...props }: React.ComponentProps
       url: "/drafts",
       icon: IconFileText,
       badge: pendingDraftCount,
+    },
+    {
+      title: "Engagement",
+      url: "/engagement",
+      icon: IconMessage,
+      badge: pendingReplyCount,
     },
     {
       title: "Accounts",
