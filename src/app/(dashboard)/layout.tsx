@@ -8,12 +8,14 @@ import {
 import { getPendingDraftCount } from "@/app/actions/drafts"
 import { getPendingReplyCount } from "@/app/actions/engagement"
 import { getAgentConfig } from "@/app/actions/agent"
+import { getUnreadNotificationCount } from "@/app/actions/notifications"
 import { AlertCircle } from "lucide-react"
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const { count } = await getPendingDraftCount()
   const { config } = await getAgentConfig()
   const { count: pendingReplyCount } = await getPendingReplyCount()
+  const { count: unreadNotificationCount } = await getUnreadNotificationCount()
   const isPaused = config?.isPaused
 
   return (
@@ -27,7 +29,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     >
       <AppSidebar variant="inset" pendingDraftCount={count || 0} pendingReplyCount={pendingReplyCount || 0} />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader unreadNotificationCount={unreadNotificationCount || 0} />
         {isPaused && (
             <div className="bg-red-500 text-white px-4 py-2 text-sm flex items-center justify-center gap-2">
                 <AlertCircle className="w-4 h-4" />

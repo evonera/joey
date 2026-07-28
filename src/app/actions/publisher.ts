@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts, agentConfigs, apiKeys } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getZernioClient } from "./zernio";
+import { createNotification } from "@/lib/notifications";
 import { decrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
 
@@ -93,6 +94,8 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
                 await db.update(agentConfigs)
                     .set({ isPaused: true })
                     .where(eq(agentConfigs.tenantId, tenantId));
+                
+                await createNotification(tenantId, 'api_failure', 'API Connection Failure', 'Your Zernio API key is invalid or revoked. Agent activity has been paused.', { link: '/settings' });
                 break;
             }
             
@@ -112,6 +115,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
             })
             .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
             
+        await createNotification(tenantId, 'publish_failed', 'Post Failed to Publish', errorMessage, { link: '/drafts' });
         return { error: errorMessage };
     }
 
@@ -130,6 +134,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         });
     });
 
+        await createNotification(tenantId, 'publish_success', 'Post Published Successfully', 'Your post was successfully published to your connected accounts.');
         return { success: true };
     } catch (unexpectedError: any) {
         console.error("Unexpected error during publish:", unexpectedError);

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb, vector } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // --- BetterAuth Required Tables ---
@@ -187,7 +187,10 @@ export const engagementItems = pgTable("engagement_items", {
   status: varchar("status", { length: 50 }).default("pending").notNull(), // 'pending', 'replied', 'skipped'
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  tenantStatusIdx: index("engagement_items_tenant_status_idx").on(table.tenantId, table.status),
+  platformCommentIdx: uniqueIndex("engagement_items_platform_comment_idx").on(table.platformCommentId),
+}));
 
 export const replyDrafts = pgTable("reply_drafts", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -198,4 +201,36 @@ export const replyDrafts = pgTable("reply_drafts", {
   feedback: text("feedback"),
   sentAt: timestamp("sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  type: varchar("type", { length: 50 }).notNull(), // 'draft_ready', 'engagement_reply_needed', 'api_failure', 'publish_success', 'publish_failed'
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  link: text("link"),
+  isRead: boolean("is_read").default(false).notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("notifications_tenant_id_idx").on(table.tenantId, table.isRead, table.createdAt.desc()),
+}));
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }).unique(),
+  inAppDraftReady: boolean("in_app_draft_ready").default(true).notNull(),
+  inAppEngagementReply: boolean("in_app_engagement_reply").default(true).notNull(),
+  inAppApiFailure: boolean("in_app_api_failure").default(true).notNull(),
+  inAppPublishSuccess: boolean("in_app_publish_success").default(false).notNull(),
+  inAppPublishFailed: boolean("in_app_publish_failed").default(true).notNull(),
+  emailDraftReady: boolean("email_draft_ready").default(false).notNull(),
+  emailEngagementReply: boolean("email_engagement_reply").default(false).notNull(),
+  emailApiFailure: boolean("email_api_failure").default(true).notNull(),
+  emailPublishSuccess: boolean("email_publish_success").default(false).notNull(),
+  emailPublishFailed: boolean("email_publish_failed").default(true).notNull(),
+  emailAddress: text("email_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

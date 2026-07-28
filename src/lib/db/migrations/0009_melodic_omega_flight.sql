@@ -1,0 +1,2 @@
+CREATE INDEX "engagement_items_tenant_status_idx" ON "engagement_items" USING btree ("tenant_id","status");--> statement-breakpoint
+CREATE UNIQUE INDEX "engagement_items_platform_comment_idx" ON "engagement_items" USING btree ("platform_comment_id");
