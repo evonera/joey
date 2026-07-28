@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { CANDIDATE_TOOLKITS, manageConnections } from "@/lib/composio-connect";
+import { db } from "@/lib/db";
+import { tenants } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 interface ToolkitResult {
   toolkit?: string;
@@ -33,7 +36,15 @@ export async function GET() {
   }
 
   try {
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(tenants.ownerId, session.user.id),
+    });
+    if (!tenant) {
+      return NextResponse.json({ error: "No tenant found" }, { status: 404 });
+    }
+
     const data = await manageConnections(
+      tenant.id,
       CANDIDATE_TOOLKITS.map((name) => ({ name, action: "list" as const })),
     );
     const results = (data.results ?? {}) as Record<string, ToolkitResult>;
@@ -67,7 +78,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const data = await manageConnections([{ name: body.toolkit, action: "add" }]);
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(tenants.ownerId, session.user.id),
+    });
+    if (!tenant) {
+      return NextResponse.json({ error: "No tenant found" }, { status: 404 });
+    }
+
+    const data = await manageConnections(tenant.id, [{ name: body.toolkit, action: "add" }]);
     const results = (data.results ?? {}) as Record<string, ToolkitResult>;
     const entry = results[body.toolkit];
     if (entry?.redirect_url) return NextResponse.json({ url: entry.redirect_url });
@@ -102,7 +120,14 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    await manageConnections([
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(tenants.ownerId, session.user.id),
+    });
+    if (!tenant) {
+      return NextResponse.json({ error: "No tenant found" }, { status: 404 });
+    }
+
+    await manageConnections(tenant.id, [
       { name: body.toolkit, action: "remove", account_id: body.accountId },
     ]);
     return NextResponse.json({ ok: true });

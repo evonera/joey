@@ -55,7 +55,7 @@ export const tenants = pgTable("tenants", {
   name: text("name").notNull(),
   ownerId: text("owner_id").notNull().references(() => user.id, { onDelete: "cascade" }),
   subscriptionPlan: varchar("subscription_plan", { length: 50 }).default('free').notNull(),
-  subscriptionStatus: varchar("subscription_status", { length: 50 }).default('active').notNull(),
+  subscriptionStatus: varchar("subscription_status", { length: 50 }).default('inactive').notNull(),
   dodoCustomerId: text("dodo_customer_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

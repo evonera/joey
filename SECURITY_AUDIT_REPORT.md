@@ -14,7 +14,7 @@
 - **Severity:** High | CVSS 4.0: ~8.7
 - **CWE:** CWE-639 (Authorization Bypass Through User-Controlled Key)
 - **OWASP:** A01:2025 Broken Access Control
-- **File:** [composio-connect.ts](file:///Users/shakthi/Desktop/joey/src/lib/composio-connect.ts#L34-L51)
+- **File:** [composio-connect.ts](src/lib/composio-connect.ts#L34-L51)
 - **Evidence:**
   ```typescript
   function apiKey(): string {
@@ -36,7 +36,7 @@
     });
   }
   ```
-  And [composio.ts](file:///Users/shakthi/Desktop/joey/agent/connections/composio.ts#L7-L9):
+  And [composio.ts](agent/connections/composio.ts#L7-L9):
   ```typescript
     headers: {
       "x-consumer-api-key": () => process.env.COMPOSIO_API_KEY!,
@@ -49,7 +49,7 @@
 - **Severity:** High | CVSS 4.0: ~7.5
 - **CWE:** CWE-1395 (Use of Vulnerable Third-Party Component)
 - **OWASP:** A03:2025 Software and Data Supply Chain Failures
-- **File:** [package.json](file:///Users/shakthi/Desktop/joey/package.json#L58)
+- **File:** [package.json](package.json#L58)
 - **Evidence:**
   ```json
   "next": "16.3.0-preview.6"
@@ -63,7 +63,7 @@
 - **Severity:** Medium | CVSS 4.0: ~4.3
 - **CWE:** CWE-384 (Session Fixation)
 - **OWASP:** A07:2025 Authentication Failures
-- **File:** [zernio.ts](file:///Users/shakthi/Desktop/joey/src/app/actions/zernio.ts#L48-L54)
+- **File:** [zernio.ts](src/app/actions/zernio.ts#L48-L54)
 - **Evidence:**
   ```typescript
           cookieStore.set('zernio_oauth_state', state, {
@@ -73,7 +73,7 @@
               path: '/'
           });
   ```
-  And [zernio.ts](file:///Users/shakthi/Desktop/joey/src/app/actions/zernio.ts#L137-L142):
+  And [zernio.ts](src/app/actions/zernio.ts#L137-L142):
   ```typescript
               cookieStore.set('zernio_oauth_session', encrypt(JSON.stringify({ tempToken, userProfile })), {
                   httpOnly: true,
@@ -89,7 +89,7 @@
 - **Severity:** Medium | CVSS 4.0: ~4.0
 - **CWE:** CWE-693 (Protection Mechanism Failure)
 - **OWASP:** A02:2025 Security Misconfiguration
-- **File:** [next.config.ts](file:///Users/shakthi/Desktop/joey/next.config.ts#L6-L17)
+- **File:** [next.config.ts](next.config.ts#L6-L17)
 - **Evidence:**
   ```typescript
     async headers() {
@@ -114,7 +114,7 @@
 - **Severity:** Low | CVSS 4.0: ~2.1
 - **CWE:** CWE-327 (Use of a Broken or Risky Cryptographic Algorithm)
 - **OWASP:** A04:2025 Cryptographic Failures
-- **File:** [crypto.ts](file:///Users/shakthi/Desktop/joey/src/lib/crypto.ts#L16)
+- **File:** [crypto.ts](src/lib/crypto.ts#L16)
 - **Evidence:**
   ```typescript
   const iv = crypto.randomBytes(16);
@@ -126,7 +126,7 @@
 - **Severity:** Low | CVSS 4.0: ~1.5
 - **CWE:** CWE-798 (Use of Hardcoded Credentials)
 - **OWASP:** A07:2025 Authentication Failures
-- **File:** [docker-compose.yml](file:///Users/shakthi/Desktop/joey/docker-compose.yml#L23-L25)
+- **File:** [docker-compose.yml](docker-compose.yml#L23-L25)
 - **Evidence:**
   ```yaml
       environment:
@@ -141,7 +141,7 @@
 - **Severity:** Low | CVSS 4.0: ~1.0
 - **CWE:** CWE-16 (Configuration)
 - **OWASP:** A02:2025 Security Misconfiguration
-- **File:** [Dockerfile](file:///Users/shakthi/Desktop/joey/Dockerfile#L1-L51)
+- **File:** [Dockerfile](Dockerfile#L1-L51)
 - **Evidence:** The Dockerfile contains no `HEALTHCHECK` instruction.
 - **Risk:** The Docker container lacks a built-in health check to signal the runtime state. Orchestrators or reverse proxies cannot automatically detect if the web server hangs or becomes unresponsive.
 - **Fix:** Add a `HEALTHCHECK` command to verify that the Next.js server is successfully responding on port 3000.

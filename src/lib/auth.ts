@@ -45,9 +45,22 @@ export const auth = betterAuth({
         dodopayments({
             client: dodoPayments,
             createCustomerOnSignUp: true,
-            getCustomerParams: (user) => ({
-                metadata: { userId: user.id },
-            }),
+            getCustomerParams: async (user) => {
+                // Look up the tenant so we can embed tenantId in Dodo metadata.
+                // Webhooks use this to update the correct row without ambiguity.
+                const tenant = await db.query.tenants.findFirst({
+                    where: eq(schema.tenants.ownerId, user.id),
+                    columns: { id: true },
+                });
+                return {
+                    name: user.name,
+                    email: user.email,
+                    metadata: {
+                        userId: user.id,
+                        ...(tenant?.id ? { tenantId: tenant.id } : {}),
+                    },
+                };
+            },
             use: [
                 checkout({
                     products: [
@@ -62,34 +75,34 @@ export const auth = betterAuth({
                 portal(),
                 usage(),
                 webhooks({
-                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET || "",
+                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET!,
                     onSubscriptionActive: async (payload: any) => {
-                        const userId = payload.data?.customer?.metadata?.userId;
-                        if (!userId) return;
+                        const tenantId = payload.data?.metadata?.tenantId;
+                        if (!tenantId) return;
                         
                         await db.update(schema.tenants)
                             .set({ 
                                 subscriptionPlan: "pro", 
                                 subscriptionStatus: "active",
-                                dodoCustomerId: payload.data?.customer?.customer_id
+                                dodoCustomerId: payload.data?.customer_id
                             })
-                            .where(eq(schema.tenants.ownerId, userId));
+                            .where(eq(schema.tenants.id, tenantId));
                     },
                     onSubscriptionCancelled: async (payload: any) => {
-                        const userId = payload.data?.customer?.metadata?.userId;
-                        if (!userId) return;
+                        const tenantId = payload.data?.metadata?.tenantId;
+                        if (!tenantId) return;
 
                         await db.update(schema.tenants)
                             .set({ subscriptionStatus: "canceled" })
-                            .where(eq(schema.tenants.ownerId, userId));
+                            .where(eq(schema.tenants.id, tenantId));
                     },
                     onPaymentFailed: async (payload: any) => {
-                        const userId = payload.data?.customer?.metadata?.userId;
-                        if (!userId) return;
+                        const tenantId = payload.data?.metadata?.tenantId;
+                        if (!tenantId) return;
 
                         await db.update(schema.tenants)
                             .set({ subscriptionStatus: "past_due" })
-                            .where(eq(schema.tenants.ownerId, userId));
+                            .where(eq(schema.tenants.id, tenantId));
                     },
                 }),
             ],

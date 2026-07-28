@@ -13,7 +13,7 @@ const ALGORITHM = 'aes-256-gcm';
 export function encrypt(text: string): string {
     if (!ENCRYPTION_KEY) throw new Error("Missing ENCRYPTION_KEY");
     
-    const iv = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(12);
     const key = Buffer.from(ENCRYPTION_KEY, 'base64');
     
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
