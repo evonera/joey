@@ -49,6 +49,7 @@ export async function generateConnectUrl(platform: string) {
         cookieStore.set('zernio_oauth_state', state, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
             maxAge: 10 * 60, // 10 mins
             path: '/'
         });
@@ -137,6 +138,7 @@ export async function handleZernioCallback(searchParams: Record<string, string>)
             cookieStore.set('zernio_oauth_session', encrypt(JSON.stringify({ tempToken, userProfile })), {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax',
                 maxAge: 10 * 60,
                 path: '/'
             });

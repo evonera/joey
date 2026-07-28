@@ -37,13 +37,15 @@ function apiKey(): string {
   return key;
 }
 
-async function mcpFetch(body: object, sessionId?: string): Promise<Response> {
+async function mcpFetch(tenantId: string, body: object, sessionId?: string): Promise<Response> {
   return fetch(MCP_URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       "x-consumer-api-key": apiKey(),
+      "x-composio-entity-id": tenantId,
+      "x-composio-user-id": tenantId,
       ...(sessionId ? { "mcp-session-id": sessionId } : {}),
     },
     body: JSON.stringify(body),
@@ -60,24 +62,29 @@ async function parseMcpBody(response: Response): Promise<McpToolResponse> {
 }
 
 export async function manageConnections(
+  tenantId: string,
   toolkits: { name: string; action: "list" | "add" | "remove"; account_id?: string }[],
 ): Promise<Record<string, unknown>> {
-  const init = await mcpFetch({
-    jsonrpc: "2.0",
-    id: 1,
-    method: "initialize",
-    params: {
-      protocolVersion: "2025-03-26",
-      capabilities: {},
-      clientInfo: { name: "joey-web", version: "1.0" },
-    },
-  });
+  const init = await mcpFetch(
+    tenantId,
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-03-26",
+        capabilities: {},
+        clientInfo: { name: "joey-web", version: "1.0" },
+      },
+    }
+  );
   const sessionId = init.headers.get("mcp-session-id");
   if (!init.ok || sessionId === null) {
     throw new Error(`Composio Connect initialize failed (${init.status})`);
   }
 
   const call = await mcpFetch(
+    tenantId,
     {
       jsonrpc: "2.0",
       id: 2,
