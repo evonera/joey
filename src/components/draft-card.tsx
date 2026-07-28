@@ -6,7 +6,7 @@ import { publishDraft } from "@/app/actions/publisher";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "./ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 export function DraftCard({ draft, onActionComplete }: { draft: any, onActionComplete: () => void }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -16,10 +16,11 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
     const [loading, setLoading] = useState(false);
 
     const [isSheetOpen, setIsSheetOpen] = useState(false);
+    const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
+    const [selectedVariant, setSelectedVariant] = useState(hasVariants ? draft.variants[0].name : "");
 
     const platformOpts = draft.platformOptions as any;
     const platform = platformOpts?.platform || "Unknown";
-    const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
 
     const handleApprove = async (variantName?: string, contentToApprove?: string) => {
         setLoading(true);
@@ -124,34 +125,40 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
                             </SheetTrigger>
                             <SheetContent className="sm:max-w-xl overflow-y-auto">
                                 <SheetHeader className="mb-6">
-                                    <SheetTitle>Review Draft Variants</SheetTitle>
-                                    <SheetDescription>
-                                        Your agent generated multiple variations for this post. Review and approve the best one.
-                                    </SheetDescription>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <SheetTitle>Review Draft Variants</SheetTitle>
+                                            <SheetDescription>
+                                                Your agent generated multiple variations for this post.
+                                            </SheetDescription>
+                                        </div>
+                                        <Select value={selectedVariant} onValueChange={setSelectedVariant}>
+                                            <SelectTrigger className="w-[180px]">
+                                                <SelectValue placeholder="Select variant" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {draft.variants.map((v: any) => (
+                                                    <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
                                 </SheetHeader>
                                 
-                                <Tabs defaultValue={draft.variants[0].name}>
-                                    <TabsList className="w-full">
-                                        {draft.variants.map((v: any) => (
-                                            <TabsTrigger key={v.name} value={v.name} className="flex-1">{v.name}</TabsTrigger>
-                                        ))}
-                                    </TabsList>
-                                    
-                                    {draft.variants.map((v: any) => (
-                                        <TabsContent key={v.name} value={v.name} className="mt-4 space-y-4">
-                                            <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-lg border whitespace-pre-wrap text-sm min-h-[150px]">
-                                                {v.content}
-                                            </div>
-                                            <Button 
-                                                onClick={() => handleApprove(v.name, v.content)} 
-                                                disabled={loading}
-                                                className="w-full bg-green-600 hover:bg-green-700 text-white"
-                                            >
-                                                {loading ? "Approving..." : `Approve ${v.name} Variant`}
-                                            </Button>
-                                        </TabsContent>
-                                    ))}
-                                </Tabs>
+                                {draft.variants.map((v: any) => v.name === selectedVariant && (
+                                    <div key={v.name} className="mt-4 space-y-4">
+                                        <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-lg border whitespace-pre-wrap text-sm min-h-[150px]">
+                                            {v.content}
+                                        </div>
+                                        <Button 
+                                            onClick={() => handleApprove(v.name, v.content)} 
+                                            disabled={loading}
+                                            className="w-full bg-green-600 hover:bg-green-700 text-white"
+                                        >
+                                            {loading ? "Approving..." : `Approve ${v.name} Variant`}
+                                        </Button>
+                                    </div>
+                                ))}
                             </SheetContent>
                         </Sheet>
                     ) : (
