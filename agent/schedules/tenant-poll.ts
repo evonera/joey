@@ -3,7 +3,7 @@ import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
 import { agentConfigs, tenants, drafts, webhookEvents, engagementItems, replyDrafts, socialAccounts } from "@/lib/db/schema";
 import { eq, and, lte, isNotNull, isNull, asc, inArray } from "drizzle-orm";
-import { executePublishDraft, getZernioClientForTenant } from "@/app/actions/publisher";
+import { executePublishDraft, getZernioClientForTenant } from "@/lib/publisher-core";
 import { syncTenantMemories } from "@/lib/ingest-memories";
 
 export default defineSchedule({
