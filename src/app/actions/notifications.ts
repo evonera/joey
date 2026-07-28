@@ -17,7 +17,7 @@ async function getAuthData() {
   }
 
   const tenant = await db.query.tenants.findFirst({
-    where: eq(tenants.ownerId, session.user.id)
+    where: eq(tenants.id, session.user.id)
   });
 
   if (!tenant) {

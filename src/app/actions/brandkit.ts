@@ -1,35 +1,15 @@
 'use server';
 
-import { auth } from "@/lib/auth";
+import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { memories, tenants, agentConfigs } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { syncTenantMemories } from "@/lib/ingest-memories";
 
-async function getTenantId() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-
-    if (!session) {
-        throw new Error("Unauthorized");
-    }
-
-    const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.ownerId, session.user.id)
-    });
-
-    if (!tenant) {
-        throw new Error("No tenant found");
-    }
-
-    return tenant.id;
-}
-
 export async function getBrandKit() {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
 
         const config = await db.query.agentConfigs.findFirst({
             where: eq(agentConfigs.tenantId, tenantId)
@@ -44,7 +24,7 @@ export async function getBrandKit() {
         const typeCounts = await db.execute(
             sql`SELECT type, COUNT(*)::int as count FROM memories WHERE tenant_id = ${tenantId}::uuid GROUP BY type`
         );
-        const rows = typeCounts.rows as { type: string; count: number }[];
+        const rows = ((typeCounts as any).rows ?? typeCounts) as { type: string; count: number }[];
         const summary = {
             total: rows.reduce((acc, r) => acc + r.count, 0),
             byType: Object.fromEntries(rows.map(r => [r.type, r.count])),
@@ -72,7 +52,7 @@ export async function getBrandKit() {
 
 export async function reindexMemories() {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         await syncTenantMemories(tenantId);
         return { success: true };
     } catch (error: any) {

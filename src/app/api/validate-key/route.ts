@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { Zernio } from "@zernio/node";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { apiKeys, tenants } from "@/lib/db/schema";
+import { apiKeys } from "@/lib/db/schema";
 import { encrypt } from "@/lib/crypto";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
+import { getActiveTenantId } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
     try {
@@ -35,25 +36,26 @@ export async function POST(req: NextRequest) {
         }
 
         if (isValid) {
-            // Upsert tenant for the user if not exists
-            let tenant = await db.query.tenants.findFirst({
-                where: eq(tenants.ownerId, session.user.id)
-            });
-
-            if (!tenant) {
-                const [newTenant] = await db.insert(tenants).values({
-                    name: `${session.user.name}'s Workspace`,
-                    ownerId: session.user.id
-                }).returning();
-                tenant = newTenant;
+            let tenantId: string;
+            try {
+                tenantId = await getActiveTenantId();
+            } catch (e) {
+                // Create a new organization if they don't have one
+                const newOrg = await auth.api.createOrganization({
+                    headers: await headers(),
+                    body: {
+                        name: `${session.user.name}'s Workspace`,
+                        slug: session.user.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(7),
+                    }
+                });
+                tenantId = newOrg.id;
             }
 
             // Encrypt and store the key
             const encrypted = encrypt(apiKey);
             
-            // Upsert the API key
             const existingKey = await db.query.apiKeys.findFirst({
-                where: eq(apiKeys.tenantId, tenant.id)
+                where: eq(apiKeys.tenantId, tenantId)
             });
 
             if (existingKey) {
@@ -62,7 +64,7 @@ export async function POST(req: NextRequest) {
                     .where(eq(apiKeys.id, existingKey.id));
             } else {
                 await db.insert(apiKeys).values({
-                    tenantId: tenant.id,
+                    tenantId: tenantId,
                     provider: 'zernio',
                     encryptedKey: encrypted,
                     status: 'active'

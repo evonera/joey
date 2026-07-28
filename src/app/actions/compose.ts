@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { drafts, socialAccounts } from "@/lib/db/schema";
 import { getZernioClient } from "./zernio";
 import { publishDraft } from "./publisher";
+import { getActiveTenantId } from "@/lib/auth";
 import { eq, and } from "drizzle-orm";
 
 export async function createManualPost(data: {
@@ -14,7 +15,7 @@ export async function createManualPost(data: {
     scheduledFor?: string; // ISO date string
 }) {
     try {
-        const { tenantId } = await getZernioClient(); // auth check
+        const tenantId = await getActiveTenantId(); // auth check
         
         // Fetch full account info to store platformOptions
         const accounts = await db.query.socialAccounts.findMany({
@@ -41,7 +42,7 @@ export async function createManualPost(data: {
                 status: "approved", // pre-approved since it's manual
                 platformOptions,
                 scheduledFor: data.scheduleType === "scheduled" && data.scheduledFor ? new Date(data.scheduledFor) : null,
-            }).returning({ id: drafts.id });
+            }).returning();
 
             createdDraftIds.push(draft.id);
 

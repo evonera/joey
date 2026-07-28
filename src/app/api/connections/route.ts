@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { getActiveTenantId } from "@/lib/auth";
 import { CANDIDATE_TOOLKITS, manageConnections } from "@/lib/composio-connect";
 import { db } from "@/lib/db";
-import { tenants } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 
 interface ToolkitResult {
   toolkit?: string;
@@ -36,15 +35,10 @@ export async function GET() {
   }
 
   try {
-    const tenant = await db.query.tenants.findFirst({
-      where: eq(tenants.ownerId, session.user.id),
-    });
-    if (!tenant) {
-      return NextResponse.json({ error: "No tenant found" }, { status: 404 });
-    }
+    const tenantId = await getActiveTenantId();
 
     const data = await manageConnections(
-      tenant.id,
+      tenantId,
       CANDIDATE_TOOLKITS.map((name) => ({ name, action: "list" as const })),
     );
     const results = (data.results ?? {}) as Record<string, ToolkitResult>;
@@ -78,14 +72,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const tenant = await db.query.tenants.findFirst({
-      where: eq(tenants.ownerId, session.user.id),
-    });
-    if (!tenant) {
-      return NextResponse.json({ error: "No tenant found" }, { status: 404 });
-    }
+    const tenantId = await getActiveTenantId();
 
-    const data = await manageConnections(tenant.id, [{ name: body.toolkit, action: "add" }]);
+    const data = await manageConnections(tenantId, [{ name: body.toolkit, action: "add" }]);
     const results = (data.results ?? {}) as Record<string, ToolkitResult>;
     const entry = results[body.toolkit];
     if (entry?.redirect_url) return NextResponse.json({ url: entry.redirect_url });
@@ -120,14 +109,9 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    const tenant = await db.query.tenants.findFirst({
-      where: eq(tenants.ownerId, session.user.id),
-    });
-    if (!tenant) {
-      return NextResponse.json({ error: "No tenant found" }, { status: 404 });
-    }
+    const tenantId = await getActiveTenantId();
 
-    await manageConnections(tenant.id, [
+    await manageConnections(tenantId, [
       { name: body.toolkit, action: "remove", account_id: body.accountId },
     ]);
     return NextResponse.json({ ok: true });

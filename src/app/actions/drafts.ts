@@ -1,34 +1,14 @@
 'use server';
 
-import { auth } from "@/lib/auth";
+import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { drafts, tenants } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
-async function getTenantId() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-
-    if (!session) {
-        throw new Error("Unauthorized");
-    }
-
-    const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.ownerId, session.user.id)
-    });
-
-    if (!tenant) {
-        throw new Error("No tenant found");
-    }
-
-    return tenant.id;
-}
-
 export async function getDrafts(status?: string) {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         
         let conditions = [eq(drafts.tenantId, tenantId)];
         if (status) {
@@ -49,7 +29,7 @@ export async function getDrafts(status?: string) {
 
 export async function getPendingDraftCount() {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         
         const data = await db.query.drafts.findMany({
             where: and(eq(drafts.tenantId, tenantId), eq(drafts.status, "pending_review")),
@@ -65,7 +45,7 @@ export async function getPendingDraftCount() {
 
 export async function updateDraft(draftId: string, content: string) {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         
         await db.update(drafts)
             .set({ content })
@@ -80,7 +60,7 @@ export async function updateDraft(draftId: string, content: string) {
 
 export async function approveDraft(draftId: string, variantName?: string, content?: string) {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         
         const updateData: Partial<typeof drafts.$inferInsert> & { status: string; errorMessage: null } = { status: "approved", errorMessage: null };
         if (variantName && content) {
@@ -109,7 +89,7 @@ export async function approveDraft(draftId: string, variantName?: string, conten
 
 export async function rejectDraft(draftId: string, feedback: string) {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         
         await db.update(drafts)
             .set({ status: "rejected", errorMessage: feedback })

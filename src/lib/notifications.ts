@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { tenants, notifications, notificationPreferences, user } from "@/lib/db/schema";
+import { tenants, notifications, notificationPreferences, user, member } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { sendNotificationEmail } from "@/lib/email";
 
@@ -21,9 +21,12 @@ export async function createNotification(
         where: eq(tenants.id, tenantId)
       });
       if (tenant) {
-        const owner = await db.query.user.findFirst({
-          where: eq(user.id, tenant.ownerId)
+        const membership = await db.query.member.findFirst({
+          where: eq(member.organizationId, tenantId)
         });
+        const owner = membership ? await db.query.user.findFirst({
+          where: eq(user.id, membership.userId)
+        }) : null;
         const [newPrefs] = await db.insert(notificationPreferences).values({
           tenantId,
           emailAddress: owner?.email || null,

@@ -41,7 +41,7 @@ export async function searchMemories(
   const embedding = await generateEmbedding(query, tenantId);
   const embeddingStr = `[${embedding.join(",")}]`;
 
-  const conditions = [sql`${memories.tenantId} = ${tenantId}::uuid`];
+  const conditions = [sql`${memories.tenantId} = ${tenantId}`];
   if (type) {
     conditions.push(sql`${memories.type} = ${type}`);
   }
@@ -58,7 +58,8 @@ export async function searchMemories(
     `,
   );
 
-  return (results.rows ?? []).map((row: any) => ({
+  const rawRows = (results as any).rows ?? results;
+  return rawRows.map((row: any) => ({
     id: row.id,
     tenantId: row.tenant_id,
     content: row.content,

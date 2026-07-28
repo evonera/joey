@@ -1,6 +1,6 @@
 'use server';
 
-import { auth } from "@/lib/auth";
+import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { assets, tenants } from "@/lib/db/schema";
@@ -8,19 +8,8 @@ import { eq, and } from "drizzle-orm";
 import { generateUploadUrl, deleteObject, buildPublicUrl } from "@/lib/storage";
 import { queryAssets } from "@/lib/assets";
 
-async function getTenantId(): Promise<string> {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) throw new Error("Unauthorized");
-
-  const tenant = await db.query.tenants.findFirst({
-    where: eq(tenants.ownerId, session.user.id),
-  });
-  if (!tenant) throw new Error("No tenant found");
-  return tenant.id;
-}
-
 export async function requestUploadUrl(filename: string, mimeType: string) {
-  const tenantId = await getTenantId();
+  const tenantId = await getActiveTenantId();
   const result = await generateUploadUrl(filename, mimeType, tenantId);
   return result;
 }
@@ -35,7 +24,7 @@ export async function registerAsset(data: {
   tags?: string[];
   altText?: string;
 }) {
-  const tenantId = await getTenantId();
+  const tenantId = await getActiveTenantId();
 
   if (!data.key.startsWith(tenantId + "/")) {
     throw new Error("Invalid asset key: namespace mismatch");
@@ -64,13 +53,13 @@ export async function listAssets(opts?: {
   limit?: number;
   offset?: number;
 }) {
-  const tenantId = await getTenantId();
+  const tenantId = await getActiveTenantId();
   const rows = await queryAssets(tenantId, opts);
   return { assets: rows };
 }
 
 export async function deleteAsset(id: string) {
-  const tenantId = await getTenantId();
+  const tenantId = await getActiveTenantId();
 
   const asset = await db.query.assets.findFirst({
     where: and(eq(assets.id, id), eq(assets.tenantId, tenantId)),
@@ -90,7 +79,7 @@ export async function deleteAsset(id: string) {
 }
 
 export async function updateAssetTags(id: string, tags: string[]) {
-  const tenantId = await getTenantId();
+  const tenantId = await getActiveTenantId();
 
   const [asset] = await db.update(assets)
     .set({ tags })

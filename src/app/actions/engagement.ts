@@ -1,6 +1,6 @@
 'use server';
 
-import { auth } from "@/lib/auth";
+import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import {
@@ -12,17 +12,6 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, desc, asc, inArray } from "drizzle-orm";
 import { getZernioClient } from "./zernio";
-
-async function getTenantId() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) throw new Error("Unauthorized");
-
-  const tenant = await db.query.tenants.findFirst({
-    where: eq(tenants.ownerId, session.user.id),
-  });
-  if (!tenant) throw new Error("No tenant found");
-  return tenant.id;
-}
 
 export type EngagementItemWithReply = {
   id: string;
@@ -47,7 +36,7 @@ export type EngagementItemWithReply = {
 
 export async function getEngagementItems(status?: string) {
   try {
-    const tenantId = await getTenantId();
+    const tenantId = await getActiveTenantId();
 
     const baseConditions = [eq(engagementItems.tenantId, tenantId)];
     if (status) {
@@ -107,7 +96,7 @@ export async function getEngagementItems(status?: string) {
 
 export async function getPendingReplyCount() {
   try {
-    const tenantId = await getTenantId();
+    const tenantId = await getActiveTenantId();
 
     const items = await db.query.engagementItems.findMany({
       where: and(
@@ -125,7 +114,7 @@ export async function getPendingReplyCount() {
 
 export async function approveReply(replyDraftId: string) {
   try {
-    const tenantId = await getTenantId();
+    const tenantId = await getActiveTenantId();
 
     await db.update(replyDrafts)
       .set({ status: "approved" })
@@ -140,7 +129,7 @@ export async function approveReply(replyDraftId: string) {
 
 export async function rejectReply(replyDraftId: string, feedback: string) {
   try {
-    const tenantId = await getTenantId();
+    const tenantId = await getActiveTenantId();
 
     await db.update(replyDrafts)
       .set({ status: "rejected", feedback })
@@ -155,7 +144,7 @@ export async function rejectReply(replyDraftId: string, feedback: string) {
 
 export async function sendReply(replyDraftId: string) {
   try {
-    const tenantId = await getTenantId();
+    const tenantId = await getActiveTenantId();
 
     const draft = await db.query.replyDrafts.findFirst({
       where: and(eq(replyDrafts.id, replyDraftId), eq(replyDrafts.tenantId, tenantId)),
@@ -244,7 +233,7 @@ export async function sendReply(replyDraftId: string) {
 
 export async function updateReplyDraft(replyDraftId: string, content: string) {
   try {
-    const tenantId = await getTenantId();
+    const tenantId = await getActiveTenantId();
 
     await db.update(replyDrafts)
       .set({ content })
@@ -259,7 +248,7 @@ export async function updateReplyDraft(replyDraftId: string, content: string) {
 
 export async function skipEngagementItem(itemId: string) {
   try {
-    const tenantId = await getTenantId();
+    const tenantId = await getActiveTenantId();
 
     await db.update(engagementItems)
       .set({ status: "skipped" })

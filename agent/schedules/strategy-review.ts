@@ -9,7 +9,7 @@ export default defineSchedule({
   async run({ receive, waitUntil }) {
     const activeTenants = await db.select({
       tenantId: agentConfigs.tenantId,
-      ownerId: tenants.ownerId,
+      ownerId: tenants.id,
     })
     .from(agentConfigs)
     .innerJoin(tenants, eq(tenants.id, agentConfigs.tenantId))

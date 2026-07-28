@@ -63,7 +63,7 @@ export default defineSchedule({
           auth: {
             authenticator: "cron",
             principalType: "user",
-            principalId: tenant.ownerId,
+            principalId: tenant.id,
             attributes: { tenantId: item.tenantId },
           },
         })
@@ -123,7 +123,7 @@ export default defineSchedule({
             auth: {
               authenticator: "cron",
               principalType: "user",
-              principalId: tenant.ownerId,
+              principalId: tenant.id,
               attributes: { tenantId: resolvedTenantId },
             },
           })
@@ -164,7 +164,7 @@ export default defineSchedule({
     // --- 3. Trigger AI Drafting ---
     const dueConfigs = await db.select({
         tenantId: agentConfigs.tenantId,
-        ownerId: tenants.ownerId,
+        ownerId: tenants.id,
         postingSchedule: agentConfigs.postingSchedule,
     })
     .from(agentConfigs)
