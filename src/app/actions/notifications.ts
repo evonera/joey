@@ -7,6 +7,8 @@ import { tenants, notifications, notificationPreferences, user } from "@/lib/db/
 import { eq, and, desc, count } from "drizzle-orm";
 import { sendNotificationEmail } from "@/lib/email";
 
+import { getActiveTenantId } from "@/lib/auth";
+
 async function getAuthData() {
   const session = await auth.api.getSession({
     headers: await headers()
@@ -16,15 +18,8 @@ async function getAuthData() {
     throw new Error("Unauthorized");
   }
 
-  const tenant = await db.query.tenants.findFirst({
-    where: eq(tenants.ownerId, session.user.id)
-  });
-
-  if (!tenant) {
-    throw new Error("No tenant found");
-  }
-
-  return { tenantId: tenant.id, user: session.user };
+  const tenantId = await getActiveTenantId();
+  return { tenantId, user: session.user };
 }
 
 export async function getNotifications(opts?: { limit?: number; offset?: number; unreadOnly?: boolean }) {

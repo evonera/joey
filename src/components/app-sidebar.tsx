@@ -21,6 +21,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { WorkspaceSwitcher } from "./workspace-switcher"
 
 export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: React.ComponentProps<typeof Sidebar> & { pendingDraftCount?: number; pendingReplyCount?: number }) {
   const navMain = [
@@ -83,6 +84,7 @@ export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: R
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <WorkspaceSwitcher />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />

@@ -1,7 +1,7 @@
 import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
-import { agentConfigs, tenants, posts } from "@/lib/db/schema";
+import { agentConfigs, tenants, posts, member } from "@/lib/db/schema";
 import { eq, and, gte } from "drizzle-orm";
 
 export default defineSchedule({
@@ -9,7 +9,6 @@ export default defineSchedule({
   async run({ receive, waitUntil }) {
     const activeTenants = await db.select({
       tenantId: agentConfigs.tenantId,
-      ownerId: tenants.ownerId,
     })
     .from(agentConfigs)
     .innerJoin(tenants, eq(tenants.id, agentConfigs.tenantId))
@@ -19,6 +18,11 @@ export default defineSchedule({
 
     for (const t of activeTenants) {
       try {
+        const ownerMember = await db.query.member.findFirst({
+          where: and(eq(member.organizationId, t.tenantId), eq(member.role, "owner"))
+        });
+        if (!ownerMember) continue;
+        
         const recentPosts = await db.query.posts.findFirst({
           where: and(
             eq(posts.tenantId, t.tenantId),
@@ -35,7 +39,7 @@ export default defineSchedule({
             auth: {
               authenticator: "cron",
               principalType: "user",
-              principalId: t.ownerId,
+              principalId: ownerMember.userId,
               attributes: { tenantId: t.tenantId },
             },
           })

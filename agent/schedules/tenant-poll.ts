@@ -1,7 +1,7 @@
 import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
-import { agentConfigs, tenants, drafts, webhookEvents, engagementItems, replyDrafts, socialAccounts } from "@/lib/db/schema";
+import { agentConfigs, tenants, member, drafts, webhookEvents, engagementItems, replyDrafts, socialAccounts } from "@/lib/db/schema";
 import { eq, and, lte, isNotNull, isNull, asc, inArray } from "drizzle-orm";
 import { executePublishDraft, getZernioClientForTenant } from "@/lib/publisher-core";
 import { syncTenantMemories } from "@/lib/ingest-memories";
@@ -50,6 +50,10 @@ export default defineSchedule({
       const tenant = await db.query.tenants.findFirst({
         where: eq(tenants.id, item.tenantId),
       });
+      const ownerMember = await db.query.member.findFirst({
+        where: and(eq(member.organizationId, item.tenantId), eq(member.role, "owner"))
+      });
+      if (!ownerMember) continue;
       if (!tenant) continue;
 
       const agentConfig = await db.query.agentConfigs.findFirst({
@@ -63,7 +67,7 @@ export default defineSchedule({
           auth: {
             authenticator: "cron",
             principalType: "user",
-            principalId: tenant.ownerId,
+            principalId: ownerMember.userId,
             attributes: { tenantId: item.tenantId },
           },
         })
@@ -85,6 +89,15 @@ export default defineSchedule({
       const tenant = await db.query.tenants.findFirst({
         where: eq(tenants.id, resolvedTenantId),
       });
+      const ownerMember = await db.query.member.findFirst({
+        where: and(eq(member.organizationId, resolvedTenantId), eq(member.role, "owner"))
+      });
+      if (!ownerMember) {
+        await db.update(webhookEvents)
+          .set({ status: "failed", errorMessage: "Organization has no owner member" })
+          .where(eq(webhookEvents.id, event.id));
+        continue;
+      }
       if (!tenant) {
         await db.update(webhookEvents)
           .set({ status: "failed", errorMessage: "Tenant not found" })
@@ -123,7 +136,7 @@ export default defineSchedule({
             auth: {
               authenticator: "cron",
               principalType: "user",
-              principalId: tenant.ownerId,
+              principalId: ownerMember.userId,
               attributes: { tenantId: resolvedTenantId },
             },
           })
@@ -164,7 +177,6 @@ export default defineSchedule({
     // --- 3. Trigger AI Drafting ---
     const dueConfigs = await db.select({
         tenantId: agentConfigs.tenantId,
-        ownerId: tenants.ownerId,
         postingSchedule: agentConfigs.postingSchedule,
     })
     .from(agentConfigs)
@@ -177,6 +189,10 @@ export default defineSchedule({
     );
 
     for (const config of dueConfigs) {
+      const ownerMember = await db.query.member.findFirst({
+        where: and(eq(member.organizationId, config.tenantId), eq(member.role, "owner"))
+      });
+      if (!ownerMember) continue;
       // Spawn an agent task for this tenant
       waitUntil(
         receive(eveChannel, {
@@ -185,7 +201,7 @@ export default defineSchedule({
           auth: {
             authenticator: "cron",
             principalType: "user",
-            principalId: config.ownerId,
+            principalId: ownerMember.userId,
             attributes: { tenantId: config.tenantId },
           },
         })

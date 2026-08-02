@@ -1,26 +1,14 @@
 'use server';
 
-import { auth } from "@/lib/auth";
+import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { memories, tenants } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
-async function getTenantId() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-    if (!session) throw new Error("Unauthorized");
-    const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.ownerId, session.user.id)
-    });
-    if (!tenant) throw new Error("No tenant found");
-    return tenant.id;
-}
-
 export async function getInsights() {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         const insights = await db.query.memories.findMany({
             where: and(
                 eq(memories.tenantId, tenantId),

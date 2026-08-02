@@ -9,25 +9,13 @@ import { decrypt, encrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
 import crypto from "crypto";
 
+import { getActiveTenantId } from "@/lib/auth";
+
 export async function getZernioClient() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-
-    if (!session) {
-        throw new Error("Unauthorized");
-    }
-
-    const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.ownerId, session.user.id)
-    });
-
-    if (!tenant) {
-        throw new Error("No tenant found");
-    }
+    const tenantId = await getActiveTenantId();
 
     const key = await db.query.apiKeys.findFirst({
-        where: eq(apiKeys.tenantId, tenant.id)
+        where: eq(apiKeys.tenantId, tenantId)
     });
 
     if (!key || !key.encryptedKey) {
@@ -35,7 +23,7 @@ export async function getZernioClient() {
     }
 
     const apiKey = decrypt(key.encryptedKey);
-    return { zernio: new Zernio({ apiKey }), tenantId: tenant.id };
+    return { zernio: new Zernio({ apiKey }), tenantId };
 }
 
 export async function generateConnectUrl(platform: string) {

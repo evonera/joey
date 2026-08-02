@@ -1,34 +1,14 @@
 'use server';
 
-import { auth } from "@/lib/auth";
+import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { agentConfigs, tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
-async function getTenantId() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
-
-    if (!session) {
-        throw new Error("Unauthorized");
-    }
-
-    const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.ownerId, session.user.id)
-    });
-
-    if (!tenant) {
-        throw new Error("No tenant found");
-    }
-
-    return tenant.id;
-}
-
 export async function getAgentConfig() {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         
         let config = await db.query.agentConfigs.findFirst({
             where: eq(agentConfigs.tenantId, tenantId)
@@ -70,7 +50,7 @@ export async function saveAgentConfig(data: {
     postingSchedule: PostingSchedule;
 }) {
     try {
-        const tenantId = await getTenantId();
+        const tenantId = await getActiveTenantId();
         
         await db.insert(agentConfigs)
             .values({
