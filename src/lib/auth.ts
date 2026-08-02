@@ -11,8 +11,15 @@ import { eq, desc, and } from "drizzle-orm";
 // Dodo Payments is optional at boot so the app can be built and self-hosted
 // without billing credentials. Billing routes fail gracefully at runtime if
 // the key is absent.
+const DODO_API_KEY = process.env.DODO_PAYMENTS_API_KEY;
+if (process.env.NODE_ENV === "production" && !DODO_API_KEY) {
+    console.warn(
+        "[billing] DODO_PAYMENTS_API_KEY is not set. Checkout/portal/webhook billing routes will fail. " +
+        "Self-hosted instances that do not use billing can ignore this warning.",
+    );
+}
 export const dodoPayments = new DodoPayments({
-    bearerToken: process.env.DODO_PAYMENTS_API_KEY || "dodo_dev_placeholder",
+    bearerToken: DODO_API_KEY || "dodo_dev_placeholder",
     environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as "test_mode" | "live_mode") || "test_mode",
 });
 
@@ -206,6 +213,16 @@ export async function getActiveTenantId(): Promise<string> {
         throw new Error("Unauthorized");
     }
 
+    return resolveActiveTenant(session);
+}
+
+/**
+ * Resolves the active tenant from an already-fetched session. Avoids a second
+ * session-store round-trip when the caller already has the session in hand.
+ */
+export async function getActiveTenantIdFromSession(
+    session: AuthSession,
+): Promise<string> {
     return resolveActiveTenant(session);
 }
 

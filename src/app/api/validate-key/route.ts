@@ -6,7 +6,7 @@ import { apiKeys } from "@/lib/db/schema";
 import { encrypt } from "@/lib/crypto";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantIdFromSession } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
     try {
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
         if (isValid) {
             let tenantId: string;
             try {
-                tenantId = await getActiveTenantId();
+                tenantId = await getActiveTenantIdFromSession(session);
             } catch (e: any) {
                 if (e?.message !== "No active workspace found") throw e;
                 // Create a new organization if they don't have one
