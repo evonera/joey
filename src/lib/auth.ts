@@ -8,12 +8,18 @@ import { db } from "./db";
 import * as schema from "./db/schema";
 import { eq, desc, and } from "drizzle-orm";
 
-if (!process.env.DODO_PAYMENTS_API_KEY) {
-    throw new Error("DODO_PAYMENTS_API_KEY is missing. Please check your environment variables.");
+// Dodo Payments is optional at boot so the app can be built and self-hosted
+// without billing credentials. Billing routes fail gracefully at runtime if
+// the key is absent.
+const DODO_API_KEY = process.env.DODO_PAYMENTS_API_KEY;
+if (process.env.NODE_ENV === "production" && !DODO_API_KEY) {
+    console.warn(
+        "[billing] DODO_PAYMENTS_API_KEY is not set. Checkout/portal/webhook billing routes will fail. " +
+        "Self-hosted instances that do not use billing can ignore this warning.",
+    );
 }
-
 export const dodoPayments = new DodoPayments({
-    bearerToken: process.env.DODO_PAYMENTS_API_KEY,
+    bearerToken: DODO_API_KEY || "dodo_dev_placeholder",
     environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as "test_mode" | "live_mode") || "test_mode",
 });
 
@@ -175,6 +181,25 @@ export const auth = betterAuth({
 
 import { headers } from "next/headers";
 
+type AuthSession = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
+
+/**
+ * Resolves the current user session and their active tenant in a single
+ * session lookup. Throws if the user is not authenticated or has no active
+ * workspace. Used by server actions that also need the session user.
+ */
+export async function getActiveTenant(): Promise<{ tenantId: string; user: AuthSession["user"] }> {
+    const session = await auth.api.getSession({
+        headers: await headers()
+    });
+
+    if (!session) {
+        throw new Error("Unauthorized");
+    }
+
+    return { tenantId: await resolveActiveTenant(session), user: session.user };
+}
+
 /**
  * Shared helper to resolve the current active tenant for a user request.
  * Throws if the user is not authenticated or has no active workspace.
@@ -188,6 +213,20 @@ export async function getActiveTenantId(): Promise<string> {
         throw new Error("Unauthorized");
     }
 
+    return resolveActiveTenant(session);
+}
+
+/**
+ * Resolves the active tenant from an already-fetched session. Avoids a second
+ * session-store round-trip when the caller already has the session in hand.
+ */
+export async function getActiveTenantIdFromSession(
+    session: AuthSession,
+): Promise<string> {
+    return resolveActiveTenant(session);
+}
+
+async function resolveActiveTenant(session: AuthSession): Promise<string> {
     // Try to get the active organization from the session
     if (session.session.activeOrganizationId) {
         const activeMembership = await db.query.member.findFirst({

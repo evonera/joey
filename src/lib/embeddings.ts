@@ -25,5 +25,13 @@ export async function generateEmbedding(text: string, tenantId?: string): Promis
     model: "text-embedding-3-small",
     input: text,
   });
+  try {
+    if (tenantId && response.usage?.prompt_tokens) {
+      const { recordTokenUsage } = await import("@/lib/usage");
+      await recordTokenUsage(tenantId, response.usage.prompt_tokens, 0);
+    }
+  } catch (err) {
+    console.error("Failed to record embedding usage:", err);
+  }
   return response.data[0].embedding;
 }

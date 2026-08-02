@@ -1,25 +1,15 @@
 'use server';
 
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { tenants, notifications, notificationPreferences, user } from "@/lib/db/schema";
+import { notifications, notificationPreferences } from "@/lib/db/schema";
 import { eq, and, desc, count } from "drizzle-orm";
 import { sendNotificationEmail } from "@/lib/email";
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenant } from "@/lib/auth";
 
 async function getAuthData() {
-  const session = await auth.api.getSession({
-    headers: await headers()
-  });
-
-  if (!session) {
-    throw new Error("Unauthorized");
-  }
-
-  const tenantId = await getActiveTenantId();
-  return { tenantId, user: session.user };
+  const { tenantId, user } = await getActiveTenant();
+  return { tenantId, user };
 }
 
 export async function getNotifications(opts?: { limit?: number; offset?: number; unreadOnly?: boolean }) {

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts } from "@/lib/db/schema";
 import { and, eq, gte, lte, isNotNull, inArray } from "drizzle-orm";
 import { getZernioClient } from "./zernio";
+import { getActiveTenantId } from "@/lib/auth";
 
 export type CalendarPost = {
   id: string;
@@ -118,5 +119,32 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
     } catch (error: any) {
         console.error("Failed to fetch calendar posts:", error);
         return { error: "Failed to load calendar data" };
+    }
+}
+
+/**
+ * Reschedule an approved (or pending) scheduled draft by setting a new
+ * scheduledFor time. Only edits drafts, not already-published posts.
+ */
+export async function rescheduleDraft(draftId: string, scheduledFor: Date) {
+    try {
+        const tenantId = await getActiveTenantId();
+
+        const existing = await db.query.drafts.findFirst({
+            where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
+            columns: { scheduledFor: true, status: true },
+        });
+
+        if (!existing) return { error: "Draft not found" };
+        if (!existing.scheduledFor) return { error: "Only scheduled drafts can be rescheduled." };
+
+        await db.update(drafts)
+            .set({ scheduledFor })
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+
+        return { success: true };
+    } catch (error: any) {
+        console.error("Failed to reschedule draft:", error);
+        return { error: "Failed to reschedule draft" };
     }
 }

@@ -10,6 +10,7 @@ import {
   IconBulb,
   IconPhoto,
   IconMessage,
+  IconChartBar,
 } from "@tabler/icons-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -56,6 +57,11 @@ export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: R
       title: "Insights",
       url: "/insights",
       icon: IconBulb,
+    },
+    {
+      title: "Analytics",
+      url: "/analytics",
+      icon: IconChartBar,
     },
     {
       title: "Assets",

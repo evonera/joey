@@ -165,7 +165,7 @@ export const webhookEvents = pgTable("webhook_events", {
 
 export const usageTracking = pgTable("usage_tracking", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().unique().references(() => tenants.id, { onDelete: "cascade" }),
   periodStart: timestamp("period_start").notNull(),
   inputTokensUsed: bigint("input_tokens_used", { mode: "number" }).default(0),
   outputTokensUsed: bigint("output_tokens_used", { mode: "number" }).default(0),
@@ -209,6 +209,32 @@ export const tenantMemoryProfiles = pgTable("tenant_memory_profiles", {
 });
 
 // --- Engagement Tables (Phase 2.7) ---
+
+// --- Threads & Messages (Phase 1.1) ---
+
+export const threads = pgTable("threads", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  subject: text("subject"),
+  // optional link to a draft for team discussion around a specific piece of content
+  draftId: text("draft_id").references(() => drafts.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("threads_tenant_id_idx").on(table.tenantId, table.updatedAt.desc()),
+}));
+
+export const messages = pgTable("messages", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  threadId: text("thread_id").notNull().references(() => threads.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
+  authorRole: varchar("author_role", { length: 50 }).notNull().default("member"), // 'member' | 'agent'
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  threadIdx: index("messages_thread_id_idx").on(table.threadId, table.createdAt),
+}));
 
 export const engagementItems = pgTable("engagement_items", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
