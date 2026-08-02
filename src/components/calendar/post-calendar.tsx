@@ -2,15 +2,20 @@
 
 import * as React from "react";
 import { Calendar, dateFnsLocalizer, Views } from "react-big-calendar";
+import withDragAndDrop from "react-big-calendar/lib/addons/dragAndDrop";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
 import { format, parse, startOfWeek, getDay, addHours, isBefore, startOfDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Plus, Image as ImageIcon } from "lucide-react";
 import { IconBrandTwitter as Twitter, IconBrandLinkedin as Linkedin, IconBrandFacebook as Facebook, IconBrandInstagram as Instagram } from "@tabler/icons-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
+import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
 import "./post-calendar.css";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import { CalendarPost } from "@/app/actions/calendar";
 
 const locales = { "en-US": enUS };
@@ -22,15 +27,21 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
+const DragAndDropCalendar = withDragAndDrop<CalendarPost>(Calendar);
+
+export type CalendarViewMode = "month" | "week" | "day";
+
 interface PostCalendarProps {
   posts: CalendarPost[];
   isPending: boolean;
   currentDate: Date;
-  view: "month" | "week";
+  view: CalendarViewMode;
   onViewChange: (view: string) => void;
   onDateChange: (date: Date) => void;
   onPostClick: (post: CalendarPost) => void;
   onCreatePost: (date: Date) => void;
+  onReschedule: (draftId: string, newDate: Date) => Promise<boolean>;
+  onReload?: () => void;
   rightActions?: React.ReactNode;
 }
 
@@ -65,6 +76,8 @@ export function PostCalendar({
   onDateChange,
   onPostClick,
   onCreatePost,
+  onReschedule,
+  onReload,
   rightActions,
 }: PostCalendarProps) {
 
@@ -84,7 +97,7 @@ export function PostCalendar({
       localizer.format(date, 'EEEE d', culture),
   }), []);
 
-  const isWeekView = view === "week";
+  const isTimeGridView = view === "week" || view === "day";
 
   const CustomToolbar = React.useCallback((toolbar: any) => {
     return (
@@ -115,6 +128,7 @@ export function PostCalendar({
             >
               <option value="month">Month</option>
               <option value="week">Week</option>
+              <option value="day">Day</option>
             </select>
           </div>
 
@@ -128,17 +142,30 @@ export function PostCalendar({
 
   return (
     <div className={cn("h-full relative flex flex-col min-h-[700px] bg-background")}>
-      <Calendar
+      <DndProvider backend={HTML5Backend}>
+      <DragAndDropCalendar
         localizer={localizer}
         events={events}
         date={currentDate}
         formats={formats}
-        step={isWeekView ? 15 : 60}
+        step={isTimeGridView ? 15 : 60}
         timeslots={4}
         onNavigate={onDateChange}
-        view={view === "month" ? Views.MONTH : Views.WEEK}
-        onView={(v) => onViewChange(v === Views.MONTH ? "month" : "week")}
+        view={view === "month" ? Views.MONTH : view === "day" ? Views.DAY : Views.WEEK}
+        onView={(v) => onViewChange(v === Views.MONTH ? "month" : v === Views.DAY ? "day" : "week")}
         onSelectEvent={(event: any) => onPostClick(event)}
+        onEventDrop={({ event, start }: any) => {
+          // Prevent dragging already-published posts; only drafts can be rescheduled.
+          if (event.status === "published") {
+            toast.error("Published posts cannot be rescheduled.");
+            return;
+          }
+          onReschedule(event.id, new Date(start)).then((ok) => {
+            if (ok) onReload?.();
+          });
+        }}
+        draggableAccessor={(event: any) => event.status !== "published"}
+        resizable={false}
         slotPropGetter={(date) => {
           const isPastSlot = isBefore(date, new Date())
           return isPastSlot
@@ -214,6 +241,7 @@ export function PostCalendar({
           },
         }}
       />
+      </DndProvider>
     </div>
   )
 }
