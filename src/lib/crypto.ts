@@ -1,12 +1,6 @@
 import crypto from "crypto";
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
-if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 44) { // 32 bytes base64 encoded is 44 chars
-    // Throw in production, but allow app to start without it for dev (it will fail when used)
-    if (process.env.NODE_ENV === "production") {
-        throw new Error("ENCRYPTION_KEY must be a 32-byte base64 encoded string.");
-    }
-}
 
 const ALGORITHM = 'aes-256-gcm';
 

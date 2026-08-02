@@ -8,12 +8,11 @@ import { db } from "./db";
 import * as schema from "./db/schema";
 import { eq, desc, and } from "drizzle-orm";
 
-if (!process.env.DODO_PAYMENTS_API_KEY) {
-    throw new Error("DODO_PAYMENTS_API_KEY is missing. Please check your environment variables.");
-}
-
+// Dodo Payments is optional at boot so the app can be built and self-hosted
+// without billing credentials. Billing routes fail gracefully at runtime if
+// the key is absent.
 export const dodoPayments = new DodoPayments({
-    bearerToken: process.env.DODO_PAYMENTS_API_KEY,
+    bearerToken: process.env.DODO_PAYMENTS_API_KEY || "dodo_dev_placeholder",
     environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as "test_mode" | "live_mode") || "test_mode",
 });
 
