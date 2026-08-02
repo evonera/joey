@@ -5,6 +5,7 @@ import { agentConfigs, tenants, member, drafts, webhookEvents, engagementItems, 
 import { eq, and, lte, isNotNull, isNull, asc, inArray } from "drizzle-orm";
 import { executePublishDraft, getZernioClientForTenant } from "@/lib/publisher-core";
 import { syncTenantMemories } from "@/lib/ingest-memories";
+import { assertBudget } from "@/lib/usage";
 // Aliases: toZonedTime() = UTC -> local wall-clock; fromZonedTime() = local -> UTC.
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
@@ -248,6 +249,18 @@ export default defineSchedule({
         where: and(eq(member.organizationId, config.tenantId), eq(member.role, "owner"))
       });
       if (!ownerMember) continue;
+
+      // Enforce the monthly LLM budget before spawning an expensive drafting run.
+      try {
+        const budget = await assertBudget(config.tenantId);
+        if (!budget.allowed) {
+          console.log(`[budget] Tenant ${config.tenantId} over budget; skipping draft.`);
+          continue;
+        }
+      } catch (err) {
+        console.error(`[budget] Failed to check budget for ${config.tenantId}:`, err);
+      }
+
       // Spawn an agent task for this tenant
       waitUntil(
         receive(eveChannel, {
