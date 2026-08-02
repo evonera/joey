@@ -165,7 +165,7 @@ export const webhookEvents = pgTable("webhook_events", {
 
 export const usageTracking = pgTable("usage_tracking", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().unique().references(() => tenants.id, { onDelete: "cascade" }),
   periodStart: timestamp("period_start").notNull(),
   inputTokensUsed: bigint("input_tokens_used", { mode: "number" }).default(0),
   outputTokensUsed: bigint("output_tokens_used", { mode: "number" }).default(0),

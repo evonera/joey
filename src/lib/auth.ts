@@ -174,6 +174,25 @@ export const auth = betterAuth({
 
 import { headers } from "next/headers";
 
+type AuthSession = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
+
+/**
+ * Resolves the current user session and their active tenant in a single
+ * session lookup. Throws if the user is not authenticated or has no active
+ * workspace. Used by server actions that also need the session user.
+ */
+export async function getActiveTenant(): Promise<{ tenantId: string; user: AuthSession["user"] }> {
+    const session = await auth.api.getSession({
+        headers: await headers()
+    });
+
+    if (!session) {
+        throw new Error("Unauthorized");
+    }
+
+    return { tenantId: await resolveActiveTenant(session), user: session.user };
+}
+
 /**
  * Shared helper to resolve the current active tenant for a user request.
  * Throws if the user is not authenticated or has no active workspace.
@@ -187,6 +206,10 @@ export async function getActiveTenantId(): Promise<string> {
         throw new Error("Unauthorized");
     }
 
+    return resolveActiveTenant(session);
+}
+
+async function resolveActiveTenant(session: AuthSession): Promise<string> {
     // Try to get the active organization from the session
     if (session.session.activeOrganizationId) {
         const activeMembership = await db.query.member.findFirst({

@@ -42,14 +42,21 @@ export async function POST(req: NextRequest) {
             } catch (e: any) {
                 if (e?.message !== "No active workspace found") throw e;
                 // Create a new organization if they don't have one
+                const displayName = session.user.name?.trim() || "User";
+                const slugBase = displayName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') || 'workspace';
                 const newOrg = await auth.api.createOrganization({
                     headers: await headers(),
                     body: {
-                        name: `${session.user.name}'s Workspace`,
-                        slug: session.user.name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(7),
+                        name: `${displayName}'s Workspace`,
+                        slug: `${slugBase}-${Math.random().toString(36).substring(7)}`,
                     }
                 });
                 tenantId = newOrg.id;
+                // Make the new org the active one so subsequent requests resolve it
+                await auth.api.setActiveOrganization({
+                    headers: await headers(),
+                    body: { organizationId: tenantId }
+                });
             }
 
             // Encrypt and store the key

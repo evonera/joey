@@ -37,7 +37,7 @@ async function getOrCreateUsageRow(tenantId: string) {
       estimatedCostUsd: "0",
       budgetLimitUsd: "5.00",
     })
-      .onConflictDoNothing();
+      .onConflictDoNothing({ target: usageTracking.tenantId });
     usage = await db.query.usageTracking.findFirst({ where: eq(usageTracking.tenantId, tenantId) });
   }
 
