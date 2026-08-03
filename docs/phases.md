@@ -495,7 +495,7 @@ This document outlines the extremely granular, step-by-step phases for building 
 - [x] Create `public/llms.txt` with brand description, key pages, FAQ, and tech details
 - [x] Fix OG image URL (rely on Next.js `opengraph-image.tsx` file convention instead of dead static file)
 - [x] Add question-based H2 headings ("What is Joey?", "How does it work?")
-- [ ] Review and add to sitemap if `llms.txt` should be crawlable
+- [x] Review and add to sitemap if `llms.txt` should be crawlable
 **Dependencies**: Phase 4.2
 **Reference Repos**: llmstxt.org protocol
 **Acceptance Criteria**: `https://joey.evonera.com/llms.txt` returns valid markdown; AI crawlers can cite structured answers.
