@@ -19,7 +19,11 @@
     "db:seed": "node --env-file=.env --import tsx src/scripts/seed.ts",
     "test": "ENCRYPTION_KEY=MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE= vitest run",
     "test:watch": "ENCRYPTION_KEY=MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE= vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:desktop": "NEXT_OUTPUT=export next build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1096.0",
@@ -43,6 +47,8 @@
     "@tailwindcss/postcss": "4.3.0",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-table": "^8.21.3",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@vercel/connect": "0.4.2",
     "@zernio/node": "^0.2.428",
     "ai": "^7.0.34",

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import { withEve } from "eve/next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  output: process.env.NEXT_OUTPUT === "export" ? "export" : "standalone",
   async headers() {
     return [
       {
