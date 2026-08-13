@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
-import { authenticateApiRequest } from '@/lib/api-auth';
+import { authenticateApiRequest, requireScope, withRateLimitHeaders } from '@/lib/api-auth';
 import { db } from '@/lib/db';
 import { drafts } from '@/lib/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
 export async function GET(request: Request) {
     try {
-        const { tenantId } = await authenticateApiRequest(request);
+        const { tenantId, scopes, rateLimit } = await authenticateApiRequest(request);
+        requireScope(scopes, "read");
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
 
@@ -20,15 +21,22 @@ export async function GET(request: Request) {
             orderBy: [desc(drafts.createdAt)]
         });
 
-        return NextResponse.json({ drafts: data });
+        return withRateLimitHeaders(NextResponse.json({ drafts: data }), rateLimit);
     } catch (error: any) {
+        if (error.name === 'RateLimitError') {
+            return NextResponse.json({ error: error.message }, { status: 429 });
+        }
+        if (error.message.startsWith('Insufficient scope')) {
+            return NextResponse.json({ error: error.message }, { status: 403 });
+        }
         return NextResponse.json({ error: error.message }, { status: 401 });
     }
 }
 
 export async function POST(request: Request) {
     try {
-        const { tenantId } = await authenticateApiRequest(request);
+        const { tenantId, scopes, rateLimit } = await authenticateApiRequest(request);
+        requireScope(scopes, "write");
         const body = await request.json();
         const { content, mediaUrls, accountIds, scheduledFor } = body;
 
@@ -40,8 +48,14 @@ export async function POST(request: Request) {
             platformOptions: { mediaUrls, accountIds }
         }).returning();
 
-        return NextResponse.json({ draft });
+        return withRateLimitHeaders(NextResponse.json({ draft }), rateLimit);
     } catch (error: any) {
+        if (error.name === 'RateLimitError') {
+            return NextResponse.json({ error: error.message }, { status: 429 });
+        }
+        if (error.message.startsWith('Insufficient scope')) {
+            return NextResponse.json({ error: error.message }, { status: 403 });
+        }
         return NextResponse.json({ error: error.message }, { status: 401 });
     }
 }

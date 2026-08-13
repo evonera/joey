@@ -97,6 +97,7 @@ export const publicApiTokens = pgTable("public_api_tokens", {
   tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   tokenHash: text("token_hash").notNull(),
+  scopes: text("scopes").array().default(["read", "write"]).notNull(),
   lastUsedAt: timestamp("last_used_at"),
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

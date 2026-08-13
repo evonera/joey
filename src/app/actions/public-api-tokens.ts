@@ -6,7 +6,7 @@ import { publicApiTokens } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import crypto from "crypto";
 
-export async function createPublicApiToken(name: string) {
+export async function createPublicApiToken(name: string, scopes: string[] = ["read", "write"]) {
     try {
         const tenantId = await getActiveTenantId();
         const token = crypto.randomBytes(32).toString('hex');
@@ -16,6 +16,7 @@ export async function createPublicApiToken(name: string) {
             tenantId,
             name,
             tokenHash,
+            scopes,
         });
 
         // Return token only once
@@ -35,6 +36,7 @@ export async function listPublicApiTokens() {
             columns: {
                 id: true,
                 name: true,
+                scopes: true,
                 lastUsedAt: true,
                 createdAt: true
             },
