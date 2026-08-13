@@ -127,6 +127,20 @@
       "when": 1785714215326,
       "tag": "0017_usage_tenant_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786637237743,
+      "tag": "0018_organic_jocasta",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786637334329,
+      "tag": "0019_spotty_kree",
+      "breakpoints": true
     }
   ]
 }
