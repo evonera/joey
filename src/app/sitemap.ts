@@ -20,6 +20,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.7,
     })),
     {
+      url: 'https://joey.evonera.com/about',
+      lastModified: now,
+      changeFrequency: 'yearly',
+      priority: 0.5,
+    },
+    {
       url: 'https://joey.evonera.com/privacy',
       lastModified: now,
       changeFrequency: 'yearly',

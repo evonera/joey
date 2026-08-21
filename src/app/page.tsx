@@ -278,19 +278,15 @@ export default function LandingPage() {
       <footer className="border-t py-8 text-center text-zinc-500 text-sm space-y-2">
         <p>
           &copy; {new Date().getFullYear()}{" "}
-          <a
-            href="https://evonera.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-indigo-600 transition-colors"
-          >
+          <Link href="/about" className="hover:text-indigo-600 transition-colors">
             Evonera
-          </a>
+          </Link>
           . All rights reserved.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link href="/privacy" className="hover:text-indigo-600 transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-indigo-600 transition-colors">Terms</Link>
+          <Link href="/about" className="hover:text-indigo-600 transition-colors">About</Link>
           <Link href="/blog" className="hover:text-indigo-600 transition-colors">Blog</Link>
           <a href="https://github.com/evonera/joey" target="_blank" rel="noopener noreferrer" aria-label="Joey on GitHub" className="hover:text-indigo-600 transition-colors inline-flex items-center gap-1">
             GitHub <GithubIcon className="h-3 w-3 inline" />
