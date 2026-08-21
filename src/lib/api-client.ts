@@ -48,9 +48,9 @@ export const apiClient = {
     },
     approve: async (id: string, data?: { variantName?: string; content?: string }) => {
       if (IS_TAURI) {
-        return fetchApi(`/api/v1/drafts/${id}/approve`, {
+        return fetchApi('/api/v1/drafts/approve', {
           method: 'POST',
-          body: JSON.stringify(data || {}),
+          body: JSON.stringify({ id, ...data }),
         });
       }
       const actions = await import('@/app/actions/drafts');
@@ -58,9 +58,9 @@ export const apiClient = {
     },
     reject: async (id: string, feedback: string) => {
       if (IS_TAURI) {
-        return fetchApi(`/api/v1/drafts/${id}/reject`, {
+        return fetchApi('/api/v1/drafts/reject', {
           method: 'POST',
-          body: JSON.stringify({ feedback }),
+          body: JSON.stringify({ id, feedback }),
         });
       }
       const actions = await import('@/app/actions/drafts');

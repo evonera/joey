@@ -4,14 +4,19 @@ import { db } from '@/lib/db';
 import { drafts } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
-export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request) {
     try {
         const { tenantId, scopes, rateLimit } = await authenticateApiRequest(request);
         requireScope(scopes, "approve");
-        const params = await props.params;
-        const draftId = params.id;
-        const body = await request.json().catch(() => ({}));
-        const { feedback } = body;
+        const body = await request.json();
+        const { id: draftId, feedback } = body;
+
+        if (!draftId) {
+            return withRateLimitHeaders(
+                NextResponse.json({ error: "Missing draft id" }, { status: 400 }),
+                rateLimit
+            );
+        }
 
         await db.update(drafts)
             .set({ status: "rejected", errorMessage: feedback })

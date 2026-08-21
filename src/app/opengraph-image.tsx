@@ -1,5 +1,8 @@
 import { ImageResponse } from 'next/og';
 
+// Required for static export
+export const dynamic = 'force-static';
+
 // Image metadata
 export const alt = 'Joey - Autonomous Social Media Agent';
 export const size = {

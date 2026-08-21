@@ -4,14 +4,19 @@ import { db } from '@/lib/db';
 import { drafts } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
-export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request) {
     try {
         const { tenantId, scopes, rateLimit } = await authenticateApiRequest(request);
         requireScope(scopes, "approve");
-        const params = await props.params;
-        const draftId = params.id;
-        const body = await request.json().catch(() => ({}));
-        const { variantName, content } = body;
+        const body = await request.json();
+        const { id: draftId, variantName, content } = body;
+
+        if (!draftId) {
+            return withRateLimitHeaders(
+                NextResponse.json({ error: "Missing draft id" }, { status: 400 }),
+                rateLimit
+            );
+        }
 
         const updateData: Partial<typeof drafts.$inferInsert> & { status: string; errorMessage: null } = { status: "approved", errorMessage: null };
         if (variantName && content) {
@@ -23,7 +28,10 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
                 columns: { content: true }
             });
             if (!existing?.content) {
-                return NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 });
+                return withRateLimitHeaders(
+                    NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 }),
+                    rateLimit
+                );
             }
         }
 
