@@ -9,6 +9,24 @@ function GithubIcon({ className }: { className?: string }) {
   );
 }
 
+const blogTeasers = [
+  {
+    href: "/blog/how-to-automate-social-media-with-ai",
+    title: "How to Automate Social Media with AI in 2026",
+    description: "What to automate, what to keep human, and how agentic workflows actually draft posts.",
+  },
+  {
+    href: "/blog/open-source-social-media-management-joey-vs-buffer-vs-hootsuite",
+    title: "Joey vs Buffer vs Hootsuite",
+    description: "Open-source AI social media management compared with the subscription incumbents.",
+  },
+  {
+    href: "/blog/what-is-byok-bring-your-own-key-explained",
+    title: "What is BYOK AI?",
+    description: "Why bringing your own API keys cuts costs and keeps your data yours.",
+  },
+];
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 flex flex-col font-sans">
@@ -22,6 +40,22 @@ export default function LandingPage() {
           <span className="text-xl font-bold tracking-tight">Joey.ai</span>
         </div>
         <nav aria-label="Main navigation" className="flex items-center gap-4">
+          <a
+            href="https://github.com/evonera/joey"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Joey on GitHub"
+            className="hidden sm:inline-flex items-center transition-opacity hover:opacity-80"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://img.shields.io/github/stars/evonera/joey?style=social&label=Star"
+              alt="GitHub star count for evonera/joey"
+              width={90}
+              height={20}
+              loading="lazy"
+            />
+          </a>
           <Link href="/login" className="text-sm font-medium hover:text-indigo-600 transition-colors">Log in</Link>
           <Link href="/signup" className="text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-4 py-2 rounded-full hover:opacity-90 transition-opacity">
             Get Started
@@ -85,6 +119,15 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl w-full text-left">
 
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/screenshots/composer.svg"
+                alt="Joey's AI composer drafting a platform-specific social post from your brand voice settings"
+                className="w-full h-40 object-cover object-top rounded-xl border mb-6"
+                loading="lazy"
+                width={1200}
+                height={750}
+              />
               <div className="h-12 w-12 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center mb-6">
                 <Bot className="h-6 w-6" />
               </div>
@@ -93,6 +136,15 @@ export default function LandingPage() {
             </div>
 
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/screenshots/approval.svg"
+                alt="Approval dashboard showing pending drafts with one-click approve and reject buttons"
+                className="w-full h-40 object-cover object-top rounded-xl border mb-6"
+                loading="lazy"
+                width={1200}
+                height={750}
+              />
               <div className="h-12 w-12 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-xl flex items-center justify-center mb-6">
                 <ShieldCheck className="h-6 w-6" />
               </div>
@@ -101,6 +153,15 @@ export default function LandingPage() {
             </div>
 
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/screenshots/calendar.svg"
+                alt="Content calendar with color-coded scheduled posts across days of the month"
+                className="w-full h-40 object-cover object-top rounded-xl border mb-6"
+                loading="lazy"
+                width={1200}
+                height={750}
+              />
               <div className="h-12 w-12 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center mb-6">
                 <CalendarDays className="h-6 w-6" />
               </div>
@@ -109,6 +170,15 @@ export default function LandingPage() {
             </div>
 
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/screenshots/dashboard.svg"
+                alt="Joey dashboard with engagement charts, draft queue, and cross-platform performance stats"
+                className="w-full h-40 object-cover object-top rounded-xl border mb-6"
+                loading="lazy"
+                width={1200}
+                height={750}
+              />
               <div className="h-12 w-12 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center mb-6">
                 <BarChart3 className="h-6 w-6" />
               </div>
@@ -128,12 +198,52 @@ export default function LandingPage() {
           <p className="text-zinc-500 dark:text-zinc-400 mb-6">
             Joey is fully open source under the MIT license. Self-host or contribute on GitHub. No vendor lock-in, no hidden fees.
           </p>
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <a
+              href="https://github.com/evonera/joey/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Joey is licensed under MIT"
+              className="inline-flex transition-opacity hover:opacity-80"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="https://img.shields.io/badge/License-MIT-blue.svg"
+                alt="MIT License"
+                width={84}
+                height={20}
+                loading="lazy"
+              />
+            </a>
+          </div>
           <Link
             href="https://github.com/evonera/joey"
             className="inline-flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
           >
             View on GitHub <ExternalLink className="h-4 w-4" />
           </Link>
+        </section>
+
+        {/* Blog */}
+        <section className="max-w-4xl w-full mt-20 text-left">
+          <div className="flex items-baseline justify-between mb-8">
+            <h2 className="text-3xl font-bold tracking-tight">From the blog</h2>
+            <Link href="/blog" className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+              View all
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {blogTeasers.map((post) => (
+              <Link
+                key={post.href}
+                href={post.href}
+                className="rounded-2xl border bg-white dark:bg-zinc-900 p-6 shadow-sm transition-shadow hover:shadow-md"
+              >
+                <h3 className="font-bold mb-2 leading-snug">{post.title}</h3>
+                <p className="text-zinc-500 dark:text-zinc-400 text-sm">{post.description}</p>
+              </Link>
+            ))}
+          </div>
         </section>
 
         {/* FAQ */}
@@ -166,13 +276,28 @@ export default function LandingPage() {
       </main>
 
       <footer className="border-t py-8 text-center text-zinc-500 text-sm space-y-2">
-        <p>&copy; {new Date().getFullYear()} Evonera. All rights reserved.</p>
+        <p>
+          &copy; {new Date().getFullYear()}{" "}
+          <a
+            href="https://evonera.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-indigo-600 transition-colors"
+          >
+            Evonera
+          </a>
+          . All rights reserved.
+        </p>
         <div className="flex items-center justify-center gap-4">
           <Link href="/privacy" className="hover:text-indigo-600 transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-indigo-600 transition-colors">Terms</Link>
-          <Link href="https://github.com/evonera/joey" className="hover:text-indigo-600 transition-colors inline-flex items-center gap-1">
+          <Link href="/blog" className="hover:text-indigo-600 transition-colors">Blog</Link>
+          <a href="https://github.com/evonera/joey" target="_blank" rel="noopener noreferrer" aria-label="Joey on GitHub" className="hover:text-indigo-600 transition-colors inline-flex items-center gap-1">
             GitHub <GithubIcon className="h-3 w-3 inline" />
-          </Link>
+          </a>
+          <a href="https://x.com/evonera" target="_blank" rel="noopener noreferrer" aria-label="Evonera on X (Twitter)" className="hover:text-indigo-600 transition-colors">
+            X / Twitter
+          </a>
         </div>
       </footer>
     </div>

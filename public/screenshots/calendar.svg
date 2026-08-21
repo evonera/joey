@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750" viewBox="0 0 1200 750">
+  <rect width="1200" height="750" fill="#09090b"/>
+  <text x="60" y="80" font-family="-apple-system,'Segoe UI',sans-serif" font-size="26" font-weight="700" fill="#fafafa">August 2026</text>
+  <rect x="940" y="52" width="200 " height="44" rx="22" fill="#4f46e5"/>
+  <rect x="60" y="110" width="1080" height="2" fill="#27272a"/>
+  <g font-family="-apple-system,'Segoe UI',sans-serif" font-size="15" fill="#71717a">
+    <text x="90" y="140">Mon</text><text x="240" y="140">Tue</text><text x="390" y="140">Wed</text><text x="540" y="140">Thu</text><text x="690" y="140">Fri</text><text x="840" y="140">Sat</text><text x="990" y="140">Sun</text>
+  </g>
+  <g fill="#18181b">
+    <rect x="60" y="160" width="150" height="130" rx="12"/><rect x="225" y="160" width="150" height="130" rx="12"/><rect x="390" y="160" width="150" height="130" rx="12"/><rect x="555" y="160" width="150" height="130" rx="12"/><rect x="720" y="160" width="150" height="130" rx="12"/><rect x="885" y="160" width="150" height="130" rx="12"/><rect x="1050" y="160" width="90" height="130" rx="12"/>
+    <rect x="60" y="305" width="150" height="130" rx="12"/><rect x="225" y="305" width="150" height="130" rx="12"/><rect x="390" y="305" width="150" height="130" rx="12"/><rect x="555" y="305" width="150" height="130" rx="12"/><rect x="720" y="305" width="150" height="130" rx="12"/><rect x="885" y="305" width="150" height="130" rx="12"/><rect x="1050" y="305" width="90" height="130" rx="12"/>
+    <rect x="60" y="450" width="150" height="130" rx="12"/><rect x="225" y="450" width="150" height="130" rx="12"/><rect x="390" y="450" width="150" height="130" rx="12"/><rect x="555" y="450" width="150" height="130" rx="12"/><rect x="720" y="450" width="150" height="130" rx="12"/><rect x="885" y="450" width="150" height="130" rx="12"/><rect x="1050" y="450" width="90" height="130" rx="12"/>
+  </g>
+  <g font-family="-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="600">
+    <rect x="70" y="180" width="130" height="34" rx="8" fill="#4f46e5"/>
+    <text x="82" y="202" fill="#ffffff">Launch thread</text>
+    <rect x="400" y="325" width="130" height="34" rx="8" fill="#10b981"/>
+    <text x="412" y="347" fill="#052e22">Product tip</text>
+    <rect x="235" y="470" width="130" height="34" rx="8" fill="#a78bfa"/>
+    <text x="247" y="492" fill="#1e1b3a">Blog share</text>
+    <rect x="730" y="325" width="130" height="34" rx="8" fill="#f59e0b"/>
+    <text x="742" y="347" fill="#3a2506">Behind scenes</text>
+  </g>
+</svg>

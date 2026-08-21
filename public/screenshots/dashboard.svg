@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750" viewBox="0 0 1200 750">
+  <rect width="1200" height="750" fill="#09090b"/>
+  <rect x="24" y="24" width="200" height="702" rx="16" fill="#18181b"/>
+  <rect x="48" y="48" width="36" height="36" rx="10" fill="#4f46e5"/>
+  <text x="96" y="74" font-family="-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#fafafa">Joey</text>
+  <rect x="48" y="120" width="152" height="14" rx="7" fill="#3f3f46"/>
+  <rect x="48" y="160" width="120" height="14" rx="7" fill="#3f3f46"/>
+  <rect x="48" y="200" width="140" height="14" rx="7" fill="#3f3f46"/>
+  <rect x="48" y="240" width="110" height="14" rx="7" fill="#3f3f46"/>
+  <rect x="256" y="24" width="920" height="120" rx="16" fill="#18181b"/>
+  <text x="292" y="72" font-family="-apple-system,'Segoe UI',sans-serif" font-size="26" font-weight="700" fill="#fafafa">Good morning — 3 drafts await approval</text>
+  <rect x="292" y="92" width="220" height="12" rx="6" fill="#4f46e5"/>
+  <rect x="532" y="92" width="180" height="12" rx="6" fill="#27272a"/>
+  <rect x="256" y="168" width="440" height="270" rx="16" fill="#18181b"/>
+  <text x="288" y="210" font-family="-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="600" fill="#d4d4d8">Engagement this week</text>
+  <polyline points="290,400 360,360 430,380 500,320 570,340 640,280" fill="none" stroke="#4f46e5" stroke-width="6" stroke-linecap="round"/>
+  <rect x="720" y="168" width="456" height="270" rx="16" fill="#18181b"/>
+  <text x="752" y="210" font-family="-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="600" fill="#d4d4d8">Draft queue</text>
+  <rect x="752" y="236" width="392" height="44" rx="10" fill="#27272a"/>
+  <circle cx="776" cy="258" r="10" fill="#4f46e5"/>
+  <rect x="800" y="250" width="240" height="14" rx="7" fill="#3f3f46"/>
+  <rect x="752" y="292" width="392" height="44" rx="10" fill="#27272a"/>
+  <circle cx="776" cy="314" r="10" fill="#a78bfa"/>
+  <rect x="800" y="306" width="200" height="14" rx="7" fill="#3f3f46"/>
+  <rect x="752" y="348" width="392" height="44" rx="10" fill="#27272a"/>
+  <circle cx="776" cy="370" r="10" fill="#34d399"/>
+  <rect x="800" y="362" width="260" height="14" rx="7" fill="#3f3f46"/>
+  <rect x="256" y="462" width="920" height="264" rx="16" fill="#18181b"/>
+  <text x="292" y="504" font-family="-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="600" fill="#d4d4d8">Platform performance</text>
+  <rect x="292" y="540" width="80" height="150" rx="10" fill="#4f46e5"/>
+  <rect x="404" y="580" width="80" height="110" rx="10" fill="#6366f1"/>
+  <rect x="516" y="550" width="80" height="140" rx="10" fill="#818cf8"/>
+  <rect x="628" y="610" width="80" height="80" rx="10" fill="#a5b4fc"/>
+</svg>

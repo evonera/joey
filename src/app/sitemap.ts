@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { posts } from '@/lib/blog';
 
 // Required for static export
 export const dynamic = 'force-static';
@@ -12,6 +13,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'weekly',
       priority: 1,
     },
+    ...posts.map((post) => ({
+      url: `https://joey.evonera.com/blog/${post.slug}`,
+      lastModified: new Date(post.date),
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
+    })),
     {
       url: 'https://joey.evonera.com/privacy',
       lastModified: now,

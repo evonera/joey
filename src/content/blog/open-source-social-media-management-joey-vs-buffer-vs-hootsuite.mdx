@@ -1,0 +1,58 @@
+# Open-Source Social Media Management: Joey vs Buffer vs Hootsuite
+
+Buffer and Hootsuite defined social media management for a decade. In 2026 a third category has matured: open-source, AI-native tools you can self-host. This comparison covers where each approach wins, with [Joey](/) as the open-source representative.
+
+## The quick version
+
+| Dimension | Joey (open source) | Buffer | Hootsuite |
+| --- | --- | --- | --- |
+| License | MIT, self-hostable | Proprietary SaaS | Proprietary SaaS |
+| Pricing model | Free + your own API keys | Subscription tiers | Subscription tiers |
+| Content creation | AI agent drafts per platform | AI assist add-on | AI assist add-on |
+| Approval workflow | Built-in human-in-the-loop queue | Basic approval flow | Team approval flows |
+| Data ownership | Your database entirely | Vendor's cloud | Vendor's cloud |
+| Customization | Full source access | None | None |
+
+## Pricing: subscription margin vs raw cost
+
+Buffer's free tier covers a handful of channels; real usage lands on paid plans. Hootsuite sits at the higher end, historically around $99/month for professional use.
+
+The open-source math is different. Joey is free software — the costs are your LLM API usage and a publishing-layer key, both at provider rates. With BYOK there is no per-seat or per-channel markup, so heavy publishers often save hundreds of dollars monthly versus SaaS seats. The trade-off: you (or your team) operate the deployment.
+
+## Automation depth: scheduler vs agent
+
+This is the sharpest difference.
+
+**Schedulers** excel at delivery. You compose posts in their composer, attach media, and pick time slots. Their AI features summarize text or suggest tweaks inside that composer. A human writes everything; the tool ships it.
+
+**An agent like Joey inverts the flow.** You configure brand voice, platforms, and a posting schedule once. The agent then generates drafts on schedule — platform-specific formatting included — and queues them for review. Your weekly job drops from "write five posts" to "approve five drafts." For content-heavy teams this is hours back per week, not minutes.
+
+Neither model is universally better. If writing is your core competency and you only want logistics handled, a scheduler fits. If consistent presence matters more than authorship control down to the comma, an agent wins.
+
+## Trust and control: who can see your data
+
+SaaS tools hold your account credentials, content history, and analytics on their infrastructure, governed by their security practices. That is fine for most teams and it is the zero-ops option.
+
+Self-hosted Joey keeps credentials in your database with keys encrypted at rest (AES-256-GCM), behind auth you control. Auditing what software does with your social accounts becomes reading source code instead of trusting policy documents. Regulated industries and privacy-conscious brands weigh this heavily.
+
+## Where Buffer and Hootsuite still win
+
+Honest assessment:
+
+- **Zero maintenance.** SaaS means someone else patches the servers.
+- **Mature integrations.** Decades of network partnerships mean broad platform coverage.
+- **Team features at scale.** Enterprise permissioning and client management are polished.
+- **Support contracts.** A phone number to call when something breaks.
+
+Open source trades those for transparency, cost control, and modern automation depth.
+
+## When Joey is the right choice
+
+Pick an open-source AI agent if you:
+
+- Want drafts generated *for* you under human approval, not just scheduled
+- Prefer paying raw API costs over subscription margins
+- Need data residency and auditable code
+- Are comfortable running a container or small server
+
+Try [Joey](/): clone the repo, connect accounts via Zernio, set your brand voice, and let the first batch of drafts hit your approval queue this week. Read [how AI automation works in practice](/blog/how-to-automate-social-media-with-ai) if you want the workflow detail first.

@@ -42,7 +42,7 @@ export default function AccountsPage() {
     setConnecting(platform);
     const { url, error } = await generateConnectUrl(platform);
     if (url) {
-      window.location.href = url;
+      window.location.assign(url);
     } else {
       alert(error || "Failed to initiate connection");
       setConnecting(null);

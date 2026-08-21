@@ -510,34 +510,34 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: CSP header returned on all responses; no console errors from first-party scripts; no blocked requests during normal app usage.
 
 ### Phase 4.5: Social Proof & Entity Signals (1-2 days)
-- [ ] Add GitHub star badge to nav header (use `shields.io` badge or GitHub API + cache)
-- [ ] Add "Open Source — MIT License" badge in open-source section
-- [ ] Add social profile links (GitHub, Twitter) to footer
-- [ ] Link "Evonera" in footer to evonera.com (or create `/about` page)
-- [ ] Add `sameAs` URLs to Organization JSON-LD schema
+- [x] Add GitHub star badge to nav header (use `shields.io` badge or GitHub API + cache)
+- [x] Add "Open Source — MIT License" badge in open-source section
+- [x] Add social profile links (GitHub, Twitter) to footer
+- [x] Link "Evonera" in footer to evonera.com (or create `/about` page)
+- [x] Add `sameAs` URLs to Organization JSON-LD schema
 **Dependencies**: Phase 4.1, Phase 4.2
 **Reference Repos**: shields.io, GitHub REST API
 **Acceptance Criteria**: GitHub star count displays in nav; footer has verified social links; Schema.org `sameAs` is populated.
 
 ### Phase 4.6: Visual Media for Experience Signals (1-2 days)
-- [ ] Capture product screenshots: dashboard, approval flow, calendar view, composer
+- [ ] Capture product screenshots: dashboard, approval flow, calendar view, composer *(branded UI-preview SVGs shipped as placeholders — replace with real captures)*
 - [ ] Create product demo video (30-60 sec) or animated GIF of the approve→publish flow
-- [ ] Add screenshots to landing page feature cards with descriptive alt text
-- [ ] Update `opengraph-image.tsx` to include product screenshot instead of abstract logo
+- [x] Add screenshots to landing page feature cards with descriptive alt text
+- [x] Update `opengraph-image.tsx` to include product screenshot instead of abstract logo
 - [ ] Consider adding video schema markup (`VideoObject`)
 **Dependencies**: Phase 4.2
 **Reference Repos**: None
 **Acceptance Criteria**: Landing page includes at least 3 product screenshots; OG image shows real product UI; alt text is descriptive.
 
 ### Phase 4.7: Blog & Content Engine (2-3 days)
-- [ ] Create blog route group (`/blog/[slug]`) with proper metadata and breadcrumb schema
-- [ ] Implement blog with MDX or CMS integration
-- [ ] Publish 3-5 pillar articles targeting informational keywords:
+- [x] Create blog route group (`/blog/[slug]`) with proper metadata and breadcrumb schema
+- [x] Implement blog with MDX or CMS integration
+- [x] Publish 3-5 pillar articles targeting informational keywords:
   - "How to automate social media with AI in 2026"
   - "Open-source social media management: Joey vs Buffer vs Hootsuite"
   - "What is BYOK AI? Bring your own key explained"
-- [ ] Add internal links from landing page to relevant blog posts
-- [ ] Add blog posts to sitemap
+- [x] Add internal links from landing page to relevant blog posts
+- [x] Add blog posts to sitemap
 **Dependencies**: Phase 4.2
 **Reference Repos**: Next.js MDX blog examples, Contentlayer
 **Acceptance Criteria**: Blog section is live with 3+ articles; articles rank for targeted long-tail keywords within 30 days.

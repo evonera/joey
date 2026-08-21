@@ -1,0 +1,50 @@
+# What is BYOK AI? Bring Your Own Key Explained
+
+If you have shopped for AI software lately, you have seen "BYOK" — bring your own key. It changes who pays for AI usage, who sees your data, and what the software costs you monthly. Here is how it works.
+
+## The two pricing models
+
+**Proxied access (the default SaaS model).** The vendor holds an account with an AI provider, and your requests flow through their infrastructure. You never see the provider's bill; instead you pay a subscription that bundles usage with margin. Simple to start, but every AI feature is rented at a markup forever.
+
+**BYOK (bring your own key).** You obtain an API key directly from the AI provider and paste it into the software. Your requests go from the software straight to the provider, billed to *your* account at raw rates. The vendor never sits in the middle of your AI traffic.
+
+## Why BYOK usually costs less
+
+LLM providers charge per token. A drafting-heavy month might cost a few dollars of raw API usage. Under a proxied model, the same volume arrives wrapped inside a $29–$99 subscription — because the vendor is reselling tokens plus margin.
+
+With BYOK:
+
+- **You pay wholesale prices** directly to the provider
+- **Heavy usage scales linearly** — no tier upgrades because you posted more
+- **Light usage costs almost nothing** — a quiet month bills pennies
+- **You can switch providers** by swapping one key, not changing products
+
+The software vendor charges for the software (or gives it away, if open source) instead of taxing your token consumption.
+
+## The security picture
+
+BYOK done right is safer than handing credentials to every SaaS you try:
+
+- **Keys stay yours.** Revoke one key and access ends everywhere it was used.
+- **Scoped permissions.** Provider dashboards let you restrict keys to specific models or spend caps.
+- **Encryption at rest matters.** Good BYOK software encrypts your key server-side before storing it — Joey uses AES-256-GCM, so a database leak does not leak your provider keys.
+
+Two rules: never paste production keys into tools that cannot explain where they are stored, and rotate keys periodically.
+
+## What BYOK asks of you
+
+Honest trade-offs:
+
+1. **One more account.** You need an API key from an LLM provider (and in Joey's case, a [Zernio](https://zernio.com) key for publishing).
+2. **Usage visibility.** You will see the provider bill directly — some people find this a feature, others a chore.
+3. **Self-serve support.** If your key hits rate limits, you resolve it with the provider, not the software vendor.
+
+For most individuals and small teams these are minor. For anyone posting at volume, the savings overwhelm the setup cost within weeks.
+
+## BYOK + open source: the full stack
+
+BYOK pairs naturally with open source. Joey combines both: MIT-licensed code you can self-host and audit, your own LLM key for generation, and your own Zernio key for cross-platform publishing. No subscription gates features, and no middleman marks up your AI spend.
+
+If you want the broader context on why this architecture is winning, read [how AI social media automation works in 2026](/blog/how-to-automate-social-media-with-ai), or compare Joey against subscription incumbents in [Joey vs Buffer vs Hootsuite](/blog/open-source-social-media-management-joey-vs-buffer-vs-hootsuite).
+
+Ready to try it? [Get started with Joey](/signup) — connect your keys and let the first drafts land in your approval queue.

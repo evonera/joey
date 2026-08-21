@@ -1,8 +1,17 @@
 import type { NextConfig } from "next";
+import createMDX from "@next/mdx";
 import { withEve } from "eve/next";
+
+const withMDX = createMDX({
+  extension: /\.mdx?$/,
+  options: {
+    remarkPlugins: [["remark-gfm", {}]],
+  },
+});
 
 const nextConfig: NextConfig = {
   output: process.env.NEXT_OUTPUT === "export" ? "export" : "standalone",
+  pageExtensions: ["ts", "tsx", "mdx"],
   async headers() {
     return [
       {
@@ -25,4 +34,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withEve(nextConfig);
+export default withEve(withMDX(nextConfig));
