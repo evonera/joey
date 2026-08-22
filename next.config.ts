@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import createMDX from "@next/mdx";
+import bundleAnalyzer from "@next/bundle-analyzer";
 import { withEve } from "eve/next";
 
 const withMDX = createMDX({
@@ -7,6 +8,12 @@ const withMDX = createMDX({
   options: {
     remarkPlugins: [["remark-gfm", {}]],
   },
+});
+
+// Run `ANALYZE=true npm run build` to emit bundle reports.
+const withAnalyze = bundleAnalyzer({
+  enabled: process.env.ANALYZE === "true",
+  analyzerMode: "static",
 });
 
 const nextConfig: NextConfig = {
@@ -34,4 +41,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withEve(withMDX(nextConfig));
+export default withEve(withMDX(withAnalyze(nextConfig)));

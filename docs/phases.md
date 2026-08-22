@@ -543,20 +543,20 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: Blog section is live with 3+ articles; articles rank for targeted long-tail keywords within 30 days.
 
 ### Phase 4.8: About / Team Page (1 day)
-- [ ] Create `/about` page with team member bios, photos, and relevant experience
-- [ ] Add Person schema for each team member (with `sameAs` to LinkedIn/GitHub)
-- [ ] Link "Evonera" in footer to `/about`
-- [ ] Add about page to sitemap
+- [x] Create `/about` page with team member bios, photos, and relevant experience *(team roster is a placeholder array — replace with real bios/headshots)*
+- [x] Add Person schema for each team member (with `sameAs` to LinkedIn/GitHub)
+- [x] Link "Evonera" in footer to `/about`
+- [x] Add about page to sitemap
 **Dependencies**: Phase 4.1
 **Reference Repos**: None
 **Acceptance Criteria**: About page displays team credentials; Person schema validates in Rich Results Test.
 
 ### Phase 4.9: Performance Budget & Core Web Vitals (1-2 days)
-- [ ] Run Lighthouse CI on landing page and dashboard
-- [ ] Implement `next/dynamic` for heavy dashboard components (charts, calendar, dnd-kit)
-- [ ] Lazy-load recharts and react-big-calendar off critical path
-- [ ] Audit bundle size with `@next/bundle-analyzer`
-- [ ] Add image optimization for any new screenshots
+- [ ] Run Lighthouse CI on landing page and dashboard *(requires deployed URL / browser env)*
+- [x] Implement `next/dynamic` for heavy dashboard components (charts, calendar, dnd-kit)
+- [x] Lazy-load recharts and react-big-calendar off critical path
+- [x] Audit bundle size with `@next/bundle-analyzer` *(analyzer wired (`ANALYZE=true`); it is webpack-only so under Turbopack the audit was done via chunk-graph inspection: recharts isolated to its own chunk, rbc excluded from server HTML)*
+- [x] Add image optimization for any new screenshots *(screenshot slots are ~1-2KB SVG vectors)*
 **Dependencies**: Phase 4.6, Phase 4.7
 **Reference Repos**: Next.js bundle analyzer, Lighthouse CI docs
 **Acceptance Criteria**: Landing page Lighthouse Performance score ≥ 95; dashboard pages ≥ 70 on mobile.

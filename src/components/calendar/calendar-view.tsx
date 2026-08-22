@@ -1,13 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { useQueryState } from "nuqs";
-import { PostCalendar, type CalendarViewMode } from "./post-calendar";
+import type { CalendarViewMode } from "./post-calendar";
 import { getCalendarPosts, rescheduleDraft, type CalendarPost } from "@/app/actions/calendar";
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, addHours } from "date-fns";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PostDetailsDialog } from "./post-details-dialog";
+
+// react-big-calendar + react-dnd are heavy; load them only when the calendar renders.
+const PostCalendar = dynamic(
+  () => import("./post-calendar").then((m) => m.PostCalendar),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-[700px] items-center justify-center rounded-xl border bg-white dark:bg-zinc-900">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-indigo-600" />
+      </div>
+    ),
+  },
+);
 
 export function CalendarView() {
   const router = useRouter();

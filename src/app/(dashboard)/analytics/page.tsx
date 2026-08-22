@@ -1,20 +1,15 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { getAnalytics } from "@/app/actions/analytics";
 import { Loader2, TrendingUp } from "lucide-react";
+
+// recharts is large; keep it off the initial dashboard bundle.
+const AnalyticsCharts = dynamic(() => import("./analytics-charts"), {
+  ssr: false,
+  loading: () => <div className="h-72 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />,
+});
 
 const RANGE_OPTIONS = [
   { label: "7 days", value: 7 },
@@ -90,43 +85,7 @@ export default function AnalyticsPage() {
           <div className="space-y-6">
             <SummaryCards summary={snapshot.summary} />
 
-            {snapshot.series.length > 0 && (
-              <Section title="Engagement Over Time" subtitle="Daily impressions, likes, comments, and shares">
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={snapshot.series} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
-                      <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#888" />
-                      <YAxis tick={{ fontSize: 12 }} stroke="#888" />
-                      <Tooltip />
-                      <Legend />
-                      <Line type="monotone" dataKey="impressions" name="Impressions" stroke="#6366f1" strokeWidth={2} />
-                      <Line type="monotone" dataKey="likes" name="Likes" stroke="#10b981" strokeWidth={2} />
-                      <Line type="monotone" dataKey="comments" name="Comments" stroke="#f59e0b" strokeWidth={2} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </Section>
-            )}
-
-            {snapshot.byPlatform.length > 0 && (
-              <Section title="By Platform" subtitle="Aggregated performance across each social platform">
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={snapshot.byPlatform} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
-                      <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#888" />
-                      <YAxis tick={{ fontSize: 12 }} stroke="#888" />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="impressions" name="Impressions" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="likes" name="Likes" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="comments" name="Comments" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </Section>
-            )}
+            <AnalyticsCharts series={snapshot.series} byPlatform={snapshot.byPlatform} />
 
             {snapshot.posts.length > 0 && (
               <Section title="Per-Post Performance" subtitle="Individual posts and their engagement across platforms">
