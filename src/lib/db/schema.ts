@@ -328,6 +328,8 @@ export const flows = pgTable("flows", {
   description: text("description"),
   graph: jsonb("graph").notNull(),
   status: varchar("status", { length: 20 }).default("draft").notNull(), // 'draft' | 'active' | 'paused'
+  /** Secret for the flow's incoming-webhook trigger URL (?secret= / header). */
+  webhookSecret: text("webhook_secret"),
   lastRunAt: timestamp("last_run_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

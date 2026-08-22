@@ -63,11 +63,11 @@ export const approvalGateConfig = z.object({
 });
 
 export const llmTaskConfig = z.object({
-  provider: z.enum(["openai", "anthropic"]).default("openai"),
+  provider: z.enum(["openai", "anthropic", "openrouter"]).default("openai"),
   model: z
     .string()
     .default("gpt-4o-mini")
-    .describe("Model id, e.g. gpt-4o-mini, gpt-4o, claude-sonnet-4-5"),
+    .describe("Model id — gpt-4o-mini, claude-sonnet-4-5, meta-llama/llama-3.3-70b-instruct (OpenRouter)…"),
   systemPrompt: z.string().describe("What this step should do (the system prompt)"),
   userTemplate: z
     .string()
@@ -131,6 +131,57 @@ export const tavilySearchConfig = z.object({
   includeAnswer: z.boolean().default(true),
 });
 
+export const incomingWebhookConfig = z.object({});
+
+export const httpConfig = z.object({
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
+  url: z.string().describe("Request URL ({{input}} inserts incoming data as text)"),
+  headersJson: z.string().optional().describe('Headers as JSON, e.g. {"Authorization":"Bearer …"}'),
+  bodyJson: z.string().optional().describe("Request body as JSON ({{input}} inserts incoming data)"),
+});
+
+export const rssConfig = z.object({
+  url: z.string().describe("RSS/Atom feed URL"),
+  limit: z.number().int().min(1).max(100).default(20),
+});
+
+export const redditConfig = z.object({
+  subreddit: z.string().describe("Subreddit name without r/"),
+  sort: z.enum(["hot", "new", "top"]).default("hot"),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+
+export const youtubeTranscriptConfig = z.object({
+  videoUrlField: z
+    .string()
+    .optional()
+    .describe("Field holding the YouTube URL (blank = input is the URL)"),
+});
+
+export const imageGenConfig = z.object({
+  prompt: z.string().describe("Image prompt ({{input}} inserts incoming data as text)"),
+  size: z.enum(["1024x1024", "1536x1024", "1024x1536"]).default("1024x1024"),
+  quality: z.enum(["low", "medium", "high"]).default("medium"),
+});
+
+export const saveAssetConfig = z.object({
+  urlField: z
+    .string()
+    .optional()
+    .describe("Field holding the file URL (blank = input is the URL)"),
+  filename: z.string().optional().describe("Filename in the asset library"),
+});
+
+export const splitConfig = z.object({
+  aWeightPercent: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .default(50)
+    .describe("Chance of taking branch 'a' (0–100); remainder goes to 'b'"),
+});
+
 export type CatalogMeta = {
   type: string;
   category: "trigger" | "data" | "transform" | "ai" | "action" | "logic";
@@ -147,9 +198,13 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "trigger.manual", category: "trigger", label: "Manual start", description: "Starts the flow when run manually (or on a schedule you set).", inputs: [], outputs: ["data"], isTrigger: true, configSchema: manualTriggerConfig },
   { type: "trigger.schedule", category: "trigger", label: "Schedule", description: "Runs the flow on a fixed interval while the flow is active.", inputs: [], outputs: ["data"], isTrigger: true, configSchema: scheduleTriggerConfig },
   { type: "trigger.webhook", category: "trigger", label: "Zernio webhook", description: "Starts the flow when Zernio sends a matching real-time event (comments, mentions).", inputs: [], outputs: ["event"], isTrigger: true, configSchema: webhookTriggerConfig },
+  { type: "trigger.incoming_webhook", category: "trigger", label: "Incoming webhook", description: "Starts the flow when anything POSTs to this flow's private URL (CMS, Slack command, scripts…). Select this node to see the URL + secret.", inputs: [], outputs: ["payload"], isTrigger: true, configSchema: incomingWebhookConfig },
   { type: "data.apify_actor", category: "data", label: "Apify Actor", description: "Runs any Apify actor synchronously and returns its dataset items (scrapes, extracts…). Needs an Apify token in Settings → API Keys.", inputs: ["input"], outputs: ["items"], configSchema: apifyActorConfig },
   { type: "data.exa_search", category: "data", label: "Web Research (Exa)", description: "Neural web search via Exa for research-grade results on a topic. Needs an Exa key in Settings → API Keys.", inputs: ["topic"], outputs: ["results"], configSchema: exaSearchConfig },
   { type: "data.tavily_search", category: "data", label: "Web Research (Tavily)", description: "Fast web search with an LLM-ready answer via Tavily. Needs a Tavily key in Settings → API Keys.", inputs: ["topic"], outputs: ["results"], configSchema: tavilySearchConfig },
+  { type: "data.http", category: "data", label: "HTTP Request", description: "Calls any REST API — method, URL, headers and body, with {{input}} templating. The universal integration escape hatch.", inputs: ["input"], outputs: ["response"], configSchema: httpConfig },
+  { type: "data.rss", category: "data", label: "RSS / Atom feed", description: "Fetches a feed's latest entries (title, link, guid, date, summary). Blogs, YouTube channels, podcasts, news.", inputs: [], outputs: ["items"], configSchema: rssConfig },
+  { type: "data.reddit", category: "data", label: "Reddit r/", description: "Pulls hot/new/top posts from a public subreddit for trend mining. No key required.", inputs: [], outputs: ["posts"], configSchema: redditConfig },
   { type: "transform.filter", category: "transform", label: "Filter", description: "Keeps array items matching a condition. Non-array input passes through unchanged.", inputs: ["items"], outputs: ["items"], configSchema: filterConfig },
   { type: "transform.sort", category: "transform", label: "Sort / Top-N", description: "Sorts array items by a field and optionally keeps the top N.", inputs: ["items"], outputs: ["items"], configSchema: sortTopNConfig },
   { type: "transform.dedupe", category: "transform", label: "Dedupe", description: "Removes duplicate array items by a field value.", inputs: ["items"], outputs: ["items"], configSchema: dedupeConfig },
@@ -158,8 +213,12 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "logic.approval", category: "logic", label: "Approval gate", description: "Pauses the run until you approve or reject in the dashboard. On approve, downstream nodes execute; on reject the run ends.", inputs: ["data"], outputs: ["data"], configSchema: approvalGateConfig },
   { type: "ai.llm", category: "ai", label: "AI Task", description: "Runs an LLM over the incoming data. Optionally forces structured JSON via a schema. Spend counts against your LLM budget.", inputs: ["data"], outputs: ["result"], configSchema: llmTaskConfig },
   { type: "ai.transcribe", category: "ai", label: "Transcribe", description: "Downloads an audio/video URL and transcribes it with OpenAI Whisper. Uses your OpenAI key; spend counts against budget.", inputs: ["media"], outputs: ["transcript"], configSchema: transcribeConfig },
+  { type: "ai.youtube_transcript", category: "ai", label: "YouTube transcript", description: "Fetches a YouTube video's transcript via Supadata for repurposing into posts. Needs a Supadata key in Settings → API Keys.", inputs: ["video"], outputs: ["transcript"], configSchema: youtubeTranscriptConfig },
+  { type: "ai.image", category: "ai", label: "Generate image", description: "Generates an image with gpt-image-1 from your OpenAI key, uploads it to your asset library, outputs its URL. Spend counts against budget.", inputs: ["idea"], outputs: ["image"], configSchema: imageGenConfig },
   { type: "action.create_draft", category: "action", label: "Create Draft", description: "Creates a draft in your approval queue. Nothing publishes until you approve it — this is how every flow must end.", inputs: ["data"], outputs: ["draft"], configSchema: createDraftConfig },
   { type: "action.notify", category: "action", label: "Notify me", description: "Sends you an in-app notification (and email if your preferences allow).", inputs: ["data"], outputs: ["data"], configSchema: notifyConfig },
+  { type: "action.save_asset", category: "action", label: "Save to Assets", description: "Downloads a file URL into your asset library so drafts can attach it.", inputs: ["file"], outputs: ["asset"], configSchema: saveAssetConfig },
+  { type: "logic.split", category: "logic", label: "A/B split", description: "Randomly routes the flow down branch 'a' or 'b' with your chosen weighting — for A/B testing hooks and variants.", inputs: ["data"], outputs: ["a", "b"], configSchema: splitConfig },
 ];
 
 const metaByType = new Map(NODE_CATALOG.map((m) => [m.type, m]));

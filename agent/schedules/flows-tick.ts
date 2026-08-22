@@ -2,7 +2,7 @@ import { defineSchedule } from "eve/schedules";
 import { db } from "@/lib/db";
 import { flows, flowRuns } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { executeFlow } from "@/lib/flows/executor";
+const { startFlowRun } = await import("@/lib/flows/run-flow-server");
 import { getNode } from "@/lib/flows/registry";
 
 /**
@@ -40,46 +40,11 @@ export default defineSchedule({
         });
         if (inFlight) continue;
 
-        const [run] = await db
-          .insert(flowRuns)
-          .values({ flowId: flow.id, tenantId: flow.tenantId, trigger: "schedule" })
-          .returning();
-
-        const result = await executeFlow(
-          flow.graph as Parameters<typeof executeFlow>[0],
-          {
-            tenantId: flow.tenantId,
-            runId: run.id,
-            flowId: flow.id,
-            triggerPayload: { scheduledAt: new Date().toISOString() },
-          },
-          {
-            onStepUpdate: async (step) => {
-              const r = await db.query.flowRuns.findFirst({
-                where: eq(flowRuns.id, run.id),
-                columns: { steps: true },
-              });
-              if (!r) return;
-              const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
-              const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
-              if (idx >= 0) steps[idx] = step;
-              else steps.push(step);
-              await db.update(flowRuns).set({ steps }).where(eq(flowRuns.id, run.id));
-            },
-          },
-        );
-
-        await db
-          .update(flowRuns)
-          .set({
-            status: result.status,
-            steps: result.steps,
-            error: result.error ?? null,
-            finishedAt: new Date(),
-          })
-          .where(eq(flowRuns.id, run.id));
-
-        await db.update(flows).set({ lastRunAt: new Date() }).where(eq(flows.id, flow.id));
+        await startFlowRun({
+          flow,
+          trigger: "schedule",
+          triggerPayload: { scheduledAt: new Date().toISOString() },
+        });
       } catch (err) {
         console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
       }

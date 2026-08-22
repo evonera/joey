@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowTemplates, drafts } from "@/lib/db/schema";
 import { and, eq, desc } from "drizzle-orm";
+import crypto from "crypto";
 import { getActiveTenantId } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
 import { executeFlow } from "@/lib/flows/executor";
@@ -43,6 +44,13 @@ export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: Flow
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
   if (!flow) return { error: "Flow not found" };
+
+  // Provision a webhook secret lazily so every flow has a stable URL.
+  if (!flow.webhookSecret) {
+    const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
+    await db.update(flows).set({ webhookSecret: secret }).where(eq(flows.id, id));
+    flow.webhookSecret = secret;
+  }
 
   const runs = await db.query.flowRuns.findMany({
     where: and(eq(flowRuns.flowId, id), eq(flowRuns.tenantId, tenantId)),
@@ -111,19 +119,6 @@ export async function setFlowStatus(
   return { ok: true };
 }
 
-async function persistStep(tenantId: string, runId: string, step: FlowStep) {
-  const run = await db.query.flowRuns.findFirst({
-    where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
-    columns: { steps: true },
-  });
-  if (!run) return;
-  const steps = (run.steps as FlowStep[]) ?? [];
-  const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
-  if (idx >= 0) steps[idx] = step;
-  else steps.push(step);
-  await db.update(flowRuns).set({ steps }).where(eq(flowRuns.id, runId));
-}
-
 export async function runFlow(
   id: string,
   triggerPayload?: unknown,
@@ -150,47 +145,14 @@ async function executeRunWithPorts(opts: {
   cachedOutputs?: Record<string, unknown>;
   approvedNodeIds?: string[];
 }): Promise<{ runId: string; status: RunStatus }> {
-  let runId = "";
-  const [run] = await db
-    .insert(flowRuns)
-    .values({
-      flowId: opts.flow.id,
-      tenantId: opts.tenantId,
-      trigger: opts.trigger,
-      triggerPayload: opts.triggerPayload ?? null,
-      approvedNodeIds: opts.approvedNodeIds ?? [],
-    })
-    .returning();
-  runId = run.id;
-
-  const result = await executeFlow(
-    opts.flow.graph as Parameters<typeof executeFlow>[0],
-    {
-      tenantId: opts.tenantId,
-      runId,
-      flowId: opts.flow.id,
-      triggerPayload: opts.triggerPayload,
-      cachedOutputs: opts.cachedOutputs,
-      approvedNodeIds: opts.approvedNodeIds,
-    },
-    {
-      onStepUpdate: (step) => persistStep(opts.tenantId, runId, step),
-    },
-  );
-
-  await db
-    .update(flowRuns)
-    .set({
-      status: result.status,
-      steps: result.steps,
-      error: result.error ?? null,
-      finishedAt: new Date(),
-    })
-    .where(eq(flowRuns.id, runId));
-
-  await db.update(flows).set({ lastRunAt: new Date() }).where(eq(flows.id, opts.flow.id));
-
-  return { runId, status: result.status };
+  const { startFlowRun } = await import("@/lib/flows/run-flow-server");
+  return startFlowRun({
+    flow: opts.flow,
+    trigger: opts.trigger,
+    triggerPayload: opts.triggerPayload,
+    cachedOutputs: opts.cachedOutputs,
+    approvedNodeIds: opts.approvedNodeIds,
+  });
 }
 
 export async function resumeRun(
@@ -198,6 +160,7 @@ export async function resumeRun(
   approve: boolean,
 ): Promise<{ ok?: boolean; status?: RunStatus; error?: string }> {
   const tenantId = await getActiveTenantId();
+  const { persistStep } = await import("@/lib/flows/run-flow-server");
   const run = await db.query.flowRuns.findFirst({
     where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
   });
@@ -395,6 +358,20 @@ export async function deleteFlow(id: string): Promise<{ ok?: boolean; error?: st
     .returning();
   if (deleted.length === 0) return { error: "Flow not found" };
   return { ok: true };
+}
+
+export async function regenerateWebhookSecret(
+  id: string,
+): Promise<{ secret?: string; error?: string }> {
+  const tenantId = await getActiveTenantId();
+  const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
+  const updated = await db
+    .update(flows)
+    .set({ webhookSecret: secret })
+    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)))
+    .returning({ id: flows.id });
+  if (updated.length === 0) return { error: "Flow not found" };
+  return { secret };
 }
 
 /**

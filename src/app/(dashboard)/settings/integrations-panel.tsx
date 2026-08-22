@@ -11,6 +11,8 @@ const INTEGRATIONS = [
   { provider: "apify", label: "Apify", placeholder: "apify_api_…", url: "https://console.apify.com/settings/integrations", hint: "Scrapers (Instagram, TikTok, LinkedIn…)" },
   { provider: "exa", label: "Exa", placeholder: "Exa API key", url: "https://dashboard.exa.ai/api-keys", hint: "Neural web research" },
   { provider: "tavily", label: "Tavily", placeholder: "tvly-…", url: "https://app.tavily.com/home", hint: "Fast web search + answers" },
+  { provider: "supadata", label: "Supadata", placeholder: "sd_…", url: "https://supadata.ai", hint: "YouTube transcripts" },
+  { provider: "openrouter", label: "OpenRouter", placeholder: "sk-or-…", url: "https://openrouter.ai/keys", hint: "One key → 100s of LLM models" },
 ] as const;
 
 export function IntegrationsPanel() {

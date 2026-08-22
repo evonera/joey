@@ -1,57 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { verifyWebhookSignature, storeWebhookEvent, markWebhookProcessed, resolveTenantFromPayload, storeEngagementItem, type ZernioWebhookPayload } from "@/lib/webhooks";
-import { webhookEvents, flows, flowRuns } from "@/lib/db/schema";
+import { webhookEvents, flows } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { executeFlow } from "@/lib/flows/executor";
 
 /** Starts every active flow whose trigger.webhook matches the event. */
 async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload: unknown) {
+  const { getNodeMeta } = await import("@/lib/flows/catalog");
+  const { startFlowRun } = await import("@/lib/flows/run-flow-server");
+
   const activeFlows = await db.query.flows.findMany({
     where: and(eq(flows.tenantId, tenantId), eq(flows.status, "active")),
   });
 
   for (const flow of activeFlows) {
-    const graph = flow.graph as { nodes?: { id: string; type: string; config?: Record<string, unknown> }[] };
+    const graph = flow.graph as { nodes?: { type: string; config?: Record<string, unknown> }[] };
     const trigger = graph.nodes?.find((n) => n.type === "trigger.webhook");
     if (!trigger) continue;
     if (trigger.config?.eventName !== eventName) continue;
+    void getNodeMeta;
 
     try {
-      const [run] = await db
-        .insert(flowRuns)
-        .values({ flowId: flow.id, tenantId, trigger: "webhook", triggerPayload: payload as object })
-        .returning();
-
-      const result = await executeFlow(
-        flow.graph as Parameters<typeof executeFlow>[0],
-        { tenantId, runId: run.id, flowId: flow.id, triggerPayload: payload },
-        {
-          onStepUpdate: async (step) => {
-            const r = await db.query.flowRuns.findFirst({
-              where: eq(flowRuns.id, run.id),
-              columns: { steps: true },
-            });
-            if (!r) return;
-            const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
-            const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
-            if (idx >= 0) steps[idx] = step;
-            else steps.push(step);
-            await db.update(flowRuns).set({ steps }).where(eq(flowRuns.id, run.id));
-          },
-        },
-      );
-
-      await db
-        .update(flowRuns)
-        .set({
-          status: result.status,
-          steps: result.steps,
-          error: result.error ?? null,
-          finishedAt: new Date(),
-        })
-        .where(eq(flowRuns.id, run.id));
+      await startFlowRun({ flow, trigger: "webhook", triggerPayload: payload });
     } catch (err) {
       console.error(`[webhooks/zernio] Flow ${flow.id} failed on ${eventName}:`, err);
     }

@@ -1,0 +1,1 @@
+ALTER TABLE "flows" ADD COLUMN "webhook_secret" text;

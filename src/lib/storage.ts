@@ -42,6 +42,29 @@ export async function generateUploadUrl(filename: string, contentType: string, t
   return { uploadUrl, key, publicUrl: buildPublicUrl(key) };
 }
 
+/** Server-side direct upload (flow nodes, generated media). */
+export async function uploadBufferToR2(
+  body: Buffer | Uint8Array,
+  contentType: string,
+  tenantId: string,
+): Promise<{ key: string; publicUrl: string }> {
+  const key = `${tenantId}/${crypto.randomUUID()}`;
+  const client = getS3Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: getBucketName(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+  return { key, publicUrl: buildPublicUrl(key) };
+}
+
+export function getBucket(): string {
+  return getBucketName();
+}
+
 export async function headObject(key: string) {
   const client = getS3Client();
   const command = new HeadObjectCommand({
