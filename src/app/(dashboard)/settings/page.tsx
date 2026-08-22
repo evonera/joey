@@ -8,6 +8,7 @@ import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
 import { getNotificationPreferences, saveNotificationPreferences } from "@/app/actions/notifications";
 import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle, Sparkles, Eye, EyeOff, Trash2, PlugZap, Bell } from "lucide-react";
 import { ConnectionsPanel } from "./connections-panel";
+import { ApiTokensPanel } from "./api-tokens-panel";
 
 const DAYS_OF_WEEK = [
   { id: "mon", label: "Monday" },
@@ -697,6 +698,18 @@ export default function SettingsPage() {
               <p className="text-xs text-zinc-500">Your fal.ai API key (FAL_KEY). Get one at <a href="https://fal.ai/dashboard" target="_blank" className="text-indigo-600 hover:underline">fal.ai/dashboard</a>. Stored encrypted.</p>
             </div>
           </div>
+        </section>
+
+        {/* Developer API */}
+        <section className="mb-8 rounded-2xl bg-zinc-800/50 p-6">
+          <h2 className="font-semibold text-zinc-900 dark:text-white">Developer API</h2>
+          <p className="text-xs text-zinc-500 mt-1 mb-5">
+            Bearer tokens for the public REST API (<code className="font-mono">/api/v1</code>).{" "}
+            <a href="/docs" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+              Read the docs →
+            </a>
+          </p>
+          <ApiTokensPanel />
         </section>
 
       </form>

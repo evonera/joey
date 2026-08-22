@@ -438,10 +438,10 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: Free users hit limits and are prompted to pay.
 
 ### Phase 3.13: Public API & Developer Docs (2 days)
--[x] Expose REST API for core actions (create draft, get analytics)
--[x] Implement API token generation in settings
--[x] Write OpenAPI/Swagger documentation
--[x] Publish developer documentation site
+-[x] Expose REST API for core actions (create draft, get analytics) *(v1: accounts, drafts, posts + approve/reject; Bearer auth, scopes, 60 req/min rate limit)*
+-[x] Implement API token generation in settings *(Settings → Developer API: hashed tokens shown once, scope picker, revoke)*
+-[x] Write OpenAPI/Swagger documentation *(served at `/api/openapi.json`, OpenAPI 3.1)*
+-[x] Publish developer documentation site *(public `/docs` page: auth, scopes, endpoints, curl examples)*
 **Dependencies**: Phase 3.10
 **Reference Repos**: Mintlify or Docusaurus
 **Acceptance Criteria**: External developers can build custom integrations via API tokens.
