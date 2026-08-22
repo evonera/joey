@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, integer, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // --- BetterAuth Required Tables ---
@@ -310,4 +310,66 @@ export const notificationPreferences = pgTable("notification_preferences", {
   emailAddress: text("email_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// Flow Builder (Phase 3.3/3.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * A user-composed automation graph. `graph` holds the full serializable board:
+ * { nodes: [{ id, type, config, position }], edges: [{ from, to }], viewport }.
+ * Node/edge semantics are validated by src/lib/flows/validation.ts on save.
+ */
+export const flows = pgTable("flows", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description"),
+  graph: jsonb("graph").notNull(),
+  status: varchar("status", { length: 20 }).default("draft").notNull(), // 'draft' | 'active' | 'paused'
+  lastRunAt: timestamp("last_run_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("flows_tenant_id_idx").on(table.tenantId, table.updatedAt),
+}));
+
+/**
+ * One execution of a flow. `steps` persists every node's lifecycle + output so
+ * runs are debuggable and resumable (restart-from-failed-node in P2):
+ * steps: [{ nodeId, type, status, input?, output?, error?, startedAt, finishedAt }]
+ */
+export const flowRuns = pgTable("flow_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  flowId: text("flow_id").notNull().references(() => flows.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 30 }).default("running").notNull(), // 'running' | 'waiting_approval' | 'succeeded' | 'failed'
+  trigger: varchar("trigger", { length: 30 }).default("manual").notNull(), // 'manual' | 'schedule' | 'webhook'
+  triggerPayload: jsonb("trigger_payload"),
+  steps: jsonb("steps").default([]).notNull(),
+  approvedNodeIds: jsonb("approved_node_ids").default([]).notNull(),
+  error: text("error"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  finishedAt: timestamp("finished_at"),
+}, (table) => ({
+  flowIdx: index("flow_runs_flow_id_idx").on(table.flowId, table.startedAt),
+  tenantIdx: index("flow_runs_tenant_id_idx").on(table.tenantId),
+}));
+
+/**
+ * Installable flow templates (Phase 3.5/3.6 merged into the Flow Builder):
+ * official seeds ship with the app; users can publish their own flows here.
+ */
+export const flowTemplates = pgTable("flow_templates", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  slug: varchar("slug", { length: 140 }).notNull().unique(),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 50 }).default("general").notNull(),
+  graph: jsonb("graph").notNull(),
+  isOfficial: boolean("is_official").default(false).notNull(),
+  authorTenantId: text("author_tenant_id").references(() => tenants.id, { onDelete: "set null" }),
+  installs: integer("installs").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });

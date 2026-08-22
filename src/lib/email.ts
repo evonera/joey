@@ -1,7 +1,14 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@joey.app';
+
+// Constructed on first send so the app can boot without RESEND_API_KEY
+// (self-hosted installs that don't use email).
+function getResend(): Resend {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) throw new Error("RESEND_API_KEY is not set — email sending is unavailable.");
+    return new Resend(apiKey);
+}
 
 export interface EmailOptions {
   to: string;
@@ -11,7 +18,7 @@ export interface EmailOptions {
 
 export async function sendEmail({ to, subject, html }: EmailOptions): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: fromEmail,
       to,
       subject,
