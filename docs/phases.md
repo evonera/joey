@@ -501,10 +501,10 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: `https://joey.evonera.com/llms.txt` returns valid markdown; AI crawlers can cite structured answers.
 
 ### Phase 4.4: Content Security Policy (1 day)
-- [ ] Research CSP requirements: which external domains Joey connects to (Zernio, LLM providers, image services)
-- [ ] Add `Content-Security-Policy` header to `next.config.ts` with appropriate `script-src`, `style-src`, `connect-src`, `img-src`, `frame-src`
-- [ ] Test all dashboard functionality with CSP active
-- [ ] Fallback to `Content-Security-Policy-Report-Only` first, iterate on violations
+- [x] Research CSP requirements: which external domains Joey connects to (Zernio, LLM providers, image services) *(browser talks only to same-origin APIs + img.shields.io, R2 assets, social avatar CDNs; Zernio/LLM/Dodo are server-side)*
+- [x] Add `Content-Security-Policy` header to `next.config.ts` with appropriate `script-src`, `style-src`, `connect-src`, `img-src`, `frame-src` *(enforcing baseline; `unsafe-eval` now dev-only)*
+- [ ] Test all dashboard functionality with CSP active *(final pass needs a browser session against production; Report-Only header is collecting violations meanwhile)*
+- [x] Fallback to `Content-Security-Policy-Report-Only` first, iterate on violations *(tightened candidate (enumerated img/connect origins, base-uri, form-action, object-src, upgrade-insecure-requests) ships as Report-Only; flip to enforcing once clean in prod)*
 **Dependencies**: Phase 4.0
 **Reference Repos**: MDN CSP docs, securityheaders.com
 **Acceptance Criteria**: CSP header returned on all responses; no console errors from first-party scripts; no blocked requests during normal app usage.
