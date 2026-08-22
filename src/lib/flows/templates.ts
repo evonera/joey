@@ -115,9 +115,9 @@ export const officialTemplates: OfficialTemplate[] = [
   },
   {
     slug: "comment-responder",
-    name: "AI Comment Responder (with approval)",
+    name: "AI Comment Responder (approve from Telegram)",
     description:
-      "When Zernio reports a new comment, AI drafts a reply in your brand voice. The reply waits at an approval gate before anything is sent.",
+      "When Zernio reports a new comment, AI drafts a reply in your brand voice and sends Approve/Reject buttons straight to your Telegram. Nothing is sent until you tap Approve.",
     category: "engagement",
     graph: {
       nodes: [
@@ -129,11 +129,12 @@ export const officialTemplates: OfficialTemplate[] = [
             "Draft a short, warm, on-brand reply to this comment. Max 2 sentences. Plain text.",
           userTemplate: "{{input}}",
         }),
-        node("g1", "logic.approval", 520, {
-          prompt: "Approve this reply? It will be sent from your account.",
+        node("g1", "logic.telegram_approval", 520, {
+          chatId: "YOUR_CHAT_ID",
+          prompt: "New comment reply ready:\n\n{{input}}\n\nApprove to send?",
         }),
-        node("n1", "action.notify", 760, {
-          title: "Reply approved",
+        node("n1", "action.notify", 780, {
+          title: "Reply approved via Telegram",
           messageTemplate: "Approved reply: {{input}}",
         }),
       ],

@@ -375,6 +375,34 @@ export async function regenerateWebhookSecret(
 }
 
 /**
+ * Points the workspace's Telegram bot at this deployment so approval-button
+ * presses reach us. Requires NEXT_PUBLIC_APP_URL/origin to be publicly
+ * reachable over HTTPS and TELEGRAM_WEBHOOK_SECRET to be set server-side.
+ */
+export async function connectTelegramWebhook(
+  originUrl?: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  const tenantId = await getActiveTenantId();
+  const baseUrl =
+    originUrl?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL;
+  if (!baseUrl || !baseUrl.startsWith("https://")) {
+    return {
+      error:
+        "A public HTTPS URL is required for Telegram webhooks (set NEXT_PUBLIC_APP_URL on self-hosted installs).",
+    };
+  }
+  const { setTelegramWebhook } = await import("@/lib/telegram");
+  try {
+    await setTelegramWebhook(tenantId, baseUrl);
+    return { ok: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "setWebhook failed" };
+  }
+}
+
+/**
  * Seeds the built-in official templates once. Safe to call repeatedly.
  */
 async function ensureOfficialTemplates(): Promise<void> {

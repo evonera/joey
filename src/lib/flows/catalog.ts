@@ -182,6 +182,19 @@ export const splitConfig = z.object({
     .describe("Chance of taking branch 'a' (0–100); remainder goes to 'b'"),
 });
 
+export const telegramSendConfig = z.object({
+  chatId: z
+    .string()
+    .describe("Telegram chat id (message your bot, then check https://t.me/userinfobot)"),
+  messageTemplate: z.string().describe("Message text; {{input}} inserts incoming data as JSON"),
+  parseMode: z.enum(["", "HTML", "Markdown"]).optional(),
+});
+
+export const telegramApprovalConfig = z.object({
+  chatId: z.string().describe("Telegram chat id that receives the approval buttons"),
+  prompt: z.string().describe("What you're being asked to approve ({{input}} inserts incoming data)"),
+});
+
 export type CatalogMeta = {
   type: string;
   category: "trigger" | "data" | "transform" | "ai" | "action" | "logic";
@@ -218,6 +231,8 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "action.create_draft", category: "action", label: "Create Draft", description: "Creates a draft in your approval queue. Nothing publishes until you approve it — this is how every flow must end.", inputs: ["data"], outputs: ["draft"], configSchema: createDraftConfig },
   { type: "action.notify", category: "action", label: "Notify me", description: "Sends you an in-app notification (and email if your preferences allow).", inputs: ["data"], outputs: ["data"], configSchema: notifyConfig },
   { type: "action.save_asset", category: "action", label: "Save to Assets", description: "Downloads a file URL into your asset library so drafts can attach it.", inputs: ["file"], outputs: ["asset"], configSchema: saveAssetConfig },
+  { type: "action.telegram_send", category: "action", label: "Telegram send", description: "Sends a message to a Telegram chat via your bot. Needs a bot token in Settings → Flow integrations.", inputs: ["data"], outputs: ["data"], configSchema: telegramSendConfig },
+  { type: "logic.telegram_approval", category: "logic", label: "Telegram approval", description: "Sends Approve/Reject buttons to your Telegram, then pauses the run until you tap one. Requires the instance webhook to be connected (Settings → Flow integrations).", inputs: ["data"], outputs: ["data"], configSchema: telegramApprovalConfig },
   { type: "logic.split", category: "logic", label: "A/B split", description: "Randomly routes the flow down branch 'a' or 'b' with your chosen weighting — for A/B testing hooks and variants.", inputs: ["data"], outputs: ["a", "b"], configSchema: splitConfig },
 ];
 

@@ -5,6 +5,7 @@ import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Loader2, Trash2 } from "lucide-react";
+import { connectTelegramWebhook } from "@/app/actions/flows";
 import { toast } from "sonner";
 
 const INTEGRATIONS = [
@@ -13,12 +14,14 @@ const INTEGRATIONS = [
   { provider: "tavily", label: "Tavily", placeholder: "tvly-…", url: "https://app.tavily.com/home", hint: "Fast web search + answers" },
   { provider: "supadata", label: "Supadata", placeholder: "sd_…", url: "https://supadata.ai", hint: "YouTube transcripts" },
   { provider: "openrouter", label: "OpenRouter", placeholder: "sk-or-…", url: "https://openrouter.ai/keys", hint: "One key → 100s of LLM models" },
+  { provider: "telegram", label: "Telegram Bot", placeholder: "123456:ABC-DEF… (from @BotFather)", url: "https://core.telegram.org/bots/tutorial#obtain-your-bot-token", hint: "Flow notifications + approve-from-phone buttons" },
 ] as const;
 
 export function IntegrationsPanel() {
   const [existing, setExisting] = useState<Record<string, boolean>>({});
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -53,6 +56,17 @@ export function IntegrationsPanel() {
     await deleteApiKey(provider);
     setExisting((e) => ({ ...e, [provider]: false }));
     toast.success("Key removed");
+  }
+
+  async function handleConnectWebhook() {
+    setConnecting(true);
+    try {
+      const res = await connectTelegramWebhook(window.location.origin);
+      if (res.ok) toast.success("Telegram webhook connected — approve buttons are live");
+      else toast.error(res.error ?? "Failed to connect");
+    } finally {
+      setConnecting(false);
+    }
   }
 
   return (
@@ -95,6 +109,19 @@ export function IntegrationsPanel() {
               {new URL(i.url).hostname}
             </a>
             . Stored AES-256-GCM encrypted.
+            {i.provider === "telegram" && existing[i.provider] && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  onClick={handleConnectWebhook}
+                  disabled={connecting}
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                >
+                  {connecting ? "Connecting…" : "Connect approval-button webhook →"}
+                </button>
+              </>
+            )}
           </p>
         </div>
       ))}

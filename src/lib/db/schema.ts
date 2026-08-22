@@ -375,3 +375,19 @@ export const flowTemplates = pgTable("flow_templates", {
   installs: integer("installs").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Pending Telegram approval buttons. Maps the button's callback nonce back to
+ * the paused flow run so /api/webhooks/telegram can resume it securely.
+ */
+export const telegramPendingApprovals = pgTable("telegram_pending_approvals", {
+  nonce: varchar("nonce", { length: 40 }).primaryKey(),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  runId: text("run_id").notNull().references(() => flowRuns.id, { onDelete: "cascade" }),
+  nodeId: text("node_id").notNull(),
+  chatId: text("chat_id").notNull(),
+  messageId: integer("message_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  runIdx: index("tg_pending_run_idx").on(table.runId),
+}));

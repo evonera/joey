@@ -176,6 +176,13 @@
       "when": 1787430599860,
       "tag": "0024_flow_webhook_secret",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787434341267,
+      "tag": "0025_telegram_approvals",
+      "breakpoints": true
     }
   ]
 }
