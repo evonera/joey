@@ -16,19 +16,29 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
         if (variantName && content) {
             updateData.selectedVariantId = variantName;
             updateData.content = content;
-        } else {
-            const existing = await db.query.drafts.findFirst({
-                where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
-                columns: { content: true }
-            });
-            if (!existing?.content) {
-                return NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 });
-            }
         }
 
-        await db.update(drafts)
+        // Existence + tenant check ALWAYS runs so a bad id or foreign draft
+        // can never report success.
+        const existing = await db.query.drafts.findFirst({
+            where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
+            columns: { content: true }
+        });
+        if (!existing) {
+            return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+        }
+        if (!variantName && !existing.content) {
+            return NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 });
+        }
+
+        const updated = await db.update(drafts)
             .set(updateData)
-            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)))
+            .returning({ id: drafts.id });
+
+        if (updated.length === 0) {
+            return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+        }
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
