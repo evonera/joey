@@ -36,9 +36,11 @@ export default defineTool({
         const outputTokens = Math.ceil(
           variants.reduce((n, v) => n + v.content.length, 0) / 4,
         );
-        void recordTokenUsage(tenantId as string, 2000, outputTokens);
-      } catch {
-        // budget accounting must never block draft creation
+        await recordTokenUsage(tenantId as string, 2000, outputTokens);
+      } catch (err) {
+        // A failed write must not lose the draft, but it is logged loudly so
+        // understated budgets are detectable.
+        console.error("[draft_post] Failed to record token usage:", err);
       }
       
       const { createNotification } = await import('@/lib/notifications');
