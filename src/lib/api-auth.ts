@@ -50,7 +50,7 @@ export async function authenticateApiRequest(request: Request) {
         throw new Error("API token expired");
     }
 
-    const rateLimit = checkRateLimit(apiToken.id);
+    const rateLimit = await checkRateLimit(apiToken.id);
     if (!rateLimit.allowed) {
         throw new RateLimitError(rateLimit.resetAt);
     }

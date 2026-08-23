@@ -245,12 +245,14 @@ export default defineSchedule({
     );
 
     for (const config of dueConfigs) {
+      try {
       const ownerMember = await db.query.member.findFirst({
         where: and(eq(member.organizationId, config.tenantId), eq(member.role, "owner"))
       });
       if (!ownerMember) continue;
 
       // Enforce the monthly LLM budget before spawning an expensive drafting run.
+      // Fail-safe: if the check itself errors, SKIP rather than spend unbounded.
       try {
         const budget = await assertBudget(config.tenantId);
         if (!budget.allowed) {
@@ -258,7 +260,8 @@ export default defineSchedule({
           continue;
         }
       } catch (err) {
-        console.error(`[budget] Failed to check budget for ${config.tenantId}:`, err);
+        console.error(`[budget] Budget check failed for ${config.tenantId}; skipping draft:`, err);
+        continue;
       }
 
       // Spawn an agent task for this tenant
@@ -276,15 +279,20 @@ export default defineSchedule({
       );
 
       // Compute the next drafting slot honouring the tenant's configured
-      // timezone and active days, then schedule a 5-minute buffer so the
-      // "due" check below (lte nextDraftAt <= now) fires at the right moment.
+      // timezone and active days. Strictly future by construction, so the due
+      // check fires exactly once per slot.
       const schedule = config.postingSchedule as PostingSchedule | null;
-      const nextSlot = nextDraftAt(new Date(), schedule);
-      const nextDueDate = new Date(nextSlot.getTime() - 5 * 60 * 1000);
+      const nextDueDate = nextDraftAt(new Date(), schedule);
 
       await db.update(agentConfigs)
         .set({ nextDraftAt: nextDueDate })
         .where(eq(agentConfigs.tenantId, config.tenantId));
+      } catch (tenantErr) {
+        // One malformed schedule (e.g. invalid IANA timezone) must not abort
+        // the shared poll for every other tenant.
+        console.error(`[poll] Tenant ${config.tenantId} processing failed:`, tenantErr);
+        continue;
+      }
     }
   },
 });

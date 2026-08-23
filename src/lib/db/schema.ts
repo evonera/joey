@@ -373,3 +373,14 @@ export const flowTemplates = pgTable("flow_templates", {
   installs: integer("installs").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+/**
+ * Deployment-wide fixed-window rate limiting for the public API. One row per
+ * (token, window) so documented limits hold across instances and restarts.
+ */
+export const rateLimitCounters = pgTable("rate_limit_counters", {
+  tokenId: text("token_id").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").default(1).notNull(),
+}, (table) => ({
+  tokenWindowIdx: uniqueIndex("rate_limit_token_window_idx").on(table.tokenId, table.windowStart),
+}));
