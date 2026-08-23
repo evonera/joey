@@ -251,6 +251,8 @@ export default defineSchedule({
       if (!ownerMember) continue;
 
       // Enforce the monthly LLM budget before spawning an expensive drafting run.
+      // Fail-safe: if the check itself errors, SKIP drafting rather than
+      // allowing an uncapped spend.
       try {
         const budget = await assertBudget(config.tenantId);
         if (!budget.allowed) {
@@ -258,7 +260,8 @@ export default defineSchedule({
           continue;
         }
       } catch (err) {
-        console.error(`[budget] Failed to check budget for ${config.tenantId}:`, err);
+        console.error(`[budget] Failed to check budget for ${config.tenantId}; skipping draft:`, err);
+        continue;
       }
 
       // Spawn an agent task for this tenant
@@ -276,11 +279,11 @@ export default defineSchedule({
       );
 
       // Compute the next drafting slot honouring the tenant's configured
-      // timezone and active days, then schedule a 5-minute buffer so the
-      // "due" check below (lte nextDraftAt <= now) fires at the right moment.
+      // timezone and active days. nextDraftAt() is strictly future by
+      // construction, so the due check fires exactly once per slot — no
+      // backdated buffer that could immediately re-trigger this tenant.
       const schedule = config.postingSchedule as PostingSchedule | null;
-      const nextSlot = nextDraftAt(new Date(), schedule);
-      const nextDueDate = new Date(nextSlot.getTime() - 5 * 60 * 1000);
+      const nextDueDate = nextDraftAt(new Date(), schedule);
 
       await db.update(agentConfigs)
         .set({ nextDraftAt: nextDueDate })
