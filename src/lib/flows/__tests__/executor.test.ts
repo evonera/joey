@@ -349,4 +349,97 @@ describe("cached fan-out trigger precision (round 4)", () => {
     // Fan-out ran per item; aggregate present via fresh sink execution.
     expect(result.outputs["__fanout:loop"]).toEqual({ sinkT: [items[0]] });
   });
+
+  it("persists checkpoint of succeeded predecessor nodes within a failed item and reuses them on restart", async () => {
+    // Pipeline: loop -> stepA (succeeds) -> stepB (fails on first run)
+    const items = [{ id: 1 }, { id: 2 }];
+    const graph = doc({
+      nodes: [
+        n("t", "trigger.manual", { samplePayload: JSON.stringify(items) }),
+        n("loop", "logic.loop"),
+        n("stepA", "transform.dedupe", { field: "id" }),
+        // Invalid schema causes deterministic failure
+        n("stepB", "ai.llm", { provider: "openai", model: "x", systemPrompt: "p", outputSchema: "{invalid-json" }),
+      ],
+      edges: [
+        { from: "t", to: "loop" },
+        { from: "loop", to: "stepA" },
+        { from: "stepA", to: "stepB" },
+      ],
+    });
+
+    let savedFanoutProgress: Record<string, Record<string, unknown>> = {};
+    const firstRun = await executeFlow(
+      graph,
+      { tenantId: "t", runId: "r1", flowId: "f" },
+      {
+        onFanoutProgress: (p) => {
+          savedFanoutProgress = { ...p };
+        },
+      },
+    );
+
+    expect(firstRun.status).toBe("failed");
+    // stepA succeeded for item 0 before stepB failed, so item 0 checkpoint MUST contain stepA!
+    expect(savedFanoutProgress["0"]).toBeDefined();
+    expect(savedFanoutProgress["0"]["stepA"]).toEqual({ id: 1 });
+
+    // Now restart the run with a fixed graph and the saved fanoutProgress
+    const fixedGraph = doc({
+      nodes: [
+        n("t", "trigger.manual", { samplePayload: JSON.stringify(items) }),
+        n("loop", "logic.loop"),
+        n("stepA", "transform.dedupe", { field: "id" }),
+        n("stepB", "transform.filter", { field: "id", operator: "exists" }),
+      ],
+      edges: [
+        { from: "t", to: "loop" },
+        { from: "loop", to: "stepA" },
+        { from: "stepA", to: "stepB" },
+      ],
+    });
+
+    const secondRun = await executeFlow(
+      fixedGraph,
+      {
+        tenantId: "t",
+        runId: "r2",
+        flowId: "f",
+        cachedSteps: [
+          step("t", "trigger.manual", { output: items }),
+          step("loop", "logic.loop", { output: items }),
+        ],
+        fanoutProgress: savedFanoutProgress,
+      },
+    );
+
+    expect(secondRun.status).toBe("succeeded");
+    expect(secondRun.outputs["__fanout:loop"]).toEqual({
+      stepB: [{ id: 1 }, { id: 2 }],
+    });
+  });
+
+  it("pulses onHeartbeat port during node execution", async () => {
+    const graph = doc({
+      nodes: [
+        n("t", "trigger.manual", { samplePayload: JSON.stringify({ hello: "world" }) }),
+        n("d", "transform.dedupe", { field: "hello" }),
+      ],
+      edges: [{ from: "t", to: "d" }],
+    });
+
+    let heartbeatCount = 0;
+    const result = await executeFlow(
+      graph,
+      { tenantId: "t", runId: "r1", flowId: "f" },
+      {
+        onHeartbeat: () => {
+          heartbeatCount++;
+        },
+      },
+    );
+
+    expect(result.status).toBe("succeeded");
+    expect(heartbeatCount).toBeGreaterThan(0);
+  });
 });

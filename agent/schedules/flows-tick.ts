@@ -117,16 +117,16 @@ export default defineSchedule({
         }
         if (!run) continue;
 
-        // Advance lastRunAt immediately upon admission so concurrent / subsequent ticks
-        // in this interval observe the new cadence window immediately.
-        await db
-          .update(flows)
-          .set({ lastRunAt: new Date(), updatedAt: new Date() })
-          .where(eq(flows.id, flow.id));
-
         let result;
         let execError: unknown;
         try {
+          // Advance lastRunAt immediately upon admission so concurrent / subsequent ticks
+          // in this interval observe the new cadence window immediately.
+          await db
+            .update(flows)
+            .set({ lastRunAt: new Date(), updatedAt: new Date() })
+            .where(eq(flows.id, flow.id));
+
           result = await executeFlow(
             flow.graph as Parameters<typeof executeFlow>[0],
             {
@@ -157,65 +157,79 @@ export default defineSchedule({
                   .set({ fanoutProgress, updatedAt: new Date() })
                   .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
               },
+              onHeartbeat: async () => {
+                await db
+                  .update(flowRuns)
+                  .set({ updatedAt: new Date() })
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+              },
             },
           );
         } catch (err) {
           execError = err;
         } finally {
-          // Resilient two-stage finalization:
+          // Resilient two-stage finalization with retries:
           // 1. If result exists, attempt primary write with full steps & status.
           // 2. If primary write fails or executeFlow threw, apply minimal fallback so run
           //    is guaranteed to reach a terminal status and never dangles as 'running'.
-          if (result) {
-            try {
-              await db
-                .update(flowRuns)
-                .set({
-                  status: result.status,
-                  steps: result.steps,
-                  error: result.error ?? null,
-                  finishedAt: new Date(),
-                  updatedAt: new Date(),
-                })
-                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
-            } catch (finErr) {
-              console.warn(`[flows-tick] Rich finalization failed for ${run.id}, applying fallback:`, finErr);
+          const status = result ? result.status : "failed";
+          const error =
+            result?.error ??
+            (execError instanceof Error
+              ? execError.message
+              : execError
+                ? String(execError)
+                : null);
+          const finishedAt = new Date();
+          const updatedAt = new Date();
+
+          let finalized = false;
+          for (let attempt = 0; attempt < 3 && !finalized; attempt++) {
+            if (result) {
               try {
-                await db
+                const updated = await db
                   .update(flowRuns)
                   .set({
-                    status: result.status,
-                    error: result.error ?? "Failed persisting step output details.",
-                    finishedAt: new Date(),
-                    updatedAt: new Date(),
+                    status,
+                    steps: result.steps,
+                    error,
+                    finishedAt,
+                    updatedAt,
                   })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
-              } catch (fallbackErr) {
-                console.error(`[flows-tick] CRITICAL: run ${run.id} finalization fallback failed:`, fallbackErr);
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                  .returning({ id: flowRuns.id });
+                if (updated.length > 0) finalized = true;
+              } catch (finErr) {
+                console.warn(`[flows-tick] Rich finalization attempt ${attempt + 1} failed for ${run.id}:`, finErr);
               }
             }
-          } else {
-            const errMessage =
-              execError instanceof Error
-                ? execError.message
-                : execError
-                  ? String(execError)
-                  : "Scheduled execution crashed unexpectedly.";
-            try {
-              await db
-                .update(flowRuns)
-                .set({
-                  status: "failed",
-                  error: `Scheduled execution crashed: ${errMessage}`,
-                  finishedAt: new Date(),
-                  updatedAt: new Date(),
-                })
-                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
-            } catch (crashFinErr) {
-              console.error(`[flows-tick] CRITICAL: run ${run.id} crash finalization failed:`, crashFinErr);
+
+            if (!finalized) {
+              try {
+                const updated = await db
+                  .update(flowRuns)
+                  .set({
+                    status,
+                    error: error ?? "Execution finalized with minimal fallback.",
+                    finishedAt,
+                    updatedAt,
+                  })
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                  .returning({ id: flowRuns.id });
+                if (updated.length > 0) finalized = true;
+              } catch (fallbackErr) {
+                console.error(`[flows-tick] Minimal finalization attempt ${attempt + 1} failed for ${run.id}:`, fallbackErr);
+              }
+            }
+
+            if (!finalized && attempt < 2) {
+              await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
             }
           }
-          await db.update(flows).set({ lastRunAt: new Date() }).where(eq(flows.id, flow.id));
+
+          try {
+            await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+          } catch {}
         }
       } catch (err) {
         console.error(`[flows-tick] Flow ${flow.id} failed:`, err);

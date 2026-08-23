@@ -11,6 +11,8 @@ export type ExecutorPorts = {
   onFanoutProgress?: (
     progress: Record<string, Record<string, unknown>>,
   ) => Promise<void> | void;
+  /** Periodic / in-node heartbeat pulse to refresh updatedAt and prevent stale recovery timeouts. */
+  onHeartbeat?: () => Promise<void> | void;
 };
 
 export type ExecuteOptions = {
@@ -55,6 +57,14 @@ export async function executeFlow(
   /** Downstream of forEach nodes — executed per item inside fanOut only. */
   const fanoutConsumed = new Set<string>();
 
+  let activeFanout:
+    | {
+        itemKey: string;
+        chainNodes: Set<string>;
+        progress: Record<string, Record<string, unknown>>;
+      }
+    | undefined;
+
   const nodeById = new Map(doc.nodes.map((n) => [n.id, n]));
   const outgoing = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.from === id);
   const incoming = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.to === id);
@@ -65,7 +75,15 @@ export async function executeFlow(
     flowId: opts.flowId,
     triggerPayload: opts.triggerPayload,
     approvedNodeIds: opts.approvedNodeIds,
+    heartbeat: () => ports.onHeartbeat?.(),
   };
+
+  let heartbeatTimer: NodeJS.Timeout | undefined;
+  if (ports.onHeartbeat) {
+    heartbeatTimer = setInterval(() => {
+      void ports.onHeartbeat?.();
+    }, 10_000);
+  }
 
   // Seed from a previous attempt. cachedSteps (full step list) preserves
   // skipped/failed states; legacy cachedOutputs synthesizes succeeded-only.
@@ -215,6 +233,16 @@ export async function executeFlow(
         startedAt,
         finishedAt: new Date().toISOString(),
       });
+
+      if (activeFanout && activeFanout.chainNodes.has(node.id)) {
+        activeFanout.progress[activeFanout.itemKey] = {
+          ...(activeFanout.progress[activeFanout.itemKey] ?? {}),
+          [node.id]: stored,
+        };
+        await ports.onFanoutProgress?.(activeFanout.progress);
+      }
+
+      await ports.onHeartbeat?.();
       return "ok";
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -401,17 +429,30 @@ export async function executeFlow(
       }
       outputs.set(loopId, items[i]);
 
-      const outcome = await stageLoop(entries, new Set());
-      if (outcome !== "completed") return outcome;
+      activeFanout = {
+        itemKey,
+        chainNodes: new Set(chainNodes),
+        progress,
+      };
 
-      // Checkpoint every chain node that succeeded for this item.
-      const done: Record<string, unknown> = {};
+      let outcome: Outcome;
+      try {
+        outcome = await stageLoop(entries, new Set());
+      } finally {
+        activeFanout = undefined;
+      }
+
+      // Checkpoint every chain node that succeeded for this item (including on failure / pause)
+      // so restart-from-failed never replays already-succeeded side-effecting predecessor nodes!
+      const done: Record<string, unknown> = { ...checkpoint };
       for (const id of chainNodes) {
         const st = steps.get(id);
         if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
       }
       progress[itemKey] = done;
       await ports.onFanoutProgress?.(progress);
+
+      if (outcome !== "completed") return outcome;
 
       for (const sinkId of Object.keys(collected)) {
         if (steps.get(sinkId)?.status !== "succeeded") continue;
@@ -479,6 +520,10 @@ export async function executeFlow(
       outputs: toObject(outputs),
       error: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+    }
   }
 
   function labelOf(nodeId: string): string {
