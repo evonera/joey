@@ -46,8 +46,16 @@ export const llmTaskNode = defineNode({
       maxTokens: config.maxTokens,
     });
 
+    // A configured schema is a contract: never fall back to raw text.
+    if (jsonSchema && (result.json === undefined || result.json === null)) {
+      throw new Error(
+        "LLM output did not match the configured JSON schema (unparseable response). " +
+          "Re-run the node or adjust the prompt/schema.",
+      );
+    }
+
     return {
-      output: jsonSchema ? (result.json ?? result.text) : result.text,
+      output: jsonSchema ? result.json : result.text,
     };
   },
 });

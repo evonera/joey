@@ -173,6 +173,8 @@ export async function executeFlow(
         status: "succeeded",
         input,
         output: stripInternal(stored),
+        // Persist the routing decision so cached replay keeps it.
+        ...(result.branch !== undefined ? { branch: result.branch } : {}),
         startedAt,
         finishedAt: new Date().toISOString(),
       });
@@ -213,12 +215,20 @@ export async function executeFlow(
       }
     }
     // Done nodes release their edges immediately.
-    let frontier: string[] = [];
+    const cachedFanouts: string[] = [];
     for (const id of reachable) {
       const done = steps.get(id)?.status === "succeeded";
       if (!done) continue;
+      const def = getNode(nodeById.get(id)!.type);
+      // A cached forEach must still drive its downstream chain per item —
+      // otherwise restart-from-failed runs the chain once over the raw array.
+      if (def?.forEach && outgoing(id).some((e) => !steps.get(e.to)?.status)) {
+        cachedFanouts.push(id);
+        continue;
+      }
       for (const to of adj.get(id)!) inDeg.set(to, (inDeg.get(to) ?? 0) - 1);
     }
+    let frontier: string[] = [];
     for (const id of reachable) {
       if (
         (inDeg.get(id) ?? 0) <= 0 &&
@@ -232,6 +242,15 @@ export async function executeFlow(
     }
 
     let branchFailed = false;
+
+    for (const loopId of cachedFanouts) {
+      for (const to of outgoing(loopId).map((e) => e.to)) fanoutConsumed.add(to);
+      const items = unwrap(outputs.get(loopId));
+      if (!Array.isArray(items)) continue;
+      const outcome = await fanOut(loopId, items);
+      if (outcome === "paused") return "paused";
+      if (outcome === "failed") branchFailed = true;
+    }
 
     while (frontier.length > 0) {
       if (pendingApproval) return "paused";

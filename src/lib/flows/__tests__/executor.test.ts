@@ -150,3 +150,65 @@ describe("executeFlow", () => {
     expect(result.status).toBe("failed");
   });
 });
+
+describe("cached replay semantics", () => {
+  const branchGraph = {
+    nodes: [
+      { id: "t", type: "trigger.manual", config: { samplePayload: JSON.stringify({ score: 5 }) }, position: { x: 0, y: 0 } },
+      { id: "cond", type: "logic.condition", config: { field: "score", operator: "gt", value: "10" }, position: { x: 0, y: 0 } },
+      { id: "yes", type: "transform.dedupe", config: { field: "score" }, position: { x: 0, y: 0 } },
+      { id: "no", type: "transform.filter", config: { field: "score", operator: "exists" }, position: { x: 0, y: 0 } },
+    ],
+    edges: [
+      { from: "t", to: "cond" },
+      { from: "cond", to: "yes", branch: "true" },
+      { from: "cond", to: "no", branch: "false" },
+    ],
+  };
+
+  it("resume with cached condition output preserves the original branch routing", async () => {
+    // Simulate flows.ts resume: seed cache from persisted steps, where cond
+    // succeeded with branch=false recorded.
+    const result = await run(branchGraph as never, {
+      cachedOutputs: {
+        t: { score: 5 },
+        cond: { __branch: "false", value: { score: 5 } },
+      },
+    });
+
+    expect(result.status).toBe("succeeded");
+    const byId = Object.fromEntries(result.steps.map((s) => [s.nodeId, s.status]));
+    // The originally unselected branch must NOT execute on replay.
+    expect(byId["yes"]).toBe("skipped");
+    expect(byId["no"]).toBe("succeeded");
+  });
+
+  it("cached forEach still fans out per item on restart-from-failed", async () => {
+    const items = [{ n: 1 }, { n: 2 }];
+    const graph = {
+      nodes: [
+        { id: "t", type: "trigger.manual", config: { samplePayload: JSON.stringify(items) }, position: { x: 0, y: 0 } },
+        { id: "loop", type: "logic.loop", config: {}, position: { x: 0, y: 0 } },
+        { id: "sink", type: "transform.dedupe", config: { field: "n" }, position: { x: 0, y: 0 } },
+      ],
+      edges: [
+        { from: "t", to: "loop" },
+        { from: "loop", to: "sink" },
+      ],
+    };
+
+    const result = await run(graph as never, {
+      cachedOutputs: {
+        t: items,
+        loop: items, // loop already succeeded before the downstream failure
+      },
+    });
+
+    expect(result.status).toBe("succeeded");
+    // Fan-out must have run per item despite the loop being cache-seeded
+    // (per-sink aggregation shape).
+    expect(result.outputs["__fanout:loop"]).toEqual({ sink: items });
+    const sink = result.steps.find((s) => s.nodeId === "sink");
+    expect(sink?.status).toBe("succeeded");
+  });
+});

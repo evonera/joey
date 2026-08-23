@@ -233,7 +233,12 @@ export async function resumeRun(
 
   const cachedOutputs: Record<string, unknown> = {};
   for (const step of run.steps as FlowStep[]) {
-    if (step.status === "succeeded") cachedOutputs[step.nodeId] = step.output;
+    if (step.status !== "succeeded") continue;
+    // Re-wrap condition routing so replay follows the original branch.
+    cachedOutputs[step.nodeId] =
+      step.branch !== undefined
+        ? { __branch: step.branch, value: step.output }
+        : step.output;
   }
 
   // Clear the gate's stale waiting step so it re-executes as approved.
@@ -282,7 +287,12 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
 
   const cachedOutputs: Record<string, unknown> = {};
   for (const step of run.steps as FlowStep[]) {
-    if (step.status === "succeeded") cachedOutputs[step.nodeId] = step.output;
+    if (step.status !== "succeeded") continue;
+    // Re-wrap condition routing so replay follows the original branch.
+    cachedOutputs[step.nodeId] =
+      step.branch !== undefined
+        ? { __branch: step.branch, value: step.output }
+        : step.output;
   }
 
   const result = await executeRunWithPorts({
