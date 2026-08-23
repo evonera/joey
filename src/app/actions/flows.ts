@@ -275,11 +275,13 @@ export async function resumeRun(
       .set({ status: result.status, steps: result.steps, error: result.error ?? null, finishedAt: new Date() })
       .where(eq(flowRuns.id, runId));
   } catch (err) {
-    console.error("[flow-resume] Final persistence failed; forcing terminal status:", err);
-    await db
-      .update(flowRuns)
-      .set({ status: result.status, finishedAt: new Date() })
-      .where(eq(flowRuns.id, runId));
+    // Both writes failing means the DB itself is unavailable — nothing more
+    // we can do in-process. Log loudly; the scheduler's global stale-run
+    // sweep (>30 min running) is the eventual backstop.
+    console.error(
+      "[flow-resume] CRITICAL: run", runId,
+      "may be stranded as running — finalize failed:", err,
+    );
   }
 
   return { ok: true, status: result.status };

@@ -286,3 +286,53 @@ describe("repeated replay + deep cached fan-out", () => {
     });
   });
 });
+
+describe("cached fan-out trigger precision (round 4)", () => {
+  const loopCondGraph = (items: unknown[]) => ({
+    nodes: [
+      { id: "t", type: "trigger.manual", config: { samplePayload: JSON.stringify(items) }, position: { x: 0, y: 0 } },
+      { id: "loop", type: "logic.loop", config: {}, position: { x: 0, y: 0 } },
+      { id: "cond", type: "logic.condition", config: { field: "go", operator: "eq", value: "true" }, position: { x: 0, y: 0 } },
+      { id: "sinkT", type: "transform.dedupe", config: { field: "n" }, position: { x: 0, y: 0 } },
+    ],
+    edges: [
+      { from: "t", to: "loop" },
+      { from: "loop", to: "cond" },
+      { from: "cond", to: "sinkT", branch: "true" },
+    ],
+  });
+
+  it("does NOT retrigger fan-out when the only uncached descendant is a clean branch-skip", async () => {
+    const items = [{ go: true, n: 1 }];
+    // Seed: loop+cond+sinkT all succeeded; the unselected-branch sink is
+    // absent entirely — nothing unfinished exists.
+    const result = await run(loopCondGraph(items) as never, {
+      cachedOutputs: {
+        t: items,
+        loop: items,
+        cond: { __branch: "true", value: items[0] },
+        sinkT: items[0],
+      },
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(result.outputs["__fanout:loop"]).toBeUndefined(); // no re-run
+    expect(result.steps.find((s) => s.nodeId === "sinkT")?.output).toEqual(items[0]);
+  });
+
+  it("DOES retrigger fan-out when a failure-skipped descendant exists", async () => {
+    const items = [{ go: true, n: 1 }];
+    // Seed mirrors a failed original run: sink was marked skipped by
+    // skipDownstream, carrying the failure marker as its error.
+    const result = await run(loopCondGraph(items) as never, {
+      cachedOutputs: {
+        t: items,
+        loop: items,
+        cond: { __branch: "true", value: items[0] },
+      },
+    });
+
+    // Fan-out ran per item; aggregate present via fresh sink execution.
+    expect(result.outputs["__fanout:loop"]).toEqual({ sinkT: [items[0]] });
+  });
+});

@@ -25,6 +25,23 @@ import { getNode } from "@/lib/flows/registry";
 export default defineSchedule({
   cron: "* * * * *",
   async run() {
+    // Global backstop FIRST: any run stuck as running for >30 min (from any
+    // trigger, including approval resumes on inactive flows) is finalized as
+    // failed so it can't suppress scheduling forever.
+    await db
+      .update(flowRuns)
+      .set({
+        status: "failed",
+        error: "Run timed out (stuck in running).",
+        finishedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(flowRuns.status, "running"),
+          lt(flowRuns.startedAt, new Date(Date.now() - 30 * 60_000)),
+        ),
+      );
+
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
     });
@@ -129,11 +146,9 @@ export default defineSchedule({
             })
             .where(eq(flowRuns.id, run.id));
         } catch (finErr) {
-          console.error(`[flows-tick] Final persistence failed for ${run.id}; forcing status:`, finErr);
-          await db
-            .update(flowRuns)
-            .set({ status: result.status, finishedAt: new Date() })
-            .where(eq(flowRuns.id, run.id));
+          // DB unavailable — non-throwing; the global stale-run sweep at the
+          // top of every tick is the eventual backstop.
+          console.error(`[flows-tick] CRITICAL: run ${run.id} may be stranded as running —`, finErr);
         }
       } catch (err) {
         console.error(`[flows-tick] Flow ${flow.id} failed:`, err);

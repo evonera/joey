@@ -132,7 +132,14 @@ export async function executeFlow(
       const id = queue.shift()!;
       const node = nodeById.get(id);
       if (!node || steps.get(id)?.status) continue;
-      await setStatus({ nodeId: id, type: node.type, status: "skipped" });
+      await setStatus({
+        nodeId: id,
+        type: node.type,
+        status: "skipped",
+        // Marker: this skip is FAILURE fallout, not clean branch routing.
+        // Cached-fanout detection relies on the distinction.
+        error: "Skipped: upstream node failed.",
+      });
       for (const e of outgoing(id)) {
         if (!seen.has(e.to)) {
           seen.add(e.to);
@@ -203,6 +210,19 @@ export async function executeFlow(
   }
 
   /**
+   * Unfinished work behind a cached loop: pending, failed, or failure-skipped.
+   * Cleanly skipped nodes (branch routing) do NOT qualify — retriggering
+   * fan-out for them would duplicate completed side effects.
+   */
+  function hasUnfinishedWork(nodeId: string): boolean {
+    const step = steps.get(nodeId);
+    if (!step) return true; // never attempted
+    if (step.status === "failed") return true;
+    if (step.status === "skipped") return Boolean(step.error); // failure-skip marker
+    return false;
+  }
+
+  /**
    * Kahn staging over the reachable subgraph. Already-done nodes (cache or a
    * previous stage) are treated as processed at setup.
    */
@@ -232,7 +252,7 @@ export async function executeFlow(
       // while a DEEPER node failed — the unfinished tail must fan out too.
       if (
         def?.forEach &&
-        Array.from(reachableFrom(outgoing(id).map((e) => e.to))).some((d: string) => steps.get(d)?.status !== "succeeded")
+        Array.from(reachableFrom(outgoing(id).map((e) => e.to))).some(hasUnfinishedWork)
       ) {
         cachedFanouts.push(id);
         continue;
