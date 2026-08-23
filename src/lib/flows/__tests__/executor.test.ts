@@ -212,3 +212,77 @@ describe("cached replay semantics", () => {
     expect(sink?.status).toBe("succeeded");
   });
 });
+
+describe("repeated replay + deep cached fan-out", () => {
+  it("synthetic cached steps retain branch for SECOND-generation replays", async () => {
+    const graph = {
+      nodes: [
+        { id: "t", type: "trigger.manual", config: { samplePayload: JSON.stringify({ score: 5 }) }, position: { x: 0, y: 0 } },
+        { id: "cond", type: "logic.condition", config: { field: "score", operator: "gt", value: "10" }, position: { x: 0, y: 0 } },
+        { id: "no", type: "transform.filter", config: { field: "score", operator: "exists" }, position: { x: 0, y: 0 } },
+      ],
+      edges: [
+        { from: "t", to: "cond" },
+        { from: "cond", to: "no", branch: "false" },
+      ],
+    };
+
+    // Generation 1: seed with wrapped output (as flows.ts resume does).
+    const g1 = await run(graph as never, {
+      cachedOutputs: {
+        t: { score: 5 },
+        cond: { __branch: "false", value: { score: 5 } },
+      },
+    });
+    const condStep = g1.steps.find((s) => s.nodeId === "cond");
+    expect(condStep?.branch).toBe("false");
+
+    // Generation 2: rebuild cache the way flows.ts does (branch-aware) and
+    // confirm routing STILL holds — this is where the old code broke.
+    const g2 = await run(graph as never, {
+      cachedOutputs: {
+        t: g1.outputs["t"],
+        cond: condStep?.branch
+          ? { __branch: condStep.branch, value: condStep.output }
+          : condStep?.output,
+      },
+    });
+    expect(g2.status).toBe("succeeded");
+    expect(g2.steps.find((s) => s.nodeId === "no")?.status).toBe("succeeded");
+  });
+
+  it("cached fanout triggers when a DEEPER descendant failed (immediate child succeeded)", async () => {
+    // loop -> mid (succeeds per item, passthrough object) is impossible with
+    // pure nodes; emulate by seeding loop+mid as succeeded and leaving sink
+    // unseeded (simulating its earlier failure).
+    const items = [{ n: 1 }, { n: 2 }];
+    const graph = {
+      nodes: [
+        { id: "t", type: "trigger.manual", config: {}, position: { x: 0, y: 0 } },
+        { id: "loop", type: "logic.loop", config: {}, position: { x: 0, y: 0 } },
+        { id: "mid", type: "transform.filter", config: { field: "n", operator: "exists" }, position: { x: 0, y: 0 } },
+        { id: "sink", type: "transform.dedupe", config: { field: "n" }, position: { x: 0, y: 0 } },
+      ],
+      edges: [
+        { from: "t", to: "loop" },
+        { from: "loop", to: "mid" },
+        { from: "mid", to: "sink" },
+      ],
+    };
+
+    const result = await run(graph as never, {
+      cachedOutputs: {
+        t: items,
+        loop: items,
+        mid: items[0], // immediate child cached-succeeded (last item)
+        // sink NOT seeded → failed earlier
+      },
+    });
+
+    expect(result.status).toBe("succeeded");
+    // Per-item fan-out ran; per-sink aggregate reflects both items.
+    expect(result.outputs["__fanout:loop"]).toEqual({
+      sink: [{ n: 1 }, { n: 2 }],
+    });
+  });
+});

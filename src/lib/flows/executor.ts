@@ -61,11 +61,18 @@ export async function executeFlow(
     for (const [nodeId, output] of Object.entries(opts.cachedOutputs)) {
       const node = nodeById.get(nodeId);
       if (!node || steps.has(nodeId)) continue;
+      // Preserve condition routing across REPEATED replays: the wrapped
+      // output carries __branch; keep it derivable on the synthetic step.
+      const branch =
+        output && typeof output === "object" && "__branch" in (output as Record<string, unknown>)
+          ? ((output as Record<string, unknown>).__branch as string)
+          : undefined;
       steps.set(nodeId, {
         nodeId,
         type: node.type,
         status: "succeeded",
         output: stripInternal(output),
+        ...(branch !== undefined ? { branch } : {}),
         cached: true,
       });
       outputs.set(nodeId, output);
@@ -220,9 +227,13 @@ export async function executeFlow(
       const done = steps.get(id)?.status === "succeeded";
       if (!done) continue;
       const def = getNode(nodeById.get(id)!.type);
-      // A cached forEach must still drive its downstream chain per item —
-      // otherwise restart-from-failed runs the chain once over the raw array.
-      if (def?.forEach && outgoing(id).some((e) => !steps.get(e.to)?.status)) {
+      // A cached forEach must still drive its downstream chain per item.
+      // Descendant-based check: an immediate child can be cached-succeeded
+      // while a DEEPER node failed — the unfinished tail must fan out too.
+      if (
+        def?.forEach &&
+        Array.from(reachableFrom(outgoing(id).map((e) => e.to))).some((d: string) => steps.get(d)?.status !== "succeeded")
+      ) {
         cachedFanouts.push(id);
         continue;
       }

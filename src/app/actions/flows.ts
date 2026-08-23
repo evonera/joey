@@ -267,10 +267,20 @@ export async function resumeRun(
     { onStepUpdate: (step) => persistStep(tenantId, runId, step) },
   );
 
-  await db
-    .update(flowRuns)
-    .set({ status: result.status, steps: result.steps, error: result.error ?? null, finishedAt: new Date() })
-    .where(eq(flowRuns.id, runId));
+  // Finalize defensively: if the full write fails, force at least the
+  // terminal status so the claimed run can never dangle as 'running'.
+  try {
+    await db
+      .update(flowRuns)
+      .set({ status: result.status, steps: result.steps, error: result.error ?? null, finishedAt: new Date() })
+      .where(eq(flowRuns.id, runId));
+  } catch (err) {
+    console.error("[flow-resume] Final persistence failed; forcing terminal status:", err);
+    await db
+      .update(flowRuns)
+      .set({ status: result.status, finishedAt: new Date() })
+      .where(eq(flowRuns.id, runId));
+  }
 
   return { ok: true, status: result.status };
 }

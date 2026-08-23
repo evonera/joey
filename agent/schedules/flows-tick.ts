@@ -115,15 +115,26 @@ export default defineSchedule({
           await db.update(flows).set({ lastRunAt: new Date() }).where(eq(flows.id, flow.id));
         }
 
-        await db
-          .update(flowRuns)
-          .set({
-            status: result.status,
-            steps: result.steps,
-            error: result.error ?? null,
-            finishedAt: new Date(),
-          })
-          .where(eq(flowRuns.id, run.id));
+        // Defensive finalize: never let a failed status write strand the row
+        // as running (lastRunAt has already advanced, blocking the 30-min
+        // stale sweep as a backstop).
+        try {
+          await db
+            .update(flowRuns)
+            .set({
+              status: result.status,
+              steps: result.steps,
+              error: result.error ?? null,
+              finishedAt: new Date(),
+            })
+            .where(eq(flowRuns.id, run.id));
+        } catch (finErr) {
+          console.error(`[flows-tick] Final persistence failed for ${run.id}; forcing status:`, finErr);
+          await db
+            .update(flowRuns)
+            .set({ status: result.status, finishedAt: new Date() })
+            .where(eq(flowRuns.id, run.id));
+        }
       } catch (err) {
         console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
       }
