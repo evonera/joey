@@ -352,10 +352,14 @@ export const flowRuns = pgTable("flow_runs", {
   fanoutProgress: jsonb("fanout_progress").default({}).notNull(),
   error: text("error"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
 }, (table) => ({
   flowIdx: index("flow_runs_flow_id_idx").on(table.flowId, table.startedAt),
   tenantIdx: index("flow_runs_tenant_id_idx").on(table.tenantId),
+  runningScheduledIdx: uniqueIndex("flow_runs_running_scheduled_idx")
+    .on(table.flowId)
+    .where(sql`${table.status} = 'running' AND ${table.trigger} = 'schedule'`),
 }));
 
 /**

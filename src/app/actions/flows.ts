@@ -121,7 +121,59 @@ async function persistStep(tenantId: string, runId: string, step: FlowStep) {
   const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
   if (idx >= 0) steps[idx] = step;
   else steps.push(step);
-  await db.update(flowRuns).set({ steps }).where(eq(flowRuns.id, runId));
+  await db
+    .update(flowRuns)
+    .set({ steps, updatedAt: new Date() })
+    .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+}
+
+async function finalizeRun(
+  runId: string,
+  tenantId: string,
+  outcome: { status: RunStatus; steps?: FlowStep[]; error?: string | null } | Error,
+): Promise<RunStatus> {
+  const isErr = outcome instanceof Error;
+  const status: RunStatus = isErr ? "failed" : outcome.status;
+  const steps = isErr ? undefined : outcome.steps;
+  const error = isErr ? outcome.message : (outcome.error ?? null);
+  const finishedAt = new Date();
+  const updatedAt = new Date();
+
+  // 1. Primary write with full steps payload
+  try {
+    const updated = await db
+      .update(flowRuns)
+      .set({
+        status,
+        ...(steps !== undefined ? { steps } : {}),
+        error,
+        finishedAt,
+        updatedAt,
+      })
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+      .returning({ id: flowRuns.id });
+
+    if (updated.length > 0) return status;
+  } catch (primaryErr) {
+    console.warn(`[flow-finalize] Rich finalization failed for run ${runId}, applying minimal fallback:`, primaryErr);
+  }
+
+  // 2. Fallback: minimal update omitting steps payload so the run is guaranteed to reach terminal status
+  try {
+    await db
+      .update(flowRuns)
+      .set({
+        status,
+        error: error ? `${error}` : "Finalization fallback applied.",
+        finishedAt,
+        updatedAt,
+      })
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+  } catch (fallbackErr) {
+    console.error(`[flow-finalize] CRITICAL: Fallback finalization failed for run ${runId}:`, fallbackErr);
+  }
+
+  return status;
 }
 
 export async function runFlow(
@@ -164,35 +216,45 @@ async function executeRunWithPorts(opts: {
     .returning();
   runId = run.id;
 
-  const result = await executeFlow(
-    opts.flow.graph as Parameters<typeof executeFlow>[0],
-    {
-      tenantId: opts.tenantId,
-      runId,
-      flowId: opts.flow.id,
-      triggerPayload: opts.triggerPayload,
-      cachedSteps: opts.cachedSteps,
-      fanoutProgress: opts.fanoutProgress,
-      approvedNodeIds: opts.approvedNodeIds,
-    },
-    {
-      onStepUpdate: (step) => persistStep(opts.tenantId, runId, step),
-    },
+  let result;
+  let execError: unknown;
+  try {
+    result = await executeFlow(
+      opts.flow.graph as Parameters<typeof executeFlow>[0],
+      {
+        tenantId: opts.tenantId,
+        runId,
+        flowId: opts.flow.id,
+        triggerPayload: opts.triggerPayload,
+        cachedSteps: opts.cachedSteps,
+        fanoutProgress: opts.fanoutProgress,
+        approvedNodeIds: opts.approvedNodeIds,
+      },
+      {
+        onStepUpdate: (step) => persistStep(opts.tenantId, runId, step),
+        onFanoutProgress: async (progress) => {
+          await db
+            .update(flowRuns)
+            .set({ fanoutProgress: progress, updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")));
+        },
+      },
+    );
+  } catch (err) {
+    execError = err;
+  }
+
+  const finalStatus = await finalizeRun(
+    runId,
+    opts.tenantId,
+    result
+      ? { status: result.status, steps: result.steps, error: result.error ?? null }
+      : (execError instanceof Error ? execError : new Error(String(execError ?? "Execution crashed"))),
   );
 
-  await db
-    .update(flowRuns)
-    .set({
-      status: result.status,
-      steps: result.steps,
-      error: result.error ?? null,
-      finishedAt: new Date(),
-    })
-    .where(eq(flowRuns.id, runId));
+  await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, opts.flow.id));
 
-  await db.update(flows).set({ lastRunAt: new Date() }).where(eq(flows.id, opts.flow.id));
-
-  return { runId, status: result.status };
+  return { runId, status: finalStatus };
 }
 
 export async function resumeRun(
@@ -220,8 +282,8 @@ export async function resumeRun(
     }
     const claimed = await db
       .update(flowRuns)
-      .set({ status: "failed", steps, error: "Rejected at approval gate.", finishedAt: new Date() })
-      .where(and(eq(flowRuns.id, runId), eq(flowRuns.status, "waiting_approval")))
+      .set({ status: "failed", steps, error: "Rejected at approval gate.", finishedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "waiting_approval")))
       .returning();
 
     if (claimed.length === 0) {
@@ -238,51 +300,51 @@ export async function resumeRun(
 
   const claimed = await db
     .update(flowRuns)
-    .set({ approvedNodeIds, steps: clearedSteps, status: "running", error: null })
-    .where(and(eq(flowRuns.id, runId), eq(flowRuns.status, "waiting_approval")))
+    .set({ approvedNodeIds, steps: clearedSteps, status: "running", error: null, updatedAt: new Date() })
+    .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "waiting_approval")))
     .returning();
 
   if (claimed.length === 0) {
     return { error: "Run is not waiting for approval (already resumed)." };
   }
 
-  const result = await executeFlow(
-    flow.graph as Parameters<typeof executeFlow>[0],
-    {
-      tenantId,
-      runId,
-      flowId: flow.id,
-      triggerPayload: run.triggerPayload ?? undefined,
-      cachedSteps: clearedSteps,
-      fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
-      approvedNodeIds,
-    },
-    {
-      onStepUpdate: (step) => persistStep(tenantId, runId, step),
-      onFanoutProgress: async (progress) => {
-        await db.update(flowRuns).set({ fanoutProgress: progress }).where(eq(flowRuns.id, runId));
-      },
-    },
-  );
-
-  // Finalize defensively: if the full write fails, force at least the
-  // terminal status so the claimed run can never dangle as 'running'.
+  let result;
+  let execError: unknown;
   try {
-    await db
-      .update(flowRuns)
-      .set({ status: result.status, steps: result.steps, error: result.error ?? null, finishedAt: new Date() })
-      .where(eq(flowRuns.id, runId));
-  } catch (err) {
-    // Both writes failing means the DB itself is unavailable — nothing more
-    // we can do in-process. Log loudly; the scheduler's global stale-run
-    // sweep (>30 min running) is the eventual backstop.
-    console.error(
-      "[flow-resume] CRITICAL: run", runId,
-      "may be stranded as running — finalize failed:", err,
+    result = await executeFlow(
+      flow.graph as Parameters<typeof executeFlow>[0],
+      {
+        tenantId,
+        runId,
+        flowId: flow.id,
+        triggerPayload: run.triggerPayload ?? undefined,
+        cachedSteps: clearedSteps,
+        fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
+        approvedNodeIds,
+      },
+      {
+        onStepUpdate: (step) => persistStep(tenantId, runId, step),
+        onFanoutProgress: async (progress) => {
+          await db
+            .update(flowRuns)
+            .set({ fanoutProgress: progress, updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+        },
+      },
     );
+  } catch (err) {
+    execError = err;
   }
 
-  return { ok: true, status: result.status };
+  const finalStatus = await finalizeRun(
+    runId,
+    tenantId,
+    result
+      ? { status: result.status, steps: result.steps, error: result.error ?? null }
+      : (execError instanceof Error ? execError : new Error(String(execError ?? "Resumed execution crashed"))),
+  );
+
+  return { ok: true, status: finalStatus };
 }
 
 /** Re-runs a failed/finished run reusing succeeded node outputs. */

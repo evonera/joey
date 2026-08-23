@@ -24,34 +24,64 @@ async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload
         .values({ flowId: flow.id, tenantId, trigger: "webhook", triggerPayload: payload as object })
         .returning();
 
-      const result = await executeFlow(
-        flow.graph as Parameters<typeof executeFlow>[0],
-        { tenantId, runId: run.id, flowId: flow.id, triggerPayload: payload },
-        {
-          onStepUpdate: async (step) => {
-            const r = await db.query.flowRuns.findFirst({
-              where: eq(flowRuns.id, run.id),
-              columns: { steps: true },
-            });
-            if (!r) return;
-            const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
-            const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
-            if (idx >= 0) steps[idx] = step;
-            else steps.push(step);
-            await db.update(flowRuns).set({ steps }).where(eq(flowRuns.id, run.id));
+      let result;
+      let execErr;
+      try {
+        result = await executeFlow(
+          flow.graph as Parameters<typeof executeFlow>[0],
+          { tenantId, runId: run.id, flowId: flow.id, triggerPayload: payload },
+          {
+            onStepUpdate: async (step) => {
+              const r = await db.query.flowRuns.findFirst({
+                where: and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId)),
+                columns: { steps: true },
+              });
+              if (!r) return;
+              const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
+              const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
+              if (idx >= 0) steps[idx] = step;
+              else steps.push(step);
+              await db
+                .update(flowRuns)
+                .set({ steps, updatedAt: new Date() })
+                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+            },
           },
-        },
-      );
+        );
+      } catch (err) {
+        execErr = err;
+      }
 
-      await db
-        .update(flowRuns)
-        .set({
-          status: result.status,
-          steps: result.steps,
-          error: result.error ?? null,
-          finishedAt: new Date(),
-        })
-        .where(eq(flowRuns.id, run.id));
+      const status = result ? result.status : "failed";
+      const errorMsg = result?.error ?? (execErr instanceof Error ? execErr.message : (execErr ? String(execErr) : null));
+
+      try {
+        await db
+          .update(flowRuns)
+          .set({
+            status,
+            ...(result?.steps ? { steps: result.steps } : {}),
+            error: errorMsg,
+            finishedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+      } catch (finErr) {
+        console.warn(`[webhooks/zernio] Rich finalization failed for ${run.id}, applying fallback:`, finErr);
+        try {
+          await db
+            .update(flowRuns)
+            .set({
+              status,
+              error: errorMsg ?? "Failed persisting step output details.",
+              finishedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+        } catch (fallbackErr) {
+          console.error(`[webhooks/zernio] CRITICAL: Fallback finalization failed for ${run.id}:`, fallbackErr);
+        }
+      }
     } catch (err) {
       console.error(`[webhooks/zernio] Flow ${flow.id} failed on ${eventName}:`, err);
     }

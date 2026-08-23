@@ -25,20 +25,24 @@ import { getNode } from "@/lib/flows/registry";
 export default defineSchedule({
   cron: "* * * * *",
   async run() {
-    // Global backstop FIRST: any run stuck as running for >30 min (from any
-    // trigger, including approval resumes on inactive flows) is finalized as
-    // failed so it can't suppress scheduling forever.
+    // Global backstop FIRST: any run stuck as running with NO heartbeat/update
+    // for >30 min (from any trigger, including approval resumes on inactive flows)
+    // is finalized as failed so it can't suppress scheduling forever. Active runs
+    // continuously touch updatedAt via step and fan-out updates, so legitimate
+    // long-running work is never timed out.
+    const staleCutoff = new Date(Date.now() - 30 * 60_000);
     await db
       .update(flowRuns)
       .set({
         status: "failed",
-        error: "Run timed out (stuck in running).",
+        error: "Run timed out (no activity for 30 minutes).",
         finishedAt: new Date(),
+        updatedAt: new Date(),
       })
       .where(
         and(
           eq(flowRuns.status, "running"),
-          lt(flowRuns.startedAt, new Date(Date.now() - 30 * 60_000)),
+          lt(flowRuns.updatedAt, staleCutoff),
         ),
       );
 
@@ -62,36 +66,66 @@ export default defineSchedule({
           if (elapsed < config.intervalMinutes * 60_000) continue;
         }
 
-        // Recover runs stuck as running (e.g. process died mid-execution).
-        const staleCutoff = new Date(Date.now() - 30 * 60_000);
-        const stale = await db.query.flowRuns.findFirst({
+        // Recover runs stuck as running without activity (e.g. process died mid-execution).
+        const flowStale = await db.query.flowRuns.findFirst({
           where: and(
             eq(flowRuns.flowId, flow.id),
             eq(flowRuns.status, "running"),
-            lt(flowRuns.startedAt, staleCutoff),
+            lt(flowRuns.updatedAt, staleCutoff),
           ),
           columns: { id: true },
         });
-        if (stale) {
+        if (flowStale) {
           await db
             .update(flowRuns)
-            .set({ status: "failed", error: "Run timed out (stuck in running).", finishedAt: new Date() })
-            .where(eq(flowRuns.id, stale.id));
+            .set({
+              status: "failed",
+              error: "Run timed out (no activity for 30 minutes).",
+              finishedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(and(eq(flowRuns.id, flowStale.id), eq(flowRuns.status, "running")));
         }
 
-        // Skip if a run for this flow is still in flight.
+        // Skip if any run for this flow is still actively in flight.
         const inFlight = await db.query.flowRuns.findFirst({
           where: and(eq(flowRuns.flowId, flow.id), eq(flowRuns.status, "running")),
           columns: { id: true },
         });
         if (inFlight) continue;
 
-        const [run] = await db
-          .insert(flowRuns)
-          .values({ flowId: flow.id, tenantId: flow.tenantId, trigger: "schedule" })
-          .returning();
+        // Atomic admission: partial unique index (flow_runs_running_scheduled_idx) guarantees
+        // at most one running scheduled execution per flow across concurrent scheduler invocations.
+        let run;
+        try {
+          const inserted = await db
+            .insert(flowRuns)
+            .values({
+              flowId: flow.id,
+              tenantId: flow.tenantId,
+              trigger: "schedule",
+              triggerPayload: { scheduledAt: new Date().toISOString() },
+            })
+            .onConflictDoNothing()
+            .returning();
+          run = inserted[0];
+        } catch (err: any) {
+          if (err?.code === "23505" || err?.message?.includes("unique")) {
+            continue;
+          }
+          throw err;
+        }
+        if (!run) continue;
+
+        // Advance lastRunAt immediately upon admission so concurrent / subsequent ticks
+        // in this interval observe the new cadence window immediately.
+        await db
+          .update(flows)
+          .set({ lastRunAt: new Date(), updatedAt: new Date() })
+          .where(eq(flows.id, flow.id));
 
         let result;
+        let execError: unknown;
         try {
           result = await executeFlow(
             flow.graph as Parameters<typeof executeFlow>[0],
@@ -104,7 +138,7 @@ export default defineSchedule({
             {
               onStepUpdate: async (step) => {
                 const r = await db.query.flowRuns.findFirst({
-                  where: eq(flowRuns.id, run.id),
+                  where: and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, flow.tenantId)),
                   columns: { steps: true },
                 });
                 if (!r) return;
@@ -112,43 +146,76 @@ export default defineSchedule({
                 const idx = steps.findIndex((st) => st.nodeId === step.nodeId);
                 if (idx >= 0) steps[idx] = step;
                 else steps.push(step);
-                await db.update(flowRuns).set({ steps }).where(eq(flowRuns.id, run.id));
+                await db
+                  .update(flowRuns)
+                  .set({ steps, updatedAt: new Date() })
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+              },
+              onFanoutProgress: async (fanoutProgress) => {
+                await db
+                  .update(flowRuns)
+                  .set({ fanoutProgress, updatedAt: new Date() })
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
               },
             },
           );
+        } catch (err) {
+          execError = err;
         } finally {
-          // A throw mid-execution must never leave the row stuck as running —
-          // that would permanently block this flow's future ticks.
-          if (result === undefined) {
-            await db
-              .update(flowRuns)
-              .set({
-                status: "failed",
-                error: "Scheduled execution crashed before finalization.",
-                finishedAt: new Date(),
-              })
-              .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+          // Resilient two-stage finalization:
+          // 1. If result exists, attempt primary write with full steps & status.
+          // 2. If primary write fails or executeFlow threw, apply minimal fallback so run
+          //    is guaranteed to reach a terminal status and never dangles as 'running'.
+          if (result) {
+            try {
+              await db
+                .update(flowRuns)
+                .set({
+                  status: result.status,
+                  steps: result.steps,
+                  error: result.error ?? null,
+                  finishedAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+            } catch (finErr) {
+              console.warn(`[flows-tick] Rich finalization failed for ${run.id}, applying fallback:`, finErr);
+              try {
+                await db
+                  .update(flowRuns)
+                  .set({
+                    status: result.status,
+                    error: result.error ?? "Failed persisting step output details.",
+                    finishedAt: new Date(),
+                    updatedAt: new Date(),
+                  })
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+              } catch (fallbackErr) {
+                console.error(`[flows-tick] CRITICAL: run ${run.id} finalization fallback failed:`, fallbackErr);
+              }
+            }
+          } else {
+            const errMessage =
+              execError instanceof Error
+                ? execError.message
+                : execError
+                  ? String(execError)
+                  : "Scheduled execution crashed unexpectedly.";
+            try {
+              await db
+                .update(flowRuns)
+                .set({
+                  status: "failed",
+                  error: `Scheduled execution crashed: ${errMessage}`,
+                  finishedAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+            } catch (crashFinErr) {
+              console.error(`[flows-tick] CRITICAL: run ${run.id} crash finalization failed:`, crashFinErr);
+            }
           }
           await db.update(flows).set({ lastRunAt: new Date() }).where(eq(flows.id, flow.id));
-        }
-
-        // Defensive finalize: never let a failed status write strand the row
-        // as running (lastRunAt has already advanced, blocking the 30-min
-        // stale sweep as a backstop).
-        try {
-          await db
-            .update(flowRuns)
-            .set({
-              status: result.status,
-              steps: result.steps,
-              error: result.error ?? null,
-              finishedAt: new Date(),
-            })
-            .where(eq(flowRuns.id, run.id));
-        } catch (finErr) {
-          // DB unavailable — non-throwing; the global stale-run sweep at the
-          // top of every tick is the eventual backstop.
-          console.error(`[flows-tick] CRITICAL: run ${run.id} may be stranded as running —`, finErr);
         }
       } catch (err) {
         console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
