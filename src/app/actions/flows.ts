@@ -131,7 +131,7 @@ async function finalizeRun(
   runId: string,
   tenantId: string,
   outcome: { status: RunStatus; steps?: FlowStep[]; error?: string | null } | Error,
-): Promise<RunStatus> {
+): Promise<{ persisted: boolean; status: RunStatus; error?: string }> {
   const isErr = outcome instanceof Error;
   const status: RunStatus = isErr ? "failed" : outcome.status;
   const steps = isErr ? undefined : outcome.steps;
@@ -139,41 +139,74 @@ async function finalizeRun(
   const finishedAt = new Date();
   const updatedAt = new Date();
 
-  // 1. Primary write with full steps payload
-  try {
-    const updated = await db
-      .update(flowRuns)
-      .set({
-        status,
-        ...(steps !== undefined ? { steps } : {}),
-        error,
-        finishedAt,
-        updatedAt,
-      })
-      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-      .returning({ id: flowRuns.id });
+  // Retry up to 3 times with exponential backoff across rich and minimal writes
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // 1. Primary write with full steps payload
+    try {
+      const updated = await db
+        .update(flowRuns)
+        .set({
+          status,
+          ...(steps !== undefined ? { steps } : {}),
+          error,
+          finishedAt,
+          updatedAt,
+        })
+        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+        .returning({ id: flowRuns.id });
 
-    if (updated.length > 0) return status;
-  } catch (primaryErr) {
-    console.warn(`[flow-finalize] Rich finalization failed for run ${runId}, applying minimal fallback:`, primaryErr);
+      if (updated.length > 0) return { persisted: true, status };
+    } catch (primaryErr) {
+      console.warn(`[flow-finalize] Rich finalization attempt ${attempt + 1} failed for run ${runId}:`, primaryErr);
+    }
+
+    // 2. Fallback: minimal update omitting steps payload
+    try {
+      const fallbackUpdated = await db
+        .update(flowRuns)
+        .set({
+          status,
+          error: error ? `${error}` : "Finalization fallback applied (steps omitted).",
+          finishedAt,
+          updatedAt,
+        })
+        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+        .returning({ id: flowRuns.id });
+
+      if (fallbackUpdated.length > 0) return { persisted: true, status };
+    } catch (fallbackErr) {
+      console.error(`[flow-finalize] Minimal finalization attempt ${attempt + 1} failed for run ${runId}:`, fallbackErr);
+    }
+
+    // 3. Bare emergency write: unconditionally transition out of running
+    try {
+      const emergency = await db
+        .update(flowRuns)
+        .set({
+          status,
+          error: error ? `${error}` : "Emergency finalization applied.",
+          finishedAt,
+          updatedAt,
+        })
+        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)))
+        .returning({ id: flowRuns.id });
+
+      if (emergency.length > 0) return { persisted: true, status };
+    } catch (emergencyErr) {
+      console.error(`[flow-finalize] Emergency finalization attempt ${attempt + 1} failed for run ${runId}:`, emergencyErr);
+    }
+
+    if (attempt < 2) {
+      await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
+    }
   }
 
-  // 2. Fallback: minimal update omitting steps payload so the run is guaranteed to reach terminal status
-  try {
-    await db
-      .update(flowRuns)
-      .set({
-        status,
-        error: error ? `${error}` : "Finalization fallback applied.",
-        finishedAt,
-        updatedAt,
-      })
-      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
-  } catch (fallbackErr) {
-    console.error(`[flow-finalize] CRITICAL: Fallback finalization failed for run ${runId}:`, fallbackErr);
-  }
-
-  return status;
+  // All persistence attempts exhausted
+  return {
+    persisted: false,
+    status,
+    error: "Failed to persist terminal status to database after retries.",
+  };
 }
 
 export async function runFlow(
@@ -202,7 +235,7 @@ async function executeRunWithPorts(opts: {
   cachedSteps?: FlowStep[];
   fanoutProgress?: Record<string, Record<string, unknown>>;
   approvedNodeIds?: string[];
-}): Promise<{ runId: string; status: RunStatus }> {
+}): Promise<{ runId: string; status: RunStatus; error?: string }> {
   let runId = "";
   const [run] = await db
     .insert(flowRuns)
@@ -250,7 +283,7 @@ async function executeRunWithPorts(opts: {
     execError = err;
   }
 
-  const finalStatus = await finalizeRun(
+  const finalResult = await finalizeRun(
     runId,
     opts.tenantId,
     result
@@ -260,7 +293,7 @@ async function executeRunWithPorts(opts: {
 
   await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, opts.flow.id));
 
-  return { runId, status: finalStatus };
+  return { runId, status: finalResult.status, error: finalResult.persisted ? undefined : finalResult.error };
 }
 
 export async function resumeRun(
@@ -348,7 +381,7 @@ export async function resumeRun(
     execError = err;
   }
 
-  const finalStatus = await finalizeRun(
+  const finalResult = await finalizeRun(
     runId,
     tenantId,
     result
@@ -356,7 +389,15 @@ export async function resumeRun(
       : (execError instanceof Error ? execError : new Error(String(execError ?? "Resumed execution crashed"))),
   );
 
-  return { ok: true, status: finalStatus };
+  if (!finalResult.persisted) {
+    return {
+      ok: false,
+      status: finalResult.status,
+      error: `Run execution finished with status '${finalResult.status}', but terminal state could not be persisted to the database.`,
+    };
+  }
+
+  return { ok: true, status: finalResult.status };
 }
 
 /** Re-runs a failed/finished run reusing succeeded node outputs. */

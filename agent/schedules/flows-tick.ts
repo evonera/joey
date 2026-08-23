@@ -222,8 +222,40 @@ export default defineSchedule({
               }
             }
 
+            // Tier 3: bare emergency update without running status filter
+            if (!finalized) {
+              try {
+                const updated = await db
+                  .update(flowRuns)
+                  .set({
+                    status,
+                    error: error ? `${error}` : "Emergency finalization applied.",
+                    finishedAt,
+                    updatedAt,
+                  })
+                  .where(eq(flowRuns.id, run.id))
+                  .returning({ id: flowRuns.id });
+                if (updated.length > 0) finalized = true;
+              } catch (emergencyErr) {
+                console.error(`[flows-tick] Bare emergency finalization attempt ${attempt + 1} failed for ${run.id}:`, emergencyErr);
+              }
+            }
+
             if (!finalized && attempt < 2) {
               await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
+            }
+          }
+
+          // Tier 4: If all finalization writes failed, delete the stranded running row
+          // so it NEVER blocks future scheduled ticks for this flow.
+          if (!finalized) {
+            try {
+              console.error(`[flows-tick] CRITICAL: Finalization exhausted for run ${run.id}, removing running row to prevent permanent scheduling block`);
+              await db
+                .delete(flowRuns)
+                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+            } catch (deleteErr) {
+              console.error(`[flows-tick] CRITICAL: Emergency deletion failed for run ${run.id}:`, deleteErr);
             }
           }
 

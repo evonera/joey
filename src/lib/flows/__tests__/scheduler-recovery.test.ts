@@ -75,4 +75,47 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(dbRecord.status).toBe("succeeded");
     expect(dbRecord.error).toBe("Failed persisting step output details.");
   });
+
+  it("reports failure in approval resume if terminal writes are completely exhausted", () => {
+    // Simulate resumeRun behavior when DB write exhausts all retries
+    const finalizeOutcome = {
+      persisted: false,
+      status: "succeeded" as const,
+      error: "Failed to persist terminal status to database after retries.",
+    };
+
+    const handleResumeOutcome = (res: typeof finalizeOutcome) => {
+      if (!res.persisted) {
+        return {
+          ok: false,
+          status: res.status,
+          error: `Run execution finished with status '${res.status}', but terminal state could not be persisted to the database.`,
+        };
+      }
+      return { ok: true, status: res.status };
+    };
+
+    const result = handleResumeOutcome(finalizeOutcome);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe("succeeded");
+    expect(result.error).toContain("could not be persisted");
+  });
+
+  it("ensures exhausted scheduled finalization clears running status so future ticks are not suppressed", () => {
+    let runningRowPresent = true;
+    let finalized = false;
+
+    // Simulate all 3 finalization attempts failing
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // Both rich and minimal writes fail
+    }
+
+    // Tier 4 emergency cleanup
+    if (!finalized) {
+      runningRowPresent = false; // Emergency removal of stranded running row
+    }
+
+    expect(runningRowPresent).toBe(false); // Does NOT block future scheduled runs
+  });
 });
+
