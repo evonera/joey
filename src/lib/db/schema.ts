@@ -349,6 +349,7 @@ export const flowRuns = pgTable("flow_runs", {
   triggerPayload: jsonb("trigger_payload"),
   steps: jsonb("steps").default([]).notNull(),
   approvedNodeIds: jsonb("approved_node_ids").default([]).notNull(),
+  fanoutProgress: jsonb("fanout_progress").default({}).notNull(),
   error: text("error"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
@@ -384,3 +385,12 @@ export const rateLimitCounters = pgTable("rate_limit_counters", {
 }, (table) => ({
   tokenWindowIdx: uniqueIndex("rate_limit_token_window_idx").on(table.tokenId, table.windowStart),
 }));
+
+/**
+ * Per-item fan-out checkpoints for flow runs: { "<itemIndex>": { nodeId: output } }.
+ * Lets restart-from-failed retry only the failed tail of each item's chain
+ * instead of re-executing already-successful side-effecting nodes.
+ */
+export const fanoutProgressCol = {
+  fanoutProgress: jsonb("fanout_progress").default({}).notNull(),
+};

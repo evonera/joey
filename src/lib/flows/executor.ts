@@ -7,6 +7,10 @@ import type { NodeContext, NodeExecuteResult } from "./node-contract";
 
 export type ExecutorPorts = {
   onStepUpdate?: (step: FlowStep) => Promise<void> | void;
+  /** Persist per-item fan-out checkpoints after each completed item. */
+  onFanoutProgress?: (
+    progress: Record<string, Record<string, unknown>>,
+  ) => Promise<void> | void;
 };
 
 export type ExecuteOptions = {
@@ -18,6 +22,14 @@ export type ExecuteOptions = {
   cachedOutputs?: Record<string, unknown>;
   /** Approval-gate node ids pre-approved by the user (resume path). */
   approvedNodeIds?: string[];
+  /**
+   * Full persisted steps from the previous attempt (preferred over
+   * cachedOutputs): preserves skipped/failed states so replay keeps clean
+   * branch-exclusions and failure markers intact.
+   */
+  cachedSteps?: FlowStep[];
+  /** Per-item fan-out checkpoints: {"<itemIndex>": {nodeId: rawOutput}}. */
+  fanoutProgress?: Record<string, Record<string, unknown>>;
 };
 
 export type ExecuteResult = {
@@ -55,9 +67,20 @@ export async function executeFlow(
     approvedNodeIds: opts.approvedNodeIds,
   };
 
-  // Seed cache as synthetic succeeded steps → resume treats them like any
-  // completed node and fan-out state resets stay uniform.
-  if (opts.cachedOutputs) {
+  // Seed from a previous attempt. cachedSteps (full step list) preserves
+  // skipped/failed states; legacy cachedOutputs synthesizes succeeded-only.
+  if (opts.cachedSteps) {
+    for (const step of opts.cachedSteps) {
+      const node = nodeById.get(step.nodeId);
+      if (!node || steps.has(step.nodeId)) continue;
+      const output =
+        step.branch !== undefined
+          ? { __branch: step.branch, value: step.output }
+          : step.output;
+      steps.set(step.nodeId, { ...step, cached: true });
+      if (step.status === "succeeded") outputs.set(step.nodeId, output);
+    }
+  } else if (opts.cachedOutputs) {
     for (const [nodeId, output] of Object.entries(opts.cachedOutputs)) {
       const node = nodeById.get(nodeId);
       if (!node || steps.has(nodeId)) continue;
@@ -349,14 +372,47 @@ export async function executeFlow(
     for (const id of reachable) {
       if (!doc.edges.some((e) => e.from === id)) collected[id] = [];
     }
+    const chainNodes = Array.from(reachable);
+    const progress: Record<string, Record<string, unknown>> = {
+      ...opts.fanoutProgress,
+    };
+
     for (let i = 0; i < items.length; i++) {
-      // Fresh slate for the chain on every iteration. Steps from the LAST
+      const itemKey = String(i);
+      const checkpoint = progress[itemKey] ?? {};
+
+      // Restore this item's already-succeeded chain prefix…
+      for (const [nodeId, value] of Object.entries(checkpoint)) {
+        const node = nodeById.get(nodeId);
+        if (!node) continue;
+        steps.set(nodeId, {
+          nodeId,
+          type: node.type,
+          status: "succeeded",
+          output: stripInternal(value),
+          cached: true,
+        });
+        outputs.set(nodeId, value);
+      }
+      // …then clear only the UNCHECKPOINTED remainder. Steps from the LAST
       // iteration are intentionally kept afterwards for run inspection.
-      for (const id of reachable) steps.delete(id);
+      for (const id of reachable) {
+        if (!(id in checkpoint)) steps.delete(id);
+      }
       outputs.set(loopId, items[i]);
 
       const outcome = await stageLoop(entries, new Set());
       if (outcome !== "completed") return outcome;
+
+      // Checkpoint every chain node that succeeded for this item.
+      const done: Record<string, unknown> = {};
+      for (const id of chainNodes) {
+        const st = steps.get(id);
+        if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
+      }
+      progress[itemKey] = done;
+      await ports.onFanoutProgress?.(progress);
+
       for (const sinkId of Object.keys(collected)) {
         if (steps.get(sinkId)?.status !== "succeeded") continue;
         const value = unwrap(outputs.get(sinkId));

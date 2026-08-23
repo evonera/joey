@@ -13,6 +13,15 @@ const n = (id: string, type: string, config: Record<string, unknown> = {}) => ({
   position: { x: 0, y: 0 },
 });
 
+
+// Build cachedSteps entries the way flows.ts persists them.
+const step = (nodeId: string, type: string, extra: Record<string, unknown> = {}) => ({
+  nodeId,
+  type,
+  status: "succeeded" as const,
+  ...extra,
+});
+
 // Pure nodes only — no DB/network — so runs are fully deterministic.
 async function run(graph: FlowGraphDoc, opts?: Partial<Parameters<typeof executeFlow>[1]>) {
   return executeFlow(graph, {
@@ -103,7 +112,10 @@ describe("executeFlow", () => {
     expect(paused.status).toBe("waiting_approval");
     expect(paused.pendingApproval?.nodeId).toBe("gate");
 
-    const resumed = await run(graph, { approvedNodeIds: ["gate"], cachedOutputs: { t: paused.outputs["t"] } });
+    const resumed = await run(graph, {
+      approvedNodeIds: ["gate"],
+      cachedSteps: [step("t", "trigger.manual", { output: paused.outputs["t"] })],
+    });
     expect(resumed.status).toBe("succeeded");
   });
 
@@ -170,10 +182,10 @@ describe("cached replay semantics", () => {
     // Simulate flows.ts resume: seed cache from persisted steps, where cond
     // succeeded with branch=false recorded.
     const result = await run(branchGraph as never, {
-      cachedOutputs: {
-        t: { score: 5 },
-        cond: { __branch: "false", value: { score: 5 } },
-      },
+      cachedSteps: [
+        step("t", "trigger.manual", { output: { score: 5 } }),
+        step("cond", "logic.condition", { output: { score: 5 }, branch: "false" }),
+      ],
     });
 
     expect(result.status).toBe("succeeded");
@@ -198,10 +210,10 @@ describe("cached replay semantics", () => {
     };
 
     const result = await run(graph as never, {
-      cachedOutputs: {
-        t: items,
-        loop: items, // loop already succeeded before the downstream failure
-      },
+      cachedSteps: [
+        step("t", "trigger.manual", { output: items }),
+        step("loop", "logic.loop", { output: items }), // succeeded pre-failure
+      ],
     });
 
     expect(result.status).toBe("succeeded");
@@ -229,10 +241,10 @@ describe("repeated replay + deep cached fan-out", () => {
 
     // Generation 1: seed with wrapped output (as flows.ts resume does).
     const g1 = await run(graph as never, {
-      cachedOutputs: {
-        t: { score: 5 },
-        cond: { __branch: "false", value: { score: 5 } },
-      },
+      cachedSteps: [
+        step("t", "trigger.manual", { output: { score: 5 } }),
+        step("cond", "logic.condition", { output: { score: 5 }, branch: "false" }),
+      ],
     });
     const condStep = g1.steps.find((s) => s.nodeId === "cond");
     expect(condStep?.branch).toBe("false");
@@ -240,12 +252,12 @@ describe("repeated replay + deep cached fan-out", () => {
     // Generation 2: rebuild cache the way flows.ts does (branch-aware) and
     // confirm routing STILL holds — this is where the old code broke.
     const g2 = await run(graph as never, {
-      cachedOutputs: {
-        t: g1.outputs["t"],
-        cond: condStep?.branch
-          ? { __branch: condStep.branch, value: condStep.output }
-          : condStep?.output,
-      },
+      cachedSteps: [
+        step("t", "trigger.manual", { output: g1.outputs["t"] }),
+        condStep?.branch !== undefined
+          ? step("cond", "logic.condition", { output: condStep.output, branch: condStep.branch })
+          : step("cond", "logic.condition", { output: condStep?.output ?? null }),
+      ],
     });
     expect(g2.status).toBe("succeeded");
     expect(g2.steps.find((s) => s.nodeId === "no")?.status).toBe("succeeded");
@@ -271,12 +283,11 @@ describe("repeated replay + deep cached fan-out", () => {
     };
 
     const result = await run(graph as never, {
-      cachedOutputs: {
-        t: items,
-        loop: items,
-        mid: items[0], // immediate child cached-succeeded (last item)
-        // sink NOT seeded → failed earlier
-      },
+      cachedSteps: [
+        step("t", "trigger.manual", { output: items }),
+        step("loop", "logic.loop", { output: items }),
+        step("mid", "transform.filter", { output: items[0] }), // deeper sink failed
+      ],
     });
 
     expect(result.status).toBe("succeeded");
@@ -307,12 +318,14 @@ describe("cached fan-out trigger precision (round 4)", () => {
     // Seed: loop+cond+sinkT all succeeded; the unselected-branch sink is
     // absent entirely — nothing unfinished exists.
     const result = await run(loopCondGraph(items) as never, {
-      cachedOutputs: {
-        t: items,
-        loop: items,
-        cond: { __branch: "true", value: items[0] },
-        sinkT: items[0],
-      },
+      cachedSteps: [
+        step("t", "trigger.manual", { output: items }),
+        step("loop", "logic.loop", { output: items }),
+        step("cond", "logic.condition", { output: items[0], branch: "true" }),
+        step("sinkT", "transform.dedupe", { output: items[0] }),
+        // clean branch-exclusion skip survives replay and is ignored:
+        { nodeId: "sinkF", type: "transform.filter", status: "skipped" as const, cached: true },
+      ],
     });
 
     expect(result.status).toBe("succeeded");
@@ -325,11 +338,12 @@ describe("cached fan-out trigger precision (round 4)", () => {
     // Seed mirrors a failed original run: sink was marked skipped by
     // skipDownstream, carrying the failure marker as its error.
     const result = await run(loopCondGraph(items) as never, {
-      cachedOutputs: {
-        t: items,
-        loop: items,
-        cond: { __branch: "true", value: items[0] },
-      },
+      cachedSteps: [
+        step("t", "trigger.manual", { output: items }),
+        step("loop", "logic.loop", { output: items }),
+        step("cond", "logic.condition", { output: items[0], branch: "true" }),
+        { nodeId: "sinkT", type: "transform.dedupe", status: "skipped" as const, error: "Skipped: upstream node failed.", cached: true },
+      ],
     });
 
     // Fan-out ran per item; aggregate present via fresh sink execution.

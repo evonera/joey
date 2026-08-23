@@ -147,7 +147,8 @@ async function executeRunWithPorts(opts: {
   tenantId: string;
   trigger: "manual" | "schedule" | "webhook";
   triggerPayload?: unknown;
-  cachedOutputs?: Record<string, unknown>;
+  cachedSteps?: FlowStep[];
+  fanoutProgress?: Record<string, Record<string, unknown>>;
   approvedNodeIds?: string[];
 }): Promise<{ runId: string; status: RunStatus }> {
   let runId = "";
@@ -170,7 +171,8 @@ async function executeRunWithPorts(opts: {
       runId,
       flowId: opts.flow.id,
       triggerPayload: opts.triggerPayload,
-      cachedOutputs: opts.cachedOutputs,
+      cachedSteps: opts.cachedSteps,
+      fanoutProgress: opts.fanoutProgress,
       approvedNodeIds: opts.approvedNodeIds,
     },
     {
@@ -231,17 +233,7 @@ export async function resumeRun(
   const pending = (run.steps as FlowStep[]).find((s) => s.status === "waiting_approval");
   const approvedNodeIds = [...((run.approvedNodeIds as string[]) ?? []), ...(pending ? [pending.nodeId] : [])];
 
-  const cachedOutputs: Record<string, unknown> = {};
-  for (const step of run.steps as FlowStep[]) {
-    if (step.status !== "succeeded") continue;
-    // Re-wrap condition routing so replay follows the original branch.
-    cachedOutputs[step.nodeId] =
-      step.branch !== undefined
-        ? { __branch: step.branch, value: step.output }
-        : step.output;
-  }
-
-  // Clear the gate's stale waiting step so it re-executes as approved.
+  // Full step list preserves clean branch-skips and failure markers for replay.
   const clearedSteps = ((run.steps as FlowStep[]) ?? []).filter((s) => s.status !== "waiting_approval");
 
   const claimed = await db
@@ -261,10 +253,16 @@ export async function resumeRun(
       runId,
       flowId: flow.id,
       triggerPayload: run.triggerPayload ?? undefined,
-      cachedOutputs,
+      cachedSteps: clearedSteps,
+      fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
       approvedNodeIds,
     },
-    { onStepUpdate: (step) => persistStep(tenantId, runId, step) },
+    {
+      onStepUpdate: (step) => persistStep(tenantId, runId, step),
+      onFanoutProgress: async (progress) => {
+        await db.update(flowRuns).set({ fanoutProgress: progress }).where(eq(flowRuns.id, runId));
+      },
+    },
   );
 
   // Finalize defensively: if the full write fails, force at least the
@@ -297,22 +295,13 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
   const flow = await db.query.flows.findFirst({ where: eq(flows.id, run.flowId) });
   if (!flow) return { error: "Flow not found" };
 
-  const cachedOutputs: Record<string, unknown> = {};
-  for (const step of run.steps as FlowStep[]) {
-    if (step.status !== "succeeded") continue;
-    // Re-wrap condition routing so replay follows the original branch.
-    cachedOutputs[step.nodeId] =
-      step.branch !== undefined
-        ? { __branch: step.branch, value: step.output }
-        : step.output;
-  }
-
   const result = await executeRunWithPorts({
     flow,
     tenantId,
     trigger: run.trigger as "manual",
     triggerPayload: run.triggerPayload ?? undefined,
-    cachedOutputs,
+    cachedSteps: (run.steps as FlowStep[]) ?? [],
+    fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
     approvedNodeIds: (run.approvedNodeIds as string[]) ?? [],
   });
   return { runId: result.runId };
