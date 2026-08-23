@@ -442,4 +442,54 @@ describe("cached fan-out trigger precision (round 4)", () => {
     expect(result.status).toBe("succeeded");
     expect(heartbeatCount).toBeGreaterThan(0);
   });
+
+  it("preserves condition branch routing when restored from fanoutProgress checkpoint", async () => {
+    // Loop -> Cond -> (true -> SinkTrue, false -> SinkFalse)
+    const items = [{ active: true, name: "item1" }];
+    const graph = doc({
+      nodes: [
+        n("t", "trigger.manual", { samplePayload: JSON.stringify(items) }),
+        n("loop", "logic.loop"),
+        n("cond", "logic.condition", { field: "active", operator: "is_true" }),
+        n("sinkTrue", "transform.dedupe", { field: "name" }),
+        n("sinkFalse", "transform.filter", { field: "name", operator: "exists" }),
+      ],
+      edges: [
+        { from: "t", to: "loop" },
+        { from: "loop", to: "cond" },
+        { from: "cond", to: "sinkTrue", branch: "true" },
+        { from: "cond", to: "sinkFalse", branch: "false" },
+      ],
+    });
+
+    // Provide pre-saved fanout checkpoint where cond evaluated to "true"
+    const savedFanoutProgress = {
+      "0": {
+        cond: { __branch: "true", value: items[0] },
+      },
+    };
+
+    const result = await executeFlow(
+      graph,
+      {
+        tenantId: "t",
+        runId: "r1",
+        flowId: "f",
+        cachedSteps: [
+          step("t", "trigger.manual", { output: items }),
+          step("loop", "logic.loop", { output: items }),
+        ],
+        fanoutProgress: savedFanoutProgress,
+      },
+    );
+
+    expect(result.status).toBe("succeeded");
+    // sinkTrue should run, sinkFalse should remain skipped (not run)
+    expect(result.outputs["__fanout:loop"]).toEqual({
+      sinkTrue: [items[0]],
+      sinkFalse: [],
+    });
+    const sinkFalseStep = result.steps.find((s) => s.nodeId === "sinkFalse");
+    expect(sinkFalseStep?.status).toBe("skipped");
+  });
 });

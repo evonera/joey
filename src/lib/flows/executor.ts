@@ -413,11 +413,16 @@ export async function executeFlow(
       for (const [nodeId, value] of Object.entries(checkpoint)) {
         const node = nodeById.get(nodeId);
         if (!node) continue;
+        const branch =
+          value && typeof value === "object" && "__branch" in (value as Record<string, unknown>)
+            ? ((value as Record<string, unknown>).__branch as string)
+            : undefined;
         steps.set(nodeId, {
           nodeId,
           type: node.type,
           status: "succeeded",
           output: stripInternal(value),
+          ...(branch !== undefined ? { branch } : {}),
           cached: true,
         });
         outputs.set(nodeId, value);

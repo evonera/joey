@@ -246,17 +246,10 @@ export default defineSchedule({
             }
           }
 
-          // Tier 4: If all finalization writes failed, delete the stranded running row
-          // so it NEVER blocks future scheduled ticks for this flow.
           if (!finalized) {
-            try {
-              console.error(`[flows-tick] CRITICAL: Finalization exhausted for run ${run.id}, removing running row to prevent permanent scheduling block`);
-              await db
-                .delete(flowRuns)
-                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
-            } catch (deleteErr) {
-              console.error(`[flows-tick] CRITICAL: Emergency deletion failed for run ${run.id}:`, deleteErr);
-            }
+            console.error(
+              `[flows-tick] CRITICAL: Finalization writes exhausted for run ${run.id}. Run remains persisted with accumulated steps; stale recovery will transition it when DB recovers.`,
+            );
           }
 
           try {

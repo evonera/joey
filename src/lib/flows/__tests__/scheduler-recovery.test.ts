@@ -101,21 +101,24 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(result.error).toContain("could not be persisted");
   });
 
-  it("ensures exhausted scheduled finalization clears running status so future ticks are not suppressed", () => {
-    let runningRowPresent = true;
-    let finalized = false;
+  it("preserves executed run history on exhausted finalization without destructive deletion", () => {
+    type RunRecord = { id: string; status: string; steps: unknown[]; updatedAt: Date };
+    const executedRun: RunRecord = {
+      id: "run-exhausted",
+      status: "running",
+      steps: [{ nodeId: "node1", status: "succeeded" }],
+      updatedAt: new Date(Date.now() - 35 * 60_000), // Execution ended 35m ago
+    };
 
-    // Simulate all 3 finalization attempts failing
-    for (let attempt = 0; attempt < 3; attempt++) {
-      // Both rich and minimal writes fail
+    // When finalization updates fail across retries, row is NOT deleted.
+    // Stale recovery safely transitions it when database is available.
+    const staleCutoff = new Date(Date.now() - 30 * 60_000);
+    if (executedRun.status === "running" && executedRun.updatedAt < staleCutoff) {
+      executedRun.status = "failed";
     }
 
-    // Tier 4 emergency cleanup
-    if (!finalized) {
-      runningRowPresent = false; // Emergency removal of stranded running row
-    }
-
-    expect(runningRowPresent).toBe(false); // Does NOT block future scheduled runs
+    expect(executedRun.status).toBe("failed");
+    expect(executedRun.steps.length).toBe(1); // Accumulated history preserved
   });
 });
 
