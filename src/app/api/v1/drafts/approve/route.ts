@@ -22,22 +22,38 @@ export async function POST(request: Request) {
         if (variantName && content) {
             updateData.selectedVariantId = variantName;
             updateData.content = content;
-        } else {
-            const existing = await db.query.drafts.findFirst({
-                where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
-                columns: { content: true }
-            });
-            if (!existing?.content) {
-                return withRateLimitHeaders(
-                    NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 }),
-                    rateLimit
-                );
-            }
         }
 
-        await db.update(drafts)
+        // Existence + tenant check ALWAYS runs so a bad id or foreign draft
+        // can never report success.
+        const existing = await db.query.drafts.findFirst({
+            where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
+            columns: { content: true }
+        });
+        if (!existing) {
+            return withRateLimitHeaders(
+                NextResponse.json({ error: "Draft not found" }, { status: 404 }),
+                rateLimit
+            );
+        }
+        if (!variantName && !existing.content) {
+            return withRateLimitHeaders(
+                NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 }),
+                rateLimit
+            );
+        }
+
+        const updated = await db.update(drafts)
             .set(updateData)
-            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)))
+            .returning();
+
+        if (updated.length === 0) {
+            return withRateLimitHeaders(
+                NextResponse.json({ error: "Draft not found" }, { status: 404 }),
+                rateLimit
+            );
+        }
 
         return withRateLimitHeaders(NextResponse.json({ success: true }), rateLimit);
     } catch (error: any) {

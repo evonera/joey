@@ -18,9 +18,17 @@ export async function POST(request: Request) {
             );
         }
 
-        await db.update(drafts)
+        const updated = await db.update(drafts)
             .set({ status: "rejected", errorMessage: feedback })
-            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)))
+            .returning();
+
+        if (updated.length === 0) {
+            return withRateLimitHeaders(
+                NextResponse.json({ error: "Draft not found" }, { status: 404 }),
+                rateLimit
+            );
+        }
 
         return withRateLimitHeaders(NextResponse.json({ success: true }), rateLimit);
     } catch (error: any) {

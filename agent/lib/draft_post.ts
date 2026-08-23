@@ -27,6 +27,19 @@ export default defineTool({
         platformOptions: { platform, mediaUrls },
         status: "pending_review",
       });
+
+      // Account the drafting run's LLM spend against this tenant's budget.
+      // Eve owns the model call, so we record an honest estimate here: ~2k
+      // input tokens (persona + context prompt) and output chars/4.
+      try {
+        const { recordTokenUsage } = await import("@/lib/usage");
+        const outputTokens = Math.ceil(
+          variants.reduce((n, v) => n + v.content.length, 0) / 4,
+        );
+        void recordTokenUsage(tenantId as string, 2000, outputTokens);
+      } catch {
+        // budget accounting must never block draft creation
+      }
       
       const { createNotification } = await import('@/lib/notifications');
       await createNotification(tenantId as string, 'draft_ready', 'New Draft Ready', 'Your AI agent has drafted a new post for your review.', { link: '/drafts' });

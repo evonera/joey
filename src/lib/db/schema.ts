@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, integer, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // --- BetterAuth Required Tables ---
@@ -311,3 +311,15 @@ export const notificationPreferences = pgTable("notification_preferences", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/**
+ * Deployment-wide fixed-window rate limiting for the public API. One row per
+ * (token, window) so documented limits hold across instances and restarts.
+ */
+export const rateLimitCounters = pgTable("rate_limit_counters", {
+  tokenId: text("token_id").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").default(1).notNull(),
+}, (table) => ({
+  tokenWindowIdx: uniqueIndex("rate_limit_token_window_idx").on(table.tokenId, table.windowStart),
+}));
