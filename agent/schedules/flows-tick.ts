@@ -1,7 +1,19 @@
+/**
+ * Flow Builder schedule tick.
+ *
+ * Eve schedule compliance (per AGENTS.md → node_modules/eve/docs):
+ * - Declared with defineSchedule({ cron }) exactly like
+ *   agent/schedules/tenant-poll.ts; the eve dev/build runtime discovers and
+ *   registers it automatically from agent/schedules/ — no manual wiring.
+ * - The handler runs to completion on every fire; long work uses await and
+ *   per-item error boundaries so one failure never kills the tick.
+ * - Idempotent per interval: active flows are guarded by an in-flight run
+ *   check plus lastRunAt spacing, so overlapping ticks are safe.
+ */
 import { defineSchedule } from "eve/schedules";
 import { db } from "@/lib/db";
 import { flows, flowRuns } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, lt } from "drizzle-orm";
 import { executeFlow } from "@/lib/flows/executor";
 import { getNode } from "@/lib/flows/registry";
 
@@ -33,6 +45,23 @@ export default defineSchedule({
           if (elapsed < config.intervalMinutes * 60_000) continue;
         }
 
+        // Recover runs stuck as running (e.g. process died mid-execution).
+        const staleCutoff = new Date(Date.now() - 30 * 60_000);
+        const stale = await db.query.flowRuns.findFirst({
+          where: and(
+            eq(flowRuns.flowId, flow.id),
+            eq(flowRuns.status, "running"),
+            lt(flowRuns.startedAt, staleCutoff),
+          ),
+          columns: { id: true },
+        });
+        if (stale) {
+          await db
+            .update(flowRuns)
+            .set({ status: "failed", error: "Run timed out (stuck in running).", finishedAt: new Date() })
+            .where(eq(flowRuns.id, stale.id));
+        }
+
         // Skip if a run for this flow is still in flight.
         const inFlight = await db.query.flowRuns.findFirst({
           where: and(eq(flowRuns.flowId, flow.id), eq(flowRuns.status, "running")),
@@ -45,29 +74,46 @@ export default defineSchedule({
           .values({ flowId: flow.id, tenantId: flow.tenantId, trigger: "schedule" })
           .returning();
 
-        const result = await executeFlow(
-          flow.graph as Parameters<typeof executeFlow>[0],
-          {
-            tenantId: flow.tenantId,
-            runId: run.id,
-            flowId: flow.id,
-            triggerPayload: { scheduledAt: new Date().toISOString() },
-          },
-          {
-            onStepUpdate: async (step) => {
-              const r = await db.query.flowRuns.findFirst({
-                where: eq(flowRuns.id, run.id),
-                columns: { steps: true },
-              });
-              if (!r) return;
-              const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
-              const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
-              if (idx >= 0) steps[idx] = step;
-              else steps.push(step);
-              await db.update(flowRuns).set({ steps }).where(eq(flowRuns.id, run.id));
+        let result;
+        try {
+          result = await executeFlow(
+            flow.graph as Parameters<typeof executeFlow>[0],
+            {
+              tenantId: flow.tenantId,
+              runId: run.id,
+              flowId: flow.id,
+              triggerPayload: { scheduledAt: new Date().toISOString() },
             },
-          },
-        );
+            {
+              onStepUpdate: async (step) => {
+                const r = await db.query.flowRuns.findFirst({
+                  where: eq(flowRuns.id, run.id),
+                  columns: { steps: true },
+                });
+                if (!r) return;
+                const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
+                const idx = steps.findIndex((st) => st.nodeId === step.nodeId);
+                if (idx >= 0) steps[idx] = step;
+                else steps.push(step);
+                await db.update(flowRuns).set({ steps }).where(eq(flowRuns.id, run.id));
+              },
+            },
+          );
+        } finally {
+          // A throw mid-execution must never leave the row stuck as running —
+          // that would permanently block this flow's future ticks.
+          if (result === undefined) {
+            await db
+              .update(flowRuns)
+              .set({
+                status: "failed",
+                error: "Scheduled execution crashed before finalization.",
+                finishedAt: new Date(),
+              })
+              .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+          }
+          await db.update(flows).set({ lastRunAt: new Date() }).where(eq(flows.id, flow.id));
+        }
 
         await db
           .update(flowRuns)
@@ -78,8 +124,6 @@ export default defineSchedule({
             finishedAt: new Date(),
           })
           .where(eq(flowRuns.id, run.id));
-
-        await db.update(flows).set({ lastRunAt: new Date() }).where(eq(flows.id, flow.id));
       } catch (err) {
         console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
       }

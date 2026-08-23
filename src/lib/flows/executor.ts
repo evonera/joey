@@ -231,20 +231,25 @@ export async function executeFlow(
       }
     }
 
+    let branchFailed = false;
+
     while (frontier.length > 0) {
       if (pendingApproval) return "paused";
 
-      const stage = [...frontier].filter((id) => !consumed.has(id));
+      // Failed branches must not starve independent healthy ones: on failure
+      // we keep staging; skipDownstream() has already marked only the failed
+      // node's descendants as skipped.
+      const stage = [...frontier].filter(
+        (id) => !consumed.has(id) && steps.get(id)?.status !== "skipped",
+      );
       frontier = [];
 
       if (stage.length === 0) break;
 
       const results = await Promise.all(stage.map((id) => runNode(nodeById.get(id)!)));
       if (results.includes("paused")) return "paused";
-      if (results.includes("failed")) {
-        await skipUnreached(reachable);
-        return "failed";
-      }
+      const stageFailed = results.includes("failed");
+      if (stageFailed) branchFailed = true;
 
       // Fan-out FIRST: its downstream chain is consumed per item and must not
       // be queued into the normal frontier.
@@ -277,12 +282,11 @@ export async function executeFlow(
         const outcome = await fanOut(loopId, unwrap(outputs.get(loopId)) as unknown[]);
         if (outcome === "paused") return "paused";
         if (outcome === "failed") {
-          await skipUnreached(reachable);
-          return "failed";
+          branchFailed = true;
         }
       }
     }
-    return "completed";
+    return branchFailed ? "failed" : "completed";
   }
 
   /** Re-runs the downstream chain once per item; aggregates sink outputs. */
@@ -313,15 +317,6 @@ export async function executeFlow(
 
     outputs.set(FANOUT_KEY(loopId), collected);
     return "completed";
-  }
-
-  async function skipUnreached(reachable: Set<string>) {
-    for (const id of reachable) {
-      if (!steps.get(id)?.status) {
-        const node = nodeById.get(id)!;
-        await setStatus({ nodeId: id, type: node.type, status: "skipped" });
-      }
-    }
   }
 
   function reachableFrom(startIds: string[]): Set<string> {

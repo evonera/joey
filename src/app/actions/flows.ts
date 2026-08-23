@@ -202,23 +202,29 @@ export async function resumeRun(
     where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
   });
   if (!run) return { error: "Run not found" };
-  if (run.status !== "waiting_approval") return { error: "Run is not waiting for approval." };
 
   const flow = await db.query.flows.findFirst({
     where: eq(flows.id, run.flowId),
   });
   if (!flow) return { error: "Flow not found" };
 
+  // Atomic claim: exactly one concurrent caller can move the run out of
+  // waiting_approval, so downstream side effects can never execute twice.
   if (!approve) {
     const steps = (run.steps as FlowStep[]) ?? [];
     for (const step of steps) {
       if (step.status === "waiting_approval") step.status = "failed";
       else if (step.status === "working" || step.status === "ready") step.status = "skipped";
     }
-    await db
+    const claimed = await db
       .update(flowRuns)
       .set({ status: "failed", steps, error: "Rejected at approval gate.", finishedAt: new Date() })
-      .where(eq(flowRuns.id, runId));
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.status, "waiting_approval")))
+      .returning();
+
+    if (claimed.length === 0) {
+      return { error: "Run is not waiting for approval (already resumed)." };
+    }
     return { ok: true, status: "failed" };
   }
 
@@ -233,10 +239,15 @@ export async function resumeRun(
   // Clear the gate's stale waiting step so it re-executes as approved.
   const clearedSteps = ((run.steps as FlowStep[]) ?? []).filter((s) => s.status !== "waiting_approval");
 
-  await db
+  const claimed = await db
     .update(flowRuns)
     .set({ approvedNodeIds, steps: clearedSteps, status: "running", error: null })
-    .where(eq(flowRuns.id, runId));
+    .where(and(eq(flowRuns.id, runId), eq(flowRuns.status, "waiting_approval")))
+    .returning();
+
+  if (claimed.length === 0) {
+    return { error: "Run is not waiting for approval (already resumed)." };
+  }
 
   const result = await executeFlow(
     flow.graph as Parameters<typeof executeFlow>[0],
