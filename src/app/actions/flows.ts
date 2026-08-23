@@ -178,23 +178,16 @@ async function finalizeRun(
       console.error(`[flow-finalize] Minimal finalization attempt ${attempt + 1} failed for run ${runId}:`, fallbackErr);
     }
 
-    // 3. Bare emergency write: unconditionally transition out of running
+    // Check if the run has already been transitioned to a terminal status by stale recovery
     try {
-      const emergency = await db
-        .update(flowRuns)
-        .set({
-          status,
-          error: error ? `${error}` : "Emergency finalization applied.",
-          finishedAt,
-          updatedAt,
-        })
-        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)))
-        .returning({ id: flowRuns.id });
-
-      if (emergency.length > 0) return { persisted: true, status };
-    } catch (emergencyErr) {
-      console.error(`[flow-finalize] Emergency finalization attempt ${attempt + 1} failed for run ${runId}:`, emergencyErr);
-    }
+      const existing = await db.query.flowRuns.findFirst({
+        where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
+        columns: { status: true },
+      });
+      if (existing && existing.status !== "running") {
+        return { persisted: true, status: existing.status as RunStatus };
+      }
+    } catch {}
 
     if (attempt < 2) {
       await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));

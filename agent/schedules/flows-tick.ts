@@ -222,23 +222,17 @@ export default defineSchedule({
               }
             }
 
-            // Tier 3: bare emergency update without running status filter
+            // Check if already finalized by stale recovery or another path
             if (!finalized) {
               try {
-                const updated = await db
-                  .update(flowRuns)
-                  .set({
-                    status,
-                    error: error ? `${error}` : "Emergency finalization applied.",
-                    finishedAt,
-                    updatedAt,
-                  })
-                  .where(eq(flowRuns.id, run.id))
-                  .returning({ id: flowRuns.id });
-                if (updated.length > 0) finalized = true;
-              } catch (emergencyErr) {
-                console.error(`[flows-tick] Bare emergency finalization attempt ${attempt + 1} failed for ${run.id}:`, emergencyErr);
-              }
+                const existing = await db.query.flowRuns.findFirst({
+                  where: eq(flowRuns.id, run.id),
+                  columns: { status: true },
+                });
+                if (existing && existing.status !== "running") {
+                  finalized = true;
+                }
+              } catch {}
             }
 
             if (!finalized && attempt < 2) {
