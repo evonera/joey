@@ -1,0 +1,52 @@
+# How to Automate Social Media with AI in 2026
+
+Social media automation has split into two eras. The first era — schedulers like Buffer and Hootsuite — automated *delivery*: you wrote everything, and software decided when it went out. The second era, driven by large language models, automates *creation*: software drafts the posts themselves, tailored to each platform and to your brand voice.
+
+This guide covers how that second era actually works in 2026, which parts of your workflow are worth handing to AI, and where a human still needs to stay in the loop.
+
+## What AI can realistically automate today
+
+Modern AI social media tools handle four jobs well:
+
+1. **Drafting platform-native content.** A good agent does not write one post and blast it everywhere. It writes a 280-character take for X/Twitter, a longer narrative for LinkedIn, and a conversational version for Facebook — each respecting character limits, hashtag conventions, and link-preview behavior.
+2. **Learning your brand voice.** Feed an agent your past posts and a short description of your tone, and it stops sounding like a generic chatbot. This is the difference between "AI slop" and drafts you would actually sign.
+3. **Scheduling at the right times.** Agents analyze posting history and space drafts across your audience's active hours instead of dumping five posts in one afternoon.
+4. **Curating relevant material.** Agentic workflows can pull industry news and turn it into draft commentary, so your feed is not purely self-promotional.
+
+## What you should never fully automate
+
+The failure mode of early AI social tools was obvious: accounts posting plausible-but-wrong claims, off-brand jokes, or hallucinated statistics. The fix is not better prompts — it is **human-in-the-loop approval**.
+
+Keep these steps human:
+
+- **Final approval.** Every post should require an explicit yes from you before publishing.
+- **Claims and numbers.** If a draft cites a statistic, verify it. LLMs generate confident-sounding numbers.
+- **Crisis or sensitive topics.** No autonomous system should speak for your brand during a PR incident.
+
+Tools that skip this step save you minutes and cost you reputation.
+
+## The agentic workflow, step by step
+
+Here is what a well-designed 2026 automation loop looks like:
+
+1. **Connect accounts** through a publishing layer (Joey uses [Zernio](/) for cross-platform delivery).
+2. **Configure persona** — brand voice, goals, tone, and posting schedule with timezone awareness.
+3. **The agent polls on schedule**, checks whether content is due, and drafts posts per platform.
+4. **Drafts land in a review queue** with full previews. You approve, edit inline, or reject with feedback the agent learns from.
+5. **Approved posts publish automatically**, and engagement data flows back so future drafts improve.
+
+The key architectural idea: the agent runs continuously (polling, drafting, learning), but every irreversible action sits behind an approval gate.
+
+## Choosing a tool: three questions
+
+Before picking any AI social media manager, ask:
+
+- **Who holds the keys?** Tools that proxy AI access through their own API charge you a margin forever. BYOK tools let you plug in your own provider keys and pay raw cost. See our explainer on [BYOK explained](/blog/what-is-byok-bring-your-own-key-explained).
+- **Can I leave?** Open-source, self-hostable tools mean your content history and configs are portable. Locked-in SaaS means exporting CSVs. We compared the trade-offs in [open-source vs Buffer vs Hootsuite](/blog/open-source-social-media-management-joey-vs-buffer-vs-hootsuite).
+- **Where is the approval gate?** If the product's demo shows auto-publishing by default, keep shopping.
+
+## Getting started with Joey
+
+[Joey](/) implements exactly this loop: an Eve-framework agent drafts platform-specific posts from your brand voice, drops them into an approval dashboard and calendar, and publishes only what you approve. It is open source under MIT, BYOK end to end, and self-hostable in an afternoon.
+
+Start with one platform and two scheduled slots per week. Review every draft for the first month, correcting tone in the rejection feedback — the agent improves fastest when your feedback is specific. Once approval edits trend toward zero, scale up.

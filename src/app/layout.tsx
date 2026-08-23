@@ -37,7 +37,12 @@ const schemaData = {
       "@type": "Organization",
       name: "Evonera",
       url: siteUrl,
-      logo: `${siteUrl}/logo.png`,
+      logo: `${siteUrl}/logo.svg`,
+      sameAs: [
+        "https://github.com/evonera",
+        "https://github.com/evonera/joey",
+        "https://x.com/evonera",
+      ],
       contactPoint: {
         "@type": "ContactPoint",
         contactType: "customer support",
@@ -50,14 +55,6 @@ const schemaData = {
       url: siteUrl,
       description:
         "An open-source, BYOK social media automation platform.",
-      potentialAction: {
-        "@type": "SearchAction",
-        target: {
-          "@type": "EntryPoint",
-          urlTemplate: `${siteUrl}/search?q={search_term_string}`,
-        },
-        "query-input": "required name=search_term_string",
-      },
     },
     {
       "@type": "WebApplication",

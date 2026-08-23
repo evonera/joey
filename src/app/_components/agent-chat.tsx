@@ -16,6 +16,7 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
+import { registerAsset, requestUploadUrl } from "@/app/actions/assets";
 import { cn } from "@/lib/utils";
 import { AgentMessage } from "./agent-message";
 
@@ -119,7 +120,7 @@ export function AgentChat() {
     }
     for (const file of message.files) {
       parts.push({
-        data: file.url,
+        data: await uploadToObjectStorage(file),
         filename: file.filename,
         mediaType: file.mediaType,
         type: "file",
@@ -202,6 +203,33 @@ export function AgentChat() {
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unable to cancel the response.";
+}
+
+async function uploadToObjectStorage(file: {
+  filename?: string;
+  mediaType?: string;
+  url: string;
+}): Promise<string> {
+  const filename = file.filename ?? "attachment";
+  const mediaType = file.mediaType ?? "application/octet-stream";
+  const { publicUrl, uploadUrl, key } = await requestUploadUrl(filename, mediaType);
+  const response = await fetch(file.url);
+  const body = await response.blob();
+  const uploadRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": mediaType },
+    body,
+  });
+  if (!uploadRes.ok) {
+    throw new Error("Failed to upload attachment to object storage.");
+  }
+  await registerAsset({
+    filename,
+    key,
+    mimeType: mediaType,
+    size: body.size,
+  });
+  return publicUrl;
 }
 
 function StatusDot({ status }: { readonly status: AgentStatus }) {

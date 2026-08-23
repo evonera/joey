@@ -55,6 +55,9 @@ export async function GET() {
       }));
     return NextResponse.json({ connections, checked: CANDIDATE_TOOLKITS });
   } catch (error) {
+    if (error instanceof Error && error.message === "No active workspace found") {
+      return NextResponse.json({ error: "No tenant found" }, { status: 404 });
+    }
     console.error("Connections list failed:", error);
     return NextResponse.json({ error: "Connections unavailable" }, { status: 502 });
   }

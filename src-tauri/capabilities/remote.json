@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-access",
+  "description": "Remote access for Joey API",
+  "windows": ["*"],
+  "permissions": [
+    "core:default"
+  ],
+  "platforms": [
+    "macOS",
+    "windows",
+    "linux"
+  ],
+  "remote": {
+    "urls": ["https://joey.evonera.com", "http://localhost:3000"]
+  }
+}

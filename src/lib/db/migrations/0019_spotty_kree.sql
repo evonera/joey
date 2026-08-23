@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "public_api_tokens_token_hash_idx" ON "public_api_tokens" USING btree ("token_hash");--> statement-breakpoint
+CREATE INDEX "public_api_tokens_tenant_id_idx" ON "public_api_tokens" USING btree ("tenant_id");

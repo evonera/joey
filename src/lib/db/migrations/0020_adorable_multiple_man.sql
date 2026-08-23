@@ -1,0 +1,1 @@
+ALTER TABLE "public_api_tokens" ADD COLUMN "scopes" text[] DEFAULT '{"read","write"}' NOT NULL;

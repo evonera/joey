@@ -1,0 +1,1 @@
+ALTER TABLE "usage_tracking" ADD CONSTRAINT "usage_tracking_tenant_id_unique" UNIQUE("tenant_id");

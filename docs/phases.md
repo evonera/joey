@@ -438,10 +438,10 @@ This document outlines the extremely granular, step-by-step phases for building 
 **Acceptance Criteria**: Free users hit limits and are prompted to pay.
 
 ### Phase 3.13: Public API & Developer Docs (2 days)
--[x] Expose REST API for core actions (create draft, get analytics)
--[x] Implement API token generation in settings
--[x] Write OpenAPI/Swagger documentation
--[x] Publish developer documentation site
+-[x] Expose REST API for core actions (create draft, get analytics) *(v1: accounts, drafts, posts + approve/reject; Bearer auth, scopes, 60 req/min rate limit)*
+-[x] Implement API token generation in settings *(Settings → Developer API: hashed tokens shown once, scope picker, revoke)*
+-[x] Write OpenAPI/Swagger documentation *(served at `/api/openapi.json`, OpenAPI 3.1)*
+-[x] Publish developer documentation site *(public `/docs` page: auth, scopes, endpoints, curl examples)*
 **Dependencies**: Phase 3.10
 **Reference Repos**: Mintlify or Docusaurus
 **Acceptance Criteria**: External developers can build custom integrations via API tokens.
@@ -495,68 +495,68 @@ This document outlines the extremely granular, step-by-step phases for building 
 - [x] Create `public/llms.txt` with brand description, key pages, FAQ, and tech details
 - [x] Fix OG image URL (rely on Next.js `opengraph-image.tsx` file convention instead of dead static file)
 - [x] Add question-based H2 headings ("What is Joey?", "How does it work?")
-- [ ] Review and add to sitemap if `llms.txt` should be crawlable
+- [x] Review and add to sitemap if `llms.txt` should be crawlable
 **Dependencies**: Phase 4.2
 **Reference Repos**: llmstxt.org protocol
 **Acceptance Criteria**: `https://joey.evonera.com/llms.txt` returns valid markdown; AI crawlers can cite structured answers.
 
 ### Phase 4.4: Content Security Policy (1 day)
-- [ ] Research CSP requirements: which external domains Joey connects to (Zernio, LLM providers, image services)
-- [ ] Add `Content-Security-Policy` header to `next.config.ts` with appropriate `script-src`, `style-src`, `connect-src`, `img-src`, `frame-src`
-- [ ] Test all dashboard functionality with CSP active
-- [ ] Fallback to `Content-Security-Policy-Report-Only` first, iterate on violations
+- [x] Research CSP requirements: which external domains Joey connects to (Zernio, LLM providers, image services) *(browser talks only to same-origin APIs + img.shields.io, R2 assets, social avatar CDNs; Zernio/LLM/Dodo are server-side)*
+- [x] Add `Content-Security-Policy` header to `next.config.ts` with appropriate `script-src`, `style-src`, `connect-src`, `img-src`, `frame-src` *(enforcing baseline; `unsafe-eval` now dev-only)*
+- [ ] Test all dashboard functionality with CSP active *(final pass needs a browser session against production; Report-Only header is collecting violations meanwhile)*
+- [x] Fallback to `Content-Security-Policy-Report-Only` first, iterate on violations *(tightened candidate (enumerated img/connect origins, base-uri, form-action, object-src, upgrade-insecure-requests) ships as Report-Only; flip to enforcing once clean in prod)*
 **Dependencies**: Phase 4.0
 **Reference Repos**: MDN CSP docs, securityheaders.com
 **Acceptance Criteria**: CSP header returned on all responses; no console errors from first-party scripts; no blocked requests during normal app usage.
 
 ### Phase 4.5: Social Proof & Entity Signals (1-2 days)
-- [ ] Add GitHub star badge to nav header (use `shields.io` badge or GitHub API + cache)
-- [ ] Add "Open Source — MIT License" badge in open-source section
-- [ ] Add social profile links (GitHub, Twitter) to footer
-- [ ] Link "Evonera" in footer to evonera.com (or create `/about` page)
-- [ ] Add `sameAs` URLs to Organization JSON-LD schema
+- [x] Add GitHub star badge to nav header (use `shields.io` badge or GitHub API + cache)
+- [x] Add "Open Source — MIT License" badge in open-source section
+- [x] Add social profile links (GitHub, Twitter) to footer
+- [x] Link "Evonera" in footer to evonera.com (or create `/about` page)
+- [x] Add `sameAs` URLs to Organization JSON-LD schema
 **Dependencies**: Phase 4.1, Phase 4.2
 **Reference Repos**: shields.io, GitHub REST API
 **Acceptance Criteria**: GitHub star count displays in nav; footer has verified social links; Schema.org `sameAs` is populated.
 
 ### Phase 4.6: Visual Media for Experience Signals (1-2 days)
-- [ ] Capture product screenshots: dashboard, approval flow, calendar view, composer
+- [ ] Capture product screenshots: dashboard, approval flow, calendar view, composer *(branded UI-preview SVGs shipped as placeholders — replace with real captures)*
 - [ ] Create product demo video (30-60 sec) or animated GIF of the approve→publish flow
-- [ ] Add screenshots to landing page feature cards with descriptive alt text
-- [ ] Update `opengraph-image.tsx` to include product screenshot instead of abstract logo
+- [x] Add screenshots to landing page feature cards with descriptive alt text
+- [x] Update `opengraph-image.tsx` to include product screenshot instead of abstract logo
 - [ ] Consider adding video schema markup (`VideoObject`)
 **Dependencies**: Phase 4.2
 **Reference Repos**: None
 **Acceptance Criteria**: Landing page includes at least 3 product screenshots; OG image shows real product UI; alt text is descriptive.
 
 ### Phase 4.7: Blog & Content Engine (2-3 days)
-- [ ] Create blog route group (`/blog/[slug]`) with proper metadata and breadcrumb schema
-- [ ] Implement blog with MDX or CMS integration
-- [ ] Publish 3-5 pillar articles targeting informational keywords:
+- [x] Create blog route group (`/blog/[slug]`) with proper metadata and breadcrumb schema
+- [x] Implement blog with MDX or CMS integration
+- [x] Publish 3-5 pillar articles targeting informational keywords:
   - "How to automate social media with AI in 2026"
   - "Open-source social media management: Joey vs Buffer vs Hootsuite"
   - "What is BYOK AI? Bring your own key explained"
-- [ ] Add internal links from landing page to relevant blog posts
-- [ ] Add blog posts to sitemap
+- [x] Add internal links from landing page to relevant blog posts
+- [x] Add blog posts to sitemap
 **Dependencies**: Phase 4.2
 **Reference Repos**: Next.js MDX blog examples, Contentlayer
 **Acceptance Criteria**: Blog section is live with 3+ articles; articles rank for targeted long-tail keywords within 30 days.
 
 ### Phase 4.8: About / Team Page (1 day)
-- [ ] Create `/about` page with team member bios, photos, and relevant experience
-- [ ] Add Person schema for each team member (with `sameAs` to LinkedIn/GitHub)
-- [ ] Link "Evonera" in footer to `/about`
-- [ ] Add about page to sitemap
+- [x] Create `/about` page with team member bios, photos, and relevant experience *(team roster is a placeholder array — replace with real bios/headshots)*
+- [x] Add Person schema for each team member (with `sameAs` to LinkedIn/GitHub)
+- [x] Link "Evonera" in footer to `/about`
+- [x] Add about page to sitemap
 **Dependencies**: Phase 4.1
 **Reference Repos**: None
 **Acceptance Criteria**: About page displays team credentials; Person schema validates in Rich Results Test.
 
 ### Phase 4.9: Performance Budget & Core Web Vitals (1-2 days)
-- [ ] Run Lighthouse CI on landing page and dashboard
-- [ ] Implement `next/dynamic` for heavy dashboard components (charts, calendar, dnd-kit)
-- [ ] Lazy-load recharts and react-big-calendar off critical path
-- [ ] Audit bundle size with `@next/bundle-analyzer`
-- [ ] Add image optimization for any new screenshots
+- [ ] Run Lighthouse CI on landing page and dashboard *(requires deployed URL / browser env)*
+- [x] Implement `next/dynamic` for heavy dashboard components (charts, calendar, dnd-kit)
+- [x] Lazy-load recharts and react-big-calendar off critical path
+- [x] Audit bundle size with `@next/bundle-analyzer` *(analyzer wired (`ANALYZE=true`); it is webpack-only so under Turbopack the audit was done via chunk-graph inspection: recharts isolated to its own chunk, rbc excluded from server HTML)*
+- [x] Add image optimization for any new screenshots *(screenshot slots are ~1-2KB SVG vectors)*
 **Dependencies**: Phase 4.6, Phase 4.7
 **Reference Repos**: Next.js bundle analyzer, Lighthouse CI docs
 **Acceptance Criteria**: Landing page Lighthouse Performance score ≥ 95; dashboard pages ≥ 70 on mobile.

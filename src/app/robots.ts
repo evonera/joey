@@ -1,11 +1,14 @@
 import type { MetadataRoute } from 'next';
 
+// Required for static export
+export const dynamic = 'force-static';
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       {
         userAgent: '*',
-        allow: '/',
+        allow: ['/', '/api/openapi.json'],
         disallow: ['/dashboard/', '/settings/', '/accounts/', '/api/', '/login', '/signup'],
       },
     ],

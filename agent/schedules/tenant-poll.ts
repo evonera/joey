@@ -5,6 +5,62 @@ import { agentConfigs, tenants, member, drafts, webhookEvents, engagementItems, 
 import { eq, and, lte, isNotNull, isNull, asc, inArray } from "drizzle-orm";
 import { executePublishDraft, getZernioClientForTenant } from "@/lib/publisher-core";
 import { syncTenantMemories } from "@/lib/ingest-memories";
+import { assertBudget } from "@/lib/usage";
+// Aliases: toZonedTime() = UTC -> local wall-clock; fromZonedTime() = local -> UTC.
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
+
+const DAY_INDEX: Record<string, number> = {
+  mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6, sun: 0,
+};
+
+interface PostingSchedule {
+  timezone?: string;
+  times?: string[];
+  activeDays?: string[];
+}
+
+function parseTime(t: string): { hours: number; minutes: number } {
+  const [hours, minutes] = t.split(":").map(Number);
+  return { hours: hours || 0, minutes: minutes || 0 };
+}
+
+/**
+ * Computes the next future drafting time (as an absolute UTC Date) honouring the
+ * tenant's configured timezone and active days. If the schedule has no times or
+ * activeDays, it defaults to a 24-hour poke so polling keeps working.
+ */
+function nextDraftAt(now: Date, schedule?: PostingSchedule | null): Date {
+  const timezone = schedule?.timezone || "UTC";
+  const times = (schedule?.times || []).filter((t) => /^\d{1,2}:\d{2}$/.test(t));
+  const activeDays = schedule?.activeDays || [];
+
+  if (times.length === 0) {
+    return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  const nowZoned = toZonedTime(now, timezone);
+
+  // Scan up to 14 days forward for the next valid slot.
+  for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
+    const day = new Date(nowZoned.getFullYear(), nowZoned.getMonth(), nowZoned.getDate() + dayOffset);
+    const dow = day.getDay();
+    if (activeDays.length > 0 && !activeDays.includes(Object.keys(DAY_INDEX).find((k) => DAY_INDEX[k] === dow) as string)) {
+      continue;
+    }
+    const sorted = [...times].sort();
+    for (const t of sorted) {
+      const { hours, minutes } = parseTime(t);
+      const candidateLocal = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes, 0, 0);
+      // Candidate must be strictly in the future in the tenant's local time.
+      if (candidateLocal.getTime() > nowZoned.getTime()) {
+        return fromZonedTime(candidateLocal, timezone);
+      }
+    }
+  }
+
+  // Fallback: 24h rolling cadence.
+  return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+}
 
 export default defineSchedule({
   cron: "*/5 * * * *",
@@ -189,10 +245,25 @@ export default defineSchedule({
     );
 
     for (const config of dueConfigs) {
+      try {
       const ownerMember = await db.query.member.findFirst({
         where: and(eq(member.organizationId, config.tenantId), eq(member.role, "owner"))
       });
       if (!ownerMember) continue;
+
+      // Enforce the monthly LLM budget before spawning an expensive drafting run.
+      // Fail-safe: if the check itself errors, SKIP rather than spend unbounded.
+      try {
+        const budget = await assertBudget(config.tenantId);
+        if (!budget.allowed) {
+          console.log(`[budget] Tenant ${config.tenantId} over budget; skipping draft.`);
+          continue;
+        }
+      } catch (err) {
+        console.error(`[budget] Budget check failed for ${config.tenantId}; skipping draft:`, err);
+        continue;
+      }
+
       // Spawn an agent task for this tenant
       waitUntil(
         receive(eveChannel, {
@@ -207,26 +278,21 @@ export default defineSchedule({
         })
       );
 
-      // Robust implementation: Parse postingSchedule to find next time
-      const nextDate = new Date();
-      try {
-        const schedule = config.postingSchedule as any;
-        if (schedule && Array.isArray(schedule.times) && schedule.times.length > 0) {
-            // Naive fallback: schedule for tomorrow at the configured time (UTC).
-            // TODO: honour schedule.timezone for accurate local-time scheduling.
-            const [hours, minutes] = schedule.times[0].split(':').map(Number);
-            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-            nextDate.setUTCHours(hours, minutes, 0, 0);
-        } else {
-            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-        }
-      } catch (e) {
-          nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-      }
+      // Compute the next drafting slot honouring the tenant's configured
+      // timezone and active days. Strictly future by construction, so the due
+      // check fires exactly once per slot.
+      const schedule = config.postingSchedule as PostingSchedule | null;
+      const nextDueDate = nextDraftAt(new Date(), schedule);
 
       await db.update(agentConfigs)
-        .set({ nextDraftAt: nextDate })
+        .set({ nextDraftAt: nextDueDate })
         .where(eq(agentConfigs.tenantId, config.tenantId));
+      } catch (tenantErr) {
+        // One malformed schedule (e.g. invalid IANA timezone) must not abort
+        // the shared poll for every other tenant.
+        console.error(`[poll] Tenant ${config.tenantId} processing failed:`, tenantErr);
+        continue;
+      }
     }
   },
 });

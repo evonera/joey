@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, integer, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // --- BetterAuth Required Tables ---
@@ -92,6 +92,20 @@ export const apiKeys = pgTable("api_keys", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const publicApiTokens = pgTable("public_api_tokens", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  scopes: text("scopes").array().default(["read", "write"]).notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tokenHashIdx: uniqueIndex("public_api_tokens_token_hash_idx").on(table.tokenHash),
+  tenantIdx: index("public_api_tokens_tenant_id_idx").on(table.tenantId),
+}));
+
 export const socialAccounts = pgTable("social_accounts", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
@@ -165,7 +179,7 @@ export const webhookEvents = pgTable("webhook_events", {
 
 export const usageTracking = pgTable("usage_tracking", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().unique().references(() => tenants.id, { onDelete: "cascade" }),
   periodStart: timestamp("period_start").notNull(),
   inputTokensUsed: bigint("input_tokens_used", { mode: "number" }).default(0),
   outputTokensUsed: bigint("output_tokens_used", { mode: "number" }).default(0),
@@ -209,6 +223,32 @@ export const tenantMemoryProfiles = pgTable("tenant_memory_profiles", {
 });
 
 // --- Engagement Tables (Phase 2.7) ---
+
+// --- Threads & Messages (Phase 1.1) ---
+
+export const threads = pgTable("threads", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  subject: text("subject"),
+  // optional link to a draft for team discussion around a specific piece of content
+  draftId: text("draft_id").references(() => drafts.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("threads_tenant_id_idx").on(table.tenantId, table.updatedAt.desc()),
+}));
+
+export const messages = pgTable("messages", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  threadId: text("thread_id").notNull().references(() => threads.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
+  authorRole: varchar("author_role", { length: 50 }).notNull().default("member"), // 'member' | 'agent'
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  threadIdx: index("messages_thread_id_idx").on(table.threadId, table.createdAt),
+}));
 
 export const engagementItems = pgTable("engagement_items", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -271,3 +311,15 @@ export const notificationPreferences = pgTable("notification_preferences", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/**
+ * Deployment-wide fixed-window rate limiting for the public API. One row per
+ * (token, window) so documented limits hold across instances and restarts.
+ */
+export const rateLimitCounters = pgTable("rate_limit_counters", {
+  tokenId: text("token_id").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").default(1).notNull(),
+}, (table) => ({
+  tokenWindowIdx: uniqueIndex("rate_limit_token_window_idx").on(table.tokenId, table.windowStart),
+}));
