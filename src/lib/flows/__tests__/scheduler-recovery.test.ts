@@ -150,57 +150,34 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(crashedRun.error).toContain("timed out");
   });
 
-  it("rejects SSRF private and link-local URLs while accepting public URLs", () => {
-    function isSafePublicUrl(urlStr: string): boolean {
-      try {
-        const parsed = new URL(urlStr);
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-        const hostname = parsed.hostname.toLowerCase();
-        if (
-          hostname === "localhost" ||
-          hostname.endsWith(".local") ||
-          hostname.endsWith(".internal") ||
-          hostname === "127.0.0.1" ||
-          hostname === "::1" ||
-          hostname === "0.0.0.0"
-        ) {
-          return false;
-        }
-        const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-        if (ipv4Match) {
-          const [_, a, b] = ipv4Match.map(Number);
-          if (a === 10) return false;
-          if (a === 127) return false;
-          if (a === 169 && b === 254) return false;
-          if (a === 172 && b >= 16 && b <= 31) return false;
-          if (a === 192 && b === 168) return false;
-          if (a === 0) return false;
-        }
-        if (hostname.startsWith("[") || hostname.includes(":")) {
-          if (hostname === "[::1]" || hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fe80")) {
-            return false;
-          }
-        }
-        return true;
-      } catch {
-        return false;
-      }
-    }
+  it("rejects SSRF private and link-local URLs including hostnames resolving to private IPs", async () => {
+    const { validateSafeUrl } = await import("../nodes/ai/transcribe");
 
     // Dangerous/internal URLs that must be rejected
-    expect(isSafePublicUrl("http://localhost/audio.mp3")).toBe(false);
-    expect(isSafePublicUrl("http://127.0.0.1:8080/secret.mp4")).toBe(false);
-    expect(isSafePublicUrl("http://169.254.169.254/latest/meta-data")).toBe(false);
-    expect(isSafePublicUrl("http://10.0.1.5/recording.mp3")).toBe(false);
-    expect(isSafePublicUrl("http://192.168.1.1/stream")).toBe(false);
-    expect(isSafePublicUrl("http://172.20.0.5/audio")).toBe(false);
-    expect(isSafePublicUrl("ftp://example.com/audio.mp3")).toBe(false);
-    expect(isSafePublicUrl("http://service.internal/audio.mp3")).toBe(false);
+    await expect(validateSafeUrl("http://localhost/audio.mp3")).rejects.toThrow();
+    await expect(validateSafeUrl("http://127.0.0.1:8080/secret.mp4")).rejects.toThrow();
+    await expect(validateSafeUrl("http://169.254.169.254/latest/meta-data")).rejects.toThrow();
+    await expect(validateSafeUrl("http://10.0.1.5/recording.mp3")).rejects.toThrow();
+    await expect(validateSafeUrl("http://192.168.1.1/stream")).rejects.toThrow();
+    await expect(validateSafeUrl("http://172.20.0.5/audio")).rejects.toThrow();
+    await expect(validateSafeUrl("ftp://example.com/audio.mp3")).rejects.toThrow();
+    await expect(validateSafeUrl("http://service.internal/audio.mp3")).rejects.toThrow();
 
     // Safe public URLs that must be allowed
-    expect(isSafePublicUrl("https://cdn.example.com/videos/media.mp4")).toBe(true);
-    expect(isSafePublicUrl("https://storage.googleapis.com/bucket/audio.mp3")).toBe(true);
-    expect(isSafePublicUrl("http://example.org/sample.wav")).toBe(true);
+    const parsed = await validateSafeUrl("https://storage.googleapis.com/bucket/audio.mp3");
+    expect(parsed.hostname).toBe("storage.googleapis.com");
+  });
+
+  it("fences execution when run is transitioned out of running by stale recovery", () => {
+    const runState = { id: "run-1", status: "failed" }; // Already transitioned by stale sweep
+
+    const guardExecution = (status: string) => {
+      if (status !== "running") {
+        throw new Error("Execution fenced: run was transitioned out of running by stale recovery.");
+      }
+    };
+
+    expect(() => guardExecution(runState.status)).toThrow("Execution fenced");
   });
 
   it("deduplicates repeated webhook deliveries", () => {

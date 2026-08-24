@@ -165,29 +165,43 @@ export default defineSchedule({
               onStepUpdate: async (step) => {
                 const r = await db.query.flowRuns.findFirst({
                   where: and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, flow.tenantId)),
-                  columns: { steps: true },
+                  columns: { steps: true, status: true },
                 });
-                if (!r) return;
+                if (!r || r.status !== "running") {
+                  throw new Error("Execution fenced: run was transitioned out of running by stale recovery.");
+                }
                 const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
                 const idx = steps.findIndex((st) => st.nodeId === step.nodeId);
                 if (idx >= 0) steps[idx] = step;
                 else steps.push(step);
-                await db
+                const updated = await db
                   .update(flowRuns)
                   .set({ steps, updatedAt: new Date() })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                  .returning({ id: flowRuns.id });
+                if (updated.length === 0) {
+                  throw new Error("Execution fenced: update rejected because run is no longer running.");
+                }
               },
               onFanoutProgress: async (fanoutProgress) => {
-                await db
+                const updated = await db
                   .update(flowRuns)
                   .set({ fanoutProgress, updatedAt: new Date() })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                  .returning({ id: flowRuns.id });
+                if (updated.length === 0) {
+                  throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+                }
               },
               onHeartbeat: async () => {
-                await db
+                const updated = await db
                   .update(flowRuns)
                   .set({ updatedAt: new Date() })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")));
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                  .returning({ id: flowRuns.id });
+                if (updated.length === 0) {
+                  throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
+                }
               },
             },
           );
