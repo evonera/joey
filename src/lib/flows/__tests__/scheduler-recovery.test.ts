@@ -112,7 +112,7 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
         { status: "succeeded" },
         { status: "succeeded" },
       ],
-      updatedAt: new Date(Date.now() - 5 * 60_000),
+      updatedAt: new Date(Date.now() - 35 * 60_000),
     };
 
     // 2. Run that crashed midway without completing
@@ -123,7 +123,7 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
         { status: "succeeded" },
         { status: "working" },
       ],
-      updatedAt: new Date(Date.now() - 5 * 60_000),
+      updatedAt: new Date(Date.now() - 35 * 60_000),
     };
 
     const reconcileStaleRun = (run: RunRecord, staleCutoff: Date) => {
@@ -136,12 +136,12 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
           run.status = "succeeded";
         } else {
           run.status = "failed";
-          run.error = "Run timed out (no heartbeat activity for 2 minutes).";
+          run.error = "Run timed out (no heartbeat activity for 30 minutes).";
         }
       }
     };
 
-    const staleCutoff = new Date(Date.now() - 2 * 60_000);
+    const staleCutoff = new Date(Date.now() - 30 * 60_000);
     reconcileStaleRun(succeededRun, staleCutoff);
     reconcileStaleRun(crashedRun, staleCutoff);
 

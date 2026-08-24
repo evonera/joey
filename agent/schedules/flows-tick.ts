@@ -26,11 +26,11 @@ export default defineSchedule({
   cron: "* * * * *",
   async run() {
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
-    // for >2 min (from any trigger, including approval resumes or crashed flows)
+    // for >30 min (from any trigger, including approval resumes or crashed flows)
     // is reconciled based on its accumulated step execution state. Active runs
     // continuously touch updatedAt every 10s via executor heartbeats and step
     // updates, so legitimate long-running work is never timed out.
-    const staleCutoff = new Date(Date.now() - 2 * 60_000);
+    const staleCutoff = new Date(Date.now() - 30 * 60_000);
     const staleRuns = await db.query.flowRuns.findMany({
       where: and(
         eq(flowRuns.status, "running"),
@@ -47,7 +47,7 @@ export default defineSchedule({
       const allDone = steps.length > 0 && steps.every((s) => s.status === "succeeded" || s.status === "skipped");
 
       let resolvedStatus: "succeeded" | "failed" | "waiting_approval" = "failed";
-      let errorMsg: string | null = "Run timed out (no heartbeat activity for 2 minutes).";
+      let errorMsg: string | null = "Run timed out (no heartbeat activity for 30 minutes).";
 
       if (hasWaitingApproval) {
         resolvedStatus = "waiting_approval";
@@ -96,33 +96,6 @@ export default defineSchedule({
         if (flow.lastRunAt) {
           const elapsed = Date.now() - flow.lastRunAt.getTime();
           if (elapsed < config.intervalMinutes * 60_000) continue;
-        }
-
-        // Recover runs stuck as running without activity (e.g. process died mid-execution).
-        const flowStale = await db.query.flowRuns.findFirst({
-          where: and(
-            eq(flowRuns.flowId, flow.id),
-            eq(flowRuns.status, "running"),
-            lt(flowRuns.updatedAt, staleCutoff),
-          ),
-          columns: { id: true },
-        });
-        if (flowStale) {
-          await db
-            .update(flowRuns)
-            .set({
-              status: "failed",
-              error: "Run timed out (no activity for 30 minutes).",
-              finishedAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(flowRuns.id, flowStale.id),
-                eq(flowRuns.status, "running"),
-                lt(flowRuns.updatedAt, staleCutoff),
-              ),
-            );
         }
 
         // Skip if any run for this flow is still in flight — a WAITING
