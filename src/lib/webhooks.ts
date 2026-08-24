@@ -37,6 +37,22 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
     const existing = await db.query.webhookEvents.findFirst({
       where: eq(webhookEvents.eventId, payload.id),
     });
+    if (existing && existing.status === "failed") {
+      // Re-arm failed webhook for retry so transient processing failures can be retried
+      const [rearmed] = await db
+        .update(webhookEvents)
+        .set({
+          status: "pending",
+          errorMessage: null,
+          processedAt: null,
+          payload,
+        })
+        .where(and(eq(webhookEvents.id, existing.id), eq(webhookEvents.status, "failed")))
+        .returning();
+      if (rearmed) {
+        return { event: rearmed, isDuplicate: false };
+      }
+    }
     return { event: existing!, isDuplicate: true };
   }
   return { event, isDuplicate: false };

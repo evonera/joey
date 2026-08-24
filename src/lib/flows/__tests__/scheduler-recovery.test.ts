@@ -181,25 +181,61 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(() => guardExecution(runState.status)).toThrow("Execution fenced");
   });
 
-  it("deduplicates repeated webhook deliveries", () => {
-    type StoredEvent = { eventId: string; status: string };
+  it("deduplicates processed webhooks but re-arms failed webhooks for retry", () => {
+    type StoredEvent = { eventId: string; status: "pending" | "processed" | "failed" };
     const dbEvents = new Map<string, StoredEvent>();
 
     const handleWebhookDelivery = (payload: { id: string; event: string }) => {
       const existing = dbEvents.get(payload.id);
       if (existing) {
+        if (existing.status === "failed") {
+          // Re-arm failed event for retry
+          existing.status = "pending";
+          return { isDuplicate: false, event: existing };
+        }
         return { isDuplicate: true, event: existing };
       }
-      const newEvent = { eventId: payload.id, status: "pending" };
+      const newEvent: StoredEvent = { eventId: payload.id, status: "pending" };
       dbEvents.set(payload.id, newEvent);
       return { isDuplicate: false, event: newEvent };
     };
 
+    // First attempt: arrives, starts as pending
     const first = handleWebhookDelivery({ id: "evt_123", event: "post.published" });
     expect(first.isDuplicate).toBe(false);
 
+    // If it processed successfully, subsequent delivery is duplicate
+    first.event.status = "processed";
     const second = handleWebhookDelivery({ id: "evt_123", event: "post.published" });
     expect(second.isDuplicate).toBe(true);
+
+    // If a different event failed, retry should NOT be duplicate; it re-arms
+    const failedDelivery = handleWebhookDelivery({ id: "evt_failed", event: "post.published" });
+    failedDelivery.event.status = "failed";
+
+    const retryDelivery = handleWebhookDelivery({ id: "evt_failed", event: "post.published" });
+    expect(retryDelivery.isDuplicate).toBe(false);
+    expect(retryDelivery.event.status).toBe("pending");
+  });
+
+  it("seeds only succeeded and skipped steps into executor cache so failed steps are retried", () => {
+    type Step = { nodeId: string; status: "succeeded" | "skipped" | "failed" | "working" };
+    const cachedSteps: Step[] = [
+      { nodeId: "node-1", status: "succeeded" },
+      { nodeId: "node-2", status: "skipped" },
+      { nodeId: "node-3", status: "failed" },
+    ];
+
+    const seededSteps = new Map<string, Step>();
+    for (const step of cachedSteps) {
+      if (step.status === "succeeded" || step.status === "skipped") {
+        seededSteps.set(step.nodeId, step);
+      }
+    }
+
+    expect(seededSteps.has("node-1")).toBe(true);
+    expect(seededSteps.has("node-2")).toBe(true);
+    expect(seededSteps.has("node-3")).toBe(false); // Failed node is NOT seeded, so execution re-runs it
   });
 
   it("filters out revoked credentials when resolving API keys", () => {

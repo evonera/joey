@@ -86,17 +86,20 @@ export async function executeFlow(
   }
 
   // Seed from a previous attempt. cachedSteps (full step list) preserves
-  // skipped/failed states; legacy cachedOutputs synthesizes succeeded-only.
+  // successful and skipped states; legacy cachedOutputs synthesizes succeeded-only.
+  // Failed or in-flight steps are NOT seeded so restartRun can re-execute them.
   if (opts.cachedSteps) {
     for (const step of opts.cachedSteps) {
       const node = nodeById.get(step.nodeId);
       if (!node || steps.has(step.nodeId)) continue;
-      const output =
-        step.branch !== undefined
-          ? { __branch: step.branch, value: step.output }
-          : step.output;
-      steps.set(step.nodeId, { ...step, cached: true });
-      if (step.status === "succeeded") outputs.set(step.nodeId, output);
+      if (step.status === "succeeded" || step.status === "skipped") {
+        const output =
+          step.branch !== undefined
+            ? { __branch: step.branch, value: step.output }
+            : step.output;
+        steps.set(step.nodeId, { ...step, cached: true });
+        if (step.status === "succeeded") outputs.set(step.nodeId, output);
+      }
     }
   } else if (opts.cachedOutputs) {
     for (const [nodeId, output] of Object.entries(opts.cachedOutputs)) {
