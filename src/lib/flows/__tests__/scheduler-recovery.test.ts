@@ -165,7 +165,8 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
 
     // Safe public URLs that must be allowed
     const parsed = await validateSafeUrl("https://storage.googleapis.com/bucket/audio.mp3");
-    expect(parsed.hostname).toBe("storage.googleapis.com");
+    expect(parsed.url.hostname).toBe("storage.googleapis.com");
+    expect(parsed.ip).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
   });
 
   it("fences execution when run is transitioned out of running by stale recovery", () => {

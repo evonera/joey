@@ -69,7 +69,13 @@ export default defineSchedule({
           finishedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(and(eq(flowRuns.id, stale.id), eq(flowRuns.status, "running")));
+        .where(
+          and(
+            eq(flowRuns.id, stale.id),
+            eq(flowRuns.status, "running"),
+            lt(flowRuns.updatedAt, staleCutoff),
+          ),
+        );
     }
 
     const activeFlows = await db.query.flows.findMany({

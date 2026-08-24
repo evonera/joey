@@ -83,7 +83,15 @@ function isPrivateIp(ip: string): boolean {
   return false;
 }
 
-export async function validateSafeUrl(urlStr: string): Promise<URL> {
+export type SafeMediaTarget = { url: URL; ip: string };
+
+/**
+ * Validates a URL AND binds the decision to a concrete, freshly resolved IP.
+ * The caller must connect to this exact IP (with the Host header) so a DNS
+ * rebinding attack cannot swap the hostname to an internal address after the
+ * check — the checked address IS the connection address.
+ */
+export async function validateSafeUrl(urlStr: string): Promise<SafeMediaTarget> {
   let parsed: URL;
   try {
     parsed = new URL(urlStr);
@@ -111,19 +119,26 @@ export async function validateSafeUrl(urlStr: string): Promise<URL> {
   }
 
   const dns = await import("dns/promises");
+  let resolvedIp: string | undefined;
   try {
-    const lookups = await dns.lookup(hostname, { all: true });
+    const lookups = await dns.lookup(hostname, { all: true, verbatim: true });
+    // Prefer a globally routable IPv4; any private/mapped result is rejected.
     for (const { address } of lookups) {
       if (isPrivateIp(address)) {
         throw new Error(`Hostname resolves to private IP (${address}). Access forbidden.`);
       }
+      if (!resolvedIp && !address.includes(":")) resolvedIp = address;
     }
+    resolvedIp ??= lookups[0]?.address;
   } catch (dnsErr: any) {
     if (dnsErr.message?.includes("forbidden")) throw dnsErr;
     throw new Error(`Failed to resolve media hostname: ${dnsErr.message}`);
   }
+  if (!resolvedIp) {
+    throw new Error("Failed to resolve media hostname (no addresses).");
+  }
 
-  return parsed;
+  return { url: parsed, ip: resolvedIp };
 }
 
 export async function fetchSafeMedia(
@@ -135,12 +150,26 @@ export async function fetchSafeMedia(
   const maxRedirects = 5;
 
   while (redirects <= maxRedirects) {
-    await validateSafeUrl(currentUrl);
+    const target = await validateSafeUrl(currentUrl);
+    const { url, ip } = target;
+    const hostHeader = url.host;
 
-    const res = await fetch(currentUrl, {
+    // Connect to the VALIDATED ip, pinning the Host header — a second DNS
+    // lookup never happens, so rebinding is impossible.
+    const port = url.port || (url.protocol === "https:" ? "443" : "80");
+    const ipAuthority = url.protocol === "https:" ? ip : ip;
+    const connectUrl = `${url.protocol}//${url.protocol === "https:" ? `[${ip}]` : ip}:${port}${url.pathname}${url.search}`;
+
+    const res = await fetch(connectUrl, {
       method: "GET",
       redirect: "manual",
       signal,
+      headers: {
+        Host: hostHeader,
+        ...(url.protocol === "https:"
+          ? { "X-Forwarded-Host": hostHeader }
+          : {}),
+      },
     });
 
     if (res.status >= 300 && res.status < 400) {
