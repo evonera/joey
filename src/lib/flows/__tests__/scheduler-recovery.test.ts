@@ -218,7 +218,7 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(retryDelivery.event.status).toBe("pending");
   });
 
-  it("seeds only succeeded and skipped steps into executor cache so failed steps are retried", () => {
+  it("seeds only succeeded steps into executor cache so failed and failure-skipped steps are retried", () => {
     type Step = { nodeId: string; status: "succeeded" | "skipped" | "failed" | "working" };
     const cachedSteps: Step[] = [
       { nodeId: "node-1", status: "succeeded" },
@@ -228,14 +228,14 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
 
     const seededSteps = new Map<string, Step>();
     for (const step of cachedSteps) {
-      if (step.status === "succeeded" || step.status === "skipped") {
+      if (step.status === "succeeded") {
         seededSteps.set(step.nodeId, step);
       }
     }
 
     expect(seededSteps.has("node-1")).toBe(true);
-    expect(seededSteps.has("node-2")).toBe(true);
-    expect(seededSteps.has("node-3")).toBe(false); // Failed node is NOT seeded, so execution re-runs it
+    expect(seededSteps.has("node-2")).toBe(false); // Downstream skipped node is NOT seeded, so retry executes it
+    expect(seededSteps.has("node-3")).toBe(false); // Failed node is NOT seeded, so retry re-runs it
   });
 
   it("filters out revoked credentials when resolving API keys", () => {
