@@ -119,8 +119,8 @@ export default defineSchedule({
           // If in flight as running, check if heartbeats have stopped (quiet for >60s).
           // Active runs touch updatedAt every 10s. If quiet >60s, finalization was exhausted
           // or execution crashed. Reconcile immediately so it doesn't block future ticks.
-          const quietFor = Date.now() - inFlight.updatedAt.getTime();
-          if (quietFor > 60_000) {
+          const quietCutoff = new Date(Date.now() - 60_000);
+          if (inFlight.updatedAt < quietCutoff) {
             const r = await db.query.flowRuns.findFirst({
               where: eq(flowRuns.id, inFlight.id),
               columns: { steps: true },
@@ -131,7 +131,7 @@ export default defineSchedule({
             const resolvedStatus = allDone && !hasFailure ? "succeeded" : "failed";
             const errorMsg = resolvedStatus === "failed" ? "Run timed out / finalization exhausted." : null;
 
-            await db
+            const updated = await db
               .update(flowRuns)
               .set({
                 status: resolvedStatus,
@@ -139,7 +139,19 @@ export default defineSchedule({
                 finishedAt: new Date(),
                 updatedAt: new Date(),
               })
-              .where(and(eq(flowRuns.id, inFlight.id), eq(flowRuns.status, "running")));
+              .where(
+                and(
+                  eq(flowRuns.id, inFlight.id),
+                  eq(flowRuns.status, "running"),
+                  lt(flowRuns.updatedAt, quietCutoff),
+                ),
+              )
+              .returning({ id: flowRuns.id });
+
+            if (updated.length === 0) {
+              // Heartbeat refreshed between check and update; run is alive.
+              continue;
+            }
 
             const stillInFlight = await db.query.flowRuns.findFirst({
               where: and(
