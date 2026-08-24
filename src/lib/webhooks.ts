@@ -19,18 +19,26 @@ export type ZernioWebhookPayload = {
 };
 
 export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
-  const existing = await db.query.webhookEvents.findFirst({
-    where: eq(webhookEvents.eventId, payload.id),
-  });
-  if (existing) return { event: existing, isDuplicate: true };
+  // Atomic dedup: rely on the unique event_id index. Concurrent deliveries
+  // with the same id both try to insert; the loser is caught by
+  // onConflictDoNothing and acknowledged as a duplicate — never a 500.
+  const [event] = await db
+    .insert(webhookEvents)
+    .values({
+      eventId: payload.id,
+      eventType: payload.event,
+      payload,
+      status: "pending",
+    })
+    .onConflictDoNothing({ target: webhookEvents.eventId })
+    .returning();
 
-  const [event] = await db.insert(webhookEvents).values({
-    eventId: payload.id,
-    eventType: payload.event,
-    payload,
-    status: "pending",
-  }).returning();
-
+  if (!event) {
+    const existing = await db.query.webhookEvents.findFirst({
+      where: eq(webhookEvents.eventId, payload.id),
+    });
+    return { event: existing!, isDuplicate: true };
+  }
   return { event, isDuplicate: false };
 }
 

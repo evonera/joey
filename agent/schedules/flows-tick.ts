@@ -116,7 +116,13 @@ export default defineSchedule({
               finishedAt: new Date(),
               updatedAt: new Date(),
             })
-            .where(and(eq(flowRuns.id, flowStale.id), eq(flowRuns.status, "running")));
+            .where(
+              and(
+                eq(flowRuns.id, flowStale.id),
+                eq(flowRuns.status, "running"),
+                lt(flowRuns.updatedAt, staleCutoff),
+              ),
+            );
         }
 
         // Skip if any run for this flow is still in flight — a WAITING

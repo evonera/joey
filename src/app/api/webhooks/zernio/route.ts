@@ -52,6 +52,12 @@ async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload
                 .set({ updatedAt: new Date() })
                 .where(and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
             },
+            onFanoutProgress: async (fanoutProgress) => {
+              await db
+                .update(flowRuns)
+                .set({ fanoutProgress, updatedAt: new Date() })
+                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+            },
           },
         );
       } catch (err) {

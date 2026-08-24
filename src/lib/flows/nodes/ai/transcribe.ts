@@ -1,6 +1,8 @@
 import { defineNode } from "../../node-contract";
 import { transcribeConfig } from "../../catalog";
 import OpenAI from "openai";
+import { request as httpRequest } from "http";
+import { request as httpsRequest } from "https";
 
 const configSchema = transcribeConfig;
 
@@ -20,9 +22,8 @@ export const transcribeNode = defineNode({
     const initialUrl = extractUrl(input, config.mediaUrlField);
     if (!initialUrl) throw new Error("No media URL found on the incoming data.");
 
-    const { mediaResponse, finalUrl } = await fetchSafeMedia(initialUrl, ctx.signal);
-    const blob = await mediaResponse.blob();
-    if (blob.size > 25 * 1024 * 1024) {
+    const { buffer, contentType, finalUrl } = await fetchSafeMedia(initialUrl, ctx.signal);
+    if (buffer.length > 25 * 1024 * 1024) {
       throw new Error("Media exceeds Whisper's 25MB limit.");
     }
 
@@ -38,13 +39,13 @@ export const transcribeNode = defineNode({
     const client = new OpenAI({ apiKey });
     const transcription = await client.audio.transcriptions.create({
       model: "whisper-1",
-      file: new File([blob], "media.mp4", { type: blob.type || "video/mp4" }),
+      file: new File([buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer], "media.mp4", { type: contentType || "video/mp4" }),
       ...(config.language ? { language: config.language } : {}),
     });
 
     try {
       const { recordTokenUsage } = await import("@/lib/usage");
-      await recordTokenUsage(ctx.tenantId, Math.ceil(blob.size / 1_000_000), 0);
+      await recordTokenUsage(ctx.tenantId, Math.ceil(buffer.length / 1_000_000), 0);
     } catch {
       // ignore usage recording failures
     }
@@ -141,52 +142,86 @@ export async function validateSafeUrl(urlStr: string): Promise<SafeMediaTarget> 
   return { url: parsed, ip: resolvedIp };
 }
 
+export type SafeMediaResult = { buffer: Buffer; contentType: string; finalUrl: string };
+
+/**
+ * Downloads media with SSRF-safe, TLS-safe semantics:
+ * - DNS is resolved ONCE and validated (private/metadata ranges rejected).
+ * - The validated IP is passed to Node's request `lookup` option, so the
+ *   connection goes to exactly that IP (no rebinding)…
+ * - …while hostname, SNI and certificate validation still use the original
+ *   hostname — normal HTTPS certificates work.
+ * Redirects are followed manually and each hop re-validates its own IP.
+ */
 export async function fetchSafeMedia(
   initialUrl: string,
   signal?: AbortSignal,
-): Promise<{ mediaResponse: Response; finalUrl: string }> {
+): Promise<SafeMediaResult> {
   let currentUrl = initialUrl;
   let redirects = 0;
   const maxRedirects = 5;
 
   while (redirects <= maxRedirects) {
-    const target = await validateSafeUrl(currentUrl);
-    const { url, ip } = target;
-    const hostHeader = url.host;
+    const { url, ip } = await validateSafeUrl(currentUrl);
+    const isHttps = url.protocol === "https:";
+    const requester = isHttps ? httpsRequest : httpRequest;
 
-    // Connect to the VALIDATED ip, pinning the Host header — a second DNS
-    // lookup never happens, so rebinding is impossible.
-    const port = url.port || (url.protocol === "https:" ? "443" : "80");
-    const ipAuthority = url.protocol === "https:" ? ip : ip;
-    const connectUrl = `${url.protocol}//${url.protocol === "https:" ? `[${ip}]` : ip}:${port}${url.pathname}${url.search}`;
-
-    const res = await fetch(connectUrl, {
-      method: "GET",
-      redirect: "manual",
-      signal,
-      headers: {
-        Host: hostHeader,
-        ...(url.protocol === "https:"
-          ? { "X-Forwarded-Host": hostHeader }
-          : {}),
-      },
+    const { status, headers, buffer } = await new Promise<{
+      status: number;
+      headers: Record<string, string | string[] | undefined>;
+      buffer: Buffer;
+    }>((resolve, reject) => {
+      const req = requester(
+        {
+          protocol: url.protocol,
+          hostname: url.hostname, // TLS/SNI + Host use the real hostname
+          port: url.port ? Number(url.port) : isHttps ? 443 : 80,
+          path: `${url.pathname}${url.search}`,
+          method: "GET",
+          // Pin the connection to the validated IP; TLS still validates the hostname.
+          lookup: (_host: string, _opts: unknown, cb: (err: Error | null, address: string, family: number) => void) =>
+            cb(null, ip, ip.includes(":") ? 6 : 4),
+          headers: { accept: "*/*" },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (c: Buffer) => chunks.push(c));
+          res.on("end", () =>
+            resolve({
+              status: res.statusCode ?? 0,
+              headers: res.headers,
+              buffer: Buffer.concat(chunks),
+            }),
+          );
+        },
+      );
+      req.on("error", (err) => reject(err));
+      if (signal) {
+        const abort = () => req.destroy(new Error("Aborted"));
+        if (signal.aborted) abort();
+        else signal.addEventListener("abort", abort, { once: true });
+      }
+      req.end();
     });
 
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
+    if (status >= 300 && status < 400) {
+      const location = Array.isArray(headers.location) ? headers.location[0] : headers.location;
       if (!location) {
-        throw new Error(`Redirect response (${res.status}) missing location header.`);
+        throw new Error(`Redirect response (${status}) missing location header.`);
       }
       currentUrl = new URL(location, currentUrl).toString();
       redirects++;
       continue;
     }
 
-    if (!res.ok) {
-      throw new Error(`Failed to download media (${res.status}).`);
+    if (status < 200 || status >= 300) {
+      throw new Error(`Failed to download media (${status}).`);
     }
 
-    return { mediaResponse: res, finalUrl: currentUrl };
+    const contentType =
+      (Array.isArray(headers["content-type"]) ? headers["content-type"][0] : headers["content-type"]) ??
+      "application/octet-stream";
+    return { buffer, contentType, finalUrl: currentUrl };
   }
 
   throw new Error("Too many redirects when downloading media.");
