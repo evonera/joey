@@ -347,11 +347,21 @@ export async function resumeRun(
   // Full step list preserves clean branch-skips and failure markers for replay.
   const clearedSteps = ((run.steps as FlowStep[]) ?? []).filter((s) => s.status !== "waiting_approval");
 
-  const claimed = await db
-    .update(flowRuns)
-    .set({ approvedNodeIds, steps: clearedSteps, status: "running", error: null, updatedAt: new Date() })
-    .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "waiting_approval")))
-    .returning();
+  let claimed;
+  try {
+    claimed = await db
+      .update(flowRuns)
+      .set({ approvedNodeIds, steps: clearedSteps, status: "running", error: null, updatedAt: new Date() })
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "waiting_approval")))
+      .returning();
+  } catch (claimErr: any) {
+    // Unique-index conflict: a newer scheduled execution already owns this
+    // flow's running slot. Keep the older run waiting rather than fail it.
+    if (claimErr?.code === "23505" || claimErr?.message?.includes("unique")) {
+      return { error: "A newer scheduled run already owns this flow's slot; this approval stays pending." };
+    }
+    throw claimErr;
+  }
 
   if (claimed.length === 0) {
     return { error: "Run is not waiting for approval (already resumed)." };

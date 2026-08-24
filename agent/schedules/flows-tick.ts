@@ -13,7 +13,7 @@
 import { defineSchedule } from "eve/schedules";
 import { db } from "@/lib/db";
 import { flows, flowRuns } from "@/lib/db/schema";
-import { eq, and, lt } from "drizzle-orm";
+import { and, eq, lt, or } from "drizzle-orm";
 import { executeFlow } from "@/lib/flows/executor";
 import { getNode } from "@/lib/flows/registry";
 
@@ -113,9 +113,17 @@ export default defineSchedule({
             .where(and(eq(flowRuns.id, flowStale.id), eq(flowRuns.status, "running")));
         }
 
-        // Skip if any run for this flow is still actively in flight.
+        // Skip if any run for this flow is still in flight — a WAITING
+        // approval also occupies the slot (it will transition back to
+        // running on approval), so a later tick must not admit another.
         const inFlight = await db.query.flowRuns.findFirst({
-          where: and(eq(flowRuns.flowId, flow.id), eq(flowRuns.status, "running")),
+          where: and(
+            eq(flowRuns.flowId, flow.id),
+            or(
+              eq(flowRuns.status, "running"),
+              eq(flowRuns.status, "waiting_approval"),
+            ),
+          ),
           columns: { id: true },
         });
         if (inFlight) continue;

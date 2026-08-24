@@ -359,7 +359,7 @@ export const flowRuns = pgTable("flow_runs", {
   tenantIdx: index("flow_runs_tenant_id_idx").on(table.tenantId),
   runningScheduledIdx: uniqueIndex("flow_runs_running_scheduled_idx")
     .on(table.flowId)
-    .where(sql`${table.status} = 'running' AND ${table.trigger} = 'schedule'`),
+    .where(sql`${table.status} IN ('running','waiting_approval') AND ${table.trigger} = 'schedule'`),
 }));
 
 /**
