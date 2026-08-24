@@ -383,25 +383,13 @@ export async function resumeRun(
   );
 
   if (!finalResult.persisted) {
-    // Revert status back to 'waiting_approval' so the run is never stranded
-    // in an un-resumable 'running' state if terminal persistence failed.
-    try {
-      await db
-        .update(flowRuns)
-        .set({
-          status: "waiting_approval",
-          error: "Failed to persist execution outcome. You can retry approval resume.",
-          updatedAt: new Date(),
-        })
-        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
-    } catch (revertErr) {
-      console.error(`[flow-resume] Failed reverting run ${runId} to waiting_approval:`, revertErr);
-    }
-
+    console.error(
+      `[flow-resume] CRITICAL: Finalization writes exhausted for resumed run ${runId}. Steps remain persisted; stale recovery will transition status if DB was unreachable.`,
+    );
     return {
       ok: false,
       status: finalResult.status,
-      error: `Run execution finished with status '${finalResult.status}', but terminal state could not be persisted to the database. The run has been restored to waiting_approval so you can retry.`,
+      error: `Run execution finished with status '${finalResult.status}', but terminal state could not be persisted to the database.`,
     };
   }
 

@@ -76,24 +76,29 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(dbRecord.error).toBe("Failed persisting step output details.");
   });
 
-  it("reverts run status to waiting_approval if approval resume terminal writes fail", () => {
-    const runState = { id: "run-1", status: "running" };
+  it("reports failure in approval resume if terminal writes are completely exhausted", () => {
+    // Simulate resumeRun behavior when DB write exhausts all retries
+    const finalizeOutcome = {
+      persisted: false,
+      status: "succeeded" as const,
+      error: "Failed to persist terminal status to database after retries.",
+    };
 
-    const handleResumeOutcome = (res: { persisted: boolean; status: "succeeded" | "failed" }) => {
+    const handleResumeOutcome = (res: typeof finalizeOutcome) => {
       if (!res.persisted) {
-        runState.status = "waiting_approval"; // Revert so user can retry
         return {
           ok: false,
           status: res.status,
-          error: "Run execution finished, but terminal state could not be persisted. Restored to waiting_approval.",
+          error: `Run execution finished with status '${res.status}', but terminal state could not be persisted to the database.`,
         };
       }
       return { ok: true, status: res.status };
     };
 
-    const result = handleResumeOutcome({ persisted: false, status: "succeeded" });
+    const result = handleResumeOutcome(finalizeOutcome);
     expect(result.ok).toBe(false);
-    expect(runState.status).toBe("waiting_approval"); // Not trapped in running
+    expect(result.status).toBe("succeeded");
+    expect(result.error).toContain("could not be persisted");
   });
 
   it("preserves executed run history on exhausted finalization without destructive deletion", () => {
