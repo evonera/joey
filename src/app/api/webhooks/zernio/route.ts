@@ -19,9 +19,48 @@ async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload
     if (trigger.config?.eventName !== eventName) continue;
 
     try {
+      // If this webhook event is being retried after a previous run on this flow failed,
+      // reuse the prior run's completed step/fan-out checkpoints so successful side-effects
+      // are not repeated.
+      const previousRuns = await db.query.flowRuns.findMany({
+        where: and(
+          eq(flowRuns.flowId, flow.id),
+          eq(flowRuns.tenantId, tenantId),
+          eq(flowRuns.trigger, "webhook"),
+        ),
+        orderBy: (runs, { desc }) => [desc(runs.startedAt)],
+        limit: 5,
+      });
+
+      const priorRun = previousRuns.find(
+        (r) => (r.triggerPayload as Record<string, unknown> | null)?.id === (payload as Record<string, unknown>)?.id,
+      );
+
+      // If the prior run already succeeded or is waiting approval, skip to avoid duplicate work.
+      if (priorRun && (priorRun.status === "succeeded" || priorRun.status === "waiting_approval")) {
+        continue;
+      }
+
+      const cachedSteps =
+        priorRun && priorRun.status === "failed" && Array.isArray(priorRun.steps)
+          ? (priorRun.steps as Parameters<typeof executeFlow>[1]["cachedSteps"])
+          : undefined;
+
+      const fanoutProgress =
+        priorRun && priorRun.status === "failed" && priorRun.fanoutProgress
+          ? (priorRun.fanoutProgress as Parameters<typeof executeFlow>[1]["fanoutProgress"])
+          : undefined;
+
       const [run] = await db
         .insert(flowRuns)
-        .values({ flowId: flow.id, tenantId, trigger: "webhook", triggerPayload: payload as object })
+        .values({
+          flowId: flow.id,
+          tenantId,
+          trigger: "webhook",
+          triggerPayload: payload as object,
+          ...(cachedSteps ? { steps: cachedSteps } : {}),
+          ...(fanoutProgress ? { fanoutProgress } : {}),
+        })
         .returning();
 
       let result;
@@ -29,7 +68,14 @@ async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload
       try {
         result = await executeFlow(
           flow.graph as Parameters<typeof executeFlow>[0],
-          { tenantId, runId: run.id, flowId: flow.id, triggerPayload: payload },
+          {
+            tenantId,
+            runId: run.id,
+            flowId: flow.id,
+            triggerPayload: payload,
+            cachedSteps,
+            fanoutProgress,
+          },
           {
             onStepUpdate: async (step) => {
               const r = await db.query.flowRuns.findFirst({

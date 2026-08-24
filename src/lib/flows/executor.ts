@@ -85,10 +85,31 @@ export async function executeFlow(
     }, 10_000);
   }
 
-  // Seed from a previous attempt. Only genuinely succeeded steps are seeded into
-  // cached steps and outputs. Failed, in-flight, or skipped steps (which may have
-  // been skipped solely due to upstream failure) are NOT seeded so restartRun can
-  // re-evaluate the execution frontier and run downstream paths when the failed node succeeds.
+  // Helper to check if a node is downstream from any failed node in the graph
+  const failedNodeIds = new Set(
+    (opts.cachedSteps ?? [])
+      .filter((s) => s.status === "failed" || s.status === "working")
+      .map((s) => s.nodeId),
+  );
+
+  const isDescendantOfAny = (nodeId: string, ancestorIds: Set<string>): boolean => {
+    if (ancestorIds.size === 0) return false;
+    const visited = new Set<string>();
+    const queue = incoming(nodeId).map((e) => e.from);
+    while (queue.length > 0) {
+      const parent = queue.shift()!;
+      if (ancestorIds.has(parent)) return true;
+      if (!visited.has(parent)) {
+        visited.add(parent);
+        queue.push(...incoming(parent).map((e) => e.from));
+      }
+    }
+    return false;
+  };
+
+  // Seed from a previous attempt. Succeeded steps and clean condition-branch skips
+  // (not caused by upstream failures) are seeded. Failure-induced skips and failed
+  // nodes are left unseeded so restartRun can re-execute the failed path.
   if (opts.cachedSteps) {
     for (const step of opts.cachedSteps) {
       const node = nodeById.get(step.nodeId);
@@ -100,6 +121,8 @@ export async function executeFlow(
             : step.output;
         steps.set(step.nodeId, { ...step, cached: true });
         outputs.set(step.nodeId, output);
+      } else if (step.status === "skipped" && !isDescendantOfAny(step.nodeId, failedNodeIds)) {
+        steps.set(step.nodeId, { ...step, cached: true });
       }
     }
   } else if (opts.cachedOutputs) {

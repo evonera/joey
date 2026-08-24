@@ -218,24 +218,91 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(retryDelivery.event.status).toBe("pending");
   });
 
-  it("seeds only succeeded steps into executor cache so failed and failure-skipped steps are retried", () => {
+  it("seeds clean condition skips while excluding failure-induced skips on restart", () => {
     type Step = { nodeId: string; status: "succeeded" | "skipped" | "failed" | "working" };
     const cachedSteps: Step[] = [
-      { nodeId: "node-1", status: "succeeded" },
-      { nodeId: "node-2", status: "skipped" },
-      { nodeId: "node-3", status: "failed" },
+      { nodeId: "trigger-1", status: "succeeded" },
+      { nodeId: "condition-1", status: "succeeded" },
+      { nodeId: "clean-skipped-branch", status: "skipped" },
+      { nodeId: "active-branch-node-1", status: "failed" },
+      { nodeId: "failure-skipped-downstream", status: "skipped" },
     ];
+
+    const edges = [
+      { from: "trigger-1", to: "condition-1" },
+      { from: "condition-1", to: "clean-skipped-branch" },
+      { from: "condition-1", to: "active-branch-node-1" },
+      { from: "active-branch-node-1", to: "failure-skipped-downstream" },
+    ];
+
+    const incoming = (id: string) => edges.filter((e) => e.to === id);
+    const failedNodeIds = new Set(
+      cachedSteps.filter((s) => s.status === "failed" || s.status === "working").map((s) => s.nodeId),
+    );
+
+    const isDescendantOfAny = (nodeId: string, ancestorIds: Set<string>): boolean => {
+      if (ancestorIds.size === 0) return false;
+      const visited = new Set<string>();
+      const queue = incoming(nodeId).map((e) => e.from);
+      while (queue.length > 0) {
+        const parent = queue.shift()!;
+        if (ancestorIds.has(parent)) return true;
+        if (!visited.has(parent)) {
+          visited.add(parent);
+          queue.push(...incoming(parent).map((e) => e.from));
+        }
+      }
+      return false;
+    };
 
     const seededSteps = new Map<string, Step>();
     for (const step of cachedSteps) {
       if (step.status === "succeeded") {
         seededSteps.set(step.nodeId, step);
+      } else if (step.status === "skipped" && !isDescendantOfAny(step.nodeId, failedNodeIds)) {
+        seededSteps.set(step.nodeId, step);
       }
     }
 
-    expect(seededSteps.has("node-1")).toBe(true);
-    expect(seededSteps.has("node-2")).toBe(false); // Downstream skipped node is NOT seeded, so retry executes it
-    expect(seededSteps.has("node-3")).toBe(false); // Failed node is NOT seeded, so retry re-runs it
+    expect(seededSteps.has("trigger-1")).toBe(true);
+    expect(seededSteps.has("condition-1")).toBe(true);
+    expect(seededSteps.has("clean-skipped-branch")).toBe(true); // Clean condition skip is preserved!
+    expect(seededSteps.has("active-branch-node-1")).toBe(false); // Failed node will re-run!
+    expect(seededSteps.has("failure-skipped-downstream")).toBe(false); // Failure-induced skip will execute when parent succeeds!
+  });
+
+  it("reuses previous checkpoints on retried webhook flow execution", () => {
+    type FlowRun = { id: string; flowId: string; status: string; steps?: any[]; triggerPayload?: { id: string } };
+    const flowRuns: FlowRun[] = [
+      {
+        id: "run-failed-attempt",
+        flowId: "flow-1",
+        status: "failed",
+        triggerPayload: { id: "evt-1" },
+        steps: [{ nodeId: "node-1", status: "succeeded", output: { text: "done" } }],
+      },
+    ];
+
+    const dispatchWebhookRun = (payload: { id: string }) => {
+      const priorRun = flowRuns.find((r) => r.triggerPayload?.id === payload.id);
+      if (priorRun && (priorRun.status === "succeeded" || priorRun.status === "waiting_approval")) {
+        return null; // Skip duplicate
+      }
+      const cachedSteps = priorRun?.status === "failed" ? priorRun.steps : undefined;
+      const newRun: FlowRun = {
+        id: "run-retry-attempt",
+        flowId: "flow-1",
+        status: "running",
+        triggerPayload: payload,
+        steps: cachedSteps,
+      };
+      return newRun;
+    };
+
+    const retriedRun = dispatchWebhookRun({ id: "evt-1" });
+    expect(retriedRun).not.toBeNull();
+    expect(retriedRun?.steps).toHaveLength(1);
+    expect(retriedRun?.steps?.[0].status).toBe("succeeded"); // Reuses completed side effects from prior attempt
   });
 
   it("filters out revoked credentials when resolving API keys", () => {
