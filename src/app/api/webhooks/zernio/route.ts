@@ -2,15 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { verifyWebhookSignature, storeWebhookEvent, markWebhookProcessed, resolveTenantFromPayload, storeEngagementItem, type ZernioWebhookPayload } from "@/lib/webhooks";
 import { webhookEvents, flows, flowRuns } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { executeFlow } from "@/lib/flows/executor";
 
 /** Starts every active flow whose trigger.webhook matches the event. */
-async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload: unknown) {
+async function dispatchFlowWebhooks(
+  tenantId: string,
+  eventName: string,
+  payload: unknown,
+): Promise<{ hasFailures: boolean; errors: string[] }> {
   const activeFlows = await db.query.flows.findMany({
     where: and(eq(flows.tenantId, tenantId), eq(flows.status, "active")),
   });
+
+  let hasFailures = false;
+  const errors: string[] = [];
 
   for (const flow of activeFlows) {
     const graph = flow.graph as { nodes?: { id: string; type: string; config?: Record<string, unknown> }[] };
@@ -22,19 +29,18 @@ async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload
       // If this webhook event is being retried after a previous run on this flow failed,
       // reuse the prior run's completed step/fan-out checkpoints so successful side-effects
       // are not repeated.
-      const previousRuns = await db.query.flowRuns.findMany({
-        where: and(
-          eq(flowRuns.flowId, flow.id),
-          eq(flowRuns.tenantId, tenantId),
-          eq(flowRuns.trigger, "webhook"),
-        ),
-        orderBy: (runs, { desc }) => [desc(runs.startedAt)],
-        limit: 5,
-      });
-
-      const priorRun = previousRuns.find(
-        (r) => (r.triggerPayload as Record<string, unknown> | null)?.id === (payload as Record<string, unknown>)?.id,
-      );
+      const payloadId = (payload as Record<string, unknown> | null)?.id;
+      const priorRun = payloadId
+        ? await db.query.flowRuns.findFirst({
+            where: and(
+              eq(flowRuns.flowId, flow.id),
+              eq(flowRuns.tenantId, tenantId),
+              eq(flowRuns.trigger, "webhook"),
+              sql`${flowRuns.triggerPayload}->>'id' = ${String(payloadId)}`,
+            ),
+            orderBy: (runs, { desc }) => [desc(runs.startedAt)],
+          })
+        : undefined;
 
       // If the prior run already succeeded or is waiting approval, skip to avoid duplicate work.
       if (priorRun && (priorRun.status === "succeeded" || priorRun.status === "waiting_approval")) {
@@ -113,6 +119,11 @@ async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload
       const status = result ? result.status : "failed";
       const errorMsg = result?.error ?? (execErr instanceof Error ? execErr.message : (execErr ? String(execErr) : null));
 
+      if (status === "failed") {
+        hasFailures = true;
+        if (errorMsg) errors.push(errorMsg);
+      }
+
       try {
         await db
           .update(flowRuns)
@@ -141,9 +152,14 @@ async function dispatchFlowWebhooks(tenantId: string, eventName: string, payload
         }
       }
     } catch (err) {
+      hasFailures = true;
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(msg);
       console.error(`[webhooks/zernio] Flow ${flow.id} failed on ${eventName}:`, err);
     }
   }
+
+  return { hasFailures, errors };
 }
 
 export async function POST(req: NextRequest) {
@@ -190,9 +206,13 @@ export async function POST(req: NextRequest) {
           }
 
           // Fan out to active flows listening for this event
-          await dispatchFlowWebhooks(tenantId, payload.event, payload);
+          const { hasFailures, errors } = await dispatchFlowWebhooks(tenantId, payload.event, payload);
 
-          await markWebhookProcessed(payload.id);
+          if (hasFailures) {
+            await markWebhookProcessed(payload.id, errors.join("; ") || "One or more flow runs failed.");
+          } else {
+            await markWebhookProcessed(payload.id);
+          }
         } else {
           await markWebhookProcessed(payload.id, "No tenant resolved");
         }

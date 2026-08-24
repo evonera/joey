@@ -109,9 +109,53 @@ export default defineSchedule({
               eq(flowRuns.status, "waiting_approval"),
             ),
           ),
-          columns: { id: true },
+          columns: { id: true, status: true, updatedAt: true },
         });
-        if (inFlight) continue;
+
+        if (inFlight) {
+          if (inFlight.status === "waiting_approval") {
+            continue;
+          }
+          // If in flight as running, check if heartbeats have stopped (quiet for >60s).
+          // Active runs touch updatedAt every 10s. If quiet >60s, finalization was exhausted
+          // or execution crashed. Reconcile immediately so it doesn't block future ticks.
+          const quietFor = Date.now() - inFlight.updatedAt.getTime();
+          if (quietFor > 60_000) {
+            const r = await db.query.flowRuns.findFirst({
+              where: eq(flowRuns.id, inFlight.id),
+              columns: { steps: true },
+            });
+            const steps = ((r?.steps as unknown[]) ?? []) as { status: string; error?: string }[];
+            const allDone = steps.length > 0 && steps.every((s) => s.status === "succeeded" || s.status === "skipped");
+            const hasFailure = steps.some((s) => s.status === "failed");
+            const resolvedStatus = allDone && !hasFailure ? "succeeded" : "failed";
+            const errorMsg = resolvedStatus === "failed" ? "Run timed out / finalization exhausted." : null;
+
+            await db
+              .update(flowRuns)
+              .set({
+                status: resolvedStatus,
+                error: errorMsg,
+                finishedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(and(eq(flowRuns.id, inFlight.id), eq(flowRuns.status, "running")));
+
+            const stillInFlight = await db.query.flowRuns.findFirst({
+              where: and(
+                eq(flowRuns.flowId, flow.id),
+                or(
+                  eq(flowRuns.status, "running"),
+                  eq(flowRuns.status, "waiting_approval"),
+                ),
+              ),
+              columns: { id: true },
+            });
+            if (stillInFlight) continue;
+          } else {
+            continue;
+          }
+        }
 
         // Atomic admission: partial unique index (flow_runs_running_scheduled_idx) guarantees
         // at most one running scheduled execution per flow across concurrent scheduler invocations.

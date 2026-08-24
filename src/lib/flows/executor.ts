@@ -159,12 +159,13 @@ export async function executeFlow(
       : undefined;
   }
 
-  /** Every incoming edge is either satisfied or explicitly branch-excluded. */
+  /** Every incoming edge is either satisfied, branch-excluded, or terminally resolved. */
   function ready(id: string): boolean {
     for (const edge of incoming(id)) {
       const s = steps.get(edge.from);
       if (s?.status === "succeeded") continue;
       if (edge.branch && branchOf(edge.from) !== undefined && branchOf(edge.from) !== edge.branch) continue;
+      if (s?.status === "skipped" || s?.status === "failed") continue;
       return false;
     }
     return true;
@@ -200,6 +201,19 @@ export async function executeFlow(
       const id = queue.shift()!;
       const node = nodeById.get(id);
       if (!node || steps.get(id)?.status) continue;
+
+      // Only skip this node if ALL incoming input paths are failed or skipped.
+      // If there is any upstream path that has succeeded, is currently working,
+      // or has not completed yet, the node might still receive valid inputs from that alternate path.
+      const hasAlternateViableInput = incoming(id).some((e) => {
+        if (e.from === failedId || seen.has(e.from)) return false;
+        if (e.branch && branchOf(e.from) !== undefined && branchOf(e.from) !== e.branch) return false;
+        const s = steps.get(e.from);
+        return !s || s.status === "succeeded" || s.status === "working";
+      });
+
+      if (hasAlternateViableInput) continue;
+
       await setStatus({
         nodeId: id,
         type: node.type,
