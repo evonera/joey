@@ -115,7 +115,10 @@ export async function POST(req: NextRequest) {
 
     const payload: ZernioWebhookPayload = JSON.parse(rawBody);
 
-    const event = await storeWebhookEvent(payload);
+    const { isDuplicate } = await storeWebhookEvent(payload);
+    if (isDuplicate) {
+      return NextResponse.json({ received: true, duplicate: true });
+    }
 
     if (payload.event === "webhook.test") {
       return NextResponse.json({ received: true, message: "Webhook test successful" });

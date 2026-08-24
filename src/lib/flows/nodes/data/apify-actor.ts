@@ -50,7 +50,11 @@ export async function resolveToken(tenantId: string): Promise<string> {
   const { eq, and } = await import("drizzle-orm");
   const { decrypt } = await import("@/lib/crypto");
   const key = await db.query.apiKeys.findFirst({
-    where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, "apify")),
+    where: and(
+      eq(apiKeys.tenantId, tenantId),
+      eq(apiKeys.provider, "apify"),
+      eq(apiKeys.status, "active"),
+    ),
   });
   if (key?.encryptedKey) return decrypt(key.encryptedKey);
   if (process.env.APIFY_TOKEN) return process.env.APIFY_TOKEN;

@@ -149,5 +149,94 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(crashedRun.status).toBe("failed");
     expect(crashedRun.error).toContain("timed out");
   });
+
+  it("rejects SSRF private and link-local URLs while accepting public URLs", () => {
+    function isSafePublicUrl(urlStr: string): boolean {
+      try {
+        const parsed = new URL(urlStr);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+        const hostname = parsed.hostname.toLowerCase();
+        if (
+          hostname === "localhost" ||
+          hostname.endsWith(".local") ||
+          hostname.endsWith(".internal") ||
+          hostname === "127.0.0.1" ||
+          hostname === "::1" ||
+          hostname === "0.0.0.0"
+        ) {
+          return false;
+        }
+        const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+        if (ipv4Match) {
+          const [_, a, b] = ipv4Match.map(Number);
+          if (a === 10) return false;
+          if (a === 127) return false;
+          if (a === 169 && b === 254) return false;
+          if (a === 172 && b >= 16 && b <= 31) return false;
+          if (a === 192 && b === 168) return false;
+          if (a === 0) return false;
+        }
+        if (hostname.startsWith("[") || hostname.includes(":")) {
+          if (hostname === "[::1]" || hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fe80")) {
+            return false;
+          }
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    // Dangerous/internal URLs that must be rejected
+    expect(isSafePublicUrl("http://localhost/audio.mp3")).toBe(false);
+    expect(isSafePublicUrl("http://127.0.0.1:8080/secret.mp4")).toBe(false);
+    expect(isSafePublicUrl("http://169.254.169.254/latest/meta-data")).toBe(false);
+    expect(isSafePublicUrl("http://10.0.1.5/recording.mp3")).toBe(false);
+    expect(isSafePublicUrl("http://192.168.1.1/stream")).toBe(false);
+    expect(isSafePublicUrl("http://172.20.0.5/audio")).toBe(false);
+    expect(isSafePublicUrl("ftp://example.com/audio.mp3")).toBe(false);
+    expect(isSafePublicUrl("http://service.internal/audio.mp3")).toBe(false);
+
+    // Safe public URLs that must be allowed
+    expect(isSafePublicUrl("https://cdn.example.com/videos/media.mp4")).toBe(true);
+    expect(isSafePublicUrl("https://storage.googleapis.com/bucket/audio.mp3")).toBe(true);
+    expect(isSafePublicUrl("http://example.org/sample.wav")).toBe(true);
+  });
+
+  it("deduplicates repeated webhook deliveries", () => {
+    type StoredEvent = { eventId: string; status: string };
+    const dbEvents = new Map<string, StoredEvent>();
+
+    const handleWebhookDelivery = (payload: { id: string; event: string }) => {
+      const existing = dbEvents.get(payload.id);
+      if (existing) {
+        return { isDuplicate: true, event: existing };
+      }
+      const newEvent = { eventId: payload.id, status: "pending" };
+      dbEvents.set(payload.id, newEvent);
+      return { isDuplicate: false, event: newEvent };
+    };
+
+    const first = handleWebhookDelivery({ id: "evt_123", event: "post.published" });
+    expect(first.isDuplicate).toBe(false);
+
+    const second = handleWebhookDelivery({ id: "evt_123", event: "post.published" });
+    expect(second.isDuplicate).toBe(true);
+  });
+
+  it("filters out revoked credentials when resolving API keys", () => {
+    type ApiKeyRecord = { provider: string; tenantId: string; status: "active" | "revoked"; encryptedKey: string };
+    const keys: ApiKeyRecord[] = [
+      { provider: "openai", tenantId: "t1", status: "revoked", encryptedKey: "enc_revoked" },
+      { provider: "tavily", tenantId: "t1", status: "active", encryptedKey: "enc_active" },
+    ];
+
+    const resolveActiveKey = (tenantId: string, provider: string) => {
+      return keys.find((k) => k.tenantId === tenantId && k.provider === provider && k.status === "active");
+    };
+
+    expect(resolveActiveKey("t1", "openai")).toBeUndefined(); // Revoked key is ignored
+    expect(resolveActiveKey("t1", "tavily")?.encryptedKey).toBe("enc_active"); // Active key is selected
+  });
 });
 

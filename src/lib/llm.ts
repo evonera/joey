@@ -8,7 +8,11 @@ async function resolveKey(tenantId: string | undefined, provider: string): Promi
     const { eq, and } = await import("drizzle-orm");
     const { decrypt } = await import("@/lib/crypto");
     const key = await db.query.apiKeys.findFirst({
-      where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, provider)),
+      where: and(
+        eq(apiKeys.tenantId, tenantId),
+        eq(apiKeys.provider, provider),
+        eq(apiKeys.status, "active"),
+      ),
     });
     if (key?.encryptedKey) return decrypt(key.encryptedKey);
   }

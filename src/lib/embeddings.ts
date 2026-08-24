@@ -7,7 +7,11 @@ import { decrypt } from "@/lib/crypto";
 async function getOpenAIClient(tenantId?: string): Promise<OpenAI> {
   if (tenantId) {
     const key = await db.query.apiKeys.findFirst({
-      where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, "openai")),
+      where: and(
+        eq(apiKeys.tenantId, tenantId),
+        eq(apiKeys.provider, "openai"),
+        eq(apiKeys.status, "active"),
+      ),
     });
     if (key?.encryptedKey) {
       return new OpenAI({ apiKey: decrypt(key.encryptedKey) });

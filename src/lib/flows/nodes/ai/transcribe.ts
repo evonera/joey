@@ -19,6 +19,9 @@ export const transcribeNode = defineNode({
 
     const url = extractUrl(input, config.mediaUrlField);
     if (!url) throw new Error("No media URL found on the incoming data.");
+    if (!isSafePublicUrl(url)) {
+      throw new Error("Invalid or unsafe media URL (internal/private destinations are forbidden).");
+    }
 
     const mediaResponse = await fetch(url, { signal: ctx.signal });
     if (!mediaResponse.ok) {
@@ -27,6 +30,15 @@ export const transcribeNode = defineNode({
     const blob = await mediaResponse.blob();
     if (blob.size > 25 * 1024 * 1024) {
       throw new Error("Media exceeds Whisper's 25MB limit.");
+    }
+
+    const { assertBudget } = await import("@/lib/usage");
+    const budget = await assertBudget(ctx.tenantId);
+    if (!budget.allowed) {
+      throw new Error(
+        `Monthly LLM budget reached ($${budget.costUsd.toFixed(2)} / $${budget.budgetUsd}). ` +
+          "Raise the limit in Settings to keep flows running.",
+      );
     }
 
     const client = new OpenAI({ apiKey });
@@ -46,6 +58,42 @@ export const transcribeNode = defineNode({
     return { output: { transcript: transcription.text, source: url } };
   },
 });
+
+function isSafePublicUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const hostname = parsed.hostname.toLowerCase();
+    if (
+      hostname === "localhost" ||
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".internal") ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "0.0.0.0"
+    ) {
+      return false;
+    }
+    const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4Match) {
+      const [_, a, b] = ipv4Match.map(Number);
+      if (a === 10) return false;
+      if (a === 127) return false;
+      if (a === 169 && b === 254) return false;
+      if (a === 172 && b >= 16 && b <= 31) return false;
+      if (a === 192 && b === 168) return false;
+      if (a === 0) return false;
+    }
+    if (hostname.startsWith("[") || hostname.includes(":")) {
+      if (hostname === "[::1]" || hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fe80")) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function extractUrl(input: unknown, field?: string): string | undefined {
   if (field) {
@@ -73,7 +121,11 @@ async function resolveOpenAiKey(tenantId: string): Promise<string> {
   const { eq, and } = await import("drizzle-orm");
   const { decrypt } = await import("@/lib/crypto");
   const key = await db.query.apiKeys.findFirst({
-    where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, "openai")),
+    where: and(
+      eq(apiKeys.tenantId, tenantId),
+      eq(apiKeys.provider, "openai"),
+      eq(apiKeys.status, "active"),
+    ),
   });
   if (key?.encryptedKey) return decrypt(key.encryptedKey);
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;

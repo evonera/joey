@@ -22,7 +22,7 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
   const existing = await db.query.webhookEvents.findFirst({
     where: eq(webhookEvents.eventId, payload.id),
   });
-  if (existing) return existing;
+  if (existing) return { event: existing, isDuplicate: true };
 
   const [event] = await db.insert(webhookEvents).values({
     eventId: payload.id,
@@ -31,7 +31,7 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
     status: "pending",
   }).returning();
 
-  return event;
+  return { event, isDuplicate: false };
 }
 
 export async function markWebhookProcessed(eventId: string, error?: string) {
