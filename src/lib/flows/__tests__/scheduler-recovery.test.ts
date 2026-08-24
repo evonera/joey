@@ -101,24 +101,53 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(result.error).toContain("could not be persisted");
   });
 
-  it("preserves executed run history on exhausted finalization without destructive deletion", () => {
-    type RunRecord = { id: string; status: string; steps: unknown[]; updatedAt: Date };
-    const executedRun: RunRecord = {
-      id: "run-exhausted",
+  it("preserves executed run history on exhausted finalization and resolves accurate status", () => {
+    type RunRecord = { id: string; status: string; steps: { status: string }[]; updatedAt: Date; error?: string | null };
+    
+    // 1. Run whose steps all succeeded before finalization network drop
+    const succeededRun: RunRecord = {
+      id: "run-succeeded",
       status: "running",
-      steps: [{ nodeId: "node1", status: "succeeded" }],
-      updatedAt: new Date(Date.now() - 5 * 60_000), // Execution ended 5m ago
+      steps: [
+        { status: "succeeded" },
+        { status: "succeeded" },
+      ],
+      updatedAt: new Date(Date.now() - 5 * 60_000),
     };
 
-    // When finalization updates fail across retries, row is NOT deleted.
-    // Stale recovery safely transitions it when database is available.
-    const staleCutoff = new Date(Date.now() - 2 * 60_000);
-    if (executedRun.status === "running" && executedRun.updatedAt < staleCutoff) {
-      executedRun.status = "failed";
-    }
+    // 2. Run that crashed midway without completing
+    const crashedRun: RunRecord = {
+      id: "run-crashed",
+      status: "running",
+      steps: [
+        { status: "succeeded" },
+        { status: "working" },
+      ],
+      updatedAt: new Date(Date.now() - 5 * 60_000),
+    };
 
-    expect(executedRun.status).toBe("failed");
-    expect(executedRun.steps.length).toBe(1); // Accumulated history preserved
+    const reconcileStaleRun = (run: RunRecord, staleCutoff: Date) => {
+      if (run.status === "running" && run.updatedAt < staleCutoff) {
+        const hasFailure = run.steps.some((s) => s.status === "failed");
+        const hasWorking = run.steps.some((s) => s.status === "working");
+        const allDone = run.steps.length > 0 && run.steps.every((s) => s.status === "succeeded" || s.status === "skipped");
+
+        if (allDone && !hasFailure && !hasWorking) {
+          run.status = "succeeded";
+        } else {
+          run.status = "failed";
+          run.error = "Run timed out (no heartbeat activity for 2 minutes).";
+        }
+      }
+    };
+
+    const staleCutoff = new Date(Date.now() - 2 * 60_000);
+    reconcileStaleRun(succeededRun, staleCutoff);
+    reconcileStaleRun(crashedRun, staleCutoff);
+
+    expect(succeededRun.status).toBe("succeeded"); // Accurately records succeeded instead of falsely failing
+    expect(crashedRun.status).toBe("failed");
+    expect(crashedRun.error).toContain("timed out");
   });
 });
 

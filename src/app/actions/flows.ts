@@ -139,8 +139,8 @@ async function finalizeRun(
   const finishedAt = new Date();
   const updatedAt = new Date();
 
-  // Retry up to 3 times with exponential backoff across rich and minimal writes
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Retry up to 5 times with exponential backoff across rich, minimal, and bare status writes
+  for (let attempt = 0; attempt < 5; attempt++) {
     // 1. Primary write with full steps payload
     try {
       const updated = await db
@@ -178,6 +178,23 @@ async function finalizeRun(
       console.error(`[flow-finalize] Minimal finalization attempt ${attempt + 1} failed for run ${runId}:`, fallbackErr);
     }
 
+    // 3. Fallback: bare status-only update
+    try {
+      const bareUpdated = await db
+        .update(flowRuns)
+        .set({
+          status,
+          finishedAt,
+          updatedAt,
+        })
+        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+        .returning({ id: flowRuns.id });
+
+      if (bareUpdated.length > 0) return { persisted: true, status };
+    } catch (bareErr) {
+      console.error(`[flow-finalize] Bare finalization attempt ${attempt + 1} failed for run ${runId}:`, bareErr);
+    }
+
     // Check if the run has already been transitioned to a terminal status by stale recovery
     try {
       const existing = await db.query.flowRuns.findFirst({
@@ -189,8 +206,8 @@ async function finalizeRun(
       }
     } catch {}
 
-    if (attempt < 2) {
-      await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
+    if (attempt < 4) {
+      await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
     }
   }
 

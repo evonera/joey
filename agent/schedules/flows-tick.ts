@@ -27,24 +27,50 @@ export default defineSchedule({
   async run() {
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
     // for >2 min (from any trigger, including approval resumes or crashed flows)
-    // is finalized as failed so it can't suppress scheduling. Active runs
+    // is reconciled based on its accumulated step execution state. Active runs
     // continuously touch updatedAt every 10s via executor heartbeats and step
     // updates, so legitimate long-running work is never timed out.
     const staleCutoff = new Date(Date.now() - 2 * 60_000);
-    await db
-      .update(flowRuns)
-      .set({
-        status: "failed",
-        error: "Run timed out (no heartbeat activity for 2 minutes).",
-        finishedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(flowRuns.status, "running"),
-          lt(flowRuns.updatedAt, staleCutoff),
-        ),
-      );
+    const staleRuns = await db.query.flowRuns.findMany({
+      where: and(
+        eq(flowRuns.status, "running"),
+        lt(flowRuns.updatedAt, staleCutoff),
+      ),
+      columns: { id: true, steps: true },
+    });
+
+    for (const stale of staleRuns) {
+      const steps = ((stale.steps as unknown[]) ?? []) as { status: string; error?: string }[];
+      const hasWaitingApproval = steps.some((s) => s.status === "waiting_approval");
+      const hasFailure = steps.some((s) => s.status === "failed");
+      const hasWorking = steps.some((s) => s.status === "working");
+      const allDone = steps.length > 0 && steps.every((s) => s.status === "succeeded" || s.status === "skipped");
+
+      let resolvedStatus: "succeeded" | "failed" | "waiting_approval" = "failed";
+      let errorMsg: string | null = "Run timed out (no heartbeat activity for 2 minutes).";
+
+      if (hasWaitingApproval) {
+        resolvedStatus = "waiting_approval";
+        errorMsg = null;
+      } else if (allDone && !hasFailure && !hasWorking) {
+        resolvedStatus = "succeeded";
+        errorMsg = null;
+      } else if (hasFailure) {
+        const failedStep = steps.find((s) => s.status === "failed");
+        resolvedStatus = "failed";
+        errorMsg = failedStep?.error ? `Step failed: ${failedStep.error}` : "One or more steps failed.";
+      }
+
+      await db
+        .update(flowRuns)
+        .set({
+          status: resolvedStatus,
+          error: errorMsg,
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(flowRuns.id, stale.id), eq(flowRuns.status, "running")));
+    }
 
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
@@ -184,7 +210,7 @@ export default defineSchedule({
           const updatedAt = new Date();
 
           let finalized = false;
-          for (let attempt = 0; attempt < 3 && !finalized; attempt++) {
+          for (let attempt = 0; attempt < 5 && !finalized; attempt++) {
             if (result) {
               try {
                 const updated = await db
@@ -222,6 +248,23 @@ export default defineSchedule({
               }
             }
 
+            if (!finalized) {
+              try {
+                const updated = await db
+                  .update(flowRuns)
+                  .set({
+                    status,
+                    finishedAt,
+                    updatedAt,
+                  })
+                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                  .returning({ id: flowRuns.id });
+                if (updated.length > 0) finalized = true;
+              } catch (bareErr) {
+                console.error(`[flows-tick] Bare finalization attempt ${attempt + 1} failed for ${run.id}:`, bareErr);
+              }
+            }
+
             // Check if already finalized by stale recovery or another path
             if (!finalized) {
               try {
@@ -235,8 +278,8 @@ export default defineSchedule({
               } catch {}
             }
 
-            if (!finalized && attempt < 2) {
-              await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
+            if (!finalized && attempt < 4) {
+              await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
             }
           }
 
