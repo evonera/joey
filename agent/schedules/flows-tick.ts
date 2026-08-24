@@ -26,16 +26,16 @@ export default defineSchedule({
   cron: "* * * * *",
   async run() {
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
-    // for >30 min (from any trigger, including approval resumes on inactive flows)
-    // is finalized as failed so it can't suppress scheduling forever. Active runs
-    // continuously touch updatedAt via step and fan-out updates, so legitimate
-    // long-running work is never timed out.
-    const staleCutoff = new Date(Date.now() - 30 * 60_000);
+    // for >2 min (from any trigger, including approval resumes or crashed flows)
+    // is finalized as failed so it can't suppress scheduling. Active runs
+    // continuously touch updatedAt every 10s via executor heartbeats and step
+    // updates, so legitimate long-running work is never timed out.
+    const staleCutoff = new Date(Date.now() - 2 * 60_000);
     await db
       .update(flowRuns)
       .set({
         status: "failed",
-        error: "Run timed out (no activity for 30 minutes).",
+        error: "Run timed out (no heartbeat activity for 2 minutes).",
         finishedAt: new Date(),
         updatedAt: new Date(),
       })

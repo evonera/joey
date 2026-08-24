@@ -3,20 +3,20 @@ import { describe, it, expect } from "vitest";
 describe("Flow scheduler stale sweep & admission invariants", () => {
   it("discriminates stale vs active runs by updatedAt rather than startedAt", () => {
     const now = Date.now();
-    const staleCutoff = new Date(now - 30 * 60_000);
+    const staleCutoff = new Date(now - 2 * 60_000); // 2-minute cutoff (12x 10s heartbeat)
 
     const longRunningActiveRun = {
       id: "run-long",
       status: "running",
       startedAt: new Date(now - 45 * 60_000), // Started 45 mins ago
-      updatedAt: new Date(now - 2 * 60_000),  // Actively progressed 2 mins ago
+      updatedAt: new Date(now - 10_000),      // Actively heartbeat 10s ago
     };
 
     const crashedStaleRun = {
       id: "run-dead",
       status: "running",
-      startedAt: new Date(now - 35 * 60_000),
-      updatedAt: new Date(now - 35 * 60_000), // No heartbeat for 35 mins
+      startedAt: new Date(now - 5 * 60_000),
+      updatedAt: new Date(now - 3 * 60_000),  // No heartbeat for 3 mins
     };
 
     // Stale evaluation based on updatedAt
@@ -76,29 +76,24 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(dbRecord.error).toBe("Failed persisting step output details.");
   });
 
-  it("reports failure in approval resume if terminal writes are completely exhausted", () => {
-    // Simulate resumeRun behavior when DB write exhausts all retries
-    const finalizeOutcome = {
-      persisted: false,
-      status: "succeeded" as const,
-      error: "Failed to persist terminal status to database after retries.",
-    };
+  it("reverts run status to waiting_approval if approval resume terminal writes fail", () => {
+    const runState = { id: "run-1", status: "running" };
 
-    const handleResumeOutcome = (res: typeof finalizeOutcome) => {
+    const handleResumeOutcome = (res: { persisted: boolean; status: "succeeded" | "failed" }) => {
       if (!res.persisted) {
+        runState.status = "waiting_approval"; // Revert so user can retry
         return {
           ok: false,
           status: res.status,
-          error: `Run execution finished with status '${res.status}', but terminal state could not be persisted to the database.`,
+          error: "Run execution finished, but terminal state could not be persisted. Restored to waiting_approval.",
         };
       }
       return { ok: true, status: res.status };
     };
 
-    const result = handleResumeOutcome(finalizeOutcome);
+    const result = handleResumeOutcome({ persisted: false, status: "succeeded" });
     expect(result.ok).toBe(false);
-    expect(result.status).toBe("succeeded");
-    expect(result.error).toContain("could not be persisted");
+    expect(runState.status).toBe("waiting_approval"); // Not trapped in running
   });
 
   it("preserves executed run history on exhausted finalization without destructive deletion", () => {
@@ -107,12 +102,12 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
       id: "run-exhausted",
       status: "running",
       steps: [{ nodeId: "node1", status: "succeeded" }],
-      updatedAt: new Date(Date.now() - 35 * 60_000), // Execution ended 35m ago
+      updatedAt: new Date(Date.now() - 5 * 60_000), // Execution ended 5m ago
     };
 
     // When finalization updates fail across retries, row is NOT deleted.
     // Stale recovery safely transitions it when database is available.
-    const staleCutoff = new Date(Date.now() - 30 * 60_000);
+    const staleCutoff = new Date(Date.now() - 2 * 60_000);
     if (executedRun.status === "running" && executedRun.updatedAt < staleCutoff) {
       executedRun.status = "failed";
     }
