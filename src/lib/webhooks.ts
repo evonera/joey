@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { webhookEvents, socialAccounts, engagementItems } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, lt } from "drizzle-orm";
 
 export function verifyWebhookSignature(rawBody: string, signature: string, secret: string): boolean {
   const computed = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
@@ -37,8 +37,14 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
     const existing = await db.query.webhookEvents.findFirst({
       where: eq(webhookEvents.eventId, payload.id),
     });
-    if (existing && existing.status === "failed") {
-      // Re-arm failed webhook for retry so transient processing failures can be retried
+    // If the existing event failed or was left pending by a crashed worker (>30s without update),
+    // re-arm it so the retry delivery can be processed.
+    const stalePendingCutoff = new Date(Date.now() - 30_000);
+    if (
+      existing &&
+      (existing.status === "failed" ||
+        (existing.status === "pending" && existing.createdAt < stalePendingCutoff))
+    ) {
       const [rearmed] = await db
         .update(webhookEvents)
         .set({
@@ -46,8 +52,20 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
           errorMessage: null,
           processedAt: null,
           payload,
+          createdAt: new Date(),
         })
-        .where(and(eq(webhookEvents.id, existing.id), eq(webhookEvents.status, "failed")))
+        .where(
+          and(
+            eq(webhookEvents.id, existing.id),
+            or(
+              eq(webhookEvents.status, "failed"),
+              and(
+                eq(webhookEvents.status, "pending"),
+                lt(webhookEvents.createdAt, stalePendingCutoff),
+              ),
+            ),
+          ),
+        )
         .returning();
       if (rearmed) {
         return { event: rearmed, isDuplicate: false };

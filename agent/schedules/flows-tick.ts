@@ -42,32 +42,18 @@ export default defineSchedule({
     for (const stale of staleRuns) {
       const steps = ((stale.steps as unknown[]) ?? []) as { nodeId: string; status: string; error?: string }[];
       const hasWaitingApproval = steps.some((s) => s.status === "waiting_approval");
-      const hasFailure = steps.some((s) => s.status === "failed");
-      const hasWorking = steps.some((s) => s.status === "working");
-      const allDone = steps.length > 0 && steps.every((s) => s.status === "succeeded" || s.status === "skipped");
 
-      // Verify that all nodes in the flow's graph were executed so partial runs are not marked succeeded
-      const flowRecord = await db.query.flows.findFirst({
-        where: eq(flows.id, stale.flowId),
-        columns: { graph: true },
-      });
-      const graphNodes = (flowRecord?.graph as { nodes?: { id: string }[] })?.nodes ?? [];
-      const executedNodeIds = new Set(steps.map((s) => s.nodeId));
-      const allGraphNodesAccountedFor = graphNodes.length > 0 && graphNodes.every((n) => executedNodeIds.has(n.id));
-
-      let resolvedStatus: "succeeded" | "failed" | "waiting_approval" = "failed";
+      let resolvedStatus: "failed" | "waiting_approval" = "failed";
       let errorMsg: string | null = "Run timed out (no heartbeat activity for 30 minutes).";
 
       if (hasWaitingApproval) {
         resolvedStatus = "waiting_approval";
         errorMsg = null;
-      } else if (allGraphNodesAccountedFor && allDone && !hasFailure && !hasWorking) {
-        resolvedStatus = "succeeded";
-        errorMsg = null;
-      } else if (hasFailure) {
+      } else {
         const failedStep = steps.find((s) => s.status === "failed");
-        resolvedStatus = "failed";
-        errorMsg = failedStep?.error ? `Step failed: ${failedStep.error}` : "One or more steps failed.";
+        if (failedStep?.error) {
+          errorMsg = `Step failed: ${failedStep.error}`;
+        }
       }
 
       await db

@@ -101,7 +101,7 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(result.error).toContain("could not be persisted");
   });
 
-  it("preserves executed run history on exhausted finalization and resolves accurate status with full graph validation", () => {
+  it("marks abandoned stale runs as failed while transitioning approval pauses", () => {
     type RunRecord = {
       id: string;
       status: string;
@@ -110,32 +110,7 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
       error?: string | null;
     };
 
-    const flowGraph = {
-      nodes: [{ id: "trigger-1" }, { id: "node-2" }],
-    };
-
-    // 1. Run whose graph nodes all succeeded before finalization network drop
-    const fullySucceededRun: RunRecord = {
-      id: "run-succeeded",
-      status: "running",
-      steps: [
-        { nodeId: "trigger-1", status: "succeeded" },
-        { nodeId: "node-2", status: "succeeded" },
-      ],
-      updatedAt: new Date(Date.now() - 35 * 60_000),
-    };
-
-    // 2. Partial run where node-2 never executed
-    const partialRun: RunRecord = {
-      id: "run-partial",
-      status: "running",
-      steps: [
-        { nodeId: "trigger-1", status: "succeeded" },
-      ],
-      updatedAt: new Date(Date.now() - 35 * 60_000),
-    };
-
-    // 3. Run that crashed midway with a working step
+    // 1. Run that crashed midway without completing
     const crashedRun: RunRecord = {
       id: "run-crashed",
       status: "running",
@@ -146,17 +121,23 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
       updatedAt: new Date(Date.now() - 35 * 60_000),
     };
 
-    const reconcileStaleRun = (run: RunRecord, graph: typeof flowGraph, staleCutoff: Date) => {
+    // 2. Run that was waiting approval when process went quiet
+    const waitingRun: RunRecord = {
+      id: "run-waiting",
+      status: "running",
+      steps: [
+        { nodeId: "trigger-1", status: "succeeded" },
+        { nodeId: "approval-1", status: "waiting_approval" },
+      ],
+      updatedAt: new Date(Date.now() - 35 * 60_000),
+    };
+
+    const reconcileStaleRun = (run: RunRecord, staleCutoff: Date) => {
       if (run.status === "running" && run.updatedAt < staleCutoff) {
-        const hasFailure = run.steps.some((s) => s.status === "failed");
-        const hasWorking = run.steps.some((s) => s.status === "working");
-        const allDone = run.steps.length > 0 && run.steps.every((s) => s.status === "succeeded" || s.status === "skipped");
-
-        const executedNodeIds = new Set(run.steps.map((s) => s.nodeId));
-        const allGraphNodesAccountedFor = graph.nodes.length > 0 && graph.nodes.every((n) => executedNodeIds.has(n.id));
-
-        if (allGraphNodesAccountedFor && allDone && !hasFailure && !hasWorking) {
-          run.status = "succeeded";
+        const hasWaitingApproval = run.steps.some((s) => s.status === "waiting_approval");
+        if (hasWaitingApproval) {
+          run.status = "waiting_approval";
+          run.error = null;
         } else {
           run.status = "failed";
           run.error = "Run timed out (no heartbeat activity for 30 minutes).";
@@ -165,15 +146,44 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     };
 
     const staleCutoff = new Date(Date.now() - 30 * 60_000);
-    reconcileStaleRun(fullySucceededRun, flowGraph, staleCutoff);
-    reconcileStaleRun(partialRun, flowGraph, staleCutoff);
-    reconcileStaleRun(crashedRun, flowGraph, staleCutoff);
+    reconcileStaleRun(crashedRun, staleCutoff);
+    reconcileStaleRun(waitingRun, staleCutoff);
 
-    expect(fullySucceededRun.status).toBe("succeeded"); // All nodes completed
-    expect(partialRun.status).toBe("failed"); // Incomplete graph is NOT marked succeeded
-    expect(partialRun.error).toContain("timed out");
     expect(crashedRun.status).toBe("failed");
     expect(crashedRun.error).toContain("timed out");
+    expect(waitingRun.status).toBe("waiting_approval");
+  });
+
+  it("re-arms stale pending webhooks on redelivery if worker crashed before processing", () => {
+    type WebhookRecord = { id: string; eventId: string; status: string; createdAt: Date };
+    const staleCutoff = new Date(Date.now() - 30_000);
+
+    const stalePendingRecord: WebhookRecord = {
+      id: "wh-1",
+      eventId: "evt-stale-pending",
+      status: "pending",
+      createdAt: new Date(Date.now() - 45_000), // Created 45s ago, never finished
+    };
+
+    const recentPendingRecord: WebhookRecord = {
+      id: "wh-2",
+      eventId: "evt-recent-pending",
+      status: "pending",
+      createdAt: new Date(Date.now() - 5_000), // Created 5s ago, actively in flight
+    };
+
+    const handleDelivery = (existing: WebhookRecord) => {
+      if (
+        existing.status === "failed" ||
+        (existing.status === "pending" && existing.createdAt < staleCutoff)
+      ) {
+        return { rearmed: true, isDuplicate: false };
+      }
+      return { rearmed: false, isDuplicate: true };
+    };
+
+    expect(handleDelivery(stalePendingRecord).isDuplicate).toBe(false); // Stale pending is re-armed
+    expect(handleDelivery(recentPendingRecord).isDuplicate).toBe(true); // Recent in-flight pending is deduplicated
   });
 
   it("rejects SSRF private and link-local URLs including hostnames resolving to private IPs", async () => {
