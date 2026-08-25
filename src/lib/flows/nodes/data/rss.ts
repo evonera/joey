@@ -65,14 +65,34 @@ export const rssNode = defineNode({
   async execute(_input, rawConfig, ctx) {
     const config = rssConfig.parse(rawConfig);
 
-    const response = await fetch(config.url, {
-      headers: { "User-Agent": "Joey/1.0 (+https://joey.evonera.com)" },
-      signal: ctx.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`Feed returned HTTP ${response.status}.`);
+    // SSRF-safe fetch: DNS-pinned to a validated public IP, private/metadata
+    // destinations rejected, redirects re-validated per hop, body capped at
+    // 5MB and hard 60s timeout.
+    const { safeRequest } = await import("../ai/transcribe");
+    let currentUrl = config.url;
+    let redirects = 0;
+    let xml = "";
+    while (redirects <= 5) {
+      const { status, headers, buffer } = await safeRequest(currentUrl, {
+        method: "GET",
+        signal: ctx.signal,
+        maxBytes: 5 * 1024 * 1024,
+        headers: { "User-Agent": "Joey/1.0 (+https://joey.evonera.com)", accept: "*/*" },
+      });
+      if (status >= 300 && status < 400) {
+        const location = Array.isArray(headers.location) ? headers.location[0] : headers.location;
+        if (!location) throw new Error(`Feed redirect (${status}) missing location header.`);
+        currentUrl = new URL(location, currentUrl).toString();
+        redirects++;
+        continue;
+      }
+      if (status < 200 || status >= 300) {
+        throw new Error(`Feed returned HTTP ${status}.`);
+      }
+      xml = buffer.toString("utf8");
+      break;
     }
-    const xml = await response.text();
+    if (!xml) throw new Error("Feed returned an empty body.");
 
     return { output: parseFeed(xml, config.limit) };
   },

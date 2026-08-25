@@ -154,6 +154,10 @@ export type SafeRequestOptions = {
   headers?: Record<string, string>;
   body?: string;
   signal?: AbortSignal;
+  /** Hard cap on the buffered body (bytes). Default 25MB. */
+  maxBytes?: number;
+  /** Hard cap on request duration (ms). Default 60s. */
+  timeoutMs?: number;
 };
 
 export type SafeRequestResult = {
@@ -176,6 +180,8 @@ export async function safeRequest(
   const { url, ip } = await validateSafeUrl(urlStr);
   const isHttps = url.protocol === "https:";
   const requester = isHttps ? httpsRequest : httpRequest;
+  const maxBytes = opts.maxBytes ?? 25 * 1024 * 1024;
+  const timeoutMs = opts.timeoutMs ?? 60_000;
 
   return new Promise<SafeRequestResult>((resolve, reject) => {
     const req = requester(
@@ -192,14 +198,36 @@ export async function safeRequest(
       },
       (res) => {
         const chunks: Buffer[] = [];
-        res.on("data", (c: Buffer) => chunks.push(c));
-        res.on("end", () =>
+        let total = 0;
+        let done = false;
+        const fail = (err: Error) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          req.destroy();
+          reject(err);
+        };
+        const timer = setTimeout(() => fail(new Error("Request timed out.")), timeoutMs);
+        res.on("data", (c: Buffer) => {
+          if (done) return;
+          total += c.length;
+          if (total > maxBytes) {
+            fail(new Error(`Response exceeded the ${maxBytes} byte limit.`));
+            return;
+          }
+          chunks.push(c);
+        });
+        res.on("end", () => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
           resolve({
             status: res.statusCode ?? 0,
             headers: res.headers,
             buffer: Buffer.concat(chunks),
-          }),
-        );
+          });
+        });
+        res.on("error", (err) => fail(err));
       },
     );
     req.on("error", (err) => reject(err));

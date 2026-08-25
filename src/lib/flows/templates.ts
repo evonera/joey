@@ -169,12 +169,14 @@ export const officialTemplates: OfficialTemplate[] = [
     slug: "youtube-repurposer",
     name: "YouTube → Multi-Platform Repurposer",
     description:
-      "Grabs a YouTube video's transcript via Supadata, then AI writes platform-tuned variants (LinkedIn story + X thread opener) into your approval queue.",
+      "Grabs a YouTube video's transcript via Supadata, then AI writes platform-tuned variants (LinkedIn story + X thread opener) into your approval queue. Set your video URL in the manual trigger's sample payload before running.",
     category: "repurpose",
     graph: {
       nodes: [
-        node("t1", "trigger.manual", 0, {}),
-        node("y1", "ai.youtube_transcript", 240, {}),
+        node("t1", "trigger.manual", 0, {
+          samplePayload: JSON.stringify({ url: "https://www.youtube.com/watch?v=REPLACE_WITH_VIDEO_ID" }),
+        }),
+        node("y1", "ai.youtube_transcript", 240, { videoUrlField: "url" }),
         node("a1", "ai.llm", 500, {
           provider: "openrouter",
           model: "meta-llama/llama-3.3-70b-instruct",
