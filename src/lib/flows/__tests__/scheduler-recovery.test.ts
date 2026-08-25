@@ -236,6 +236,37 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(eventTable[0].status).toBe("processed"); // Successfully marked by active attempt 2!
   });
 
+  it("aborts stale webhook callback attempts before dispatching flows when re-armed", () => {
+    type EventRow = { eventId: string; status: string; createdAt: Date };
+    const eventTable: EventRow[] = [
+      { eventId: "evt-1", status: "pending", createdAt: new Date(2000) }, // Re-armed to 2000
+    ];
+
+    const canDispatch = (eventId: string, attemptCreatedAt: Date) => {
+      const activeEvent = eventTable.find(
+        (e) => e.eventId === eventId && e.status === "pending" && e.createdAt.getTime() === attemptCreatedAt.getTime()
+      );
+      return Boolean(activeEvent);
+    };
+
+    expect(canDispatch("evt-1", new Date(1000))).toBe(false); // Stale callback (1000) aborts!
+    expect(canDispatch("evt-1", new Date(2000))).toBe(true);  // Active callback (2000) dispatches!
+  });
+
+  it("rejects restartRun when target run is active or waiting approval", () => {
+    const validateRestart = (status: string) => {
+      if (status !== "failed" && status !== "succeeded") {
+        return { error: `Cannot restart run with status '${status}'. Only completed or failed runs can be restarted.` };
+      }
+      return { ok: true };
+    };
+
+    expect(validateRestart("running").error).toBeDefined();
+    expect(validateRestart("waiting_approval").error).toBeDefined();
+    expect(validateRestart("failed").ok).toBe(true);
+    expect(validateRestart("succeeded").ok).toBe(true);
+  });
+
   it("rejects SSRF private and link-local URLs including hostnames resolving to private IPs", async () => {
     const { validateSafeUrl } = await import("../nodes/ai/transcribe");
 

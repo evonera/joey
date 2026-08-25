@@ -225,6 +225,19 @@ export async function POST(req: NextRequest) {
             .set({ tenantId })
             .where(and(eq(webhookEvents.eventId, payload.id), eq(webhookEvents.createdAt, attemptCreatedAt)));
 
+          // Verify that this callback attempt still owns the webhook event before dispatching
+          const activeEvent = await db.query.webhookEvents.findFirst({
+            where: and(
+              eq(webhookEvents.eventId, payload.id),
+              eq(webhookEvents.createdAt, attemptCreatedAt),
+              eq(webhookEvents.status, "pending"),
+            ),
+          });
+          if (!activeEvent) {
+            console.warn(`[webhooks/zernio] Aborting stale attempt for event ${payload.id} (superseded by redelivery)`);
+            return;
+          }
+
           // Store engagement item for comment.received events
           if (payload.event === "comment.received") {
             await storeEngagementItem(payload, tenantId);

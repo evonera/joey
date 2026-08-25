@@ -430,6 +430,9 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
     where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
   });
   if (!run) return { error: "Run not found" };
+  if (run.status !== "failed" && run.status !== "succeeded") {
+    return { error: `Cannot restart run with status '${run.status}'. Only completed or failed runs can be restarted.` };
+  }
   const flow = await db.query.flows.findFirst({ where: eq(flows.id, run.flowId) });
   if (!flow) return { error: "Flow not found" };
 
