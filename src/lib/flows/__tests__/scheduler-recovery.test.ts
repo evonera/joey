@@ -519,5 +519,40 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(d1.isDuplicate).toBe(false); // Delivery 1 won the exclusive claim!
     expect(d2.isDuplicate).toBe(true);  // Delivery 2 was safely deduplicated!
   });
+
+  it("validates LLM JSON output strictly against schema and rejects schema-invalid data", async () => {
+    const { validateJsonSchema } = await import("../nodes/ai/llm-task");
+
+    const schema = {
+      type: "object",
+      properties: {
+        sentiment: { type: "string", enum: ["positive", "negative", "neutral"] },
+        score: { type: "number", minimum: 0, maximum: 1 },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      required: ["sentiment", "score"],
+      additionalProperties: false,
+    };
+
+    // Valid JSON
+    const validData = { sentiment: "positive", score: 0.95, tags: ["happy"] };
+    expect(validateJsonSchema(validData, schema).valid).toBe(true);
+
+    // Missing required field
+    const missingField = { sentiment: "positive" };
+    expect(validateJsonSchema(missingField, schema).valid).toBe(false);
+
+    // Invalid enum
+    const invalidEnum = { sentiment: "confused", score: 0.5 };
+    expect(validateJsonSchema(invalidEnum, schema).valid).toBe(false);
+
+    // Invalid type
+    const invalidType = { sentiment: "positive", score: "high" };
+    expect(validateJsonSchema(invalidType, schema).valid).toBe(false);
+
+    // Unexpected additional property
+    const extraProperty = { sentiment: "positive", score: 0.8, extra: true };
+    expect(validateJsonSchema(extraProperty, schema).valid).toBe(false);
+  });
 });
 
