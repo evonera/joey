@@ -36,15 +36,24 @@ export default defineSchedule({
         eq(flowRuns.status, "running"),
         lt(flowRuns.updatedAt, staleCutoff),
       ),
-      columns: { id: true, steps: true },
+      columns: { id: true, flowId: true, steps: true },
     });
 
     for (const stale of staleRuns) {
-      const steps = ((stale.steps as unknown[]) ?? []) as { status: string; error?: string }[];
+      const steps = ((stale.steps as unknown[]) ?? []) as { nodeId: string; status: string; error?: string }[];
       const hasWaitingApproval = steps.some((s) => s.status === "waiting_approval");
       const hasFailure = steps.some((s) => s.status === "failed");
       const hasWorking = steps.some((s) => s.status === "working");
       const allDone = steps.length > 0 && steps.every((s) => s.status === "succeeded" || s.status === "skipped");
+
+      // Verify that all nodes in the flow's graph were executed so partial runs are not marked succeeded
+      const flowRecord = await db.query.flows.findFirst({
+        where: eq(flows.id, stale.flowId),
+        columns: { graph: true },
+      });
+      const graphNodes = (flowRecord?.graph as { nodes?: { id: string }[] })?.nodes ?? [];
+      const executedNodeIds = new Set(steps.map((s) => s.nodeId));
+      const allGraphNodesAccountedFor = graphNodes.length > 0 && graphNodes.every((n) => executedNodeIds.has(n.id));
 
       let resolvedStatus: "succeeded" | "failed" | "waiting_approval" = "failed";
       let errorMsg: string | null = "Run timed out (no heartbeat activity for 30 minutes).";
@@ -52,7 +61,7 @@ export default defineSchedule({
       if (hasWaitingApproval) {
         resolvedStatus = "waiting_approval";
         errorMsg = null;
-      } else if (allDone && !hasFailure && !hasWorking) {
+      } else if (allGraphNodesAccountedFor && allDone && !hasFailure && !hasWorking) {
         resolvedStatus = "succeeded";
         errorMsg = null;
       } else if (hasFailure) {
@@ -109,65 +118,9 @@ export default defineSchedule({
               eq(flowRuns.status, "waiting_approval"),
             ),
           ),
-          columns: { id: true, status: true, updatedAt: true },
+          columns: { id: true },
         });
-
-        if (inFlight) {
-          if (inFlight.status === "waiting_approval") {
-            continue;
-          }
-          // If in flight as running, check if heartbeats have stopped (quiet for >60s).
-          // Active runs touch updatedAt every 10s. If quiet >60s, finalization was exhausted
-          // or execution crashed. Reconcile immediately so it doesn't block future ticks.
-          const quietCutoff = new Date(Date.now() - 60_000);
-          if (inFlight.updatedAt < quietCutoff) {
-            const r = await db.query.flowRuns.findFirst({
-              where: eq(flowRuns.id, inFlight.id),
-              columns: { steps: true },
-            });
-            const steps = ((r?.steps as unknown[]) ?? []) as { status: string; error?: string }[];
-            const allDone = steps.length > 0 && steps.every((s) => s.status === "succeeded" || s.status === "skipped");
-            const hasFailure = steps.some((s) => s.status === "failed");
-            const resolvedStatus = allDone && !hasFailure ? "succeeded" : "failed";
-            const errorMsg = resolvedStatus === "failed" ? "Run timed out / finalization exhausted." : null;
-
-            const updated = await db
-              .update(flowRuns)
-              .set({
-                status: resolvedStatus,
-                error: errorMsg,
-                finishedAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(flowRuns.id, inFlight.id),
-                  eq(flowRuns.status, "running"),
-                  lt(flowRuns.updatedAt, quietCutoff),
-                ),
-              )
-              .returning({ id: flowRuns.id });
-
-            if (updated.length === 0) {
-              // Heartbeat refreshed between check and update; run is alive.
-              continue;
-            }
-
-            const stillInFlight = await db.query.flowRuns.findFirst({
-              where: and(
-                eq(flowRuns.flowId, flow.id),
-                or(
-                  eq(flowRuns.status, "running"),
-                  eq(flowRuns.status, "waiting_approval"),
-                ),
-              ),
-              columns: { id: true },
-            });
-            if (stillInFlight) continue;
-          } else {
-            continue;
-          }
-        }
+        if (inFlight) continue;
 
         // Atomic admission: partial unique index (flow_runs_running_scheduled_idx) guarantees
         // at most one running scheduled execution per flow across concurrent scheduler invocations.

@@ -101,38 +101,61 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(result.error).toContain("could not be persisted");
   });
 
-  it("preserves executed run history on exhausted finalization and resolves accurate status", () => {
-    type RunRecord = { id: string; status: string; steps: { status: string }[]; updatedAt: Date; error?: string | null };
-    
-    // 1. Run whose steps all succeeded before finalization network drop
-    const succeededRun: RunRecord = {
+  it("preserves executed run history on exhausted finalization and resolves accurate status with full graph validation", () => {
+    type RunRecord = {
+      id: string;
+      status: string;
+      steps: { nodeId: string; status: string }[];
+      updatedAt: Date;
+      error?: string | null;
+    };
+
+    const flowGraph = {
+      nodes: [{ id: "trigger-1" }, { id: "node-2" }],
+    };
+
+    // 1. Run whose graph nodes all succeeded before finalization network drop
+    const fullySucceededRun: RunRecord = {
       id: "run-succeeded",
       status: "running",
       steps: [
-        { status: "succeeded" },
-        { status: "succeeded" },
+        { nodeId: "trigger-1", status: "succeeded" },
+        { nodeId: "node-2", status: "succeeded" },
       ],
       updatedAt: new Date(Date.now() - 35 * 60_000),
     };
 
-    // 2. Run that crashed midway without completing
+    // 2. Partial run where node-2 never executed
+    const partialRun: RunRecord = {
+      id: "run-partial",
+      status: "running",
+      steps: [
+        { nodeId: "trigger-1", status: "succeeded" },
+      ],
+      updatedAt: new Date(Date.now() - 35 * 60_000),
+    };
+
+    // 3. Run that crashed midway with a working step
     const crashedRun: RunRecord = {
       id: "run-crashed",
       status: "running",
       steps: [
-        { status: "succeeded" },
-        { status: "working" },
+        { nodeId: "trigger-1", status: "succeeded" },
+        { nodeId: "node-2", status: "working" },
       ],
       updatedAt: new Date(Date.now() - 35 * 60_000),
     };
 
-    const reconcileStaleRun = (run: RunRecord, staleCutoff: Date) => {
+    const reconcileStaleRun = (run: RunRecord, graph: typeof flowGraph, staleCutoff: Date) => {
       if (run.status === "running" && run.updatedAt < staleCutoff) {
         const hasFailure = run.steps.some((s) => s.status === "failed");
         const hasWorking = run.steps.some((s) => s.status === "working");
         const allDone = run.steps.length > 0 && run.steps.every((s) => s.status === "succeeded" || s.status === "skipped");
 
-        if (allDone && !hasFailure && !hasWorking) {
+        const executedNodeIds = new Set(run.steps.map((s) => s.nodeId));
+        const allGraphNodesAccountedFor = graph.nodes.length > 0 && graph.nodes.every((n) => executedNodeIds.has(n.id));
+
+        if (allGraphNodesAccountedFor && allDone && !hasFailure && !hasWorking) {
           run.status = "succeeded";
         } else {
           run.status = "failed";
@@ -142,10 +165,13 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     };
 
     const staleCutoff = new Date(Date.now() - 30 * 60_000);
-    reconcileStaleRun(succeededRun, staleCutoff);
-    reconcileStaleRun(crashedRun, staleCutoff);
+    reconcileStaleRun(fullySucceededRun, flowGraph, staleCutoff);
+    reconcileStaleRun(partialRun, flowGraph, staleCutoff);
+    reconcileStaleRun(crashedRun, flowGraph, staleCutoff);
 
-    expect(succeededRun.status).toBe("succeeded"); // Accurately records succeeded instead of falsely failing
+    expect(fullySucceededRun.status).toBe("succeeded"); // All nodes completed
+    expect(partialRun.status).toBe("failed"); // Incomplete graph is NOT marked succeeded
+    expect(partialRun.error).toContain("timed out");
     expect(crashedRun.status).toBe("failed");
     expect(crashedRun.error).toContain("timed out");
   });
