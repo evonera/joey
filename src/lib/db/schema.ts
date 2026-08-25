@@ -360,6 +360,9 @@ export const flowRuns = pgTable("flow_runs", {
   runningScheduledIdx: uniqueIndex("flow_runs_running_scheduled_idx")
     .on(table.flowId)
     .where(sql`${table.status} IN ('running','waiting_approval') AND ${table.trigger} = 'schedule'`),
+  runningWebhookIdx: uniqueIndex("flow_runs_running_webhook_idx")
+    .on(table.flowId, sql`(${table.triggerPayload}->>'id')`)
+    .where(sql`${table.status} IN ('running','waiting_approval') AND ${table.trigger} = 'webhook'`),
 }));
 
 /**

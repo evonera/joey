@@ -107,7 +107,14 @@ async function dispatchFlowWebhooks(
           ...(cachedSteps ? { steps: cachedSteps } : {}),
           ...(fanoutProgress ? { fanoutProgress } : {}),
         })
+        .onConflictDoNothing()
         .returning();
+
+      if (!run) {
+        // Another concurrent callback or retry already claimed and created the active run for this flow and event
+        console.warn(`[webhooks/zernio] Active flow run already exists for flow ${flow.id} and event ${String(payloadId)}, skipping duplicate`);
+        continue;
+      }
 
       let result;
       let execErr;

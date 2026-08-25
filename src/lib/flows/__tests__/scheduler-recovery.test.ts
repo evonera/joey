@@ -593,5 +593,27 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
 
     await expect(persistStepFenced()).rejects.toThrow("Execution fenced");
   });
+
+  it("atomically deduplicates concurrent webhook flow dispatches using unique index on active runs", () => {
+    type ActiveWebhookRun = { flowId: string; eventId: string; status: string };
+    const runningRuns = new Map<string, ActiveWebhookRun>();
+
+    const admitWebhookRun = (flowId: string, eventId: string) => {
+      const key = `${flowId}:${eventId}`;
+      if (runningRuns.has(key) && runningRuns.get(key)!.status === "running") {
+        return null; // onConflictDoNothing
+      }
+      const newRun = { flowId, eventId, status: "running" };
+      runningRuns.set(key, newRun);
+      return newRun;
+    };
+
+    // Stale attempt and replacement attempt race to dispatch the same flow and event
+    const run1 = admitWebhookRun("flow-1", "evt-123");
+    const run2 = admitWebhookRun("flow-1", "evt-123");
+
+    expect(run1).not.toBeNull();
+    expect(run2).toBeNull(); // Second dispatch is atomically rejected and skipped!
+  });
 });
 

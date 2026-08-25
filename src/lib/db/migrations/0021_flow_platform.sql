@@ -53,5 +53,6 @@ ALTER TABLE "flows" ADD CONSTRAINT "flows_tenant_id_tenants_id_fk" FOREIGN KEY (
 CREATE INDEX "flow_runs_flow_id_idx" ON "flow_runs" USING btree ("flow_id","started_at");--> statement-breakpoint
 CREATE INDEX "flow_runs_tenant_id_idx" ON "flow_runs" USING btree ("tenant_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "flow_runs_running_scheduled_idx" ON "flow_runs" USING btree ("flow_id") WHERE (status IN ('running','waiting_approval') AND trigger = 'schedule');--> statement-breakpoint
+CREATE UNIQUE INDEX "flow_runs_running_webhook_idx" ON "flow_runs" USING btree ("flow_id",((trigger_payload->>'id'))) WHERE (status IN ('running','waiting_approval') AND trigger = 'webhook');--> statement-breakpoint
 CREATE INDEX "flows_tenant_id_idx" ON "flows" USING btree ("tenant_id","updated_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "rate_limit_token_window_idx" ON "rate_limit_counters" USING btree ("token_id","window_start");
