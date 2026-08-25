@@ -194,13 +194,8 @@ export function validateJsonSchema(
       errors.push(`${path}: string length ${data.length} is greater than maxLength ${schema.maxLength}`);
     }
     if (typeof schema.pattern === "string") {
-      try {
-        const regex = new RegExp(schema.pattern);
-        if (!regex.test(data)) {
-          errors.push(`${path}: string does not match pattern ${schema.pattern}`);
-        }
-      } catch {
-        // invalid regex pattern in user schema
+      if (!safeTestRegex(schema.pattern, data)) {
+        errors.push(`${path}: string does not match pattern ${schema.pattern}`);
       }
     }
   }
@@ -223,5 +218,24 @@ function safeStringify(value: unknown): string {
     return typeof value === "string" ? value : JSON.stringify(value, null, 2);
   } catch {
     return String(value);
+  }
+}
+
+export function safeTestRegex(pattern: string, str: string): boolean {
+  if (pattern.length > 256) {
+    return false; // Reject excessively long/complex regex patterns
+  }
+  // Detect known catastrophic nested quantifier patterns e.g. (x+)+ or (x*)* or (x+)*
+  const nestedQuantifiers = /\([^)]*(\+|\*|\{[0-9]+,[0-9]*\})[^)]*\)(\+|\*|\{[0-9]+,[0-9]*\})/i;
+  if (nestedQuantifiers.test(pattern)) {
+    return false; // Reject unsafe backtracking patterns
+  }
+  // Limit string length tested against regex to prevent ReDoS on massive inputs
+  const safeStr = str.length > 2048 ? str.slice(0, 2048) : str;
+  try {
+    const regex = new RegExp(pattern);
+    return regex.test(safeStr);
+  } catch {
+    return false;
   }
 }

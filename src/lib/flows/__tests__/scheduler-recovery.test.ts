@@ -684,5 +684,22 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     };
     expect(isGraphFullyCompleted(fanoutGraph, fanoutSteps, partialFanoutProgress)).toBe(false);
   });
+
+  it("safely evaluates schema regex patterns and rejects dangerous catastrophic backtracking patterns (ReDoS)", async () => {
+    const { safeTestRegex } = await import("../nodes/ai/llm-task");
+
+    // Safe valid pattern
+    expect(safeTestRegex("^[a-z]+$", "hello")).toBe(true);
+    expect(safeTestRegex("^[a-z]+$", "12345")).toBe(false);
+
+    // Pathological nested quantifier patterns (catastrophic backtracking)
+    expect(safeTestRegex("^(a+)+$", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!")).toBe(false);
+    expect(safeTestRegex("^([a-zA-Z0-9]+)*$", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!")).toBe(false);
+    expect(safeTestRegex("^(a*)*$", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!")).toBe(false);
+
+    // Excessively long regex pattern
+    const longPattern = "a".repeat(300);
+    expect(safeTestRegex(longPattern, "a")).toBe(false);
+  });
 });
 
