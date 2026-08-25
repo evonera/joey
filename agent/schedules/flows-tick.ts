@@ -40,10 +40,10 @@ export default defineSchedule({
     });
 
     for (const stale of staleRuns) {
-      const steps = ((stale.steps as unknown[]) ?? []) as { nodeId: string; status: string; error?: string }[];
+      const steps = ((stale.steps as unknown[]) ?? []) as { nodeId: string; status: string; branch?: string; error?: string }[];
       const hasWaitingApproval = steps.some((s) => s.status === "waiting_approval");
 
-      let resolvedStatus: "failed" | "waiting_approval" = "failed";
+      let resolvedStatus: "failed" | "waiting_approval" | "succeeded" = "failed";
       let errorMsg: string | null = "Run timed out (no heartbeat activity for 30 minutes).";
 
       if (hasWaitingApproval) {
@@ -53,6 +53,15 @@ export default defineSchedule({
         const failedStep = steps.find((s) => s.status === "failed");
         if (failedStep?.error) {
           errorMsg = `Step failed: ${failedStep.error}`;
+        } else {
+          const flow = await db.query.flows.findFirst({
+            where: eq(flows.id, stale.flowId),
+            columns: { graph: true },
+          });
+          if (flow?.graph && isGraphFullyCompleted(flow.graph, steps)) {
+            resolvedStatus = "succeeded";
+            errorMsg = null;
+          }
         }
       }
 
@@ -305,3 +314,52 @@ export default defineSchedule({
     }
   },
 });
+
+export function isGraphFullyCompleted(
+  graph: unknown,
+  steps: { nodeId: string; status: string; branch?: string }[],
+): boolean {
+  if (!graph || typeof graph !== "object") return false;
+  const g = graph as {
+    nodes?: { id: string; type: string }[];
+    edges?: { id: string; source: string; target: string; sourceHandle?: string | null }[];
+  };
+  const nodes = g.nodes ?? [];
+  const edges = g.edges ?? [];
+  if (nodes.length === 0) return false;
+
+  const stepsByNodeId = new Map(steps.map((s) => [s.nodeId, s]));
+
+  // Find root / trigger nodes
+  const targets = new Set(edges.map((e) => e.target));
+  const rootNodes = nodes.filter((n) => !targets.has(n.id) || n.type.startsWith("trigger."));
+  if (rootNodes.length === 0) return false;
+
+  const queue: string[] = rootNodes.map((n) => n.id);
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const currId = queue.shift()!;
+    if (visited.has(currId)) continue;
+    visited.add(currId);
+
+    const step = stepsByNodeId.get(currId);
+    // If a reachable node was not executed or did not succeed/skip, it did not complete successfully
+    if (!step || (step.status !== "succeeded" && step.status !== "skipped")) {
+      return false;
+    }
+
+    // Find downstream neighbors
+    for (const edge of edges) {
+      if (edge.source !== currId) continue;
+      // If the node is a branch/condition node and recorded a branch decision, follow only the taken branch
+      if (step.branch !== undefined && edge.sourceHandle && edge.sourceHandle !== step.branch) {
+        continue;
+      }
+      queue.push(edge.target);
+    }
+  }
+
+  // All reachable nodes have succeeded or skipped!
+  return visited.size > 0;
+}

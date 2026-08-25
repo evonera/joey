@@ -615,5 +615,45 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(run1).not.toBeNull();
     expect(run2).toBeNull(); // Second dispatch is atomically rejected and skipped!
   });
+
+  it("accurately classifies fully completed flows as succeeded during stale recovery", async () => {
+    const { isGraphFullyCompleted } = await import("../../../../agent/schedules/flows-tick");
+
+    const graph = {
+      nodes: [
+        { id: "t1", type: "trigger.schedule" },
+        { id: "c1", type: "logic.condition" },
+        { id: "act-true", type: "action.notify" },
+        { id: "act-false", type: "action.notify" },
+      ],
+      edges: [
+        { id: "e1", source: "t1", target: "c1" },
+        { id: "e2", source: "c1", target: "act-true", sourceHandle: "true" },
+        { id: "e3", source: "c1", target: "act-false", sourceHandle: "false" },
+      ],
+    };
+
+    // Case 1: Full execution following "true" branch
+    const fullSteps = [
+      { nodeId: "t1", status: "succeeded" },
+      { nodeId: "c1", status: "succeeded", branch: "true" },
+      { nodeId: "act-true", status: "succeeded" },
+    ];
+    expect(isGraphFullyCompleted(graph, fullSteps)).toBe(true);
+
+    // Case 2: Incomplete execution (crashed before act-true)
+    const partialSteps = [
+      { nodeId: "t1", status: "succeeded" },
+      { nodeId: "c1", status: "succeeded", branch: "true" },
+    ];
+    expect(isGraphFullyCompleted(graph, partialSteps)).toBe(false);
+
+    // Case 3: Failed step in path
+    const failedSteps = [
+      { nodeId: "t1", status: "succeeded" },
+      { nodeId: "c1", status: "failed" },
+    ];
+    expect(isGraphFullyCompleted(graph, failedSteps)).toBe(false);
+  });
 });
 
