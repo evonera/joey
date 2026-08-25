@@ -71,8 +71,10 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
         return { event: existing, isDuplicate: true };
       }
 
-      // If pending for >30s without any live heartbeat, process crashed before finishing
-      if (existing.createdAt < new Date(Date.now() - 30_000)) {
+      // If pending for >30s without any live heartbeat, process crashed before finishing.
+      // Exclusively claim the retry via compare-and-swap on createdAt so concurrent deliveries do not duplicate.
+      const staleCutoff = new Date(Date.now() - 30_000);
+      if (existing.createdAt < staleCutoff) {
         const [rearmed] = await db
           .update(webhookEvents)
           .set({
@@ -82,7 +84,13 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
             payload,
             createdAt: new Date(),
           })
-          .where(and(eq(webhookEvents.id, existing.id), eq(webhookEvents.status, "pending")))
+          .where(
+            and(
+              eq(webhookEvents.id, existing.id),
+              eq(webhookEvents.status, "pending"),
+              eq(webhookEvents.createdAt, existing.createdAt),
+            ),
+          )
           .returning();
         if (rearmed) {
           return { event: rearmed, isDuplicate: false };

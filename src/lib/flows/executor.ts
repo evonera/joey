@@ -450,16 +450,6 @@ export async function executeFlow(
       const itemKey = String(i);
       const checkpoint = { ...(progress[itemKey] ?? {}) };
 
-      // If checkpoint for item 0 is missing but cachedSteps has succeeded chain nodes,
-      // seed them into checkpoint so a crash between step update and fanout write does not drop progress.
-      if (i === 0 && Object.keys(checkpoint).length === 0 && opts.cachedSteps) {
-        for (const st of opts.cachedSteps) {
-          if (reachable.has(st.nodeId) && st.status === "succeeded" && outputs.has(st.nodeId)) {
-            checkpoint[st.nodeId] = outputs.get(st.nodeId);
-          }
-        }
-      }
-
       // Restore this item's already-succeeded chain prefix…
       for (const [nodeId, value] of Object.entries(checkpoint)) {
         const node = nodeById.get(nodeId);

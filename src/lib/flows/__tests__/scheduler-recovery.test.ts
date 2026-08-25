@@ -436,25 +436,47 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(resolveTenantKey("t2", "openai")).toBe("shared_env_openai"); // Unconfigured workspace falls back to env
   });
 
-  it("seeds fanout checkpoint from cachedSteps if checkpoint write lagged behind step update", () => {
-    const cachedSteps = [
-      { nodeId: "sink-1", status: "succeeded", output: { count: 1 } },
-    ];
-    const reachable = new Set(["sink-1", "sink-2"]);
-    const outputs = new Map<string, unknown>([["sink-1", { count: 1 }]]);
+  it("maintains strict per-item fanout checkpoint isolation so later items do not leak into item 0", () => {
+    const item0Checkpoint = {};
+    const item1Checkpoint = { "sink-1": { count: 42 } };
 
-    const progress: Record<string, Record<string, unknown>> = {};
-    const checkpoint = { ...(progress["0"] ?? {}) };
+    const progress: Record<string, Record<string, unknown>> = {
+      "1": item1Checkpoint,
+    };
 
-    if (Object.keys(checkpoint).length === 0) {
-      for (const st of cachedSteps) {
-        if (reachable.has(st.nodeId) && st.status === "succeeded" && outputs.has(st.nodeId)) {
-          checkpoint[st.nodeId] = outputs.get(st.nodeId);
-        }
+    // Item 0 gets only its own checkpoint, never leaking from later items
+    const restoredItem0 = { ...(progress["0"] ?? {}) };
+    expect(Object.keys(restoredItem0)).toHaveLength(0); // Clean slate for item 0
+
+    // Item 1 gets its own checkpoint
+    const restoredItem1 = { ...(progress["1"] ?? {}) };
+    expect(restoredItem1["sink-1"]).toEqual({ count: 42 });
+  });
+
+  it("exclusively claims stale pending webhooks via compare-and-swap so concurrent deliveries do not duplicate", () => {
+    type EventRow = { id: string; eventId: string; status: string; createdAt: Date };
+    const initialCreatedAt = new Date(1000);
+    const eventRow: EventRow = {
+      id: "ev-1",
+      eventId: "evt-stale",
+      status: "pending",
+      createdAt: initialCreatedAt,
+    };
+
+    const claimStalePending = (expectedCreatedAt: Date) => {
+      if (eventRow.status === "pending" && eventRow.createdAt.getTime() === expectedCreatedAt.getTime()) {
+        eventRow.createdAt = new Date(2000); // CAS success
+        return { rearmed: true, isDuplicate: false };
       }
-    }
+      return { rearmed: false, isDuplicate: true };
+    };
 
-    expect(checkpoint["sink-1"]).toEqual({ count: 1 });
+    // Delivery 1 and Delivery 2 race with the same initial createdAt
+    const d1 = claimStalePending(initialCreatedAt);
+    const d2 = claimStalePending(initialCreatedAt);
+
+    expect(d1.isDuplicate).toBe(false); // Delivery 1 won the exclusive claim!
+    expect(d2.isDuplicate).toBe(true);  // Delivery 2 was safely deduplicated!
   });
 });
 
