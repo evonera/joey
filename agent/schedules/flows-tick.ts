@@ -345,8 +345,8 @@ export function isGraphFullyCompleted(
 
   const stepsByNodeId = new Map(steps.map((s) => [s.nodeId, s]));
 
-  // Check all forEach nodes in the graph
-  const forEachNodes = nodes.filter((n) => n.type === "logic.forEach");
+  // Check all fan-out loop nodes in the graph
+  const forEachNodes = nodes.filter((n) => n.type === "logic.loop" || n.type === "logic.forEach");
   for (const feNode of forEachNodes) {
     const feStep = stepsByNodeId.get(feNode.id);
     if (!feStep || feStep.status !== "succeeded") return false;
