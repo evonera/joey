@@ -119,21 +119,27 @@ async function persistStep(
 ) {
   const run = await db.query.flowRuns.findFirst({
     where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
-    columns: { steps: true },
+    columns: { steps: true, status: true },
   });
-  if (!run) return;
+  if (!run || run.status !== "running") {
+    throw new Error("Execution fenced: run was transitioned out of running.");
+  }
   const steps = (run.steps as FlowStep[]) ?? [];
   const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
   if (idx >= 0) steps[idx] = step;
   else steps.push(step);
-  await db
+  const updated = await db
     .update(flowRuns)
     .set({
       steps,
       ...(fanoutProgress ? { fanoutProgress } : {}),
       updatedAt: new Date(),
     })
-    .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+    .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+    .returning({ id: flowRuns.id });
+  if (updated.length === 0) {
+    throw new Error("Execution fenced: update rejected because run is no longer running.");
+  }
 }
 
 async function finalizeRun(
@@ -442,6 +448,27 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
   if (run.status !== "failed" && run.status !== "succeeded") {
     return { error: `Cannot restart run with status '${run.status}'. Only completed or failed runs can be restarted.` };
   }
+
+  // Atomically claim the run for restart with optimistic locking
+  const [claimed] = await db
+    .update(flowRuns)
+    .set({
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(flowRuns.id, runId),
+        eq(flowRuns.tenantId, tenantId),
+        eq(flowRuns.status, run.status),
+        eq(flowRuns.updatedAt, run.updatedAt),
+      ),
+    )
+    .returning();
+
+  if (!claimed) {
+    return { error: "Run was modified or restarted by another request." };
+  }
+
   const flow = await db.query.flows.findFirst({ where: eq(flows.id, run.flowId) });
   if (!flow) return { error: "Flow not found" };
 

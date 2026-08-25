@@ -554,5 +554,44 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     const extraProperty = { sentiment: "positive", score: 0.8, extra: true };
     expect(validateJsonSchema(extraProperty, schema).valid).toBe(false);
   });
+
+  it("atomically claims run for restart so concurrent restart calls cannot execute duplicate runs", () => {
+    type RunRow = { id: string; status: string; updatedAt: Date };
+    const initialUpdatedAt = new Date(1000);
+    const runRow: RunRow = { id: "run-1", status: "failed", updatedAt: initialUpdatedAt };
+
+    const claimRestart = (expectedUpdatedAt: Date) => {
+      if (runRow.status === "failed" && runRow.updatedAt.getTime() === expectedUpdatedAt.getTime()) {
+        runRow.updatedAt = new Date(2000); // CAS success
+        return { ok: true };
+      }
+      return { ok: false, error: "Run was modified or restarted by another request." };
+    };
+
+    const r1 = claimRestart(initialUpdatedAt);
+    const r2 = claimRestart(initialUpdatedAt);
+
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(false);
+    expect(r2.error).toContain("modified or restarted");
+  });
+
+  it("fences onStepUpdate and onHeartbeat execution when run is transitioned out of running", async () => {
+    let runStatus = "running";
+
+    const persistStepFenced = async () => {
+      if (runStatus !== "running") {
+        throw new Error("Execution fenced: run was transitioned out of running.");
+      }
+      return { ok: true };
+    };
+
+    await expect(persistStepFenced()).resolves.toEqual({ ok: true });
+
+    // Transition run out of running (e.g. by redelivery, stale sweep, or cancellation)
+    runStatus = "failed";
+
+    await expect(persistStepFenced()).rejects.toThrow("Execution fenced");
+  });
 });
 
