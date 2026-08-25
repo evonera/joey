@@ -159,10 +159,14 @@ async function dispatchFlowWebhooks(
               }
             },
             onFanoutProgress: async (fanoutProgress) => {
-              await db
+              const updated = await db
                 .update(flowRuns)
                 .set({ fanoutProgress, updatedAt: new Date() })
-                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+                .where(and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+                .returning({ id: flowRuns.id });
+              if (updated.length === 0) {
+                throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+              }
             },
           },
         );

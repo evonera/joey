@@ -291,16 +291,24 @@ async function executeRunWithPorts(opts: {
       {
         onStepUpdate: (step, fanoutProgress) => persistStep(opts.tenantId, runId, step, fanoutProgress),
         onFanoutProgress: async (progress) => {
-          await db
+          const updated = await db
             .update(flowRuns)
             .set({ fanoutProgress: progress, updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")));
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+          }
         },
         onHeartbeat: async () => {
-          await db
+          const updated = await db
             .update(flowRuns)
             .set({ updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")));
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
+          }
         },
       },
     );
@@ -399,16 +407,24 @@ export async function resumeRun(
       {
         onStepUpdate: (step, fanoutProgress) => persistStep(tenantId, runId, step, fanoutProgress),
         onFanoutProgress: async (progress) => {
-          await db
+          const updated = await db
             .update(flowRuns)
             .set({ fanoutProgress: progress, updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+          }
         },
         onHeartbeat: async () => {
-          await db
+          const updated = await db
             .update(flowRuns)
             .set({ updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
+          }
         },
       },
     );
