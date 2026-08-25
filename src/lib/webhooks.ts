@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "@/lib/db";
-import { webhookEvents, socialAccounts, engagementItems } from "@/lib/db/schema";
-import { eq, and, or, lt } from "drizzle-orm";
+import { webhookEvents, socialAccounts, engagementItems, flowRuns } from "@/lib/db/schema";
+import { eq, and, sql, gt } from "drizzle-orm";
 
 export function verifyWebhookSignature(rawBody: string, signature: string, secret: string): boolean {
   const computed = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
@@ -37,14 +37,10 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
     const existing = await db.query.webhookEvents.findFirst({
       where: eq(webhookEvents.eventId, payload.id),
     });
-    // If the existing event failed or was left pending by a crashed worker (>5 min without update),
-    // re-arm it so the retry delivery can be processed.
-    const stalePendingCutoff = new Date(Date.now() - 5 * 60_000);
-    if (
-      existing &&
-      (existing.status === "failed" ||
-        (existing.status === "pending" && existing.createdAt < stalePendingCutoff))
-    ) {
+    if (!existing) return { event: null, isDuplicate: true };
+
+    if (existing.status === "failed") {
+      // Re-arm failed webhook for retry
       const [rearmed] = await db
         .update(webhookEvents)
         .set({
@@ -54,24 +50,47 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
           payload,
           createdAt: new Date(),
         })
-        .where(
-          and(
-            eq(webhookEvents.id, existing.id),
-            or(
-              eq(webhookEvents.status, "failed"),
-              and(
-                eq(webhookEvents.status, "pending"),
-                lt(webhookEvents.createdAt, stalePendingCutoff),
-              ),
-            ),
-          ),
-        )
+        .where(and(eq(webhookEvents.id, existing.id), eq(webhookEvents.status, "failed")))
         .returning();
       if (rearmed) {
         return { event: rearmed, isDuplicate: false };
       }
+    } else if (existing.status === "pending") {
+      // Check if there is an active flow execution emitting live heartbeats
+      const recentLiveRun = await db.query.flowRuns.findFirst({
+        where: and(
+          eq(flowRuns.trigger, "webhook"),
+          sql`${flowRuns.triggerPayload}->>'id' = ${String(payload.id)}`,
+          eq(flowRuns.status, "running"),
+          gt(flowRuns.updatedAt, new Date(Date.now() - 2 * 60_000)),
+        ),
+      });
+
+      // If active flow is running with live heartbeats, do not re-arm or duplicate
+      if (recentLiveRun) {
+        return { event: existing, isDuplicate: true };
+      }
+
+      // If pending for >30s without any live heartbeat, process crashed before finishing
+      if (existing.createdAt < new Date(Date.now() - 30_000)) {
+        const [rearmed] = await db
+          .update(webhookEvents)
+          .set({
+            status: "pending",
+            errorMessage: null,
+            processedAt: null,
+            payload,
+            createdAt: new Date(),
+          })
+          .where(and(eq(webhookEvents.id, existing.id), eq(webhookEvents.status, "pending")))
+          .returning();
+        if (rearmed) {
+          return { event: rearmed, isDuplicate: false };
+        }
+      }
     }
-    return { event: existing!, isDuplicate: true };
+
+    return { event: existing, isDuplicate: true };
   }
   return { event, isDuplicate: false };
 }

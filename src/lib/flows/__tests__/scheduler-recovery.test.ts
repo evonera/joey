@@ -154,36 +154,59 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(waitingRun.status).toBe("waiting_approval");
   });
 
-  it("re-arms stale pending webhooks on redelivery if worker crashed before processing", () => {
+  it("re-arms stale pending webhooks on redelivery only if no active run has recent heartbeats", () => {
     type WebhookRecord = { id: string; eventId: string; status: string; createdAt: Date };
-    const staleCutoff = new Date(Date.now() - 30_000);
+    type FlowRunRecord = { id: string; eventId: string; status: string; updatedAt: Date };
 
-    const stalePendingRecord: WebhookRecord = {
+    const flowRuns: FlowRunRecord[] = [
+      {
+        id: "run-live",
+        eventId: "evt-live-long-running",
+        status: "running",
+        updatedAt: new Date(Date.now() - 10_000), // Heartbeat 10s ago (live!)
+      },
+      {
+        id: "run-dead",
+        eventId: "evt-abandoned-run",
+        status: "running",
+        updatedAt: new Date(Date.now() - 5 * 60_000), // Dead / no heartbeat for 5m
+      },
+    ];
+
+    const liveWebhookRecord: WebhookRecord = {
       id: "wh-1",
-      eventId: "evt-stale-pending",
+      eventId: "evt-live-long-running",
       status: "pending",
-      createdAt: new Date(Date.now() - 45_000), // Created 45s ago, never finished
+      createdAt: new Date(Date.now() - 10 * 60_000), // Flow running for 10m
     };
 
-    const recentPendingRecord: WebhookRecord = {
+    const abandonedWebhookRecord: WebhookRecord = {
       id: "wh-2",
-      eventId: "evt-recent-pending",
+      eventId: "evt-abandoned-run",
       status: "pending",
-      createdAt: new Date(Date.now() - 5_000), // Created 5s ago, actively in flight
+      createdAt: new Date(Date.now() - 10 * 60_000),
     };
 
     const handleDelivery = (existing: WebhookRecord) => {
-      if (
-        existing.status === "failed" ||
-        (existing.status === "pending" && existing.createdAt < staleCutoff)
-      ) {
+      if (existing.status === "failed") {
         return { rearmed: true, isDuplicate: false };
+      }
+      if (existing.status === "pending") {
+        const liveRun = flowRuns.find(
+          (r) => r.eventId === existing.eventId && r.status === "running" && r.updatedAt.getTime() > Date.now() - 2 * 60_000
+        );
+        if (liveRun) {
+          return { rearmed: false, isDuplicate: true }; // Active live flow is NOT disrupted
+        }
+        if (existing.createdAt.getTime() < Date.now() - 30_000) {
+          return { rearmed: true, isDuplicate: false }; // Abandoned run is re-armed
+        }
       }
       return { rearmed: false, isDuplicate: true };
     };
 
-    expect(handleDelivery(stalePendingRecord).isDuplicate).toBe(false); // Stale pending is re-armed
-    expect(handleDelivery(recentPendingRecord).isDuplicate).toBe(true); // Recent in-flight pending is deduplicated
+    expect(handleDelivery(liveWebhookRecord).isDuplicate).toBe(true); // Live running flow is NOT re-armed
+    expect(handleDelivery(abandonedWebhookRecord).isDuplicate).toBe(false); // Dead flow is re-armed
   });
 
   it("rejects SSRF private and link-local URLs including hostnames resolving to private IPs", async () => {

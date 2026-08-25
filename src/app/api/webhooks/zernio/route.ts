@@ -47,7 +47,17 @@ async function dispatchFlowWebhooks(
         continue;
       }
 
-      // If prior run was interrupted while still running, mark it superseded
+      // If prior run is actively running with live heartbeats, skip to avoid duplicate concurrent execution.
+      if (
+        priorRun &&
+        priorRun.status === "running" &&
+        priorRun.updatedAt &&
+        new Date(priorRun.updatedAt).getTime() > Date.now() - 2 * 60_000
+      ) {
+        continue;
+      }
+
+      // If prior run was interrupted/abandoned without heartbeat for >2m, mark it superseded
       if (priorRun && priorRun.status === "running") {
         await db
           .update(flowRuns)
