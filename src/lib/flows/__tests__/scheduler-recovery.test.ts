@@ -500,19 +500,23 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     const processingEvent: EventRow = { id: "ev-2", eventId: "evt-2", status: "processing" };
     const failedEvent: EventRow = { id: "ev-3", eventId: "evt-3", status: "failed" };
 
-    const handleDelivery = (event: EventRow) => {
+    const handleDelivery = (event: EventRow, isLive = true) => {
       if (event.status === "failed") {
         event.status = "pending";
         return { isDuplicate: false };
       }
-      if (event.status === "pending" || event.status === "processing") {
-        return { isDuplicate: true };
+      if (event.status === "processing" || event.status === "pending") {
+        if (isLive) return { isDuplicate: true };
+        // Crashed processing without live heartbeat is re-armed
+        event.status = "pending";
+        return { isDuplicate: false };
       }
       return { isDuplicate: true };
     };
 
-    expect(handleDelivery(pendingEvent).isDuplicate).toBe(true);
-    expect(handleDelivery(processingEvent).isDuplicate).toBe(true);
+    expect(handleDelivery(pendingEvent, true).isDuplicate).toBe(true);
+    expect(handleDelivery(processingEvent, true).isDuplicate).toBe(true);
+    expect(handleDelivery(processingEvent, false).isDuplicate).toBe(false); // Crashed processing recovers!
     expect(handleDelivery(failedEvent).isDuplicate).toBe(false);
   });
 
@@ -551,25 +555,24 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(validateJsonSchema(extraProperty, schema).valid).toBe(false);
   });
 
-  it("atomically claims run for restart so concurrent restart calls cannot execute duplicate runs", () => {
-    type RunRow = { id: string; status: string; updatedAt: Date };
-    const initialUpdatedAt = new Date(1000);
-    const runRow: RunRow = { id: "run-1", status: "failed", updatedAt: initialUpdatedAt };
+  it("atomically transitions status to restarted so restart cannot be reused", () => {
+    type RunRow = { id: string; status: string };
+    const runRow: RunRow = { id: "run-1", status: "failed" };
 
-    const claimRestart = (expectedUpdatedAt: Date) => {
-      if (runRow.status === "failed" && runRow.updatedAt.getTime() === expectedUpdatedAt.getTime()) {
-        runRow.updatedAt = new Date(2000); // CAS success
+    const claimRestart = () => {
+      if (runRow.status === "failed" || runRow.status === "succeeded") {
+        runRow.status = "restarted"; // Atomically change status
         return { ok: true };
       }
-      return { ok: false, error: "Run was modified or restarted by another request." };
+      return { ok: false, error: `Cannot restart run with status '${runRow.status}'.` };
     };
 
-    const r1 = claimRestart(initialUpdatedAt);
-    const r2 = claimRestart(initialUpdatedAt);
+    const r1 = claimRestart();
+    const r2 = claimRestart();
 
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(false);
-    expect(r2.error).toContain("modified or restarted");
+    expect(r2.error).toContain("Cannot restart run with status 'restarted'");
   });
 
   it("fences onStepUpdate and onHeartbeat execution when run is transitioned out of running", async () => {

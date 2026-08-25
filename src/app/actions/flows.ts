@@ -465,10 +465,11 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
     return { error: `Cannot restart run with status '${run.status}'. Only completed or failed runs can be restarted.` };
   }
 
-  // Atomically claim the run for restart with optimistic locking
+  // Atomically claim the run for restart by transitioning its status to restarted
   const [claimed] = await db
     .update(flowRuns)
     .set({
+      status: "restarted",
       updatedAt: new Date(),
     })
     .where(
@@ -476,7 +477,6 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
         eq(flowRuns.id, runId),
         eq(flowRuns.tenantId, tenantId),
         eq(flowRuns.status, run.status),
-        eq(flowRuns.updatedAt, run.updatedAt),
       ),
     )
     .returning();
