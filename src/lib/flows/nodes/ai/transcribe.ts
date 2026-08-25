@@ -73,12 +73,8 @@ function isPrivateIp(ip: string): boolean {
   if (normalized === "::1" || normalized === "::") return true;
   if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // ULA
   if (normalized.startsWith("fe80")) return true; // link-local
-  if (
-    normalized.startsWith("::ffff:127.") ||
-    normalized.startsWith("::ffff:10.") ||
-    normalized.startsWith("::ffff:192.168.") ||
-    normalized.startsWith("::ffff:169.254.")
-  ) {
+  const mappedIpv4 = normalized.match(/^::ffff:(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (mappedIpv4 && isPrivateIp(mappedIpv4.slice(1).join("."))) {
     return true;
   }
   return false;

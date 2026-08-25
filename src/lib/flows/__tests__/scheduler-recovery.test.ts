@@ -159,6 +159,10 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     await expect(validateSafeUrl("http://169.254.169.254/latest/meta-data")).rejects.toThrow();
     await expect(validateSafeUrl("http://10.0.1.5/recording.mp3")).rejects.toThrow();
     await expect(validateSafeUrl("http://192.168.1.1/stream")).rejects.toThrow();
+    // IPv4-mapped IPv6 representations of private ranges (incl. 172.16/12)
+    await expect(validateSafeUrl("http://[::ffff:172.20.0.5]/audio")).rejects.toThrow();
+    await expect(validateSafeUrl("http://[::ffff:10.0.1.5]/audio")).rejects.toThrow();
+    await expect(validateSafeUrl("http://[::ffff:169.254.169.254]/latest/meta-data")).rejects.toThrow();
     await expect(validateSafeUrl("http://172.20.0.5/audio")).rejects.toThrow();
     await expect(validateSafeUrl("ftp://example.com/audio.mp3")).rejects.toThrow();
     await expect(validateSafeUrl("http://service.internal/audio.mp3")).rejects.toThrow();
