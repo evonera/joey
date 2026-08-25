@@ -1,3 +1,4 @@
+import vm from "node:vm";
 import { defineNode } from "../../node-contract";
 import { llmTaskConfig } from "../../catalog";
 import { runLlm } from "@/lib/llm";
@@ -223,19 +224,22 @@ function safeStringify(value: unknown): string {
 
 export function safeTestRegex(pattern: string, str: string): boolean {
   if (pattern.length > 256) {
-    return false; // Reject excessively long/complex regex patterns
+    return false; // Reject excessively long regex patterns
   }
-  // Detect known catastrophic nested quantifier patterns e.g. (x+)+ or (x*)* or (x+)*
+  // Detect known catastrophic nested quantifier patterns
   const nestedQuantifiers = /\([^)]*(\+|\*|\{[0-9]+,[0-9]*\})[^)]*\)(\+|\*|\{[0-9]+,[0-9]*\})/i;
   if (nestedQuantifiers.test(pattern)) {
     return false; // Reject unsafe backtracking patterns
   }
-  // Limit string length tested against regex to prevent ReDoS on massive inputs
+  // Limit string length tested against regex
   const safeStr = str.length > 2048 ? str.slice(0, 2048) : str;
   try {
-    const regex = new RegExp(pattern);
-    return regex.test(safeStr);
+    const sandbox = { pattern, str: safeStr, result: false };
+    const context = vm.createContext(sandbox);
+    const script = new vm.Script("result = new RegExp(pattern).test(str);");
+    script.runInContext(context, { timeout: 25 }); // 25ms hard timeout terminates catastrophic backtracking
+    return sandbox.result;
   } catch {
-    return false;
+    return false; // Timed out or invalid regex
   }
 }

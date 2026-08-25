@@ -691,10 +691,11 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(safeTestRegex("^[a-z]+$", "hello")).toBe(true);
     expect(safeTestRegex("^[a-z]+$", "12345")).toBe(false);
 
-    // Pathological nested quantifier patterns (catastrophic backtracking)
+    // Pathological nested and alternation quantifier patterns (catastrophic backtracking)
     expect(safeTestRegex("^(a+)+$", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!")).toBe(false);
     expect(safeTestRegex("^([a-zA-Z0-9]+)*$", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!")).toBe(false);
     expect(safeTestRegex("^(a*)*$", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!")).toBe(false);
+    expect(safeTestRegex("^(a|aa)+$", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!")).toBe(false);
 
     // Excessively long regex pattern
     const longPattern = "a".repeat(300);
