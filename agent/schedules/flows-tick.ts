@@ -150,7 +150,7 @@ export default defineSchedule({
               triggerPayload: { scheduledAt: new Date().toISOString() },
             },
             {
-              onStepUpdate: async (step) => {
+              onStepUpdate: async (step, fanoutProgress) => {
                 const r = await db.query.flowRuns.findFirst({
                   where: and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, flow.tenantId)),
                   columns: { steps: true, status: true },
@@ -164,7 +164,11 @@ export default defineSchedule({
                 else steps.push(step);
                 const updated = await db
                   .update(flowRuns)
-                  .set({ steps, updatedAt: new Date() })
+                  .set({
+                    steps,
+                    ...(fanoutProgress ? { fanoutProgress } : {}),
+                    updatedAt: new Date(),
+                  })
                   .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
                   .returning({ id: flowRuns.id });
                 if (updated.length === 0) {

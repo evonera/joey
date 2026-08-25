@@ -6,7 +6,10 @@ import type { NodeContext, NodeExecuteResult } from "./node-contract";
 // injected via ports so runs are deterministic and replay-testable.
 
 export type ExecutorPorts = {
-  onStepUpdate?: (step: FlowStep) => Promise<void> | void;
+  onStepUpdate?: (
+    step: FlowStep,
+    fanoutProgress?: Record<string, Record<string, unknown>>,
+  ) => Promise<void> | void;
   /** Persist per-item fan-out checkpoints after each completed item. */
   onFanoutProgress?: (
     progress: Record<string, Record<string, unknown>>,
@@ -147,9 +150,12 @@ export async function executeFlow(
     }
   }
 
-  const setStatus = async (step: FlowStep) => {
+  const setStatus = async (
+    step: FlowStep,
+    fanoutProgress?: Record<string, Record<string, unknown>>,
+  ) => {
     steps.set(step.nodeId, step);
-    await ports.onStepUpdate?.(step);
+    await ports.onStepUpdate?.(step, fanoutProgress);
   };
 
   function branchOf(id: string): string | undefined {
@@ -247,7 +253,8 @@ export async function executeFlow(
       const config = def.configSchema.parse(node.config ?? {});
       const result = await def.execute(input, config, { ...ctxBase, nodeId: node.id });
 
-      const stored = result.branch !== undefined ? { __branch: result.branch, value: result.output } : result.output;
+      const stored =
+        result.branch !== undefined ? { __branch: result.branch, value: result.output } : result.output;
       outputs.set(node.id, stored);
 
       if (result.waitForApproval && !opts.approvedNodeIds?.includes(node.id)) {
@@ -257,6 +264,7 @@ export async function executeFlow(
           type: node.type,
           status: "waiting_approval",
           input,
+          output: stripInternal(stored),
           startedAt,
           finishedAt: new Date().toISOString(),
         });
@@ -268,20 +276,22 @@ export async function executeFlow(
           ...(activeFanout.progress[activeFanout.itemKey] ?? {}),
           [node.id]: stored,
         };
-        await ports.onFanoutProgress?.(activeFanout.progress);
       }
 
-      await setStatus({
-        nodeId: node.id,
-        type: node.type,
-        status: "succeeded",
-        input,
-        output: stripInternal(stored),
-        // Persist the routing decision so cached replay keeps it.
-        ...(result.branch !== undefined ? { branch: result.branch } : {}),
-        startedAt,
-        finishedAt: new Date().toISOString(),
-      });
+      await setStatus(
+        {
+          nodeId: node.id,
+          type: node.type,
+          status: "succeeded",
+          input,
+          output: stripInternal(stored),
+          // Persist the routing decision so cached replay keeps it.
+          ...(result.branch !== undefined ? { branch: result.branch } : {}),
+          startedAt,
+          finishedAt: new Date().toISOString(),
+        },
+        activeFanout ? activeFanout.progress : undefined,
+      );
 
       await ports.onHeartbeat?.();
       return "ok";

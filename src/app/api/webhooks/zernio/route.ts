@@ -11,6 +11,7 @@ async function dispatchFlowWebhooks(
   tenantId: string,
   eventName: string,
   payload: unknown,
+  attemptCreatedAt?: Date,
 ): Promise<{ hasFailures: boolean; errors: string[] }> {
   const activeFlows = await db.query.flows.findMany({
     where: and(eq(flows.tenantId, tenantId), eq(flows.status, "active")),
@@ -30,6 +31,22 @@ async function dispatchFlowWebhooks(
       // reuse the prior run's completed step/fan-out checkpoints so successful side-effects
       // are not repeated.
       const payloadId = (payload as Record<string, unknown> | null)?.id;
+
+      // If this callback attempt is superseded by a subsequent redelivery, abort dispatch
+      if (attemptCreatedAt && payloadId) {
+        const stillActive = await db.query.webhookEvents.findFirst({
+          where: and(
+            eq(webhookEvents.eventId, String(payloadId)),
+            eq(webhookEvents.createdAt, attemptCreatedAt),
+            eq(webhookEvents.status, "processing"),
+          ),
+        });
+        if (!stillActive) {
+          console.warn(`[webhooks/zernio] Aborting flow ${flow.id} dispatch for superseded attempt`);
+          break;
+        }
+      }
+
       const priorRun = payloadId
         ? await db.query.flowRuns.findFirst({
             where: and(
@@ -106,7 +123,7 @@ async function dispatchFlowWebhooks(
             fanoutProgress,
           },
           {
-            onStepUpdate: async (step) => {
+            onStepUpdate: async (step, fanoutProgress) => {
               const r = await db.query.flowRuns.findFirst({
                 where: and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId)),
                 columns: { steps: true },
@@ -118,7 +135,11 @@ async function dispatchFlowWebhooks(
               else steps.push(step);
               await db
                 .update(flowRuns)
-                .set({ steps, updatedAt: new Date() })
+                .set({
+                  steps,
+                  ...(fanoutProgress ? { fanoutProgress } : {}),
+                  updatedAt: new Date(),
+                })
                 .where(and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
             },
             onHeartbeat: async () => {
@@ -246,7 +267,7 @@ export async function POST(req: NextRequest) {
           }
 
           // Fan out to active flows listening for this event
-          const { hasFailures, errors } = await dispatchFlowWebhooks(tenantId, payload.event, payload);
+          const { hasFailures, errors } = await dispatchFlowWebhooks(tenantId, payload.event, payload, attemptCreatedAt);
 
           if (hasFailures) {
             await markWebhookProcessed(

@@ -111,7 +111,12 @@ export async function setFlowStatus(
   return { ok: true };
 }
 
-async function persistStep(tenantId: string, runId: string, step: FlowStep) {
+async function persistStep(
+  tenantId: string,
+  runId: string,
+  step: FlowStep,
+  fanoutProgress?: Record<string, Record<string, unknown>>,
+) {
   const run = await db.query.flowRuns.findFirst({
     where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
     columns: { steps: true },
@@ -123,7 +128,11 @@ async function persistStep(tenantId: string, runId: string, step: FlowStep) {
   else steps.push(step);
   await db
     .update(flowRuns)
-    .set({ steps, updatedAt: new Date() })
+    .set({
+      steps,
+      ...(fanoutProgress ? { fanoutProgress } : {}),
+      updatedAt: new Date(),
+    })
     .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
 }
 
@@ -274,7 +283,7 @@ async function executeRunWithPorts(opts: {
         approvedNodeIds: opts.approvedNodeIds,
       },
       {
-        onStepUpdate: (step) => persistStep(opts.tenantId, runId, step),
+        onStepUpdate: (step, fanoutProgress) => persistStep(opts.tenantId, runId, step, fanoutProgress),
         onFanoutProgress: async (progress) => {
           await db
             .update(flowRuns)
@@ -382,7 +391,7 @@ export async function resumeRun(
         approvedNodeIds,
       },
       {
-        onStepUpdate: (step) => persistStep(tenantId, runId, step),
+        onStepUpdate: (step, fanoutProgress) => persistStep(tenantId, runId, step, fanoutProgress),
         onFanoutProgress: async (progress) => {
           await db
             .update(flowRuns)
