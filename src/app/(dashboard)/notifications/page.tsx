@@ -106,7 +106,7 @@ export default function NotificationsPage() {
             <IconBell className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
           </div>
           <h3 className="mt-2 text-sm font-semibold text-zinc-900 dark:text-white">No notifications</h3>
-          <p className="mt-1 text-sm text-zinc-500">You're all caught up!</p>
+          <p className="mt-1 text-sm text-zinc-500">You&apos;re all caught up!</p>
         </div>
       ) : (
         <div className="space-y-3">

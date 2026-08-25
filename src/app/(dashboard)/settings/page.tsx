@@ -9,6 +9,7 @@ import { getNotificationPreferences, saveNotificationPreferences } from "@/app/a
 import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle, Sparkles, Eye, EyeOff, Trash2, PlugZap, Bell } from "lucide-react";
 import { ConnectionsPanel } from "./connections-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
+import { IntegrationsPanel } from "./integrations-panel";
 
 const DAYS_OF_WEEK = [
   { id: "mon", label: "Monday" },
@@ -710,6 +711,15 @@ export default function SettingsPage() {
             </a>
           </p>
           <ApiTokensPanel />
+        </section>
+
+        {/* Flow integrations */}
+        <section className="mb-8 rounded-2xl bg-zinc-800/50 p-6">
+          <h2 className="font-semibold text-zinc-900 dark:text-white">Flow integrations</h2>
+          <p className="text-xs text-zinc-500 mt-1 mb-5">
+            API keys used by Flow Builder nodes. Stored encrypted per workspace.
+          </p>
+          <IntegrationsPanel />
         </section>
 
       </form>

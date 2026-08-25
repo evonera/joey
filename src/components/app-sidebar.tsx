@@ -11,6 +11,7 @@ import {
   IconPhoto,
   IconMessage,
   IconChartBar,
+  IconGitBranch,
 } from "@tabler/icons-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -62,6 +63,11 @@ export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: R
       title: "Analytics",
       url: "/analytics",
       icon: IconChartBar,
+    },
+    {
+      title: "Flows",
+      url: "/flows",
+      icon: IconGitBranch,
     },
     {
       title: "Assets",
