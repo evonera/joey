@@ -37,9 +37,9 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
     const existing = await db.query.webhookEvents.findFirst({
       where: eq(webhookEvents.eventId, payload.id),
     });
-    // If the existing event failed or was left pending by a crashed worker (>30s without update),
+    // If the existing event failed or was left pending by a crashed worker (>5 min without update),
     // re-arm it so the retry delivery can be processed.
-    const stalePendingCutoff = new Date(Date.now() - 30_000);
+    const stalePendingCutoff = new Date(Date.now() - 5 * 60_000);
     if (
       existing &&
       (existing.status === "failed" ||

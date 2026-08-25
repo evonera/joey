@@ -328,7 +328,10 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
       if (priorRun && (priorRun.status === "succeeded" || priorRun.status === "waiting_approval")) {
         return null; // Skip duplicate
       }
-      const cachedSteps = priorRun?.status === "failed" ? priorRun.steps : undefined;
+      const cachedSteps =
+        priorRun && (priorRun.status === "failed" || priorRun.status === "running")
+          ? priorRun.steps
+          : undefined;
       const newRun: FlowRun = {
         id: "run-retry-attempt",
         flowId: "flow-1",
@@ -343,6 +346,19 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(retriedRun).not.toBeNull();
     expect(retriedRun?.steps).toHaveLength(1);
     expect(retriedRun?.steps?.[0].status).toBe("succeeded"); // Reuses completed side effects from prior attempt
+
+    // Also verify when prior run was interrupted while still "running"
+    const interruptedRun = {
+      id: "run-interrupted",
+      flowId: "flow-2",
+      status: "running",
+      triggerPayload: { id: "evt-2" },
+      steps: [{ nodeId: "node-1", status: "succeeded", output: { text: "done" } }],
+    };
+    flowRuns.push(interruptedRun);
+    const retryInterrupted = dispatchWebhookRun({ id: "evt-2" });
+    expect(retryInterrupted?.steps).toHaveLength(1);
+    expect(retryInterrupted?.steps?.[0].status).toBe("succeeded");
   });
 
   it("rejects revoked tenant credentials with an explicit error rather than falling back to shared environment variables", () => {

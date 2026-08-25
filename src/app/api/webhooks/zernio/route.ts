@@ -47,13 +47,26 @@ async function dispatchFlowWebhooks(
         continue;
       }
 
+      // If prior run was interrupted while still running, mark it superseded
+      if (priorRun && priorRun.status === "running") {
+        await db
+          .update(flowRuns)
+          .set({
+            status: "failed",
+            error: "Interrupted by webhook redelivery / retry.",
+            finishedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(flowRuns.id, priorRun.id), eq(flowRuns.status, "running")));
+      }
+
       const cachedSteps =
-        priorRun && priorRun.status === "failed" && Array.isArray(priorRun.steps)
+        priorRun && (priorRun.status === "failed" || priorRun.status === "running") && Array.isArray(priorRun.steps)
           ? (priorRun.steps as Parameters<typeof executeFlow>[1]["cachedSteps"])
           : undefined;
 
       const fanoutProgress =
-        priorRun && priorRun.status === "failed" && priorRun.fanoutProgress
+        priorRun && (priorRun.status === "failed" || priorRun.status === "running") && priorRun.fanoutProgress
           ? (priorRun.fanoutProgress as Parameters<typeof executeFlow>[1]["fanoutProgress"])
           : undefined;
 
