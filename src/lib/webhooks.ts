@@ -55,7 +55,7 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
       if (rearmed) {
         return { event: rearmed, isDuplicate: false };
       }
-    } else if (existing.status === "pending") {
+    } else if (existing.status === "pending" || existing.status === "processing") {
       // Check if there is an active flow execution emitting live heartbeats
       const recentLiveRun = await db.query.flowRuns.findFirst({
         where: and(
@@ -71,7 +71,7 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
         return { event: existing, isDuplicate: true };
       }
 
-      // If pending for >30s without any live heartbeat, process crashed before finishing.
+      // If pending/processing for >30s without any live heartbeat, process crashed before finishing.
       // Exclusively claim the retry via compare-and-swap on createdAt so concurrent deliveries do not duplicate.
       const staleCutoff = new Date(Date.now() - 30_000);
       if (existing.createdAt < staleCutoff) {
@@ -87,7 +87,6 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
           .where(
             and(
               eq(webhookEvents.id, existing.id),
-              eq(webhookEvents.status, "pending"),
               eq(webhookEvents.createdAt, existing.createdAt),
             ),
           )

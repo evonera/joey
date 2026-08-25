@@ -221,19 +221,21 @@ export async function POST(req: NextRequest) {
       try {
         const tenantId = await resolveTenantFromPayload(payload);
         if (tenantId) {
-          await db.update(webhookEvents)
-            .set({ tenantId })
-            .where(and(eq(webhookEvents.eventId, payload.id), eq(webhookEvents.createdAt, attemptCreatedAt)));
+          // Atomically claim the pending attempt to 'processing' and record tenantId.
+          // If another callback or redelivery claimed or re-armed it, returning() is empty.
+          const [claimed] = await db
+            .update(webhookEvents)
+            .set({ tenantId, status: "processing" })
+            .where(
+              and(
+                eq(webhookEvents.eventId, payload.id),
+                eq(webhookEvents.createdAt, attemptCreatedAt),
+                eq(webhookEvents.status, "pending"),
+              ),
+            )
+            .returning();
 
-          // Verify that this callback attempt still owns the webhook event before dispatching
-          const activeEvent = await db.query.webhookEvents.findFirst({
-            where: and(
-              eq(webhookEvents.eventId, payload.id),
-              eq(webhookEvents.createdAt, attemptCreatedAt),
-              eq(webhookEvents.status, "pending"),
-            ),
-          });
-          if (!activeEvent) {
+          if (!claimed) {
             console.warn(`[webhooks/zernio] Aborting stale attempt for event ${payload.id} (superseded by redelivery)`);
             return;
           }

@@ -236,21 +236,31 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(eventTable[0].status).toBe("processed"); // Successfully marked by active attempt 2!
   });
 
-  it("aborts stale webhook callback attempts before dispatching flows when re-armed", () => {
+  it("atomically claims pending attempt to processing so stale or duplicate callbacks abort before flow dispatch", () => {
     type EventRow = { eventId: string; status: string; createdAt: Date };
     const eventTable: EventRow[] = [
       { eventId: "evt-1", status: "pending", createdAt: new Date(2000) }, // Re-armed to 2000
     ];
 
-    const canDispatch = (eventId: string, attemptCreatedAt: Date) => {
-      const activeEvent = eventTable.find(
+    const tryClaimProcessing = (eventId: string, attemptCreatedAt: Date) => {
+      const row = eventTable.find(
         (e) => e.eventId === eventId && e.status === "pending" && e.createdAt.getTime() === attemptCreatedAt.getTime()
       );
-      return Boolean(activeEvent);
+      if (!row) return null;
+      row.status = "processing";
+      return row;
     };
 
-    expect(canDispatch("evt-1", new Date(1000))).toBe(false); // Stale callback (1000) aborts!
-    expect(canDispatch("evt-1", new Date(2000))).toBe(true);  // Active callback (2000) dispatches!
+    // Stale callback (1000) attempts to claim
+    expect(tryClaimProcessing("evt-1", new Date(1000))).toBeNull(); // Fails CAS!
+    expect(eventTable[0].status).toBe("pending");
+
+    // Active callback 1 (2000) attempts to claim
+    expect(tryClaimProcessing("evt-1", new Date(2000))).not.toBeNull(); // Wins CAS!
+    expect(eventTable[0].status).toBe("processing");
+
+    // Active callback 2 (2000, racing) attempts to claim
+    expect(tryClaimProcessing("evt-1", new Date(2000))).toBeNull(); // Fails CAS because status is now 'processing'!
   });
 
   it("rejects restartRun when target run is active or waiting approval", () => {
