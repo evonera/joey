@@ -36,11 +36,18 @@ export default defineSchedule({
         eq(flowRuns.status, "running"),
         lt(flowRuns.updatedAt, staleCutoff),
       ),
-      columns: { id: true, flowId: true, steps: true },
+      columns: { id: true, flowId: true, steps: true, fanoutProgress: true },
     });
 
     for (const stale of staleRuns) {
-      const steps = ((stale.steps as unknown[]) ?? []) as { nodeId: string; status: string; branch?: string; error?: string }[];
+      const steps = ((stale.steps as unknown[]) ?? []) as {
+        nodeId: string;
+        status: string;
+        branch?: string;
+        input?: unknown;
+        output?: unknown;
+        error?: string;
+      }[];
       const hasWaitingApproval = steps.some((s) => s.status === "waiting_approval");
 
       let resolvedStatus: "failed" | "waiting_approval" | "succeeded" = "failed";
@@ -58,7 +65,14 @@ export default defineSchedule({
             where: eq(flows.id, stale.flowId),
             columns: { graph: true },
           });
-          if (flow?.graph && isGraphFullyCompleted(flow.graph, steps)) {
+          if (
+            flow?.graph &&
+            isGraphFullyCompleted(
+              flow.graph,
+              steps,
+              stale.fanoutProgress as Record<string, Record<string, unknown>>,
+            )
+          ) {
             resolvedStatus = "succeeded";
             errorMsg = null;
           }
@@ -317,7 +331,8 @@ export default defineSchedule({
 
 export function isGraphFullyCompleted(
   graph: unknown,
-  steps: { nodeId: string; status: string; branch?: string }[],
+  steps: { nodeId: string; status: string; branch?: string; input?: unknown; output?: unknown }[],
+  fanoutProgress?: Record<string, Record<string, unknown>>,
 ): boolean {
   if (!graph || typeof graph !== "object") return false;
   const g = graph as {
@@ -329,6 +344,47 @@ export function isGraphFullyCompleted(
   if (nodes.length === 0) return false;
 
   const stepsByNodeId = new Map(steps.map((s) => [s.nodeId, s]));
+
+  // Check all forEach nodes in the graph
+  const forEachNodes = nodes.filter((n) => n.type === "logic.forEach");
+  for (const feNode of forEachNodes) {
+    const feStep = stepsByNodeId.get(feNode.id);
+    if (!feStep || feStep.status !== "succeeded") return false;
+    const items = Array.isArray(feStep.output)
+      ? feStep.output
+      : Array.isArray(feStep.input)
+        ? feStep.input
+        : (feStep.input as any)?.data && Array.isArray((feStep.input as any).data)
+          ? (feStep.input as any).data
+          : null;
+    if (!items) return false;
+    if (items.length > 0) {
+      if (!fanoutProgress) return false;
+      // Find downstream chain nodes inside the fan-out
+      const chainNodes = new Set<string>();
+      const q = [feNode.id];
+      while (q.length > 0) {
+        const c = q.shift()!;
+        for (const e of edges) {
+          if (e.source === c) {
+            chainNodes.add(e.target);
+            q.push(e.target);
+          }
+        }
+      }
+      for (let i = 0; i < items.length; i++) {
+        const itemProg = fanoutProgress[String(i)];
+        if (!itemProg) return false;
+        // Verify every non-skipped node in chain has recorded progress for this item
+        for (const chainId of chainNodes) {
+          const chainStep = stepsByNodeId.get(chainId);
+          if (chainStep?.status === "succeeded" && !(chainId in itemProg)) {
+            return false;
+          }
+        }
+      }
+    }
+  }
 
   // Find root / trigger nodes
   const targets = new Set(edges.map((e) => e.target));

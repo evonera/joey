@@ -654,6 +654,35 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
       { nodeId: "c1", status: "failed" },
     ];
     expect(isGraphFullyCompleted(graph, failedSteps)).toBe(false);
+
+    // Case 4: Flow with fanout node - all items completed
+    const fanoutGraph = {
+      nodes: [
+        { id: "t1", type: "trigger.schedule" },
+        { id: "fe1", type: "logic.forEach" },
+        { id: "act1", type: "action.notify" },
+      ],
+      edges: [
+        { id: "e1", source: "t1", target: "fe1" },
+        { id: "e2", source: "fe1", target: "act1" },
+      ],
+    };
+    const fanoutSteps = [
+      { nodeId: "t1", status: "succeeded" },
+      { nodeId: "fe1", status: "succeeded", output: ["itemA", "itemB"] },
+      { nodeId: "act1", status: "succeeded" },
+    ];
+    const fullFanoutProgress = {
+      "0": { act1: { sent: true } },
+      "1": { act1: { sent: true } },
+    };
+    expect(isGraphFullyCompleted(fanoutGraph, fanoutSteps, fullFanoutProgress)).toBe(true);
+
+    // Case 5: Flow with fanout node - missing progress for item 1
+    const partialFanoutProgress = {
+      "0": { act1: { sent: true } },
+    };
+    expect(isGraphFullyCompleted(fanoutGraph, fanoutSteps, partialFanoutProgress)).toBe(false);
   });
 });
 
