@@ -6,15 +6,17 @@ import { decrypt } from "@/lib/crypto";
 
 async function getOpenAIClient(tenantId?: string): Promise<OpenAI> {
   if (tenantId) {
-    const key = await db.query.apiKeys.findFirst({
+    const tenantKey = await db.query.apiKeys.findFirst({
       where: and(
         eq(apiKeys.tenantId, tenantId),
         eq(apiKeys.provider, "openai"),
-        eq(apiKeys.status, "active"),
       ),
     });
-    if (key?.encryptedKey) {
-      return new OpenAI({ apiKey: decrypt(key.encryptedKey) });
+    if (tenantKey) {
+      if (tenantKey.status !== "active") {
+        throw new Error("OpenAI API key for this workspace is revoked or disabled.");
+      }
+      return new OpenAI({ apiKey: decrypt(tenantKey.encryptedKey) });
     }
   }
   if (process.env.OPENAI_API_KEY) {

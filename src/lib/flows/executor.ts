@@ -263,6 +263,14 @@ export async function executeFlow(
         return "paused";
       }
 
+      if (activeFanout && activeFanout.chainNodes.has(node.id)) {
+        activeFanout.progress[activeFanout.itemKey] = {
+          ...(activeFanout.progress[activeFanout.itemKey] ?? {}),
+          [node.id]: stored,
+        };
+        await ports.onFanoutProgress?.(activeFanout.progress);
+      }
+
       await setStatus({
         nodeId: node.id,
         type: node.type,
@@ -274,14 +282,6 @@ export async function executeFlow(
         startedAt,
         finishedAt: new Date().toISOString(),
       });
-
-      if (activeFanout && activeFanout.chainNodes.has(node.id)) {
-        activeFanout.progress[activeFanout.itemKey] = {
-          ...(activeFanout.progress[activeFanout.itemKey] ?? {}),
-          [node.id]: stored,
-        };
-        await ports.onFanoutProgress?.(activeFanout.progress);
-      }
 
       await ports.onHeartbeat?.();
       return "ok";
@@ -448,7 +448,17 @@ export async function executeFlow(
 
     for (let i = 0; i < items.length; i++) {
       const itemKey = String(i);
-      const checkpoint = progress[itemKey] ?? {};
+      const checkpoint = { ...(progress[itemKey] ?? {}) };
+
+      // If checkpoint for item 0 is missing but cachedSteps has succeeded chain nodes,
+      // seed them into checkpoint so a crash between step update and fanout write does not drop progress.
+      if (i === 0 && Object.keys(checkpoint).length === 0 && opts.cachedSteps) {
+        for (const st of opts.cachedSteps) {
+          if (reachable.has(st.nodeId) && st.status === "succeeded" && outputs.has(st.nodeId)) {
+            checkpoint[st.nodeId] = outputs.get(st.nodeId);
+          }
+        }
+      }
 
       // Restore this item's already-succeeded chain prefix…
       for (const [nodeId, value] of Object.entries(checkpoint)) {

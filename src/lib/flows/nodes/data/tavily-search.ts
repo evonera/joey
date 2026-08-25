@@ -50,14 +50,18 @@ async function resolveKey(tenantId: string): Promise<string> {
   const { apiKeys } = await import("@/lib/db/schema");
   const { eq, and } = await import("drizzle-orm");
   const { decrypt } = await import("@/lib/crypto");
-  const key = await db.query.apiKeys.findFirst({
+  const tenantKey = await db.query.apiKeys.findFirst({
     where: and(
       eq(apiKeys.tenantId, tenantId),
       eq(apiKeys.provider, "tavily"),
-      eq(apiKeys.status, "active"),
     ),
   });
-  if (key?.encryptedKey) return decrypt(key.encryptedKey);
+  if (tenantKey) {
+    if (tenantKey.status !== "active") {
+      throw new Error("Tavily API key for this workspace is revoked or disabled.");
+    }
+    return decrypt(tenantKey.encryptedKey);
+  }
   if (process.env.TAVILY_API_KEY) return process.env.TAVILY_API_KEY;
   throw new Error("No Tavily API key. Add one in Settings → API Keys (provider: tavily).");
 }

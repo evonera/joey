@@ -335,19 +335,50 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(retriedRun?.steps?.[0].status).toBe("succeeded"); // Reuses completed side effects from prior attempt
   });
 
-  it("filters out revoked credentials when resolving API keys", () => {
+  it("rejects revoked tenant credentials with an explicit error rather than falling back to shared environment variables", () => {
     type ApiKeyRecord = { provider: string; tenantId: string; status: "active" | "revoked"; encryptedKey: string };
     const keys: ApiKeyRecord[] = [
       { provider: "openai", tenantId: "t1", status: "revoked", encryptedKey: "enc_revoked" },
       { provider: "tavily", tenantId: "t1", status: "active", encryptedKey: "enc_active" },
     ];
+    const env = { OPENAI_API_KEY: "shared_env_openai" };
 
-    const resolveActiveKey = (tenantId: string, provider: string) => {
-      return keys.find((k) => k.tenantId === tenantId && k.provider === provider && k.status === "active");
+    const resolveTenantKey = (tenantId: string, provider: string) => {
+      const tenantKey = keys.find((k) => k.tenantId === tenantId && k.provider === provider);
+      if (tenantKey) {
+        if (tenantKey.status !== "active") {
+          throw new Error(`${provider} API key for this workspace is revoked or disabled.`);
+        }
+        return tenantKey.encryptedKey;
+      }
+      if (provider === "openai" && env.OPENAI_API_KEY) return env.OPENAI_API_KEY;
+      throw new Error(`No ${provider} API key available.`);
     };
 
-    expect(resolveActiveKey("t1", "openai")).toBeUndefined(); // Revoked key is ignored
-    expect(resolveActiveKey("t1", "tavily")?.encryptedKey).toBe("enc_active"); // Active key is selected
+    expect(() => resolveTenantKey("t1", "openai")).toThrow("revoked or disabled");
+    expect(resolveTenantKey("t1", "tavily")).toBe("enc_active");
+    expect(resolveTenantKey("t2", "openai")).toBe("shared_env_openai"); // Unconfigured workspace falls back to env
+  });
+
+  it("seeds fanout checkpoint from cachedSteps if checkpoint write lagged behind step update", () => {
+    const cachedSteps = [
+      { nodeId: "sink-1", status: "succeeded", output: { count: 1 } },
+    ];
+    const reachable = new Set(["sink-1", "sink-2"]);
+    const outputs = new Map<string, unknown>([["sink-1", { count: 1 }]]);
+
+    const progress: Record<string, Record<string, unknown>> = {};
+    const checkpoint = { ...(progress["0"] ?? {}) };
+
+    if (Object.keys(checkpoint).length === 0) {
+      for (const st of cachedSteps) {
+        if (reachable.has(st.nodeId) && st.status === "succeeded" && outputs.has(st.nodeId)) {
+          checkpoint[st.nodeId] = outputs.get(st.nodeId);
+        }
+      }
+    }
+
+    expect(checkpoint["sink-1"]).toEqual({ count: 1 });
   });
 });
 

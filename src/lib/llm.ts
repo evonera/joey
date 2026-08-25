@@ -7,14 +7,18 @@ async function resolveKey(tenantId: string | undefined, provider: string): Promi
     const { apiKeys } = await import("@/lib/db/schema");
     const { eq, and } = await import("drizzle-orm");
     const { decrypt } = await import("@/lib/crypto");
-    const key = await db.query.apiKeys.findFirst({
+    const tenantKey = await db.query.apiKeys.findFirst({
       where: and(
         eq(apiKeys.tenantId, tenantId),
         eq(apiKeys.provider, provider),
-        eq(apiKeys.status, "active"),
       ),
     });
-    if (key?.encryptedKey) return decrypt(key.encryptedKey);
+    if (tenantKey) {
+      if (tenantKey.status !== "active") {
+        throw new Error(`${provider} API key for this workspace is revoked or disabled.`);
+      }
+      return decrypt(tenantKey.encryptedKey);
+    }
   }
   const envKey =
     provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY;
