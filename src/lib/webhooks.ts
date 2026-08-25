@@ -56,45 +56,9 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
         return { event: rearmed, isDuplicate: false };
       }
     } else if (existing.status === "pending" || existing.status === "processing") {
-      // Check if there is an active flow execution emitting live heartbeats
-      const recentLiveRun = await db.query.flowRuns.findFirst({
-        where: and(
-          eq(flowRuns.trigger, "webhook"),
-          sql`${flowRuns.triggerPayload}->>'id' = ${String(payload.id)}`,
-          eq(flowRuns.status, "running"),
-          gt(flowRuns.updatedAt, new Date(Date.now() - 2 * 60_000)),
-        ),
-      });
-
-      // If active flow is running with live heartbeats, do not re-arm or duplicate
-      if (recentLiveRun) {
-        return { event: existing, isDuplicate: true };
-      }
-
-      // If pending/processing for >30s without any live heartbeat, process crashed before finishing.
-      // Exclusively claim the retry via compare-and-swap on createdAt so concurrent deliveries do not duplicate.
-      const staleCutoff = new Date(Date.now() - 30_000);
-      if (existing.createdAt < staleCutoff) {
-        const [rearmed] = await db
-          .update(webhookEvents)
-          .set({
-            status: "pending",
-            errorMessage: null,
-            processedAt: null,
-            payload,
-            createdAt: new Date(),
-          })
-          .where(
-            and(
-              eq(webhookEvents.id, existing.id),
-              eq(webhookEvents.createdAt, existing.createdAt),
-            ),
-          )
-          .returning();
-        if (rearmed) {
-          return { event: rearmed, isDuplicate: false };
-        }
-      }
+      // Event is actively pending or processing. Redeliveries while in flight are acknowledged
+      // as duplicates so replacement callbacks cannot overlap or repeat already-committed side effects.
+      return { event: existing, isDuplicate: true };
     }
 
     return { event: existing, isDuplicate: true };

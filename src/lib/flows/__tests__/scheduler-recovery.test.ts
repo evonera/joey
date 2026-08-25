@@ -494,30 +494,26 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(restoredItem1["sink-1"]).toEqual({ count: 42 });
   });
 
-  it("exclusively claims stale pending webhooks via compare-and-swap so concurrent deliveries do not duplicate", () => {
-    type EventRow = { id: string; eventId: string; status: string; createdAt: Date };
-    const initialCreatedAt = new Date(1000);
-    const eventRow: EventRow = {
-      id: "ev-1",
-      eventId: "evt-stale",
-      status: "pending",
-      createdAt: initialCreatedAt,
-    };
+  it("treats in-flight pending and processing webhooks as duplicates and only re-arms failed events", () => {
+    type EventRow = { id: string; eventId: string; status: string };
+    const pendingEvent: EventRow = { id: "ev-1", eventId: "evt-1", status: "pending" };
+    const processingEvent: EventRow = { id: "ev-2", eventId: "evt-2", status: "processing" };
+    const failedEvent: EventRow = { id: "ev-3", eventId: "evt-3", status: "failed" };
 
-    const claimStalePending = (expectedCreatedAt: Date) => {
-      if (eventRow.status === "pending" && eventRow.createdAt.getTime() === expectedCreatedAt.getTime()) {
-        eventRow.createdAt = new Date(2000); // CAS success
-        return { rearmed: true, isDuplicate: false };
+    const handleDelivery = (event: EventRow) => {
+      if (event.status === "failed") {
+        event.status = "pending";
+        return { isDuplicate: false };
       }
-      return { rearmed: false, isDuplicate: true };
+      if (event.status === "pending" || event.status === "processing") {
+        return { isDuplicate: true };
+      }
+      return { isDuplicate: true };
     };
 
-    // Delivery 1 and Delivery 2 race with the same initial createdAt
-    const d1 = claimStalePending(initialCreatedAt);
-    const d2 = claimStalePending(initialCreatedAt);
-
-    expect(d1.isDuplicate).toBe(false); // Delivery 1 won the exclusive claim!
-    expect(d2.isDuplicate).toBe(true);  // Delivery 2 was safely deduplicated!
+    expect(handleDelivery(pendingEvent).isDuplicate).toBe(true);
+    expect(handleDelivery(processingEvent).isDuplicate).toBe(true);
+    expect(handleDelivery(failedEvent).isDuplicate).toBe(false);
   });
 
   it("validates LLM JSON output strictly against schema and rejects schema-invalid data", async () => {
