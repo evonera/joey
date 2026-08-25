@@ -95,14 +95,19 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
   return { event, isDuplicate: false };
 }
 
-export async function markWebhookProcessed(eventId: string, error?: string) {
+export async function markWebhookProcessed(eventId: string, error?: string, expectedCreatedAt?: Date) {
   await db.update(webhookEvents)
     .set({
       status: error ? "failed" : "processed",
       processedAt: new Date(),
       errorMessage: error,
     })
-    .where(eq(webhookEvents.eventId, eventId));
+    .where(
+      and(
+        eq(webhookEvents.eventId, eventId),
+        expectedCreatedAt ? eq(webhookEvents.createdAt, expectedCreatedAt) : undefined,
+      ),
+    );
 }
 
 export async function resolveTenantFromPayload(payload: ZernioWebhookPayload): Promise<string | null> {

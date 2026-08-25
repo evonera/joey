@@ -206,10 +206,12 @@ export async function POST(req: NextRequest) {
 
     const payload: ZernioWebhookPayload = JSON.parse(rawBody);
 
-    const { isDuplicate } = await storeWebhookEvent(payload);
-    if (isDuplicate) {
+    const { event, isDuplicate } = await storeWebhookEvent(payload);
+    if (isDuplicate || !event) {
       return NextResponse.json({ received: true, duplicate: true });
     }
+
+    const attemptCreatedAt = event.createdAt;
 
     if (payload.event === "webhook.test") {
       return NextResponse.json({ received: true, message: "Webhook test successful" });
@@ -221,7 +223,7 @@ export async function POST(req: NextRequest) {
         if (tenantId) {
           await db.update(webhookEvents)
             .set({ tenantId })
-            .where(eq(webhookEvents.eventId, payload.id));
+            .where(and(eq(webhookEvents.eventId, payload.id), eq(webhookEvents.createdAt, attemptCreatedAt)));
 
           // Store engagement item for comment.received events
           if (payload.event === "comment.received") {
@@ -232,16 +234,24 @@ export async function POST(req: NextRequest) {
           const { hasFailures, errors } = await dispatchFlowWebhooks(tenantId, payload.event, payload);
 
           if (hasFailures) {
-            await markWebhookProcessed(payload.id, errors.join("; ") || "One or more flow runs failed.");
+            await markWebhookProcessed(
+              payload.id,
+              errors.join("; ") || "One or more flow runs failed.",
+              attemptCreatedAt,
+            );
           } else {
-            await markWebhookProcessed(payload.id);
+            await markWebhookProcessed(payload.id, undefined, attemptCreatedAt);
           }
         } else {
-          await markWebhookProcessed(payload.id, "No tenant resolved");
+          await markWebhookProcessed(payload.id, "No tenant resolved", attemptCreatedAt);
         }
       } catch (err) {
         console.error(`[webhooks/zernio] Failed to process event ${payload.id}:`, err);
-        await markWebhookProcessed(payload.id, err instanceof Error ? err.message : "Unknown error");
+        await markWebhookProcessed(
+          payload.id,
+          err instanceof Error ? err.message : "Unknown error",
+          attemptCreatedAt,
+        );
       }
     });
 

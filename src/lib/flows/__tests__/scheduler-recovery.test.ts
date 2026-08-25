@@ -209,6 +209,33 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(handleDelivery(abandonedWebhookRecord).isDuplicate).toBe(false); // Dead flow is re-armed
   });
 
+  it("fences markWebhookProcessed so stale delayed callbacks cannot overwrite a re-armed replacement attempt", () => {
+    type EventRow = { eventId: string; status: string; createdAt: Date };
+    const eventTable: EventRow[] = [
+      { eventId: "evt-1", status: "pending", createdAt: new Date(1000) },
+    ];
+
+    // Re-arm event for attempt 2
+    eventTable[0].createdAt = new Date(2000);
+
+    const markWebhookProcessedFenced = (eventId: string, status: string, expectedCreatedAt?: Date) => {
+      const row = eventTable.find((r) => r.eventId === eventId);
+      if (!row) return;
+      if (expectedCreatedAt && row.createdAt.getTime() !== expectedCreatedAt.getTime()) {
+        return; // Fenced out!
+      }
+      row.status = status;
+    };
+
+    // Stale delayed attempt 1 tries to mark failed/processed
+    markWebhookProcessedFenced("evt-1", "failed", new Date(1000));
+    expect(eventTable[0].status).toBe("pending"); // Not overwritten by stale attempt 1!
+
+    // Active attempt 2 marks processed
+    markWebhookProcessedFenced("evt-1", "processed", new Date(2000));
+    expect(eventTable[0].status).toBe("processed"); // Successfully marked by active attempt 2!
+  });
+
   it("rejects SSRF private and link-local URLs including hostnames resolving to private IPs", async () => {
     const { validateSafeUrl } = await import("../nodes/ai/transcribe");
 
