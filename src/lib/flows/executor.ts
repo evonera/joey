@@ -6,7 +6,16 @@ import type { NodeContext, NodeExecuteResult } from "./node-contract";
 // injected via ports so runs are deterministic and replay-testable.
 
 export type ExecutorPorts = {
-  onStepUpdate?: (step: FlowStep) => Promise<void> | void;
+  onStepUpdate?: (
+    step: FlowStep,
+    fanoutProgress?: Record<string, Record<string, unknown>>,
+  ) => Promise<void> | void;
+  /** Persist per-item fan-out checkpoints after each completed item. */
+  onFanoutProgress?: (
+    progress: Record<string, Record<string, unknown>>,
+  ) => Promise<void> | void;
+  /** Periodic / in-node heartbeat pulse to refresh updatedAt and prevent stale recovery timeouts. */
+  onHeartbeat?: () => Promise<void> | void;
 };
 
 export type ExecuteOptions = {
@@ -18,6 +27,14 @@ export type ExecuteOptions = {
   cachedOutputs?: Record<string, unknown>;
   /** Approval-gate node ids pre-approved by the user (resume path). */
   approvedNodeIds?: string[];
+  /**
+   * Full persisted steps from the previous attempt (preferred over
+   * cachedOutputs): preserves skipped/failed states so replay keeps clean
+   * branch-exclusions and failure markers intact.
+   */
+  cachedSteps?: FlowStep[];
+  /** Per-item fan-out checkpoints: {"<itemIndex>": {nodeId: rawOutput}}. */
+  fanoutProgress?: Record<string, Record<string, unknown>>;
 };
 
 export type ExecuteResult = {
@@ -43,6 +60,14 @@ export async function executeFlow(
   /** Downstream of forEach nodes — executed per item inside fanOut only. */
   const fanoutConsumed = new Set<string>();
 
+  let activeFanout:
+    | {
+        itemKey: string;
+        chainNodes: Set<string>;
+        progress: Record<string, Record<string, unknown>>;
+      }
+    | undefined;
+
   const nodeById = new Map(doc.nodes.map((n) => [n.id, n]));
   const outgoing = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.from === id);
   const incoming = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.to === id);
@@ -53,28 +78,84 @@ export async function executeFlow(
     flowId: opts.flowId,
     triggerPayload: opts.triggerPayload,
     approvedNodeIds: opts.approvedNodeIds,
+    heartbeat: () => ports.onHeartbeat?.(),
   };
 
-  // Seed cache as synthetic succeeded steps → resume treats them like any
-  // completed node and fan-out state resets stay uniform.
-  if (opts.cachedOutputs) {
+  let heartbeatTimer: NodeJS.Timeout | undefined;
+  if (ports.onHeartbeat) {
+    heartbeatTimer = setInterval(() => {
+      void ports.onHeartbeat?.();
+    }, 10_000);
+  }
+
+  // Helper to check if a node is downstream from any failed node in the graph
+  const failedNodeIds = new Set(
+    (opts.cachedSteps ?? [])
+      .filter((s) => s.status === "failed" || s.status === "working")
+      .map((s) => s.nodeId),
+  );
+
+  const isDescendantOfAny = (nodeId: string, ancestorIds: Set<string>): boolean => {
+    if (ancestorIds.size === 0) return false;
+    const visited = new Set<string>();
+    const queue = incoming(nodeId).map((e) => e.from);
+    while (queue.length > 0) {
+      const parent = queue.shift()!;
+      if (ancestorIds.has(parent)) return true;
+      if (!visited.has(parent)) {
+        visited.add(parent);
+        queue.push(...incoming(parent).map((e) => e.from));
+      }
+    }
+    return false;
+  };
+
+  // Seed from a previous attempt. Succeeded steps and clean condition-branch skips
+  // (not caused by upstream failures) are seeded. Failure-induced skips and failed
+  // nodes are left unseeded so restartRun can re-execute the failed path.
+  if (opts.cachedSteps) {
+    for (const step of opts.cachedSteps) {
+      const node = nodeById.get(step.nodeId);
+      if (!node || steps.has(step.nodeId)) continue;
+      if (step.status === "succeeded") {
+        const output =
+          step.branch !== undefined
+            ? { __branch: step.branch, value: step.output }
+            : step.output;
+        steps.set(step.nodeId, { ...step, cached: true });
+        outputs.set(step.nodeId, output);
+      } else if (step.status === "skipped" && !isDescendantOfAny(step.nodeId, failedNodeIds)) {
+        steps.set(step.nodeId, { ...step, cached: true });
+      }
+    }
+  } else if (opts.cachedOutputs) {
     for (const [nodeId, output] of Object.entries(opts.cachedOutputs)) {
       const node = nodeById.get(nodeId);
       if (!node || steps.has(nodeId)) continue;
+      // Preserve condition routing across REPEATED replays: the wrapped
+      // output carries __branch; keep it derivable on the synthetic step.
+      const branch =
+        output && typeof output === "object" && "__branch" in (output as Record<string, unknown>)
+          ? ((output as Record<string, unknown>).__branch as string)
+          : undefined;
       steps.set(nodeId, {
         nodeId,
         type: node.type,
         status: "succeeded",
         output: stripInternal(output),
+        ...(branch !== undefined ? { branch } : {}),
         cached: true,
       });
       outputs.set(nodeId, output);
     }
   }
 
-  const setStatus = async (step: FlowStep) => {
+  const setStatus = async (
+    step: FlowStep,
+    fanoutProgress?: Record<string, Record<string, unknown>>,
+  ) => {
     steps.set(step.nodeId, step);
-    await ports.onStepUpdate?.(step);
+    await ports.onStepUpdate?.(step, fanoutProgress);
   };
 
   function branchOf(id: string): string | undefined {
@@ -84,12 +165,13 @@ export async function executeFlow(
       : undefined;
   }
 
-  /** Every incoming edge is either satisfied or explicitly branch-excluded. */
+  /** Every incoming edge is either satisfied, branch-excluded, or terminally resolved. */
   function ready(id: string): boolean {
     for (const edge of incoming(id)) {
       const s = steps.get(edge.from);
       if (s?.status === "succeeded") continue;
       if (edge.branch && branchOf(edge.from) !== undefined && branchOf(edge.from) !== edge.branch) continue;
+      if (s?.status === "skipped" || s?.status === "failed") continue;
       return false;
     }
     return true;
@@ -125,7 +207,27 @@ export async function executeFlow(
       const id = queue.shift()!;
       const node = nodeById.get(id);
       if (!node || steps.get(id)?.status) continue;
-      await setStatus({ nodeId: id, type: node.type, status: "skipped" });
+
+      // Only skip this node if ALL incoming input paths are failed or skipped.
+      // If there is any upstream path that has succeeded, is currently working,
+      // or has not completed yet, the node might still receive valid inputs from that alternate path.
+      const hasAlternateViableInput = incoming(id).some((e) => {
+        if (e.from === failedId || seen.has(e.from)) return false;
+        if (e.branch && branchOf(e.from) !== undefined && branchOf(e.from) !== e.branch) return false;
+        const s = steps.get(e.from);
+        return !s || s.status === "succeeded" || s.status === "working";
+      });
+
+      if (hasAlternateViableInput) continue;
+
+      await setStatus({
+        nodeId: id,
+        type: node.type,
+        status: "skipped",
+        // Marker: this skip is FAILURE fallout, not clean branch routing.
+        // Cached-fanout detection relies on the distinction.
+        error: "Skipped: upstream node failed.",
+      });
       for (const e of outgoing(id)) {
         if (!seen.has(e.to)) {
           seen.add(e.to);
@@ -151,7 +253,8 @@ export async function executeFlow(
       const config = def.configSchema.parse(node.config ?? {});
       const result = await def.execute(input, config, { ...ctxBase, nodeId: node.id });
 
-      const stored = result.branch !== undefined ? { __branch: result.branch, value: result.output } : result.output;
+      const stored =
+        result.branch !== undefined ? { __branch: result.branch, value: result.output } : result.output;
       outputs.set(node.id, stored);
 
       if (result.waitForApproval && !opts.approvedNodeIds?.includes(node.id)) {
@@ -161,21 +264,36 @@ export async function executeFlow(
           type: node.type,
           status: "waiting_approval",
           input,
+          output: stripInternal(stored),
           startedAt,
           finishedAt: new Date().toISOString(),
         });
         return "paused";
       }
 
-      await setStatus({
-        nodeId: node.id,
-        type: node.type,
-        status: "succeeded",
-        input,
-        output: stripInternal(stored),
-        startedAt,
-        finishedAt: new Date().toISOString(),
-      });
+      if (activeFanout && activeFanout.chainNodes.has(node.id)) {
+        activeFanout.progress[activeFanout.itemKey] = {
+          ...(activeFanout.progress[activeFanout.itemKey] ?? {}),
+          [node.id]: stored,
+        };
+      }
+
+      await setStatus(
+        {
+          nodeId: node.id,
+          type: node.type,
+          status: "succeeded",
+          input,
+          output: stripInternal(stored),
+          // Persist the routing decision so cached replay keeps it.
+          ...(result.branch !== undefined ? { branch: result.branch } : {}),
+          startedAt,
+          finishedAt: new Date().toISOString(),
+        },
+        activeFanout ? activeFanout.progress : undefined,
+      );
+
+      await ports.onHeartbeat?.();
       return "ok";
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -191,6 +309,19 @@ export async function executeFlow(
       await skipDownstream(node.id);
       return "failed";
     }
+  }
+
+  /**
+   * Unfinished work behind a cached loop: pending, failed, or failure-skipped.
+   * Cleanly skipped nodes (branch routing) do NOT qualify — retriggering
+   * fan-out for them would duplicate completed side effects.
+   */
+  function hasUnfinishedWork(nodeId: string): boolean {
+    const step = steps.get(nodeId);
+    if (!step) return true; // never attempted
+    if (step.status === "failed") return true;
+    if (step.status === "skipped") return Boolean(step.error); // failure-skip marker
+    return false;
   }
 
   /**
@@ -213,12 +344,24 @@ export async function executeFlow(
       }
     }
     // Done nodes release their edges immediately.
-    let frontier: string[] = [];
+    const cachedFanouts: string[] = [];
     for (const id of reachable) {
       const done = steps.get(id)?.status === "succeeded";
       if (!done) continue;
+      const def = getNode(nodeById.get(id)!.type);
+      // A cached forEach must still drive its downstream chain per item.
+      // Descendant-based check: an immediate child can be cached-succeeded
+      // while a DEEPER node failed — the unfinished tail must fan out too.
+      if (
+        def?.forEach &&
+        Array.from(reachableFrom(outgoing(id).map((e) => e.to))).some(hasUnfinishedWork)
+      ) {
+        cachedFanouts.push(id);
+        continue;
+      }
       for (const to of adj.get(id)!) inDeg.set(to, (inDeg.get(to) ?? 0) - 1);
     }
+    let frontier: string[] = [];
     for (const id of reachable) {
       if (
         (inDeg.get(id) ?? 0) <= 0 &&
@@ -231,20 +374,34 @@ export async function executeFlow(
       }
     }
 
+    let branchFailed = false;
+
+    for (const loopId of cachedFanouts) {
+      for (const to of outgoing(loopId).map((e) => e.to)) fanoutConsumed.add(to);
+      const items = unwrap(outputs.get(loopId));
+      if (!Array.isArray(items)) continue;
+      const outcome = await fanOut(loopId, items);
+      if (outcome === "paused") return "paused";
+      if (outcome === "failed") branchFailed = true;
+    }
+
     while (frontier.length > 0) {
       if (pendingApproval) return "paused";
 
-      const stage = [...frontier].filter((id) => !consumed.has(id));
+      // Failed branches must not starve independent healthy ones: on failure
+      // we keep staging; skipDownstream() has already marked only the failed
+      // node's descendants as skipped.
+      const stage = [...frontier].filter(
+        (id) => !consumed.has(id) && steps.get(id)?.status !== "skipped",
+      );
       frontier = [];
 
       if (stage.length === 0) break;
 
       const results = await Promise.all(stage.map((id) => runNode(nodeById.get(id)!)));
       if (results.includes("paused")) return "paused";
-      if (results.includes("failed")) {
-        await skipUnreached(reachable);
-        return "failed";
-      }
+      const stageFailed = results.includes("failed");
+      if (stageFailed) branchFailed = true;
 
       // Fan-out FIRST: its downstream chain is consumed per item and must not
       // be queued into the normal frontier.
@@ -277,12 +434,11 @@ export async function executeFlow(
         const outcome = await fanOut(loopId, unwrap(outputs.get(loopId)) as unknown[]);
         if (outcome === "paused") return "paused";
         if (outcome === "failed") {
-          await skipUnreached(reachable);
-          return "failed";
+          branchFailed = true;
         }
       }
     }
-    return "completed";
+    return branchFailed ? "failed" : "completed";
   }
 
   /** Re-runs the downstream chain once per item; aggregates sink outputs. */
@@ -295,14 +451,65 @@ export async function executeFlow(
     for (const id of reachable) {
       if (!doc.edges.some((e) => e.from === id)) collected[id] = [];
     }
+    const chainNodes = Array.from(reachable);
+    const progress: Record<string, Record<string, unknown>> = {
+      ...opts.fanoutProgress,
+    };
+
     for (let i = 0; i < items.length; i++) {
-      // Fresh slate for the chain on every iteration. Steps from the LAST
+      const itemKey = String(i);
+      const checkpoint = { ...(progress[itemKey] ?? {}) };
+
+      // Restore this item's already-succeeded chain prefix…
+      for (const [nodeId, value] of Object.entries(checkpoint)) {
+        const node = nodeById.get(nodeId);
+        if (!node) continue;
+        const branch =
+          value && typeof value === "object" && "__branch" in (value as Record<string, unknown>)
+            ? ((value as Record<string, unknown>).__branch as string)
+            : undefined;
+        steps.set(nodeId, {
+          nodeId,
+          type: node.type,
+          status: "succeeded",
+          output: stripInternal(value),
+          ...(branch !== undefined ? { branch } : {}),
+          cached: true,
+        });
+        outputs.set(nodeId, value);
+      }
+      // …then clear only the UNCHECKPOINTED remainder. Steps from the LAST
       // iteration are intentionally kept afterwards for run inspection.
-      for (const id of reachable) steps.delete(id);
+      for (const id of reachable) {
+        if (!(id in checkpoint)) steps.delete(id);
+      }
       outputs.set(loopId, items[i]);
 
-      const outcome = await stageLoop(entries, new Set());
+      activeFanout = {
+        itemKey,
+        chainNodes: new Set(chainNodes),
+        progress,
+      };
+
+      let outcome: Outcome;
+      try {
+        outcome = await stageLoop(entries, new Set());
+      } finally {
+        activeFanout = undefined;
+      }
+
+      // Checkpoint every chain node that succeeded for this item (including on failure / pause)
+      // so restart-from-failed never replays already-succeeded side-effecting predecessor nodes!
+      const done: Record<string, unknown> = { ...checkpoint };
+      for (const id of chainNodes) {
+        const st = steps.get(id);
+        if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
+      }
+      progress[itemKey] = done;
+      await ports.onFanoutProgress?.(progress);
+
       if (outcome !== "completed") return outcome;
+
       for (const sinkId of Object.keys(collected)) {
         if (steps.get(sinkId)?.status !== "succeeded") continue;
         const value = unwrap(outputs.get(sinkId));
@@ -313,15 +520,6 @@ export async function executeFlow(
 
     outputs.set(FANOUT_KEY(loopId), collected);
     return "completed";
-  }
-
-  async function skipUnreached(reachable: Set<string>) {
-    for (const id of reachable) {
-      if (!steps.get(id)?.status) {
-        const node = nodeById.get(id)!;
-        await setStatus({ nodeId: id, type: node.type, status: "skipped" });
-      }
-    }
   }
 
   function reachableFrom(startIds: string[]): Set<string> {
@@ -378,6 +576,10 @@ export async function executeFlow(
       outputs: toObject(outputs),
       error: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+    }
   }
 
   function labelOf(nodeId: string): string {

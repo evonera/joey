@@ -50,10 +50,18 @@ async function resolveKey(tenantId: string): Promise<string> {
   const { apiKeys } = await import("@/lib/db/schema");
   const { eq, and } = await import("drizzle-orm");
   const { decrypt } = await import("@/lib/crypto");
-  const key = await db.query.apiKeys.findFirst({
-    where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, "exa")),
+  const tenantKey = await db.query.apiKeys.findFirst({
+    where: and(
+      eq(apiKeys.tenantId, tenantId),
+      eq(apiKeys.provider, "exa"),
+    ),
   });
-  if (key?.encryptedKey) return decrypt(key.encryptedKey);
+  if (tenantKey) {
+    if (tenantKey.status !== "active") {
+      throw new Error("Exa API key for this workspace is revoked or disabled.");
+    }
+    return decrypt(tenantKey.encryptedKey);
+  }
   if (process.env.EXA_API_KEY) return process.env.EXA_API_KEY;
   throw new Error("No Exa API key. Add one in Settings → API Keys (provider: exa).");
 }

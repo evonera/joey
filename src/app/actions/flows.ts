@@ -1,9 +1,9 @@
 'use server';
 
+import crypto from "crypto";
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowTemplates, drafts } from "@/lib/db/schema";
-import { and, eq, desc } from "drizzle-orm";
-import crypto from "crypto";
+import { and, eq, desc, isNull } from "drizzle-orm";
 import { getActiveTenantId } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
 import { executeFlow } from "@/lib/flows/executor";
@@ -40,16 +40,29 @@ export async function createFlow(name: string): Promise<{ flow?: FlowRow; error?
 
 export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: FlowRunRow[]; error?: string }> {
   const tenantId = await getActiveTenantId();
-  const flow = await db.query.flows.findFirst({
+  let flow = await db.query.flows.findFirst({
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
   if (!flow) return { error: "Flow not found" };
 
-  // Provision a webhook secret lazily so every flow has a stable URL.
+  // Provision a webhook secret ATOMICALLY: the conditional UPDATE wins the
+  // race exactly once; concurrent callers re-read the stored secret instead
+  // of returning a value that was already overwritten.
   if (!flow.webhookSecret) {
     const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
-    await db.update(flows).set({ webhookSecret: secret }).where(eq(flows.id, id));
-    flow.webhookSecret = secret;
+    const updated = await db
+      .update(flows)
+      .set({ webhookSecret: secret, updatedAt: new Date() })
+      .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId), isNull(flows.webhookSecret)))
+      .returning({ id: flows.id });
+    if (updated.length > 0) {
+      flow.webhookSecret = secret;
+    } else {
+      // Lost the race — read whatever the winner persisted.
+      flow = await db.query.flows.findFirst({
+        where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
+      });
+    }
   }
 
   const runs = await db.query.flowRuns.findMany({
@@ -58,6 +71,20 @@ export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: Flow
     limit: 20,
   });
   return { flow, runs };
+}
+
+export async function regenerateWebhookSecret(
+  id: string,
+): Promise<{ secret?: string; error?: string }> {
+  const tenantId = await getActiveTenantId();
+  const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
+  const updated = await db
+    .update(flows)
+    .set({ webhookSecret: secret, updatedAt: new Date() })
+    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)))
+    .returning({ id: flows.id });
+  if (updated.length === 0) return { error: "Flow not found" };
+  return { secret };
 }
 
 export async function validateFlowGraph(raw: unknown): Promise<{ ok: boolean; issues: ValidationIssue[] }> {
@@ -119,6 +146,129 @@ export async function setFlowStatus(
   return { ok: true };
 }
 
+async function persistStep(
+  tenantId: string,
+  runId: string,
+  step: FlowStep,
+  fanoutProgress?: Record<string, Record<string, unknown>>,
+) {
+  const run = await db.query.flowRuns.findFirst({
+    where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
+    columns: { steps: true, status: true },
+  });
+  if (!run || run.status !== "running") {
+    throw new Error("Execution fenced: run was transitioned out of running.");
+  }
+  const steps = (run.steps as FlowStep[]) ?? [];
+  const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
+  if (idx >= 0) steps[idx] = step;
+  else steps.push(step);
+  const updated = await db
+    .update(flowRuns)
+    .set({
+      steps,
+      ...(fanoutProgress ? { fanoutProgress } : {}),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+    .returning({ id: flowRuns.id });
+  if (updated.length === 0) {
+    throw new Error("Execution fenced: update rejected because run is no longer running.");
+  }
+}
+
+async function finalizeRun(
+  runId: string,
+  tenantId: string,
+  outcome: { status: RunStatus; steps?: FlowStep[]; error?: string | null } | Error,
+): Promise<{ persisted: boolean; status: RunStatus; error?: string }> {
+  const isErr = outcome instanceof Error;
+  const status: RunStatus = isErr ? "failed" : outcome.status;
+  const steps = isErr ? undefined : outcome.steps;
+  const error = isErr ? outcome.message : (outcome.error ?? null);
+  const finishedAt = new Date();
+  const updatedAt = new Date();
+
+  // Retry up to 5 times with exponential backoff across rich, minimal, and bare status writes
+  for (let attempt = 0; attempt < 5; attempt++) {
+    // 1. Primary write with full steps payload
+    try {
+      const updated = await db
+        .update(flowRuns)
+        .set({
+          status,
+          ...(steps !== undefined ? { steps } : {}),
+          error,
+          finishedAt,
+          updatedAt,
+        })
+        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+        .returning({ id: flowRuns.id });
+
+      if (updated.length > 0) return { persisted: true, status };
+    } catch (primaryErr) {
+      console.warn(`[flow-finalize] Rich finalization attempt ${attempt + 1} failed for run ${runId}:`, primaryErr);
+    }
+
+    // 2. Fallback: minimal update omitting steps payload
+    try {
+      const fallbackUpdated = await db
+        .update(flowRuns)
+        .set({
+          status,
+          error: error ? `${error}` : "Finalization fallback applied (steps omitted).",
+          finishedAt,
+          updatedAt,
+        })
+        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+        .returning({ id: flowRuns.id });
+
+      if (fallbackUpdated.length > 0) return { persisted: true, status };
+    } catch (fallbackErr) {
+      console.error(`[flow-finalize] Minimal finalization attempt ${attempt + 1} failed for run ${runId}:`, fallbackErr);
+    }
+
+    // 3. Fallback: bare status-only update
+    try {
+      const bareUpdated = await db
+        .update(flowRuns)
+        .set({
+          status,
+          finishedAt,
+          updatedAt,
+        })
+        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+        .returning({ id: flowRuns.id });
+
+      if (bareUpdated.length > 0) return { persisted: true, status };
+    } catch (bareErr) {
+      console.error(`[flow-finalize] Bare finalization attempt ${attempt + 1} failed for run ${runId}:`, bareErr);
+    }
+
+    // Check if the run has already been transitioned to a terminal status by stale recovery
+    try {
+      const existing = await db.query.flowRuns.findFirst({
+        where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
+        columns: { status: true },
+      });
+      if (existing && existing.status !== "running") {
+        return { persisted: true, status: existing.status as RunStatus };
+      }
+    } catch {}
+
+    if (attempt < 4) {
+      await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
+    }
+  }
+
+  // All persistence attempts exhausted
+  return {
+    persisted: false,
+    status,
+    error: "Failed to persist terminal status to database after retries.",
+  };
+}
+
 export async function runFlow(
   id: string,
   triggerPayload?: unknown,
@@ -142,17 +292,76 @@ async function executeRunWithPorts(opts: {
   tenantId: string;
   trigger: "manual" | "schedule" | "webhook";
   triggerPayload?: unknown;
-  cachedOutputs?: Record<string, unknown>;
+  cachedSteps?: FlowStep[];
+  fanoutProgress?: Record<string, Record<string, unknown>>;
   approvedNodeIds?: string[];
-}): Promise<{ runId: string; status: RunStatus }> {
-  const { startFlowRun } = await import("@/lib/flows/run-flow-server");
-  return startFlowRun({
-    flow: opts.flow,
-    trigger: opts.trigger,
-    triggerPayload: opts.triggerPayload,
-    cachedOutputs: opts.cachedOutputs,
-    approvedNodeIds: opts.approvedNodeIds,
-  });
+}): Promise<{ runId: string; status: RunStatus; error?: string }> {
+  let runId = "";
+  const [run] = await db
+    .insert(flowRuns)
+    .values({
+      flowId: opts.flow.id,
+      tenantId: opts.tenantId,
+      trigger: opts.trigger,
+      triggerPayload: opts.triggerPayload ?? null,
+      approvedNodeIds: opts.approvedNodeIds ?? [],
+    })
+    .returning();
+  runId = run.id;
+
+  let result;
+  let execError: unknown;
+  try {
+    result = await executeFlow(
+      opts.flow.graph as Parameters<typeof executeFlow>[0],
+      {
+        tenantId: opts.tenantId,
+        runId,
+        flowId: opts.flow.id,
+        triggerPayload: opts.triggerPayload,
+        cachedSteps: opts.cachedSteps,
+        fanoutProgress: opts.fanoutProgress,
+        approvedNodeIds: opts.approvedNodeIds,
+      },
+      {
+        onStepUpdate: (step, fanoutProgress) => persistStep(opts.tenantId, runId, step, fanoutProgress),
+        onFanoutProgress: async (progress) => {
+          const updated = await db
+            .update(flowRuns)
+            .set({ fanoutProgress: progress, updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+          }
+        },
+        onHeartbeat: async () => {
+          const updated = await db
+            .update(flowRuns)
+            .set({ updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
+          }
+        },
+      },
+    );
+  } catch (err) {
+    execError = err;
+  }
+
+  const finalResult = await finalizeRun(
+    runId,
+    opts.tenantId,
+    result
+      ? { status: result.status, steps: result.steps, error: result.error ?? null }
+      : (execError instanceof Error ? execError : new Error(String(execError ?? "Execution crashed"))),
+  );
+
+  await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, opts.flow.id));
+
+  return { runId, status: finalResult.status, error: finalResult.persisted ? undefined : finalResult.error };
 }
 
 export async function resumeRun(
@@ -160,66 +369,124 @@ export async function resumeRun(
   approve: boolean,
 ): Promise<{ ok?: boolean; status?: RunStatus; error?: string }> {
   const tenantId = await getActiveTenantId();
-  const { persistStep } = await import("@/lib/flows/run-flow-server");
   const run = await db.query.flowRuns.findFirst({
     where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
   });
   if (!run) return { error: "Run not found" };
-  if (run.status !== "waiting_approval") return { error: "Run is not waiting for approval." };
 
   const flow = await db.query.flows.findFirst({
     where: eq(flows.id, run.flowId),
   });
   if (!flow) return { error: "Flow not found" };
 
+  // Atomic claim: exactly one concurrent caller can move the run out of
+  // waiting_approval, so downstream side effects can never execute twice.
   if (!approve) {
     const steps = (run.steps as FlowStep[]) ?? [];
     for (const step of steps) {
       if (step.status === "waiting_approval") step.status = "failed";
       else if (step.status === "working" || step.status === "ready") step.status = "skipped";
     }
-    await db
+    const claimed = await db
       .update(flowRuns)
-      .set({ status: "failed", steps, error: "Rejected at approval gate.", finishedAt: new Date() })
-      .where(eq(flowRuns.id, runId));
+      .set({ status: "failed", steps, error: "Rejected at approval gate.", finishedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "waiting_approval")))
+      .returning();
+
+    if (claimed.length === 0) {
+      return { error: "Run is not waiting for approval (already resumed)." };
+    }
     return { ok: true, status: "failed" };
   }
 
   const pending = (run.steps as FlowStep[]).find((s) => s.status === "waiting_approval");
   const approvedNodeIds = [...((run.approvedNodeIds as string[]) ?? []), ...(pending ? [pending.nodeId] : [])];
 
-  const cachedOutputs: Record<string, unknown> = {};
-  for (const step of run.steps as FlowStep[]) {
-    if (step.status === "succeeded") cachedOutputs[step.nodeId] = step.output;
-  }
-
-  // Clear the gate's stale waiting step so it re-executes as approved.
+  // Full step list preserves clean branch-skips and failure markers for replay.
   const clearedSteps = ((run.steps as FlowStep[]) ?? []).filter((s) => s.status !== "waiting_approval");
 
-  await db
-    .update(flowRuns)
-    .set({ approvedNodeIds, steps: clearedSteps, status: "running", error: null })
-    .where(eq(flowRuns.id, runId));
+  let claimed;
+  try {
+    claimed = await db
+      .update(flowRuns)
+      .set({ approvedNodeIds, steps: clearedSteps, status: "running", error: null, updatedAt: new Date() })
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "waiting_approval")))
+      .returning();
+  } catch (claimErr: any) {
+    // Unique-index conflict: a newer scheduled execution already owns this
+    // flow's running slot. Keep the older run waiting rather than fail it.
+    if (claimErr?.code === "23505" || claimErr?.message?.includes("unique")) {
+      return { error: "A newer scheduled run already owns this flow's slot; this approval stays pending." };
+    }
+    throw claimErr;
+  }
 
-  const result = await executeFlow(
-    flow.graph as Parameters<typeof executeFlow>[0],
-    {
-      tenantId,
-      runId,
-      flowId: flow.id,
-      triggerPayload: run.triggerPayload ?? undefined,
-      cachedOutputs,
-      approvedNodeIds,
-    },
-    { onStepUpdate: (step) => persistStep(tenantId, runId, step) },
+  if (claimed.length === 0) {
+    return { error: "Run is not waiting for approval (already resumed)." };
+  }
+
+  let result;
+  let execError: unknown;
+  try {
+    result = await executeFlow(
+      flow.graph as Parameters<typeof executeFlow>[0],
+      {
+        tenantId,
+        runId,
+        flowId: flow.id,
+        triggerPayload: run.triggerPayload ?? undefined,
+        cachedSteps: clearedSteps,
+        fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
+        approvedNodeIds,
+      },
+      {
+        onStepUpdate: (step, fanoutProgress) => persistStep(tenantId, runId, step, fanoutProgress),
+        onFanoutProgress: async (progress) => {
+          const updated = await db
+            .update(flowRuns)
+            .set({ fanoutProgress: progress, updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+          }
+        },
+        onHeartbeat: async () => {
+          const updated = await db
+            .update(flowRuns)
+            .set({ updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
+          }
+        },
+      },
+    );
+  } catch (err) {
+    execError = err;
+  }
+
+  const finalResult = await finalizeRun(
+    runId,
+    tenantId,
+    result
+      ? { status: result.status, steps: result.steps, error: result.error ?? null }
+      : (execError instanceof Error ? execError : new Error(String(execError ?? "Resumed execution crashed"))),
   );
 
-  await db
-    .update(flowRuns)
-    .set({ status: result.status, steps: result.steps, error: result.error ?? null, finishedAt: new Date() })
-    .where(eq(flowRuns.id, runId));
+  if (!finalResult.persisted) {
+    console.error(
+      `[flow-resume] CRITICAL: Finalization writes exhausted for resumed run ${runId}. Steps remain persisted; stale recovery will transition status if DB was unreachable.`,
+    );
+    return {
+      ok: false,
+      status: finalResult.status,
+      error: `Run execution finished with status '${finalResult.status}', but terminal state could not be persisted to the database.`,
+    };
+  }
 
-  return { ok: true, status: result.status };
+  return { ok: true, status: finalResult.status };
 }
 
 /** Re-runs a failed/finished run reusing succeeded node outputs. */
@@ -229,20 +496,40 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
     where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
   });
   if (!run) return { error: "Run not found" };
+  if (run.status !== "failed" && run.status !== "succeeded") {
+    return { error: `Cannot restart run with status '${run.status}'. Only completed or failed runs can be restarted.` };
+  }
+
+  // Atomically claim the run for restart by transitioning its status to restarted
+  const [claimed] = await db
+    .update(flowRuns)
+    .set({
+      status: "restarted",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(flowRuns.id, runId),
+        eq(flowRuns.tenantId, tenantId),
+        eq(flowRuns.status, run.status),
+      ),
+    )
+    .returning();
+
+  if (!claimed) {
+    return { error: "Run was modified or restarted by another request." };
+  }
+
   const flow = await db.query.flows.findFirst({ where: eq(flows.id, run.flowId) });
   if (!flow) return { error: "Flow not found" };
-
-  const cachedOutputs: Record<string, unknown> = {};
-  for (const step of run.steps as FlowStep[]) {
-    if (step.status === "succeeded") cachedOutputs[step.nodeId] = step.output;
-  }
 
   const result = await executeRunWithPorts({
     flow,
     tenantId,
     trigger: run.trigger as "manual",
     triggerPayload: run.triggerPayload ?? undefined,
-    cachedOutputs,
+    cachedSteps: (run.steps as FlowStep[]) ?? [],
+    fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
     approvedNodeIds: (run.approvedNodeIds as string[]) ?? [],
   });
   return { runId: result.runId };
@@ -358,20 +645,6 @@ export async function deleteFlow(id: string): Promise<{ ok?: boolean; error?: st
     .returning();
   if (deleted.length === 0) return { error: "Flow not found" };
   return { ok: true };
-}
-
-export async function regenerateWebhookSecret(
-  id: string,
-): Promise<{ secret?: string; error?: string }> {
-  const tenantId = await getActiveTenantId();
-  const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
-  const updated = await db
-    .update(flows)
-    .set({ webhookSecret: secret })
-    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)))
-    .returning({ id: flows.id });
-  if (updated.length === 0) return { error: "Flow not found" };
-  return { secret };
 }
 
 /**

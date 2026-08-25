@@ -49,10 +49,18 @@ export async function resolveToken(tenantId: string): Promise<string> {
   const { apiKeys } = await import("@/lib/db/schema");
   const { eq, and } = await import("drizzle-orm");
   const { decrypt } = await import("@/lib/crypto");
-  const key = await db.query.apiKeys.findFirst({
-    where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, "apify")),
+  const tenantKey = await db.query.apiKeys.findFirst({
+    where: and(
+      eq(apiKeys.tenantId, tenantId),
+      eq(apiKeys.provider, "apify"),
+    ),
   });
-  if (key?.encryptedKey) return decrypt(key.encryptedKey);
+  if (tenantKey) {
+    if (tenantKey.status !== "active") {
+      throw new Error("Apify token for this workspace is revoked or disabled.");
+    }
+    return decrypt(tenantKey.encryptedKey);
+  }
   if (process.env.APIFY_TOKEN) return process.env.APIFY_TOKEN;
   throw new Error("No Apify token. Add one in Settings → API Keys (provider: apify).");
 }

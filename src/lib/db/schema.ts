@@ -351,12 +351,20 @@ export const flowRuns = pgTable("flow_runs", {
   triggerPayload: jsonb("trigger_payload"),
   steps: jsonb("steps").default([]).notNull(),
   approvedNodeIds: jsonb("approved_node_ids").default([]).notNull(),
+  fanoutProgress: jsonb("fanout_progress").default({}).notNull(),
   error: text("error"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
 }, (table) => ({
   flowIdx: index("flow_runs_flow_id_idx").on(table.flowId, table.startedAt),
   tenantIdx: index("flow_runs_tenant_id_idx").on(table.tenantId),
+  runningScheduledIdx: uniqueIndex("flow_runs_running_scheduled_idx")
+    .on(table.flowId)
+    .where(sql`${table.status} IN ('running','waiting_approval') AND ${table.trigger} = 'schedule'`),
+  runningWebhookIdx: uniqueIndex("flow_runs_running_webhook_idx")
+    .on(table.flowId, sql`(${table.triggerPayload}->>'id')`)
+    .where(sql`${table.status} IN ('running','waiting_approval') AND ${table.trigger} = 'webhook'`),
 }));
 
 /**
@@ -375,3 +383,23 @@ export const flowTemplates = pgTable("flow_templates", {
   installs: integer("installs").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+/**
+ * Deployment-wide fixed-window rate limiting for the public API. One row per
+ * (token, window) so documented limits hold across instances and restarts.
+ */
+export const rateLimitCounters = pgTable("rate_limit_counters", {
+  tokenId: text("token_id").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").default(1).notNull(),
+}, (table) => ({
+  tokenWindowIdx: uniqueIndex("rate_limit_token_window_idx").on(table.tokenId, table.windowStart),
+}));
+
+/**
+ * Per-item fan-out checkpoints for flow runs: { "<itemIndex>": { nodeId: output } }.
+ * Lets restart-from-failed retry only the failed tail of each item's chain
+ * instead of re-executing already-successful side-effecting nodes.
+ */
+export const fanoutProgressCol = {
+  fanoutProgress: jsonb("fanout_progress").default({}).notNull(),
+};

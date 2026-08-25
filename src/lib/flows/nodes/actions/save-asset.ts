@@ -31,24 +31,41 @@ export const saveAssetNode = defineNode({
     const url = extractUrl(input, config.urlField);
     if (!url) throw new Error("No file URL found on the incoming data.");
 
-    const response = await fetch(url, { signal: ctx.signal });
-    if (!response.ok) throw new Error(`Download failed (HTTP ${response.status}).`);
-
-    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-    const buffer = Buffer.from(await response.arrayBuffer());
+    // SSRF-safe download: DNS is resolved once and pinned to the validated
+    // public IP; private/metadata destinations are rejected. Redirects are
+    // re-validated per hop.
+    const { fetchSafeMedia } = await import("../ai/transcribe");
+    const { buffer, contentType, finalUrl } = await fetchSafeMedia(url, ctx.signal);
     if (buffer.length > 25 * 1024 * 1024) throw new Error("File exceeds the 25MB asset limit.");
 
     const { uploadBufferToR2 } = await import("@/lib/storage");
     const uploaded = await uploadBufferToR2(buffer, contentType.split(";")[0], ctx.tenantId);
 
-    const { registerAsset } = await import("@/app/actions/assets");
-    await registerAsset({
-      filename: config.filename?.trim() || url.split("/").pop()?.split("?")[0] || "flow-asset",
-      key: uploaded.key,
-      mimeType: contentType.split(";")[0],
-      size: buffer.length,
-    });
+    // Register the asset with a direct tenant-scoped insert — registerAsset
+    // requires a browser session and would throw Unauthorized during
+    // scheduled/webhook runs.
+    const { db } = await import("@/lib/db");
+    const { assets } = await import("@/lib/db/schema");
+    const [asset] = await db
+      .insert(assets)
+      .values({
+        tenantId: ctx.tenantId,
+        filename: config.filename?.trim() || url.split("/").pop()?.split("?")[0] || "flow-asset",
+        key: uploaded.key,
+        mimeType: contentType.split(";")[0],
+        size: buffer.length,
+        publicUrl: uploaded.publicUrl,
+      })
+      .returning({ id: assets.id, publicUrl: assets.publicUrl });
 
-    return { output: { publicUrl: uploaded.publicUrl, size: buffer.length, contentType } };
+    return {
+      output: {
+        publicUrl: asset?.publicUrl ?? uploaded.publicUrl,
+        assetId: asset?.id,
+        size: buffer.length,
+        contentType,
+        source: finalUrl,
+      },
+    };
   },
 });

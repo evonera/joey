@@ -11,6 +11,8 @@ export type NodeContext = {
   /** Approval-gate node ids already approved for this run (resume path). */
   approvedNodeIds?: string[];
   signal?: AbortSignal;
+  /** Pulse execution heartbeat during long operations to prevent stale sweep timeouts. */
+  heartbeat?: () => Promise<void> | void;
 };
 
 export type NodeExecuteResult = {

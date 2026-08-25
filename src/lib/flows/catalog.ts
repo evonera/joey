@@ -138,6 +138,10 @@ export const httpConfig = z.object({
   url: z.string().describe("Request URL ({{input}} inserts incoming data as text)"),
   headersJson: z.string().optional().describe('Headers as JSON, e.g. {"Authorization":"Bearer …"}'),
   bodyJson: z.string().optional().describe("Request body as JSON ({{input}} inserts incoming data)"),
+  allowPrivateHosts: z
+    .boolean()
+    .default(false)
+    .describe("Allow private/LAN destinations (default off: SSRF-safe; webhook-reachable flows must stay off)"),
 });
 
 export const rssConfig = z.object({

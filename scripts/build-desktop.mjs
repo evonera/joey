@@ -11,31 +11,36 @@
 import { renameSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 
-const API_DIR = 'src/app/api';
-const API_BAK = 'src/app/_api_desktop_bak';
+const HIDE_DIRS = ['src/app/api', 'src/app/actions'];
+const BAK_SUFFIX = '_desktop_bak';
 
-function hideApiRoutes() {
-  if (existsSync(API_DIR)) {
-    renameSync(API_DIR, API_BAK);
-    console.log('[desktop-build] Temporarily hidden API routes');
+function hideServerCode() {
+  for (const dir of HIDE_DIRS) {
+    if (existsSync(dir)) {
+      renameSync(dir, dir + BAK_SUFFIX);
+      console.log(`[desktop-build] Temporarily hidden ${dir}`);
+    }
   }
 }
 
-function restoreApiRoutes() {
-  if (existsSync(API_BAK)) {
-    renameSync(API_BAK, API_DIR);
-    console.log('[desktop-build] Restored API routes');
+function restoreServerCode() {
+  for (const dir of HIDE_DIRS) {
+    const bak = dir + BAK_SUFFIX;
+    if (existsSync(bak)) {
+      renameSync(bak, dir);
+      console.log(`[desktop-build] Restored ${dir}`);
+    }
   }
 }
 
 // Always restore on exit
-process.on('exit', restoreApiRoutes);
-process.on('SIGINT', () => { restoreApiRoutes(); process.exit(1); });
-process.on('SIGTERM', () => { restoreApiRoutes(); process.exit(1); });
-process.on('uncaughtException', (e) => { restoreApiRoutes(); throw e; });
+process.on('exit', restoreServerCode);
+process.on('SIGINT', () => { restoreServerCode(); process.exit(1); });
+process.on('SIGTERM', () => { restoreServerCode(); process.exit(1); });
+process.on('uncaughtException', (e) => { restoreServerCode(); throw e; });
 
 try {
-  hideApiRoutes();
+  hideServerCode();
   console.log('[desktop-build] Running Next.js static export...');
   execSync('NEXT_OUTPUT=export next build', { stdio: 'inherit' });
   console.log('[desktop-build] ✓ Static export complete');

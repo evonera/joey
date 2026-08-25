@@ -40,6 +40,8 @@ export type FlowStep = {
   status: StepStatus;
   input?: unknown;
   output?: unknown;
+  /** Condition nodes: which outgoing branch was taken ('true'|'false'). */
+  branch?: string;
   error?: string;
   startedAt?: string;
   finishedAt?: string;
