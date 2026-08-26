@@ -180,8 +180,24 @@ export async function fetchSafeMedia(
           headers: { accept: "*/*" },
         },
         (res) => {
+          const maxBytes = 25 * 1024 * 1024;
+          const cl = res.headers["content-length"];
+          if (cl && Number(cl) > maxBytes) {
+            req.destroy(new Error(`Media exceeds 25MB limit (${cl} bytes).`));
+            reject(new Error(`Media exceeds 25MB limit (${cl} bytes).`));
+            return;
+          }
+          let total = 0;
           const chunks: Buffer[] = [];
-          res.on("data", (c: Buffer) => chunks.push(c));
+          res.on("data", (c: Buffer) => {
+            total += c.length;
+            if (total > maxBytes) {
+              req.destroy(new Error("Media exceeds 25MB limit."));
+              reject(new Error("Media exceeds 25MB limit."));
+              return;
+            }
+            chunks.push(c);
+          });
           res.on("end", () =>
             resolve({
               status: res.statusCode ?? 0,

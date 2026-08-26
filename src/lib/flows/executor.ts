@@ -502,75 +502,80 @@ export async function executeFlow(
     const progress: Record<string, Record<string, unknown>> = {
       ...opts.fanoutProgress,
     };
+    const prevFanout = activeFanout;
+    try {
+      for (let i = 0; i < items.length; i++) {
+        const itemKey = `${loopId}:${i}`;
+        const checkpoint = { ...(progress[itemKey] ?? progress[String(i)] ?? {}) };
 
-    for (let i = 0; i < items.length; i++) {
-      const itemKey = String(i);
-      const checkpoint = { ...(progress[itemKey] ?? {}) };
-
-      // Restore this item's already-succeeded chain prefix…
-      for (const [nodeId, value] of Object.entries(checkpoint)) {
-        const node = nodeById.get(nodeId);
-        if (!node) continue;
-        const branch =
-          value && typeof value === "object" && "__branch" in (value as Record<string, unknown>)
-            ? ((value as Record<string, unknown>).__branch as string)
-            : undefined;
-        steps.set(nodeId, {
-          nodeId,
-          type: node.type,
-          status: "succeeded",
-          output: stripInternal(value),
-          ...(branch !== undefined ? { branch } : {}),
-          cached: true,
-        });
-        outputs.set(nodeId, value);
-      }
-      // …then clear only the UNCHECKPOINTED remainder. Steps from the LAST
-      // iteration are intentionally kept afterwards for run inspection.
-      for (const id of reachable) {
-        if (!(id in checkpoint)) steps.delete(id);
-      }
-      outputs.set(loopId, items[i]);
-
-      activeFanout = {
-        itemKey,
-        chainNodes: new Set(chainNodes),
-        progress,
-      };
-
-      let outcome: Outcome;
-      try {
-        outcome = await stageLoop(entries, new Set());
-      } finally {
-        activeFanout = undefined;
-      }
-
-      // Checkpoint every chain node that succeeded for this item (including on failure / pause)
-      // so restart-from-failed never replays already-succeeded side-effecting predecessor nodes!
-      const done: Record<string, unknown> = { ...checkpoint };
-      for (const id of chainNodes) {
-        const st = steps.get(id);
-        if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
-      }
-      progress[itemKey] = done;
-      try {
-        await ports.onFanoutProgress?.(progress);
-      } catch (err: any) {
-        if (!fenceError) {
-          fenceError = err instanceof Error ? err : new Error(String(err));
-          abortController.abort(fenceError);
+        // Restore this item's already-succeeded chain prefix…
+        for (const [nodeId, value] of Object.entries(checkpoint)) {
+          const node = nodeById.get(nodeId);
+          if (!node) continue;
+          const branch =
+            value && typeof value === "object" && "__branch" in (value as Record<string, unknown>)
+              ? ((value as Record<string, unknown>).__branch as string)
+              : undefined;
+          steps.set(nodeId, {
+            nodeId,
+            type: node.type,
+            status: "succeeded",
+            output: stripInternal(value),
+            ...(branch !== undefined ? { branch } : {}),
+            cached: true,
+          });
+          outputs.set(nodeId, value);
         }
-        throw fenceError;
-      }
+        // …then clear only the UNCHECKPOINTED remainder. Steps from the LAST
+        // iteration are intentionally kept afterwards for run inspection.
+        for (const id of reachable) {
+          if (!(id in checkpoint)) steps.delete(id);
+        }
+        outputs.set(loopId, items[i]);
 
-      if (outcome !== "completed") return outcome;
+        activeFanout = {
+          itemKey,
+          chainNodes: new Set(chainNodes),
+          progress,
+        };
 
-      for (const sinkId of Object.keys(collected)) {
-        if (steps.get(sinkId)?.status !== "succeeded") continue;
-        const value = unwrap(outputs.get(sinkId));
-        if (Array.isArray(value)) collected[sinkId].push(...value);
-        else collected[sinkId].push(value);
+        let outcome: Outcome;
+        try {
+          outcome = await stageLoop(entries, new Set());
+        } finally {
+          activeFanout = prevFanout;
+        }
+
+        // Checkpoint every chain node that succeeded for this item (including on failure / pause)
+        // so restart-from-failed never replays already-succeeded side-effecting predecessor nodes!
+        const done: Record<string, unknown> = { ...checkpoint };
+        for (const id of chainNodes) {
+          const st = steps.get(id);
+          if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
+        }
+        progress[itemKey] = done;
+        progress[String(i)] = done;
+        try {
+          await ports.onFanoutProgress?.(progress);
+        } catch (err: any) {
+          if (!fenceError) {
+            fenceError = err instanceof Error ? err : new Error(String(err));
+            abortController.abort(fenceError);
+          }
+          throw fenceError;
+        }
+
+        if (outcome !== "completed") return outcome;
+
+        for (const sinkId of Object.keys(collected)) {
+          if (steps.get(sinkId)?.status !== "succeeded") continue;
+          const value = unwrap(outputs.get(sinkId));
+          if (Array.isArray(value)) collected[sinkId].push(...value);
+          else collected[sinkId].push(value);
+        }
       }
+    } finally {
+      activeFanout = prevFanout;
     }
 
     outputs.set(FANOUT_KEY(loopId), collected);
