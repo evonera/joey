@@ -24,6 +24,20 @@ export const notifyNode = defineNode({
       throw (ctx.signal.reason as Error) ?? new Error("Aborted");
     }
 
+    const { db } = await import("@/lib/db");
+    const { flowRuns } = await import("@/lib/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+
+    if (ctx.runId) {
+      const run = await db.query.flowRuns.findFirst({
+        where: and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")),
+        columns: { id: true },
+      });
+      if (!run) {
+        throw new Error("Execution fenced: flow run is no longer running.");
+      }
+    }
+
     await createNotification(ctx.tenantId, "draft_ready", config.title, body, {
       link: `/flows/runs?runId=${ctx.runId}`,
       metadata: { flowRunId: ctx.runId },
