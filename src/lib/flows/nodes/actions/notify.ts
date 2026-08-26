@@ -25,23 +25,75 @@ export const notifyNode = defineNode({
     }
 
     const { db } = await import("@/lib/db");
-    const { flowRuns } = await import("@/lib/db/schema");
+    const { flowRuns, notifications, notificationPreferences, tenants, member, user } = await import("@/lib/db/schema");
     const { eq, and } = await import("drizzle-orm");
 
-    if (ctx.runId) {
-      const run = await db.query.flowRuns.findFirst({
-        where: and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")),
-        columns: { id: true },
-      });
-      if (!run) {
-        throw new Error("Execution fenced: flow run is no longer running.");
+    // Atomically check active run status and insert notification in the same transaction
+    const emailRecipient = await db.transaction(async (tx) => {
+      if (ctx.runId) {
+        const run = await tx.query.flowRuns.findFirst({
+          where: and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")),
+          columns: { id: true },
+        });
+        if (!run) {
+          throw new Error("Execution fenced: flow run is no longer running.");
+        }
       }
-    }
 
-    await createNotification(ctx.tenantId, "draft_ready", config.title, body, {
-      link: `/flows/runs?runId=${ctx.runId}`,
-      metadata: { flowRunId: ctx.runId },
+      let prefs = await tx.query.notificationPreferences.findFirst({
+        where: eq(notificationPreferences.tenantId, ctx.tenantId),
+      });
+
+      if (!prefs) {
+        const tenant = await tx.query.tenants.findFirst({
+          where: eq(tenants.id, ctx.tenantId),
+        });
+        if (tenant) {
+          const membership = await tx.query.member.findFirst({
+            where: eq(member.organizationId, ctx.tenantId),
+          });
+          const owner = membership
+            ? await tx.query.user.findFirst({ where: eq(user.id, membership.userId) })
+            : null;
+          const [newPrefs] = await tx
+            .insert(notificationPreferences)
+            .values({ tenantId: ctx.tenantId, emailAddress: owner?.email || null })
+            .returning();
+          prefs = newPrefs;
+        }
+      }
+
+      const shouldCreateInApp = prefs ? prefs.inAppDraftReady : true;
+      if (shouldCreateInApp) {
+        await tx.insert(notifications).values({
+          tenantId: ctx.tenantId,
+          type: "draft_ready",
+          title: config.title,
+          body,
+          link: `/flows/runs?runId=${ctx.runId}`,
+          metadata: { flowRunId: ctx.runId },
+        });
+      }
+
+      const shouldSendEmail = prefs ? prefs.emailDraftReady : false;
+      return shouldSendEmail && prefs?.emailAddress ? prefs.emailAddress : null;
     });
+
+    if (emailRecipient) {
+      if (ctx.signal?.aborted) {
+        throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+      }
+      const { sendNotificationEmail } = await import("@/lib/email");
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
+      await sendNotificationEmail({
+        to: emailRecipient,
+        subject: config.title,
+        body,
+        tenantId: ctx.tenantId,
+        link: fullLink,
+      }).catch(() => {});
+    }
 
     return { output: input };
   },
