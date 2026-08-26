@@ -87,26 +87,25 @@ export const notifyNode = defineNode({
       }
 
       const shouldCreateInApp = prefs ? prefs.inAppDraftReady : true;
-      let notificationId: string | undefined;
-      if (shouldCreateInApp) {
-        const [inserted] = await tx
-          .insert(notifications)
-          .values({
-            tenantId: ctx.tenantId,
-            type: "draft_ready",
-            title: config.title,
-            body,
-            link: `/flows/runs?runId=${ctx.runId}`,
-            metadata: {
-              flowRunId: ctx.runId,
-              nodeId: ctx.nodeId,
-              itemKey: ctx.itemKey ?? "root",
-              emailStatus: emailRecipient ? "pending" : "not_required",
-            },
-          })
-          .returning({ id: notifications.id });
-        notificationId = inserted?.id;
-      }
+      const [inserted] = await tx
+        .insert(notifications)
+        .values({
+          tenantId: ctx.tenantId,
+          type: "draft_ready",
+          title: config.title,
+          body,
+          link: `/flows/runs?runId=${ctx.runId}`,
+          isRead: !shouldCreateInApp,
+          metadata: {
+            flowRunId: ctx.runId,
+            nodeId: ctx.nodeId,
+            itemKey: ctx.itemKey ?? "root",
+            emailStatus: emailRecipient ? "pending" : "not_required",
+            inApp: shouldCreateInApp,
+          },
+        })
+        .returning({ id: notifications.id });
+      const notificationId = inserted?.id;
       return { alreadyDone: false, notificationId };
     });
 

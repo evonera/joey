@@ -63,9 +63,10 @@ export async function POST(
         : null);
 
     if (explicitId) {
+      const webhookEventId = `flow:${flowId}:${explicitId}`;
       const { storeWebhookEvent, markWebhookProcessed } = await import("@/lib/webhooks");
       const { isDuplicate, event } = await storeWebhookEvent({
-        id: explicitId,
+        id: webhookEventId,
         event: "flow.incoming_webhook",
         timestamp: new Date().toISOString(),
         flowId,
@@ -83,10 +84,10 @@ export async function POST(
           triggerPayload: payload,
         });
 
-        await markWebhookProcessed(explicitId, result.status === "failed" ? "Flow execution failed" : undefined, event?.createdAt);
+        await markWebhookProcessed(webhookEventId, result.status === "failed" ? "Flow execution failed" : undefined, event?.createdAt);
         return NextResponse.json({ received: true, runId: result.runId, status: result.status });
       } catch (err: any) {
-        await markWebhookProcessed(explicitId, err?.message || "Flow execution threw an error", event?.createdAt);
+        await markWebhookProcessed(webhookEventId, err?.message || "Flow execution threw an error", event?.createdAt);
         throw err;
       }
     }

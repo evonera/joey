@@ -114,6 +114,8 @@ export const httpNode = defineNode({
               }
             }
             currentHeaders = safeHeaders;
+            // Prevent request body disclosure across origins
+            currentBody = undefined;
           }
           if (status === 303 || ((status === 301 || status === 302) && currentMethod === "POST")) {
             currentMethod = "GET";
