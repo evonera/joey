@@ -165,13 +165,17 @@ export async function executeFlow(
     }
   }
 
+  const sharedFanoutProgress: Record<string, Record<string, unknown>> = {
+    ...(opts.fanoutProgress ?? {}),
+  };
+
   const setStatus = async (
     step: FlowStep,
     fanoutProgress?: Record<string, Record<string, unknown>>,
   ) => {
     steps.set(step.nodeId, step);
     try {
-      await ports.onStepUpdate?.(step, fanoutProgress);
+      await ports.onStepUpdate?.(step, fanoutProgress ?? sharedFanoutProgress);
     } catch (err: any) {
       if (!fenceError) {
         fenceError = err instanceof Error ? err : new Error(String(err));
@@ -499,15 +503,12 @@ export async function executeFlow(
       if (!doc.edges.some((e) => e.from === id)) collected[id] = [];
     }
     const chainNodes = Array.from(reachable);
-    const progress: Record<string, Record<string, unknown>> = {
-      ...opts.fanoutProgress,
-    };
 
     const prevFanout = activeFanout;
     try {
       for (let i = 0; i < items.length; i++) {
         const itemKey = `${loopId}:${i}`;
-        const checkpoint = { ...(progress[itemKey] ?? progress[String(i)] ?? {}) };
+        const checkpoint = { ...(sharedFanoutProgress[itemKey] ?? sharedFanoutProgress[String(i)] ?? {}) };
 
         // Restore this item's already-succeeded chain prefix…
         for (const [nodeId, value] of Object.entries(checkpoint)) {
@@ -537,7 +538,7 @@ export async function executeFlow(
         activeFanout = {
           itemKey,
           chainNodes: new Set(chainNodes),
-          progress,
+          progress: sharedFanoutProgress,
         };
 
         let outcome: Outcome;
@@ -554,10 +555,10 @@ export async function executeFlow(
           const st = steps.get(id);
           if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
         }
-        progress[itemKey] = done;
-        progress[String(i)] = done;
+        sharedFanoutProgress[itemKey] = done;
+        sharedFanoutProgress[String(i)] = done;
         try {
-          await ports.onFanoutProgress?.(progress);
+          await ports.onFanoutProgress?.(sharedFanoutProgress);
         } catch (err: any) {
           if (!fenceError) {
             fenceError = err instanceof Error ? err : new Error(String(err));
