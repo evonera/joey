@@ -15,9 +15,13 @@ export interface EmailOptions {
   subject: string;
   html: string;
   idempotencyKey?: string;
+  signal?: AbortSignal;
 }
 
-export async function sendEmail({ to, subject, html, idempotencyKey }: EmailOptions): Promise<{ success: boolean; error?: string }> {
+export async function sendEmail({ to, subject, html, idempotencyKey, signal }: EmailOptions): Promise<{ success: boolean; error?: string }> {
+  if (signal?.aborted) {
+    throw (signal.reason as Error) ?? new Error("Aborted");
+  }
   try {
     const { error } = await getResend().emails.send({
       from: fromEmail,
@@ -46,9 +50,13 @@ export interface NotificationEmailOptions {
   tenantId: string;
   link?: string | null;
   idempotencyKey?: string;
+  signal?: AbortSignal;
 }
 
-export async function sendNotificationEmail({ to, subject, body, tenantId, link, idempotencyKey }: NotificationEmailOptions) {
+export async function sendNotificationEmail({ to, subject, body, tenantId, link, idempotencyKey, signal }: NotificationEmailOptions) {
+  if (signal?.aborted) {
+    throw (signal.reason as Error) ?? new Error("Aborted");
+  }
   const escapeHtml = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   
@@ -59,7 +67,7 @@ export async function sendNotificationEmail({ to, subject, body, tenantId, link,
       ${link ? `
         <div style="margin-top: 24px;">
           <a href="${link}" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 500; display: inline-block;">
-            View Details
+            View in Joey
           </a>
         </div>
       ` : ''}
@@ -71,7 +79,7 @@ export async function sendNotificationEmail({ to, subject, body, tenantId, link,
     </div>
   `;
 
-  const res = await sendEmail({ to, subject, html, idempotencyKey });
+  const res = await sendEmail({ to, subject, html, idempotencyKey, signal });
   if (!res.success) {
     throw new Error(`Failed to send notification email: ${res.error || "Unknown error"}`);
   }

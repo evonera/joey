@@ -101,18 +101,28 @@ export const httpNode = defineNode({
       let currentMethod = config.method;
       let currentBody = body;
 
-      // If the configured template had a static origin and dynamic interpolation changed it, strip credentials immediately
-      let staticOrigin: string | null = null;
+      // Extract expected origin if config.url has a static base host (e.g. https://api.mysite.com/{{path}})
+      let expectedOrigin: string | null = null;
       try {
-        if (config.url && !config.url.includes("{{")) {
-          staticOrigin = new URL(config.url).origin;
+        if (config.url) {
+          const templateIndex = config.url.indexOf("{{");
+          if (templateIndex === -1) {
+            expectedOrigin = new URL(config.url).origin;
+          } else {
+            const prefix = config.url.substring(0, templateIndex);
+            if (prefix.startsWith("http://") || prefix.startsWith("https://")) {
+              expectedOrigin = new URL(prefix).origin;
+            }
+          }
         }
       } catch {}
-      if (staticOrigin && new URL(url).origin !== staticOrigin) {
-        currentHeaders = stripCredentials(currentHeaders);
-      }
 
       const initialOrigin = new URL(url).origin;
+      // If the URL host was dynamically supplied by runtime input (no fixed base host configured)
+      // OR if the interpolated origin differs from the expected configured origin, strip sensitive credentials
+      if (!expectedOrigin || initialOrigin !== expectedOrigin) {
+        currentHeaders = stripCredentials(currentHeaders);
+      }
       let redirects = 0;
       while (redirects <= 5) {
         const { status, headers: resHeaders, buffer } = await safeRequest(currentUrl, {
