@@ -78,12 +78,16 @@ export const httpNode = defineNode({
 
     try {
       let currentUrl = url;
+      let currentHeaders = { ...headers };
+      let currentMethod = config.method;
+      let currentBody = body;
+      const initialOrigin = new URL(url).origin;
       let redirects = 0;
       while (redirects <= 5) {
         const { status, headers: resHeaders, buffer } = await safeRequest(currentUrl, {
-          method: config.method,
-          headers,
-          body,
+          method: currentMethod,
+          headers: currentHeaders,
+          body: currentBody,
           signal: abortCtrl.signal,
           timeoutMs: 60_000,
         });
@@ -91,7 +95,23 @@ export const httpNode = defineNode({
         if (status >= 300 && status < 400) {
           const location = Array.isArray(resHeaders.location) ? resHeaders.location[0] : resHeaders.location;
           if (!location) throw new Error(`Redirect response (${status}) missing location header.`);
-          currentUrl = new URL(location, currentUrl).toString();
+          const nextUrl = new URL(location, currentUrl);
+          if (nextUrl.origin !== initialOrigin) {
+            // Strip sensitive credentials on cross-origin redirects
+            const safeHeaders: Record<string, string> = {};
+            for (const [k, v] of Object.entries(currentHeaders)) {
+              const lower = k.toLowerCase();
+              if (lower !== "authorization" && lower !== "cookie" && lower !== "proxy-authorization") {
+                safeHeaders[k] = v;
+              }
+            }
+            currentHeaders = safeHeaders;
+          }
+          if (status === 303 || ((status === 301 || status === 302) && currentMethod === "POST")) {
+            currentMethod = "GET";
+            currentBody = undefined;
+          }
+          currentUrl = nextUrl.toString();
           redirects++;
           continue;
         }

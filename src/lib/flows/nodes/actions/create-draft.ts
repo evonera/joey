@@ -29,7 +29,7 @@ export const createDraftNode = defineNode({
 
     const { db } = await import("@/lib/db");
     const { drafts, flowRuns } = await import("@/lib/db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, sql } = await import("drizzle-orm");
 
     const draft = await db.transaction(async (tx) => {
       if (ctx.runId) {
@@ -43,6 +43,17 @@ export const createDraftNode = defineNode({
         }
       }
 
+      if (ctx.runId && ctx.nodeId) {
+        const existing = await tx.query.drafts.findFirst({
+          where: and(
+            eq(drafts.tenantId, ctx.tenantId),
+            sql`${drafts.platformOptions}->>'flowRunId' = ${ctx.runId}`,
+            sql`${drafts.platformOptions}->>'nodeId' = ${ctx.nodeId}`,
+          ),
+        });
+        if (existing) return existing;
+      }
+
       const [inserted] = await tx
         .insert(drafts)
         .values({
@@ -54,6 +65,7 @@ export const createDraftNode = defineNode({
             ...(config.accountId ? { accountId: config.accountId } : {}),
             source: "flow",
             flowRunId: ctx.runId,
+            nodeId: ctx.nodeId,
           },
         })
         .returning();

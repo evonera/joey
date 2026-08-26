@@ -26,7 +26,7 @@ export const notifyNode = defineNode({
 
     const { db } = await import("@/lib/db");
     const { flowRuns, notifications, notificationPreferences, tenants, member, user } = await import("@/lib/db/schema");
-    const { eq, and } = await import("drizzle-orm");
+    const { eq, and, sql } = await import("drizzle-orm");
 
     // Atomically check active run status and insert notification in the same transaction
     const emailRecipient = await db.transaction(async (tx) => {
@@ -38,6 +38,19 @@ export const notifyNode = defineNode({
           .for("update");
         if (!lockedRun) {
           throw new Error("Execution fenced: flow run is no longer running.");
+        }
+      }
+
+      if (ctx.runId && ctx.nodeId) {
+        const existing = await tx.query.notifications.findFirst({
+          where: and(
+            eq(notifications.tenantId, ctx.tenantId),
+            sql`${notifications.metadata}->>'flowRunId' = ${ctx.runId}`,
+            sql`${notifications.metadata}->>'nodeId' = ${ctx.nodeId}`,
+          ),
+        });
+        if (existing) {
+          return null; // Already notified and emailed for this step
         }
       }
 
@@ -72,7 +85,7 @@ export const notifyNode = defineNode({
           title: config.title,
           body,
           link: `/flows/runs?runId=${ctx.runId}`,
-          metadata: { flowRunId: ctx.runId },
+          metadata: { flowRunId: ctx.runId, nodeId: ctx.nodeId },
         });
       }
 
