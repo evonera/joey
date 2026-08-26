@@ -624,7 +624,7 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
       await db
         .update(flowRuns)
         .set({ status: "failed", error: finalResult.error || "Failed to persist terminal status.", finishedAt: new Date(), updatedAt: new Date() })
-        .where(eq(flowRuns.id, newRunId));
+        .where(and(eq(flowRuns.id, newRunId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
     } catch {}
     return { runId: newRunId, error: finalResult.error || "Failed to persist terminal status to database." };
   }

@@ -219,11 +219,12 @@ export async function safeRequest(
 
     return await new Promise<SafeRequestResult>((resolve, reject) => {
       let done = false;
+      let req: ReturnType<typeof requester> | undefined;
 
       const fail = (err: Error) => {
         if (done) return;
         done = true;
-        req.destroy();
+        req?.destroy();
         reject(err);
       };
 
@@ -236,7 +237,7 @@ export async function safeRequest(
       }
       abortCtrl.signal.addEventListener("abort", onAbort, { once: true });
 
-      const req = requester(
+      req = requester(
         {
           protocol: url.protocol,
           hostname: url.hostname, // TLS/SNI + Host use the real hostname
