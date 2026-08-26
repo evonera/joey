@@ -84,7 +84,7 @@ export async function executeFlow(
   let heartbeatTimer: NodeJS.Timeout | undefined;
   if (ports.onHeartbeat) {
     heartbeatTimer = setInterval(() => {
-      void ports.onHeartbeat?.();
+      void Promise.resolve(ports.onHeartbeat?.()).catch(() => {});
     }, 10_000);
   }
 
