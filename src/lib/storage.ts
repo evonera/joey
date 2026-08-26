@@ -94,18 +94,22 @@ export async function deleteObject(key: string) {
 }
 
 /** Robust compensating deletion for unreferenced uploads with backoff retries. */
-export async function deleteObjectWithRetry(key: string, maxAttempts = 3): Promise<boolean> {
+export async function deleteObjectWithRetry(key: string, maxAttempts = 3): Promise<void> {
+  let lastErr: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       await deleteObject(key);
-      return true;
+      return;
     } catch (err) {
-      if (attempt === maxAttempts) {
-        console.error(`Failed to delete R2 object (${key}) after ${maxAttempts} attempts:`, err);
-        return false;
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        await new Promise((res) => setTimeout(res, 200 * attempt));
       }
-      await new Promise((res) => setTimeout(res, 200 * attempt));
     }
   }
-  return false;
+  throw new Error(
+    `Compensating deletion failed: unable to delete orphaned R2 object (${key}) after ${maxAttempts} attempts: ${
+      lastErr instanceof Error ? lastErr.message : String(lastErr)
+    }`,
+  );
 }
