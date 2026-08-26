@@ -89,15 +89,21 @@ export async function runLlm(opts: {
     // Reject incomplete generations: token-limit truncation, refusals, pause turns, and
     // stop-sequence hits must never flow downstream as "successful" output.
     const completeStops = new Set(["end_turn", "tool_use"]);
-    if (!response.stop_reason || !completeStops.has(response.stop_reason)) {
+    if (!response.stop_reason || !completeStops.has(response.stop_reason) || (response as any).stop_reason === "refusal") {
       throw new Error(
         `Anthropic stopped with reason "${response.stop_reason ?? "none"}" — treating it as a failed generation.`,
       );
+    }
+    if ((response as any).refusal) {
+      throw new Error(`Anthropic refused request: ${(response as any).refusal}`);
     }
 
     let text = "";
     let json: unknown;
     for (const block of response.content) {
+      if ((block as any).type === "refusal") {
+        throw new Error(`Anthropic refused request: ${(block as any).refusal || (block as any).text}`);
+      }
       if (block.type === "text") {
         text += block.text;
       } else if (block.type === "tool_use") {
@@ -141,7 +147,17 @@ export async function runLlm(opts: {
   } catch {
     // ignore
   }
-  const text = response.choices[0]?.message?.content ?? "";
+  const choice = response.choices[0];
+  if (choice?.message?.refusal) {
+    throw new Error(`OpenAI refused request: ${choice.message.refusal}`);
+  }
+  if (choice?.finish_reason === "content_filter") {
+    throw new Error("OpenAI generation stopped by content filter.");
+  }
+  if (choice?.finish_reason === "length") {
+    throw new Error("OpenAI generation stopped due to max tokens length limit.");
+  }
+  const text = choice?.message?.content ?? "";
   return { text, json: tryParse(text) };
 }
 

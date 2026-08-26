@@ -13,7 +13,6 @@ export const notifyNode = defineNode({
   outputs: ["data"],
   configSchema,
   async execute(input, rawConfig, ctx) {
-    const { createNotification } = await import("@/lib/notifications");
     const config = configSchema.parse(rawConfig);
 
     const body = config.messageTemplate?.includes("{{input}}")
@@ -28,8 +27,8 @@ export const notifyNode = defineNode({
     const { flowRuns, notifications, notificationPreferences, tenants, member, user } = await import("@/lib/db/schema");
     const { eq, and } = await import("drizzle-orm");
 
-    // Atomically check active run status and insert notification in the same transaction
-    const emailRecipient = await db.transaction(async (tx) => {
+    // Atomically check active run status and insert in-app notification in the same transaction
+    await db.transaction(async (tx) => {
       if (ctx.runId) {
         const [lockedRun] = await tx
           .select({ id: flowRuns.id })
@@ -75,35 +74,7 @@ export const notifyNode = defineNode({
           metadata: { flowRunId: ctx.runId },
         });
       }
-
-      const shouldSendEmail = prefs ? prefs.emailDraftReady : false;
-      return shouldSendEmail && prefs?.emailAddress ? prefs.emailAddress : null;
     });
-
-    if (emailRecipient) {
-      if (ctx.signal?.aborted) {
-        throw (ctx.signal.reason as Error) ?? new Error("Aborted");
-      }
-      if (ctx.runId) {
-        const stillRunning = await db.query.flowRuns.findFirst({
-          where: and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")),
-          columns: { id: true },
-        });
-        if (!stillRunning) {
-          throw new Error("Execution fenced: flow run is no longer running.");
-        }
-      }
-      const { sendNotificationEmail } = await import("@/lib/email");
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
-      await sendNotificationEmail({
-        to: emailRecipient,
-        subject: config.title,
-        body,
-        tenantId: ctx.tenantId,
-        link: fullLink,
-      }).catch(() => {});
-    }
 
     return { output: input };
   },
