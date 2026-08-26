@@ -99,7 +99,7 @@ export async function startFlowRun(opts: {
     },
   );
 
-  await db
+  const [finalized] = await db
     .update(flowRuns)
     .set({
       status: result.status,
@@ -108,11 +108,19 @@ export async function startFlowRun(opts: {
       finishedAt: result.status === "waiting_approval" ? null : new Date(),
       updatedAt: new Date(),
     })
-    .where(fenceWhere());
+    .where(fenceWhere())
+    .returning({ id: flowRuns.id, status: flowRuns.status });
 
-  await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+  if (finalized) {
+    await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+    return { runId: run.id, status: finalized.status as RunStatus };
+  }
 
-  return { runId: run.id, status: result.status };
+  const persisted = await db.query.flowRuns.findFirst({
+    where: eq(flowRuns.id, run.id),
+    columns: { status: true },
+  });
+  return { runId: run.id, status: (persisted?.status ?? result.status) as RunStatus };
 }
 
 export async function persistStep(tenantId: string, runId: string, step: FlowStep) {
