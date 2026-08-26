@@ -112,17 +112,29 @@ export const notifyNode = defineNode({
       return { output: input };
     }
 
-    // 2. If email is required, send it now
+    // 2. If email is required, send it now with active run fence and idempotencyKey
     if (emailRecipient && !ctx.signal?.aborted) {
+      if (ctx.runId) {
+        const [activeRun] = await db
+          .select({ id: flowRuns.id })
+          .from(flowRuns)
+          .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")));
+        if (!activeRun || ctx.signal?.aborted) {
+          throw (ctx.signal?.reason as Error) ?? new Error("Execution fenced: flow run is no longer running.");
+        }
+      }
+
       const { sendNotificationEmail } = await import("@/lib/email");
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
       const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
+      const emailIdempotencyKey = `${ctx.tenantId}:${ctx.runId || "direct"}:${ctx.nodeId || "notify"}:${ctx.itemKey ?? "root"}`;
       await sendNotificationEmail({
         to: emailRecipient,
         subject: config.title,
         body,
         tenantId: ctx.tenantId,
         link: fullLink,
+        idempotencyKey: emailIdempotencyKey,
       });
 
       // 3. Mark email as confirmed sent under run status lock
