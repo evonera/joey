@@ -72,19 +72,34 @@ export async function executeFlow(
   const outgoing = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.from === id);
   const incoming = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.to === id);
 
+  const abortController = new AbortController();
+  let fenceError: Error | undefined;
+
+  const triggerHeartbeat = async () => {
+    try {
+      await ports.onHeartbeat?.();
+    } catch (err: any) {
+      if (!fenceError) {
+        fenceError = err instanceof Error ? err : new Error(String(err));
+        abortController.abort(fenceError);
+      }
+    }
+  };
+
   const ctxBase: Omit<NodeContext, "nodeId"> = {
     tenantId: opts.tenantId,
     runId: opts.runId,
     flowId: opts.flowId,
     triggerPayload: opts.triggerPayload,
     approvedNodeIds: opts.approvedNodeIds,
-    heartbeat: () => ports.onHeartbeat?.(),
+    signal: abortController.signal,
+    heartbeat: triggerHeartbeat,
   };
 
   let heartbeatTimer: NodeJS.Timeout | undefined;
   if (ports.onHeartbeat) {
     heartbeatTimer = setInterval(() => {
-      void Promise.resolve(ports.onHeartbeat?.()).catch(() => {});
+      void triggerHeartbeat();
     }, 10_000);
   }
 
@@ -238,6 +253,11 @@ export async function executeFlow(
   }
 
   async function runNode(node: FlowGraphNode): Promise<"ok" | "failed" | "paused"> {
+    if (fenceError) throw fenceError;
+    if (abortController.signal.aborted) {
+      throw (abortController.signal.reason as Error) ?? new Error("Execution aborted.");
+    }
+
     const def = getNode(node.type);
     if (!def) {
       await setStatus({ nodeId: node.id, type: node.type, status: "failed", error: `Unknown node type ${node.type}` });
@@ -252,6 +272,11 @@ export async function executeFlow(
     try {
       const config = def.configSchema.parse(node.config ?? {});
       const result = await def.execute(input, config, { ...ctxBase, nodeId: node.id });
+
+      if (fenceError) throw fenceError;
+      if (abortController.signal.aborted) {
+        throw (abortController.signal.reason as Error) ?? new Error("Execution aborted.");
+      }
 
       const stored =
         result.branch !== undefined ? { __branch: result.branch, value: result.output } : result.output;
@@ -293,10 +318,14 @@ export async function executeFlow(
         activeFanout ? activeFanout.progress : undefined,
       );
 
-      await ports.onHeartbeat?.();
+      await triggerHeartbeat();
       return "ok";
     } catch (error) {
+      if (fenceError) throw fenceError;
       const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Execution fenced") || message.includes("Aborted")) {
+        throw error;
+      }
       await setStatus({
         nodeId: node.id,
         type: node.type,
@@ -386,6 +415,10 @@ export async function executeFlow(
     }
 
     while (frontier.length > 0) {
+      if (fenceError) throw fenceError;
+      if (abortController.signal.aborted) {
+        throw (abortController.signal.reason as Error) ?? new Error("Execution aborted.");
+      }
       if (pendingApproval) return "paused";
 
       // Failed branches must not starve independent healthy ones: on failure
