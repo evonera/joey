@@ -556,7 +556,6 @@ export async function executeFlow(
           if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
         }
         sharedFanoutProgress[itemKey] = done;
-        sharedFanoutProgress[String(i)] = done;
         try {
           await ports.onFanoutProgress?.(sharedFanoutProgress);
         } catch (err: any) {
