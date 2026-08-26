@@ -374,18 +374,57 @@ export function isGraphFullyCompleted(
           }
         }
       }
-      for (let i = 0; i < items.length; i++) {
-        const keySuffix = `${feNode.id}:${i}`;
-        const itemProg =
-          fanoutProgress[keySuffix] ??
-          Object.entries(fanoutProgress).find(([k]) => k === keySuffix || k.endsWith(`/${keySuffix}`))?.[1] ??
-          fanoutProgress[String(i)];
-        if (!itemProg) return false;
-        // Verify every non-skipped node in chain has recorded progress for this item
-        for (const chainId of chainNodes) {
-          const chainStep = stepsByNodeId.get(chainId);
-          if (chainStep?.status === "succeeded" && !(chainId in itemProg)) {
-            return false;
+      // Compute all prefix paths from ancestor loops
+      const ancestorLoops: { id: string; count: number }[] = [];
+      const visited = new Set<string>();
+      const aq = [feNode.id];
+      while (aq.length > 0) {
+        const curr = aq.shift()!;
+        for (const e of edges) {
+          if (e.target === curr && !visited.has(e.source)) {
+            visited.add(e.source);
+            const srcNode = nodes.find((n) => n.id === e.source);
+            if (srcNode && (srcNode.type === "logic.loop" || srcNode.type === "logic.forEach")) {
+              const pStep = stepsByNodeId.get(srcNode.id);
+              const pItems = Array.isArray(pStep?.output)
+                ? pStep.output
+                : Array.isArray(pStep?.input)
+                  ? pStep.input
+                  : (pStep?.input as any)?.data && Array.isArray((pStep?.input as any).data)
+                    ? (pStep?.input as any).data
+                    : null;
+              if (pItems && Array.isArray(pItems)) {
+                ancestorLoops.unshift({ id: srcNode.id, count: pItems.length });
+              }
+            }
+            aq.push(e.source);
+          }
+        }
+      }
+
+      // Generate all fully-qualified prefix paths
+      let prefixes: string[] = [""];
+      for (const anc of ancestorLoops) {
+        const nextPrefixes: string[] = [];
+        for (const p of prefixes) {
+          for (let pi = 0; pi < anc.count; pi++) {
+            nextPrefixes.push(p ? `${p}/${anc.id}:${pi}` : `${anc.id}:${pi}`);
+          }
+        }
+        prefixes = nextPrefixes;
+      }
+
+      for (const prefix of prefixes) {
+        for (let i = 0; i < items.length; i++) {
+          const itemKey = prefix ? `${prefix}/${feNode.id}:${i}` : `${feNode.id}:${i}`;
+          const itemProg = fanoutProgress[itemKey] ?? (prefix === "" ? fanoutProgress[String(i)] : undefined);
+          if (!itemProg) return false;
+          // Verify every non-skipped node in chain has recorded progress for this item
+          for (const chainId of chainNodes) {
+            const chainStep = stepsByNodeId.get(chainId);
+            if (chainStep?.status === "succeeded" && !(chainId in itemProg)) {
+              return false;
+            }
           }
         }
       }
