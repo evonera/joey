@@ -620,6 +620,12 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
   await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
 
   if (!finalResult.persisted) {
+    try {
+      await db
+        .update(flowRuns)
+        .set({ status: "failed", error: finalResult.error || "Failed to persist terminal status.", finishedAt: new Date(), updatedAt: new Date() })
+        .where(eq(flowRuns.id, newRunId));
+    } catch {}
     return { runId: newRunId, error: finalResult.error || "Failed to persist terminal status to database." };
   }
 
