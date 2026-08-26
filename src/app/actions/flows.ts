@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowTemplates, drafts } from "@/lib/db/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import { getActiveTenantId } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
 import { executeFlow } from "@/lib/flows/executor";
@@ -457,61 +457,134 @@ export async function resumeRun(
 /** Re-runs a failed/finished run reusing succeeded node outputs. */
 export async function restartRun(runId: string): Promise<{ runId?: string; error?: string }> {
   const tenantId = await getActiveTenantId();
-  const run = await db.query.flowRuns.findFirst({
-    where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
-  });
-  if (!run) return { error: "Run not found" };
-  if (run.status !== "failed" && run.status !== "succeeded") {
-    return { error: `Cannot restart run with status '${run.status}'. Only completed or failed runs can be restarted.` };
-  }
 
-  // Atomically claim the run for restart by transitioning its status to restarted
-  const [claimed] = await db
-    .update(flowRuns)
-    .set({
-      status: "restarted",
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(flowRuns.id, runId),
-        eq(flowRuns.tenantId, tenantId),
-        eq(flowRuns.status, run.status),
-      ),
-    )
-    .returning();
-
-  if (!claimed) {
-    return { error: "Run was modified or restarted by another request." };
-  }
-
-  const flow = await db.query.flows.findFirst({ where: eq(flows.id, run.flowId) });
-  if (!flow) {
-    await db
-      .update(flowRuns)
-      .set({ status: run.status })
-      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "restarted")));
-    return { error: "Flow not found" };
-  }
+  // Atomically claim the original run and insert the replacement run in a single transaction
+  let newRunId: string;
+  let flow: FlowRow;
+  let cachedSteps: FlowStep[];
+  let fanoutProgress: Record<string, Record<string, unknown>>;
+  let approvedNodeIds: string[];
+  let triggerPayload: unknown;
 
   try {
-    const result = await executeRunWithPorts({
-      flow,
-      tenantId,
-      trigger: run.trigger as "manual",
-      triggerPayload: run.triggerPayload ?? undefined,
-      cachedSteps: (run.steps as FlowStep[]) ?? [],
-      fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
-      approvedNodeIds: (run.approvedNodeIds as string[]) ?? [],
+    const setup = await db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .select()
+        .from(flowRuns)
+        .where(
+          and(
+            eq(flowRuns.id, runId),
+            eq(flowRuns.tenantId, tenantId),
+            inArray(flowRuns.status, ["failed", "succeeded"]),
+          ),
+        )
+        .for("update");
+
+      if (!claimed) {
+        return { error: "Run not found or not in a restartable state (failed or succeeded)." };
+      }
+
+      const flowRecord = await tx.query.flows.findFirst({ where: eq(flows.id, claimed.flowId) });
+      if (!flowRecord) {
+        return { error: "Flow not found" };
+      }
+
+      // Mark original run as restarted
+      await tx
+        .update(flowRuns)
+        .set({ status: "restarted", updatedAt: new Date() })
+        .where(eq(flowRuns.id, runId));
+
+      // Insert the replacement run row atomically
+      const [insertedRun] = await tx
+        .insert(flowRuns)
+        .values({
+          flowId: flowRecord.id,
+          tenantId,
+          trigger: claimed.trigger,
+          triggerPayload: claimed.triggerPayload ?? null,
+          approvedNodeIds: (claimed.approvedNodeIds as string[]) ?? [],
+        })
+        .returning();
+
+      return {
+        flow: flowRecord,
+        newRunId: insertedRun.id,
+        cachedSteps: (claimed.steps as FlowStep[]) ?? [],
+        fanoutProgress: (claimed.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
+        approvedNodeIds: (claimed.approvedNodeIds as string[]) ?? [],
+        triggerPayload: claimed.triggerPayload ?? undefined,
+      };
     });
-    return { runId: result.runId };
+
+    if ("error" in setup) {
+      return { error: setup.error };
+    }
+
+    flow = setup.flow;
+    newRunId = setup.newRunId;
+    cachedSteps = setup.cachedSteps;
+    fanoutProgress = setup.fanoutProgress;
+    approvedNodeIds = setup.approvedNodeIds;
+    triggerPayload = setup.triggerPayload;
   } catch (err: any) {
-    await db
-      .update(flowRuns)
-      .set({ status: run.status })
-      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "restarted")));
-    return { error: err?.message || "Failed to start replacement run." };
+    return { error: err?.message || "Failed to initialize replacement run." };
   }
+
+  // Now execute the replacement run that was already inserted
+  let result;
+  let execError: unknown;
+  try {
+    result = await executeFlow(
+      flow.graph as Parameters<typeof executeFlow>[0],
+      {
+        tenantId,
+        runId: newRunId,
+        flowId: flow.id,
+        triggerPayload,
+        cachedSteps,
+        fanoutProgress,
+        approvedNodeIds,
+      },
+      {
+        onStepUpdate: (step, fanoutProgress) => persistStep(tenantId, newRunId, step, fanoutProgress),
+        onFanoutProgress: async (progress) => {
+          const updated = await db
+            .update(flowRuns)
+            .set({ fanoutProgress: progress, updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, newRunId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+          }
+        },
+        onHeartbeat: async () => {
+          const updated = await db
+            .update(flowRuns)
+            .set({ updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, newRunId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
+          }
+        },
+      },
+    );
+  } catch (err) {
+    execError = err;
+  }
+
+  await finalizeRun(
+    newRunId,
+    tenantId,
+    result
+      ? { status: result.status, steps: result.steps, error: result.error ?? null }
+      : (execError instanceof Error ? execError : new Error(String(execError ?? "Execution crashed"))),
+  );
+
+  await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+
+  return { runId: newRunId };
 }
 
 export async function listRuns(flowId: string): Promise<{ runs: FlowRunRow[] }> {
