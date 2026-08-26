@@ -111,10 +111,8 @@ export const saveAssetNode = defineNode({
         },
       };
     } finally {
-      if (!registered) {
-        await deleteObjectWithRetry(uploaded.key).catch((err) => {
-          console.error(`[storage-cleanup] Failed to delete orphaned object ${uploaded.key}:`, err);
-        });
+      if (!registered && uploaded?.key) {
+        await deleteObjectWithRetry(uploaded.key);
       }
     }
   },

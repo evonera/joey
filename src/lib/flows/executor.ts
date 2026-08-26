@@ -507,7 +507,7 @@ export async function executeFlow(
     const prevFanout = activeFanout;
     try {
       for (let i = 0; i < items.length; i++) {
-        const itemKey = `${loopId}:${i}`;
+        const itemKey = prevFanout ? `${prevFanout.itemKey}/${loopId}:${i}` : `${loopId}:${i}`;
         const checkpoint = { ...(sharedFanoutProgress[itemKey] ?? sharedFanoutProgress[String(i)] ?? {}) };
 
         // Restore this item's already-succeeded chain prefix…

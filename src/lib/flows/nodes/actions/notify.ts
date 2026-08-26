@@ -114,8 +114,6 @@ export const notifyNode = defineNode({
         body,
         tenantId: ctx.tenantId,
         link: fullLink,
-      }).catch((err) => {
-        console.warn("Notification email delivery failed:", err);
       });
     }
 
