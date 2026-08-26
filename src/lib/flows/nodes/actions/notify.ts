@@ -31,11 +31,12 @@ export const notifyNode = defineNode({
     // Atomically check active run status and insert notification in the same transaction
     const emailRecipient = await db.transaction(async (tx) => {
       if (ctx.runId) {
-        const run = await tx.query.flowRuns.findFirst({
-          where: and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")),
-          columns: { id: true },
-        });
-        if (!run) {
+        const [lockedRun] = await tx
+          .select({ id: flowRuns.id })
+          .from(flowRuns)
+          .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")))
+          .for("update");
+        if (!lockedRun) {
           throw new Error("Execution fenced: flow run is no longer running.");
         }
       }

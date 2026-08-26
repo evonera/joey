@@ -278,6 +278,12 @@ export async function executeFlow(
     await setStatus({ nodeId: node.id, type: node.type, status: "working", input, startedAt });
 
     try {
+      await triggerHeartbeat();
+      if (fenceError) throw fenceError;
+      if (abortController.signal.aborted) {
+        throw (abortController.signal.reason as Error) ?? new Error("Execution aborted.");
+      }
+
       const config = def.configSchema.parse(node.config ?? {});
       const result = await def.execute(input, config, { ...ctxBase, nodeId: node.id });
 
