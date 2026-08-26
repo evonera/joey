@@ -375,7 +375,7 @@ export function isGraphFullyCompleted(
         }
       }
       for (let i = 0; i < items.length; i++) {
-        const itemProg = fanoutProgress[String(i)];
+        const itemProg = fanoutProgress[`${feNode.id}:${i}`] ?? fanoutProgress[String(i)];
         if (!itemProg) return false;
         // Verify every non-skipped node in chain has recorded progress for this item
         for (const chainId of chainNodes) {

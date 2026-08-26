@@ -73,6 +73,20 @@ export const imageGenNode = defineNode({
       throw (ctx.signal.reason as Error) ?? new Error("Aborted");
     }
 
+    const { db } = await import("@/lib/db");
+    const { assets, flowRuns } = await import("@/lib/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+
+    if (ctx.runId) {
+      const [activeRun] = await db
+        .select({ id: flowRuns.id })
+        .from(flowRuns)
+        .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")));
+      if (!activeRun) {
+        throw new Error("Execution fenced: flow run is no longer running.");
+      }
+    }
+
     const { buildPublicUrl, uploadBufferToR2, deleteObjectWithRetry } = await import("@/lib/storage");
     const key = `${ctx.tenantId}/${crypto.randomUUID()}.png`;
     const uploaded = await uploadBufferToR2(buffer, "image/png", ctx.tenantId, {
