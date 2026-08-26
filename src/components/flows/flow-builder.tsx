@@ -172,7 +172,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
       edges: rfEdges.map((e) => ({
         from: e.source,
         to: e.target,
-        ...(e.sourceHandle && ["true", "false"].includes(e.sourceHandle) ? { branch: e.sourceHandle } : {}),
+        ...(e.sourceHandle && ["true", "false", "a", "b"].includes(e.sourceHandle) ? { branch: e.sourceHandle } : {}),
       })),
     };
   }

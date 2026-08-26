@@ -38,16 +38,48 @@ export async function POST(
       );
     }
 
-    const payload = await req.json().catch(() => null);
+    const rawBody = await req.text();
+    let payload: unknown = null;
+    try {
+      payload = rawBody ? JSON.parse(rawBody) : {};
+    } catch {
+      payload = rawBody;
+    }
 
-    const result = await startFlowRun({
-      flow,
-      trigger: "webhook",
-      triggerPayload: payload,
+    const { createHash } = await import("crypto");
+    const eventId =
+      req.headers.get("x-webhook-id") ||
+      req.headers.get("x-request-id") ||
+      (payload && typeof payload === "object" && "id" in (payload as Record<string, unknown>) && typeof (payload as Record<string, unknown>).id === "string"
+        ? String((payload as Record<string, unknown>).id)
+        : `flow_wh_${flowId}_${createHash("sha256").update(rawBody).digest("hex")}`);
+
+    const { storeWebhookEvent, markWebhookProcessed } = await import("@/lib/webhooks");
+    const { isDuplicate, event } = await storeWebhookEvent({
+      id: eventId,
+      event: "flow.incoming_webhook",
+      timestamp: new Date().toISOString(),
+      flowId,
+      data: payload,
     });
 
-    void and; // keep import if unused elsewhere
-    return NextResponse.json({ received: true, runId: result.runId, status: result.status });
+    if (isDuplicate) {
+      return NextResponse.json({ received: true, deduplicated: true });
+    }
+
+    try {
+      const result = await startFlowRun({
+        flow,
+        trigger: "webhook",
+        triggerPayload: payload,
+      });
+
+      await markWebhookProcessed(eventId, result.status === "failed" ? "Flow execution failed" : undefined, event?.createdAt);
+      return NextResponse.json({ received: true, runId: result.runId, status: result.status });
+    } catch (err: any) {
+      await markWebhookProcessed(eventId, err?.message || "Flow execution threw an error", event?.createdAt);
+      throw err;
+    }
   } catch (error) {
     console.error("[webhooks/flows]", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

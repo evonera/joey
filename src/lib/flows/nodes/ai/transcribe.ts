@@ -231,6 +231,11 @@ export async function safeRequest(
           headers: opts.headers ?? {},
         },
         (res) => {
+          const cl = res.headers["content-length"];
+          if (cl && Number(cl) > maxBytes) {
+            fail(new Error(`Response content-length (${cl}) exceeded the ${maxBytes} byte limit.`));
+            return;
+          }
           const chunks: Buffer[] = [];
           let total = 0;
           res.on("data", (c: Buffer) => {
