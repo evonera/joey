@@ -339,10 +339,14 @@ export function isGraphFullyCompleted(
   if (!graph || typeof graph !== "object") return false;
   const g = graph as {
     nodes?: { id: string; type: string }[];
-    edges?: { id: string; source: string; target: string; sourceHandle?: string | null }[];
+    edges?: { id: string; from?: string; to?: string; source?: string; target?: string; branch?: string | null; sourceHandle?: string | null }[];
   };
   const nodes = g.nodes ?? [];
-  const edges = g.edges ?? [];
+  const edges = (g.edges ?? []).map((e) => ({
+    source: e.from ?? e.source ?? "",
+    target: e.to ?? e.target ?? "",
+    sourceHandle: e.branch ?? e.sourceHandle ?? null,
+  }));
   if (nodes.length === 0) return false;
 
   const stepsByNodeId = new Map(steps.map((s) => [s.nodeId, s]));
