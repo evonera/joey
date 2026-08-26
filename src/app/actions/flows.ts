@@ -574,7 +574,7 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
     execError = err;
   }
 
-  await finalizeRun(
+  const finalResult = await finalizeRun(
     newRunId,
     tenantId,
     result
@@ -583,6 +583,10 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
   );
 
   await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+
+  if (!finalResult.persisted) {
+    return { runId: newRunId, error: finalResult.error || "Failed to persist terminal status to database." };
+  }
 
   return { runId: newRunId };
 }
