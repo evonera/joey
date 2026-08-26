@@ -289,7 +289,7 @@ export async function executeFlow(
       }
 
       const config = def.configSchema.parse(node.config ?? {});
-      const result = await def.execute(input, config, { ...ctxBase, nodeId: node.id });
+      const result = await def.execute(input, config, { ...ctxBase, nodeId: node.id, itemKey: activeFanout?.itemKey });
 
       if (fenceError) throw fenceError;
       if (abortController.signal.aborted) {

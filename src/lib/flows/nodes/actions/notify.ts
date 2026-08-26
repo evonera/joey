@@ -41,15 +41,17 @@ export const notifyNode = defineNode({
       }
 
       if (ctx.runId && ctx.nodeId) {
+        const itemKey = ctx.itemKey ?? "root";
         const existing = await tx.query.notifications.findFirst({
           where: and(
             eq(notifications.tenantId, ctx.tenantId),
             sql`${notifications.metadata}->>'flowRunId' = ${ctx.runId}`,
             sql`${notifications.metadata}->>'nodeId' = ${ctx.nodeId}`,
+            sql`${notifications.metadata}->>'itemKey' = ${itemKey}`,
           ),
         });
         if (existing) {
-          return null; // Already notified and emailed for this step
+          return null; // Already notified and emailed for this step & item
         }
       }
 
@@ -84,7 +86,7 @@ export const notifyNode = defineNode({
           title: config.title,
           body,
           link: `/flows/runs?runId=${ctx.runId}`,
-          metadata: { flowRunId: ctx.runId, nodeId: ctx.nodeId },
+          metadata: { flowRunId: ctx.runId, nodeId: ctx.nodeId, itemKey: ctx.itemKey ?? "root" },
         });
       }
 
