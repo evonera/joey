@@ -47,8 +47,9 @@ export async function uploadBufferToR2(
   body: Buffer | Uint8Array,
   contentType: string,
   tenantId: string,
+  customKey?: string,
 ): Promise<{ key: string; publicUrl: string }> {
-  const key = `${tenantId}/${crypto.randomUUID()}`;
+  const key = customKey ?? `${tenantId}/${crypto.randomUUID()}`;
   const client = getS3Client();
   await client.send(
     new PutObjectCommand({

@@ -42,51 +42,52 @@ export const saveAssetNode = defineNode({
       throw (ctx.signal.reason as Error) ?? new Error("Aborted");
     }
 
-    const { uploadBufferToR2, deleteObjectWithRetry } = await import("@/lib/storage");
-    const uploaded = await uploadBufferToR2(buffer, contentType.split(";")[0], ctx.tenantId);
+    const { buildPublicUrl, uploadBufferToR2, deleteObjectWithRetry } = await import("@/lib/storage");
+    const ext = url.split("?")[0].split(".").pop() || "bin";
+    const key = `${ctx.tenantId}/${crypto.randomUUID()}.${ext}`;
+    const publicUrl = buildPublicUrl(key);
 
-    let registered = false;
-    let asset: { id: string; publicUrl: string } | undefined;
+    const { db } = await import("@/lib/db");
+    const { assets, flowRuns } = await import("@/lib/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+
+    // 1. Atomically register the asset in database first under active run lock
+    const [asset] = await db.transaction(async (tx) => {
+      if (ctx.runId) {
+        const [lockedRun] = await tx
+          .select({ id: flowRuns.id })
+          .from(flowRuns)
+          .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")))
+          .for("update");
+        if (!lockedRun) {
+          throw new Error("Execution fenced: flow run is no longer running.");
+        }
+      }
+      return await tx
+        .insert(assets)
+        .values({
+          tenantId: ctx.tenantId,
+          filename: config.filename?.trim() || url.split("/").pop()?.split("?")[0] || "flow-asset",
+          key,
+          mimeType: contentType.split(";")[0],
+          size: buffer.length,
+          publicUrl,
+        })
+        .returning({ id: assets.id, publicUrl: assets.publicUrl });
+    });
+
+    // 2. Upload to R2. If upload fails or is aborted, remove the DB asset record and clean up R2
+    let uploaded = false;
     try {
       if (ctx.signal?.aborted) {
         throw (ctx.signal.reason as Error) ?? new Error("Aborted");
       }
-
-      // Register the asset with a direct tenant-scoped insert — registerAsset
-      // requires a browser session and would throw Unauthorized during
-      // scheduled/webhook runs.
-      const { db } = await import("@/lib/db");
-      const { assets, flowRuns } = await import("@/lib/db/schema");
-      const { eq, and } = await import("drizzle-orm");
-
-      [asset] = await db.transaction(async (tx) => {
-        if (ctx.runId) {
-          const [lockedRun] = await tx
-            .select({ id: flowRuns.id })
-            .from(flowRuns)
-            .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")))
-            .for("update");
-          if (!lockedRun) {
-            throw new Error("Execution fenced: flow run is no longer running.");
-          }
-        }
-        return await tx
-          .insert(assets)
-          .values({
-            tenantId: ctx.tenantId,
-            filename: config.filename?.trim() || url.split("/").pop()?.split("?")[0] || "flow-asset",
-            key: uploaded.key,
-            mimeType: contentType.split(";")[0],
-            size: buffer.length,
-            publicUrl: uploaded.publicUrl,
-          })
-          .returning({ id: assets.id, publicUrl: assets.publicUrl });
-      });
-      registered = true;
+      await uploadBufferToR2(buffer, contentType.split(";")[0], ctx.tenantId, key);
+      uploaded = true;
 
       return {
         output: {
-          publicUrl: asset?.publicUrl ?? uploaded.publicUrl,
+          publicUrl: asset?.publicUrl ?? publicUrl,
           assetId: asset?.id,
           size: buffer.length,
           contentType,
@@ -94,8 +95,9 @@ export const saveAssetNode = defineNode({
         },
       };
     } finally {
-      if (!registered) {
-        await deleteObjectWithRetry(uploaded.key);
+      if (!uploaded) {
+        await db.delete(assets).where(eq(assets.id, asset.id)).catch(() => {});
+        await deleteObjectWithRetry(key).catch(() => {});
       }
     }
   },
