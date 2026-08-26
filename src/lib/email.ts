@@ -68,5 +68,9 @@ export async function sendNotificationEmail({ to, subject, body, tenantId, link 
     </div>
   `;
 
-  return sendEmail({ to, subject, html });
+  const res = await sendEmail({ to, subject, html });
+  if (!res.success) {
+    throw new Error(`Failed to send notification email: ${res.error || "Unknown error"}`);
+  }
+  return res;
 }

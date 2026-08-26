@@ -127,19 +127,31 @@ export const notifyNode = defineNode({
         link: fullLink,
       });
 
-      // 3. Mark email as confirmed sent
+      // 3. Mark email as confirmed sent under run status lock
       if (initialRecord.notificationId) {
-        await db
-          .update(notifications)
-          .set({
-            metadata: {
-              flowRunId: ctx.runId,
-              nodeId: ctx.nodeId,
-              itemKey: ctx.itemKey ?? "root",
-              emailStatus: "sent",
-            },
-          })
-          .where(eq(notifications.id, initialRecord.notificationId));
+        await db.transaction(async (tx) => {
+          if (ctx.runId) {
+            const [lockedRun] = await tx
+              .select({ id: flowRuns.id })
+              .from(flowRuns)
+              .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")))
+              .for("update");
+            if (!lockedRun) {
+              throw new Error("Execution fenced: flow run is no longer running.");
+            }
+          }
+          await tx
+            .update(notifications)
+            .set({
+              metadata: {
+                flowRunId: ctx.runId,
+                nodeId: ctx.nodeId,
+                itemKey: ctx.itemKey ?? "root",
+                emailStatus: "sent",
+              },
+            })
+            .where(eq(notifications.id, initialRecord.notificationId!));
+        });
       }
     }
 
