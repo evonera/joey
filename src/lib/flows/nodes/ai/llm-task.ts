@@ -45,6 +45,7 @@ export const llmTaskNode = defineNode({
       ],
       jsonSchema,
       maxTokens: config.maxTokens,
+      signal: ctx.signal,
     });
 
     // A configured schema is a contract: never fall back to raw text or schema-invalid data.

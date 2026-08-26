@@ -52,6 +52,7 @@ export async function runLlm(opts: {
   /** Optional JSON schema (as plain object) to force structured output. */
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
+  signal?: AbortSignal;
 }): Promise<LlmResult> {
   const apiKey = await resolveKey(opts.tenantId, opts.provider);
 
@@ -60,27 +61,30 @@ export async function runLlm(opts: {
     const client = new Anthropic({ apiKey });
     const system = opts.messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
     const rest = opts.messages.filter((m) => m.role !== "system");
-    const response = await client.messages.create({
-      model: opts.model,
-      max_tokens: opts.maxTokens ?? 2048,
-      system: system || undefined,
-      messages: rest.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
-      ...(opts.jsonSchema
-        ? {
-            tool_choice: { type: "tool", name: "emit_result" },
-            tools: [
-              {
-                name: "emit_result",
-                description: "Return the structured result",
-                input_schema: opts.jsonSchema as Parameters<never>[0] extends never ? never : Record<string, unknown>,
-              },
-            ],
-          }
-        : {}),
-    });
+    const response = await client.messages.create(
+      {
+        model: opts.model,
+        max_tokens: opts.maxTokens ?? 2048,
+        system: system || undefined,
+        messages: rest.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+        ...(opts.jsonSchema
+          ? {
+              tool_choice: { type: "tool", name: "emit_result" },
+              tools: [
+                {
+                  name: "emit_result",
+                  description: "Return the structured result",
+                  input_schema: opts.jsonSchema as Parameters<never>[0] extends never ? never : Record<string, unknown>,
+                },
+              ],
+            }
+          : {}),
+      },
+      { signal: opts.signal },
+    );
     try {
       await recordUsage(opts.tenantId, response.usage.input_tokens, response.usage.output_tokens);
     } catch {
@@ -96,14 +100,17 @@ export async function runLlm(opts: {
       );
     }
 
-    const block = response.content[0];
     let text = "";
     let json: unknown;
-    if (block && block.type === "tool_use") {
-      json = block.input;
-      text = JSON.stringify(block.input);
-    } else if (block && block.type === "text") {
-      text = block.text;
+    for (const block of response.content) {
+      if (block.type === "text") {
+        text += block.text;
+      } else if (block.type === "tool_use") {
+        json = block.input;
+        text = typeof block.input === "string" ? block.input : JSON.stringify(block.input);
+      }
+    }
+    if (json === undefined && text) {
       json = tryParse(text);
     }
     return { text, json };
@@ -126,12 +133,15 @@ export async function runLlm(opts: {
       }
     : undefined;
 
-  const response = await client.chat.completions.create({
-    model: opts.model,
-    messages: opts.messages,
-    max_tokens: opts.maxTokens ?? 2048,
-    ...(completionFormat ? { response_format: completionFormat } : {}),
-  });
+  const response = await client.chat.completions.create(
+    {
+      model: opts.model,
+      messages: opts.messages,
+      max_tokens: opts.maxTokens ?? 2048,
+      ...(completionFormat ? { response_format: completionFormat } : {}),
+    },
+    { signal: opts.signal },
+  );
   try {
     await recordUsage(
       opts.tenantId,
