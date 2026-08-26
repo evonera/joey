@@ -46,40 +46,50 @@ export async function POST(
       payload = rawBody;
     }
 
-    const { createHash } = await import("crypto");
-    const eventId =
+    const explicitId =
       req.headers.get("x-webhook-id") ||
       req.headers.get("x-request-id") ||
+      req.headers.get("x-idempotency-key") ||
       (payload && typeof payload === "object" && "id" in (payload as Record<string, unknown>) && typeof (payload as Record<string, unknown>).id === "string"
         ? String((payload as Record<string, unknown>).id)
-        : `flow_wh_${flowId}_${createHash("sha256").update(rawBody).digest("hex")}`);
+        : null);
 
-    const { storeWebhookEvent, markWebhookProcessed } = await import("@/lib/webhooks");
-    const { isDuplicate, event } = await storeWebhookEvent({
-      id: eventId,
-      event: "flow.incoming_webhook",
-      timestamp: new Date().toISOString(),
-      flowId,
-      data: payload,
-    });
-
-    if (isDuplicate) {
-      return NextResponse.json({ received: true, deduplicated: true });
-    }
-
-    try {
-      const result = await startFlowRun({
-        flow,
-        trigger: "webhook",
-        triggerPayload: payload,
+    if (explicitId) {
+      const { storeWebhookEvent, markWebhookProcessed } = await import("@/lib/webhooks");
+      const { isDuplicate, event } = await storeWebhookEvent({
+        id: explicitId,
+        event: "flow.incoming_webhook",
+        timestamp: new Date().toISOString(),
+        flowId,
+        data: payload,
       });
 
-      await markWebhookProcessed(eventId, result.status === "failed" ? "Flow execution failed" : undefined, event?.createdAt);
-      return NextResponse.json({ received: true, runId: result.runId, status: result.status });
-    } catch (err: any) {
-      await markWebhookProcessed(eventId, err?.message || "Flow execution threw an error", event?.createdAt);
-      throw err;
+      if (isDuplicate) {
+        return NextResponse.json({ received: true, deduplicated: true });
+      }
+
+      try {
+        const result = await startFlowRun({
+          flow,
+          trigger: "webhook",
+          triggerPayload: payload,
+        });
+
+        await markWebhookProcessed(explicitId, result.status === "failed" ? "Flow execution failed" : undefined, event?.createdAt);
+        return NextResponse.json({ received: true, runId: result.runId, status: result.status });
+      } catch (err: any) {
+        await markWebhookProcessed(explicitId, err?.message || "Flow execution threw an error", event?.createdAt);
+        throw err;
+      }
     }
+
+    const result = await startFlowRun({
+      flow,
+      trigger: "webhook",
+      triggerPayload: payload,
+    });
+
+    return NextResponse.json({ received: true, runId: result.runId, status: result.status });
   } catch (error) {
     console.error("[webhooks/flows]", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
