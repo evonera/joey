@@ -73,10 +73,28 @@ function isPrivateIp(ip: string): boolean {
   if (normalized === "::1" || normalized === "::") return true;
   if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // ULA
   if (normalized.startsWith("fe80")) return true; // link-local
-  const mappedIpv4 = normalized.match(/^::ffff:(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (normalized.startsWith("ff")) return true; // multicast
+
+  // Dotted IPv4-mapped IPv6 (::ffff:10.0.0.1)
+  const mappedIpv4 = normalized.match(/^(?:0*:)*ffff:(\d+)\.(\d+)\.(\d+)\.(\d+)$/i);
   if (mappedIpv4 && isPrivateIp(mappedIpv4.slice(1).join("."))) {
     return true;
   }
+
+  // Hexadecimal IPv4-mapped IPv6 (::ffff:0a00:0001 or ::ffff:a00:1)
+  const hexMapped = normalized.match(/^(?:0*:)*ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (hexMapped) {
+    const high = parseInt(hexMapped[1], 16);
+    const low = parseInt(hexMapped[2], 16);
+    const a = (high >> 8) & 0xff;
+    const b = high & 0xff;
+    const c = (low >> 8) & 0xff;
+    const d = low & 0xff;
+    if (isPrivateIp(`${a}.${b}.${c}.${d}`)) {
+      return true;
+    }
+  }
+
   return false;
 }
 
