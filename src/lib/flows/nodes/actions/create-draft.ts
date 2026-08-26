@@ -25,6 +25,10 @@ export const createDraftNode = defineNode({
       throw new Error("No content to draft — incoming data was empty.");
     }
 
+    if (ctx.signal?.aborted) {
+      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+    }
+
     const [draft] = await db
       .insert(drafts)
       .values({

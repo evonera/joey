@@ -20,6 +20,10 @@ export const notifyNode = defineNode({
       ? config.messageTemplate.replaceAll("{{input}}", safeStringify(input))
       : (config.messageTemplate ?? safeStringify(input)).slice(0, 500);
 
+    if (ctx.signal?.aborted) {
+      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+    }
+
     await createNotification(ctx.tenantId, "draft_ready", config.title, body, {
       link: `/flows/runs?runId=${ctx.runId}`,
       metadata: { flowRunId: ctx.runId },

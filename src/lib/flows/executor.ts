@@ -170,7 +170,15 @@ export async function executeFlow(
     fanoutProgress?: Record<string, Record<string, unknown>>,
   ) => {
     steps.set(step.nodeId, step);
-    await ports.onStepUpdate?.(step, fanoutProgress);
+    try {
+      await ports.onStepUpdate?.(step, fanoutProgress);
+    } catch (err: any) {
+      if (!fenceError) {
+        fenceError = err instanceof Error ? err : new Error(String(err));
+        abortController.abort(fenceError);
+      }
+      throw fenceError;
+    }
   };
 
   function branchOf(id: string): string | undefined {
@@ -539,7 +547,15 @@ export async function executeFlow(
         if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
       }
       progress[itemKey] = done;
-      await ports.onFanoutProgress?.(progress);
+      try {
+        await ports.onFanoutProgress?.(progress);
+      } catch (err: any) {
+        if (!fenceError) {
+          fenceError = err instanceof Error ? err : new Error(String(err));
+          abortController.abort(fenceError);
+        }
+        throw fenceError;
+      }
 
       if (outcome !== "completed") return outcome;
 
