@@ -92,3 +92,20 @@ export async function deleteObject(key: string) {
   });
   return client.send(command);
 }
+
+/** Robust compensating deletion for unreferenced uploads with backoff retries. */
+export async function deleteObjectWithRetry(key: string, maxAttempts = 3): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await deleteObject(key);
+      return true;
+    } catch (err) {
+      if (attempt === maxAttempts) {
+        console.error(`Failed to delete R2 object (${key}) after ${maxAttempts} attempts:`, err);
+        return false;
+      }
+      await new Promise((res) => setTimeout(res, 200 * attempt));
+    }
+  }
+  return false;
+}

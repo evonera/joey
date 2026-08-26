@@ -42,7 +42,7 @@ export const saveAssetNode = defineNode({
       throw (ctx.signal.reason as Error) ?? new Error("Aborted");
     }
 
-    const { uploadBufferToR2, deleteObject } = await import("@/lib/storage");
+    const { uploadBufferToR2, deleteObjectWithRetry } = await import("@/lib/storage");
     const uploaded = await uploadBufferToR2(buffer, contentType.split(";")[0], ctx.tenantId);
 
     let registered = false;
@@ -94,7 +94,7 @@ export const saveAssetNode = defineNode({
       };
     } finally {
       if (!registered) {
-        await deleteObject(uploaded.key).catch(() => {});
+        await deleteObjectWithRetry(uploaded.key);
       }
     }
   },
