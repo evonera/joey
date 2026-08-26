@@ -41,9 +41,10 @@ export const httpNode = defineNode({
       }
     }
 
-    if (config.allowPrivateHosts) {
-      // Trusted opt-out: plain fetch (LAN/self-host APIs). Only for users who
-      // explicitly enable it — webhook-reachable flows should stay safe.
+    const hasDynamicUrl = config.url.includes("{{input}}");
+    if (config.allowPrivateHosts && !hasDynamicUrl) {
+      // Trusted opt-out: plain fetch for static LAN/self-host APIs only.
+      // Dynamic/webhook-derived URLs must always go through the SSRF-safe path.
       const response = await fetch(url, {
         method: config.method,
         headers,
