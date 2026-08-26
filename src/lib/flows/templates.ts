@@ -209,19 +209,18 @@ export const officialTemplates: OfficialTemplate[] = [
           size: "1024x1024",
           quality: "medium",
         }),
-        node("s1", "action.save_asset", 760, { filename: "daily-image" }),
-        node("a2", "ai.llm", 1000, {
+        node("a2", "ai.llm", 760, {
           provider: "openai",
           model: "gpt-4o-mini",
           systemPrompt:
             "Write a short caption (<=200 chars) to accompany this image on Instagram. Reference the image concept but let it speak. No hashtags.",
           userTemplate: "{{input}}",
         }),
-        node("d1", "action.create_draft", 1240, { platform: "facebook" }),
+        node("d1", "action.create_draft", 1020, { platform: "facebook" }),
       ],
       edges: [
-        edge("t1", "a1"), edge("a1", "i1"), edge("i1", "s1"),
-        edge("s1", "a2"), edge("a2", "d1"),
+        edge("t1", "a1"), edge("a1", "i1"),
+        edge("i1", "a2"), edge("a2", "d1"),
       ],
     },
   },

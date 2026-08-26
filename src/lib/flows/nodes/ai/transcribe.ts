@@ -184,6 +184,23 @@ export async function safeRequest(
   const timeoutMs = opts.timeoutMs ?? 60_000;
 
   return new Promise<SafeRequestResult>((resolve, reject) => {
+    let done = false;
+    let timer: NodeJS.Timeout | undefined;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+    };
+
+    const fail = (err: Error) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      req.destroy();
+      reject(err);
+    };
+
+    timer = setTimeout(() => fail(new Error("Request timed out.")), timeoutMs);
+
     const req = requester(
       {
         protocol: url.protocol,
@@ -199,15 +216,6 @@ export async function safeRequest(
       (res) => {
         const chunks: Buffer[] = [];
         let total = 0;
-        let done = false;
-        const fail = (err: Error) => {
-          if (done) return;
-          done = true;
-          clearTimeout(timer);
-          req.destroy();
-          reject(err);
-        };
-        const timer = setTimeout(() => fail(new Error("Request timed out.")), timeoutMs);
         res.on("data", (c: Buffer) => {
           if (done) return;
           total += c.length;
@@ -220,7 +228,7 @@ export async function safeRequest(
         res.on("end", () => {
           if (done) return;
           done = true;
-          clearTimeout(timer);
+          cleanup();
           resolve({
             status: res.statusCode ?? 0,
             headers: res.headers,
@@ -230,10 +238,10 @@ export async function safeRequest(
         res.on("error", (err) => fail(err));
       },
     );
-    req.on("error", (err) => reject(err));
+    req.on("error", (err) => fail(err));
     const signal = opts.signal;
     if (signal) {
-      const abort = () => req.destroy(new Error("Aborted"));
+      const abort = () => fail(new Error("Aborted"));
       if (signal.aborted) abort();
       else signal.addEventListener("abort", abort, { once: true });
     }

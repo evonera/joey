@@ -91,10 +91,10 @@ export async function startFlowRun(opts: {
       status: result.status,
       steps: result.steps,
       error: result.error ?? null,
-      finishedAt: new Date(),
+      finishedAt: result.status === "waiting_approval" ? null : new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(flowRuns.id, run.id));
+    .where(fenceWhere());
 
   await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
 

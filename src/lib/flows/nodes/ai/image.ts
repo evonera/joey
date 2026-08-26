@@ -55,19 +55,35 @@ export const imageGenNode = defineNode({
     const remoteUrl = result.data?.[0]?.url;
     let publicUrl: string;
 
+    let buffer: Buffer;
     if (b64) {
-      const { uploadBufferToR2 } = await import("@/lib/storage");
-      const uploaded = await uploadBufferToR2(
-        Buffer.from(b64, "base64"),
-        "image/png",
-        ctx.tenantId,
-      );
-      publicUrl = uploaded.publicUrl;
+      buffer = Buffer.from(b64, "base64");
     } else if (remoteUrl) {
-      publicUrl = remoteUrl;
+      const { fetchSafeMedia } = await import("./transcribe");
+      const safe = await fetchSafeMedia(remoteUrl, ctx.signal);
+      buffer = safe.buffer;
     } else {
       throw new Error("Image generation returned no output.");
     }
+
+    const { uploadBufferToR2 } = await import("@/lib/storage");
+    const uploaded = await uploadBufferToR2(buffer, "image/png", ctx.tenantId);
+    publicUrl = uploaded.publicUrl;
+
+    // Register asset in the library so it appears in assets list and drafts can use it
+    const { db } = await import("@/lib/db");
+    const { assets } = await import("@/lib/db/schema");
+    const [asset] = await db
+      .insert(assets)
+      .values({
+        tenantId: ctx.tenantId,
+        filename: `generated-image-${Date.now()}.png`,
+        key: uploaded.key,
+        mimeType: "image/png",
+        size: buffer.length,
+        publicUrl: uploaded.publicUrl,
+      })
+      .returning({ id: assets.id, publicUrl: assets.publicUrl });
 
     try {
       // gpt-image-1 medium ≈ $0.03–0.07; record rough token-equivalent cost.
@@ -77,6 +93,6 @@ export const imageGenNode = defineNode({
       // ignore
     }
 
-    return { output: { imageUrl: publicUrl, prompt } };
+    return { output: { imageUrl: asset?.publicUrl ?? publicUrl, assetId: asset?.id, prompt } };
   },
 });
