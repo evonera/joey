@@ -79,7 +79,7 @@ export const notifyNode = defineNode({
         });
         if (existing) {
           const emailStatus = (existing.metadata as Record<string, unknown>)?.emailStatus;
-          if (emailStatus === "sent" || emailStatus === "not_required" || !emailRecipient) {
+          if (emailStatus === "sent" || emailStatus === "sending" || emailStatus === "not_required" || !emailRecipient) {
             return { alreadyDone: true, notificationId: existing.id };
           }
           return { alreadyDone: false, notificationId: existing.id };
@@ -116,13 +116,29 @@ export const notifyNode = defineNode({
     // 2. If email is required, send it now with active run fence and idempotencyKey
     if (emailRecipient && !ctx.signal?.aborted) {
       if (ctx.runId) {
-        const [activeRun] = await db
-          .select({ id: flowRuns.id })
-          .from(flowRuns)
-          .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")));
-        if (!activeRun || ctx.signal?.aborted) {
-          throw (ctx.signal?.reason as Error) ?? new Error("Execution fenced: flow run is no longer running.");
-        }
+        await db.transaction(async (tx) => {
+          const [lockedRun] = await tx
+            .select({ id: flowRuns.id })
+            .from(flowRuns)
+            .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")))
+            .for("update");
+          if (!lockedRun || ctx.signal?.aborted) {
+            throw (ctx.signal?.reason as Error) ?? new Error("Execution fenced: flow run is no longer running.");
+          }
+          if (initialRecord.notificationId) {
+            await tx
+              .update(notifications)
+              .set({
+                metadata: {
+                  flowRunId: ctx.runId,
+                  nodeId: ctx.nodeId,
+                  itemKey: ctx.itemKey ?? "root",
+                  emailStatus: "sending",
+                },
+              })
+              .where(eq(notifications.id, initialRecord.notificationId));
+          }
+        });
       }
 
       const { sendNotificationEmail } = await import("@/lib/email");
