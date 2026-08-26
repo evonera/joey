@@ -113,7 +113,7 @@ export const notifyNode = defineNode({
       return { output: input };
     }
 
-    // 2. If email is required, send it now with active run fence and idempotencyKey
+    // 2. If email is required, send it now under transactional run status fence with idempotencyKey
     if (emailRecipient && !ctx.signal?.aborted) {
       if (ctx.runId) {
         await db.transaction(async (tx) => {
