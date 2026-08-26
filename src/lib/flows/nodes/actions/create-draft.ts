@@ -44,11 +44,13 @@ export const createDraftNode = defineNode({
       }
 
       if (ctx.runId && ctx.nodeId) {
+        const itemKey = ctx.itemKey ?? "root";
         const existing = await tx.query.drafts.findFirst({
           where: and(
             eq(drafts.tenantId, ctx.tenantId),
             sql`${drafts.platformOptions}->>'flowRunId' = ${ctx.runId}`,
             sql`${drafts.platformOptions}->>'nodeId' = ${ctx.nodeId}`,
+            sql`${drafts.platformOptions}->>'itemKey' = ${itemKey}`,
           ),
         });
         if (existing) return existing;
@@ -66,6 +68,7 @@ export const createDraftNode = defineNode({
             source: "flow",
             flowRunId: ctx.runId,
             nodeId: ctx.nodeId,
+            itemKey: ctx.itemKey ?? "root",
           },
         })
         .returning();

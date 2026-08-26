@@ -7,6 +7,7 @@ export type NodeContext = {
   runId: string;
   flowId: string;
   nodeId: string;
+  itemKey?: string;
   triggerPayload?: unknown;
   /** Approval-gate node ids already approved for this run (resume path). */
   approvedNodeIds?: string[];
