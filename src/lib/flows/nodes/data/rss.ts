@@ -67,33 +67,52 @@ export const rssNode = defineNode({
 
     // SSRF-safe fetch: DNS-pinned to a validated public IP, private/metadata
     // destinations rejected, redirects re-validated per hop, body capped at
-    // 5MB and hard 60s timeout.
+    // 5MB within a single overall 60s timeout.
     const { safeRequest } = await import("../ai/transcribe");
-    let currentUrl = config.url;
-    let redirects = 0;
-    let xml = "";
-    while (redirects <= 5) {
-      const { status, headers, buffer } = await safeRequest(currentUrl, {
-        method: "GET",
-        signal: ctx.signal,
-        maxBytes: 5 * 1024 * 1024,
-        headers: { "User-Agent": "Joey/1.0 (+https://joey.evonera.com)", accept: "*/*" },
-      });
-      if (status >= 300 && status < 400) {
-        const location = Array.isArray(headers.location) ? headers.location[0] : headers.location;
-        if (!location) throw new Error(`Feed redirect (${status}) missing location header.`);
-        currentUrl = new URL(location, currentUrl).toString();
-        redirects++;
-        continue;
-      }
-      if (status < 200 || status >= 300) {
-        throw new Error(`Feed returned HTTP ${status}.`);
-      }
-      xml = buffer.toString("utf8");
-      break;
-    }
-    if (!xml) throw new Error("Feed returned an empty body.");
+    const abortCtrl = new AbortController();
+    const timer = setTimeout(() => {
+      abortCtrl.abort(new Error("RSS feed request timed out."));
+    }, 60_000);
 
-    return { output: parseFeed(xml, config.limit) };
+    const onExternalAbort = () => {
+      abortCtrl.abort(ctx.signal?.reason ?? new Error("Aborted"));
+    };
+    if (ctx.signal) {
+      if (ctx.signal.aborted) onExternalAbort();
+      else ctx.signal.addEventListener("abort", onExternalAbort, { once: true });
+    }
+
+    try {
+      let currentUrl = config.url;
+      let redirects = 0;
+      let xml = "";
+      while (redirects <= 5) {
+        const { status, headers, buffer } = await safeRequest(currentUrl, {
+          method: "GET",
+          signal: abortCtrl.signal,
+          timeoutMs: 60_000,
+          maxBytes: 5 * 1024 * 1024,
+          headers: { "User-Agent": "Joey/1.0 (+https://joey.evonera.com)", accept: "*/*" },
+        });
+        if (status >= 300 && status < 400) {
+          const location = Array.isArray(headers.location) ? headers.location[0] : headers.location;
+          if (!location) throw new Error(`Feed redirect (${status}) missing location header.`);
+          currentUrl = new URL(location, currentUrl).toString();
+          redirects++;
+          continue;
+        }
+        if (status < 200 || status >= 300) {
+          throw new Error(`Feed returned HTTP ${status}.`);
+        }
+        xml = buffer.toString("utf8");
+        break;
+      }
+      if (!xml) throw new Error("Feed returned an empty body.");
+
+      return { output: parseFeed(xml, config.limit) };
+    } finally {
+      clearTimeout(timer);
+      if (ctx.signal) ctx.signal.removeEventListener("abort", onExternalAbort);
+    }
   },
 });

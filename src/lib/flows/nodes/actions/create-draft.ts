@@ -13,8 +13,6 @@ export const createDraftNode = defineNode({
   outputs: ["draft"],
   configSchema,
   async execute(input, rawConfig, ctx) {
-    const { db } = await import("@/lib/db");
-    const { drafts } = await import("@/lib/db/schema");
     const config = configSchema.parse(rawConfig);
 
     const content =
@@ -29,20 +27,37 @@ export const createDraftNode = defineNode({
       throw (ctx.signal.reason as Error) ?? new Error("Aborted");
     }
 
-    const [draft] = await db
-      .insert(drafts)
-      .values({
-        tenantId: ctx.tenantId,
-        content,
-        status: "pending_review",
-        platformOptions: {
-          platform: config.platform,
-          ...(config.accountId ? { accountId: config.accountId } : {}),
-          source: "flow",
-          flowRunId: ctx.runId,
-        },
-      })
-      .returning();
+    const { db } = await import("@/lib/db");
+    const { drafts, flowRuns } = await import("@/lib/db/schema");
+    const { eq, and } = await import("drizzle-orm");
+
+    const draft = await db.transaction(async (tx) => {
+      if (ctx.runId) {
+        const run = await tx.query.flowRuns.findFirst({
+          where: and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")),
+          columns: { id: true },
+        });
+        if (!run) {
+          throw new Error("Execution fenced: flow run is no longer running.");
+        }
+      }
+
+      const [inserted] = await tx
+        .insert(drafts)
+        .values({
+          tenantId: ctx.tenantId,
+          content,
+          status: "pending_review",
+          platformOptions: {
+            platform: config.platform,
+            ...(config.accountId ? { accountId: config.accountId } : {}),
+            source: "flow",
+            flowRunId: ctx.runId,
+          },
+        })
+        .returning();
+      return inserted;
+    });
 
     return { output: { draftId: draft.id, status: draft.status } };
   },

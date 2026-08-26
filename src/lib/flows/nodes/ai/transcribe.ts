@@ -284,38 +284,62 @@ export type SafeRequestResult = {
 export async function fetchSafeMedia(
   initialUrl: string,
   signal?: AbortSignal,
+  timeoutMs = 60_000,
 ): Promise<SafeMediaResult> {
-  let currentUrl = initialUrl;
-  let redirects = 0;
-  const maxRedirects = 5;
+  const abortCtrl = new AbortController();
+  const timer = setTimeout(() => {
+    abortCtrl.abort(new Error("Media download timed out."));
+  }, timeoutMs);
 
-  while (redirects <= maxRedirects) {
-    const { status, headers, buffer } = await safeRequest(currentUrl, {
-      method: "GET",
-      signal,
-    });
-
-    if (status >= 300 && status < 400) {
-      const location = Array.isArray(headers.location) ? headers.location[0] : headers.location;
-      if (!location) {
-        throw new Error(`Redirect response (${status}) missing location header.`);
-      }
-      currentUrl = new URL(location, currentUrl).toString();
-      redirects++;
-      continue;
-    }
-
-    if (status < 200 || status >= 300) {
-      throw new Error(`Failed to download media (${status}).`);
-    }
-
-    const contentType =
-      (Array.isArray(headers["content-type"]) ? headers["content-type"][0] : headers["content-type"]) ??
-      "application/octet-stream";
-    return { buffer, contentType, finalUrl: currentUrl };
+  const onExternalAbort = () => {
+    abortCtrl.abort(signal?.reason ?? new Error("Aborted"));
+  };
+  if (signal) {
+    if (signal.aborted) onExternalAbort();
+    else signal.addEventListener("abort", onExternalAbort, { once: true });
   }
 
-  throw new Error("Too many redirects when downloading media.");
+  const cleanup = () => {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", onExternalAbort);
+  };
+
+  try {
+    let currentUrl = initialUrl;
+    let redirects = 0;
+    const maxRedirects = 5;
+
+    while (redirects <= maxRedirects) {
+      const { status, headers, buffer } = await safeRequest(currentUrl, {
+        method: "GET",
+        signal: abortCtrl.signal,
+        timeoutMs,
+      });
+
+      if (status >= 300 && status < 400) {
+        const location = Array.isArray(headers.location) ? headers.location[0] : headers.location;
+        if (!location) {
+          throw new Error(`Redirect response (${status}) missing location header.`);
+        }
+        currentUrl = new URL(location, currentUrl).toString();
+        redirects++;
+        continue;
+      }
+
+      if (status < 200 || status >= 300) {
+        throw new Error(`Failed to download media (${status}).`);
+      }
+
+      const contentType =
+        (Array.isArray(headers["content-type"]) ? headers["content-type"][0] : headers["content-type"]) ??
+        "application/octet-stream";
+      return { buffer, contentType, finalUrl: currentUrl };
+    }
+
+    throw new Error("Too many redirects when downloading media.");
+  } finally {
+    cleanup();
+  }
 }
 
 function extractUrl(input: unknown, field?: string): string | undefined {

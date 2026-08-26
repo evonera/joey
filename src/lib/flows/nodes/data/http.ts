@@ -60,34 +60,53 @@ export const httpNode = defineNode({
     }
 
     // SSRF-safe path: DNS-pinned, private/metadata destinations rejected,
-    // redirects re-validated per hop (max 5).
+    // redirects re-validated per hop (max 5) within a single overall 60s timeout.
     const { safeRequest } = await import("../ai/transcribe");
-    let currentUrl = url;
-    let redirects = 0;
-    while (redirects <= 5) {
-      const { status, headers: resHeaders, buffer } = await safeRequest(currentUrl, {
-        method: config.method,
-        headers,
-        body,
-        signal: ctx.signal,
-      });
+    const abortCtrl = new AbortController();
+    const timer = setTimeout(() => {
+      abortCtrl.abort(new Error("HTTP request timed out."));
+    }, 60_000);
 
-      if (status >= 300 && status < 400) {
-        const location = Array.isArray(resHeaders.location) ? resHeaders.location[0] : resHeaders.location;
-        if (!location) throw new Error(`Redirect response (${status}) missing location header.`);
-        currentUrl = new URL(location, currentUrl).toString();
-        redirects++;
-        continue;
-      }
-      if (status < 200 || status >= 300) {
-        throw new Error(`HTTP ${status} from ${url}: ${buffer.toString("utf8").slice(0, 300)}`);
-      }
-
-      const text = buffer.toString("utf8");
-      let parsed: unknown = text;
-      try { parsed = JSON.parse(text); } catch { /* keep text */ }
-      return { output: parsed };
+    const onExternalAbort = () => {
+      abortCtrl.abort(ctx.signal?.reason ?? new Error("Aborted"));
+    };
+    if (ctx.signal) {
+      if (ctx.signal.aborted) onExternalAbort();
+      else ctx.signal.addEventListener("abort", onExternalAbort, { once: true });
     }
-    throw new Error("Too many redirects.");
+
+    try {
+      let currentUrl = url;
+      let redirects = 0;
+      while (redirects <= 5) {
+        const { status, headers: resHeaders, buffer } = await safeRequest(currentUrl, {
+          method: config.method,
+          headers,
+          body,
+          signal: abortCtrl.signal,
+          timeoutMs: 60_000,
+        });
+
+        if (status >= 300 && status < 400) {
+          const location = Array.isArray(resHeaders.location) ? resHeaders.location[0] : resHeaders.location;
+          if (!location) throw new Error(`Redirect response (${status}) missing location header.`);
+          currentUrl = new URL(location, currentUrl).toString();
+          redirects++;
+          continue;
+        }
+        if (status < 200 || status >= 300) {
+          throw new Error(`HTTP ${status} from ${url}: ${buffer.toString("utf8").slice(0, 300)}`);
+        }
+
+        const text = buffer.toString("utf8");
+        let parsed: unknown = text;
+        try { parsed = JSON.parse(text); } catch { /* keep text */ }
+        return { output: parsed };
+      }
+      throw new Error("Too many redirects.");
+    } finally {
+      clearTimeout(timer);
+      if (ctx.signal) ctx.signal.removeEventListener("abort", onExternalAbort);
+    }
   },
 });

@@ -42,38 +42,60 @@ export const saveAssetNode = defineNode({
       throw (ctx.signal.reason as Error) ?? new Error("Aborted");
     }
 
-    const { uploadBufferToR2 } = await import("@/lib/storage");
+    const { uploadBufferToR2, deleteObject } = await import("@/lib/storage");
     const uploaded = await uploadBufferToR2(buffer, contentType.split(";")[0], ctx.tenantId);
 
-    if (ctx.signal?.aborted) {
-      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+    let registered = false;
+    let asset: { id: string; publicUrl: string } | undefined;
+    try {
+      if (ctx.signal?.aborted) {
+        throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+      }
+
+      // Register the asset with a direct tenant-scoped insert — registerAsset
+      // requires a browser session and would throw Unauthorized during
+      // scheduled/webhook runs.
+      const { db } = await import("@/lib/db");
+      const { assets, flowRuns } = await import("@/lib/db/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      [asset] = await db.transaction(async (tx) => {
+        if (ctx.runId) {
+          const run = await tx.query.flowRuns.findFirst({
+            where: and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")),
+            columns: { id: true },
+          });
+          if (!run) {
+            throw new Error("Execution fenced: flow run is no longer running.");
+          }
+        }
+        return await tx
+          .insert(assets)
+          .values({
+            tenantId: ctx.tenantId,
+            filename: config.filename?.trim() || url.split("/").pop()?.split("?")[0] || "flow-asset",
+            key: uploaded.key,
+            mimeType: contentType.split(";")[0],
+            size: buffer.length,
+            publicUrl: uploaded.publicUrl,
+          })
+          .returning({ id: assets.id, publicUrl: assets.publicUrl });
+      });
+      registered = true;
+
+      return {
+        output: {
+          publicUrl: asset?.publicUrl ?? uploaded.publicUrl,
+          assetId: asset?.id,
+          size: buffer.length,
+          contentType,
+          source: finalUrl,
+        },
+      };
+    } finally {
+      if (!registered) {
+        await deleteObject(uploaded.key).catch(() => {});
+      }
     }
-
-    // Register the asset with a direct tenant-scoped insert — registerAsset
-    // requires a browser session and would throw Unauthorized during
-    // scheduled/webhook runs.
-    const { db } = await import("@/lib/db");
-    const { assets } = await import("@/lib/db/schema");
-    const [asset] = await db
-      .insert(assets)
-      .values({
-        tenantId: ctx.tenantId,
-        filename: config.filename?.trim() || url.split("/").pop()?.split("?")[0] || "flow-asset",
-        key: uploaded.key,
-        mimeType: contentType.split(";")[0],
-        size: buffer.length,
-        publicUrl: uploaded.publicUrl,
-      })
-      .returning({ id: assets.id, publicUrl: assets.publicUrl });
-
-    return {
-      output: {
-        publicUrl: asset?.publicUrl ?? uploaded.publicUrl,
-        assetId: asset?.id,
-        size: buffer.length,
-        contentType,
-        source: finalUrl,
-      },
-    };
   },
 });

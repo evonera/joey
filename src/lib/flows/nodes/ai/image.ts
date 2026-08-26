@@ -73,28 +73,50 @@ export const imageGenNode = defineNode({
       throw (ctx.signal.reason as Error) ?? new Error("Aborted");
     }
 
-    const { uploadBufferToR2 } = await import("@/lib/storage");
+    const { uploadBufferToR2, deleteObject } = await import("@/lib/storage");
     const uploaded = await uploadBufferToR2(buffer, "image/png", ctx.tenantId);
     publicUrl = uploaded.publicUrl;
 
-    if (ctx.signal?.aborted) {
-      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
-    }
+    let registered = false;
+    let asset: { id: string; publicUrl: string } | undefined;
+    try {
+      if (ctx.signal?.aborted) {
+        throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+      }
 
-    // Register asset in the library so it appears in assets list and drafts can use it
-    const { db } = await import("@/lib/db");
-    const { assets } = await import("@/lib/db/schema");
-    const [asset] = await db
-      .insert(assets)
-      .values({
-        tenantId: ctx.tenantId,
-        filename: `generated-image-${Date.now()}.png`,
-        key: uploaded.key,
-        mimeType: "image/png",
-        size: buffer.length,
-        publicUrl: uploaded.publicUrl,
-      })
-      .returning({ id: assets.id, publicUrl: assets.publicUrl });
+      // Register asset in the library so it appears in assets list and drafts can use it
+      const { db } = await import("@/lib/db");
+      const { assets, flowRuns } = await import("@/lib/db/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      [asset] = await db.transaction(async (tx) => {
+        if (ctx.runId) {
+          const run = await tx.query.flowRuns.findFirst({
+            where: and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")),
+            columns: { id: true },
+          });
+          if (!run) {
+            throw new Error("Execution fenced: flow run is no longer running.");
+          }
+        }
+        return await tx
+          .insert(assets)
+          .values({
+            tenantId: ctx.tenantId,
+            filename: `generated-image-${Date.now()}.png`,
+            key: uploaded.key,
+            mimeType: "image/png",
+            size: buffer.length,
+            publicUrl: uploaded.publicUrl,
+          })
+          .returning({ id: assets.id, publicUrl: assets.publicUrl });
+      });
+      registered = true;
+    } finally {
+      if (!registered) {
+        await deleteObject(uploaded.key).catch(() => {});
+      }
+    }
 
     try {
       // gpt-image-1 medium ≈ $0.03–0.07; record rough token-equivalent cost.
