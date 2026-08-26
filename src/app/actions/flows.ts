@@ -521,18 +521,32 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
   }
 
   const flow = await db.query.flows.findFirst({ where: eq(flows.id, run.flowId) });
-  if (!flow) return { error: "Flow not found" };
+  if (!flow) {
+    await db
+      .update(flowRuns)
+      .set({ status: run.status })
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "restarted")));
+    return { error: "Flow not found" };
+  }
 
-  const result = await executeRunWithPorts({
-    flow,
-    tenantId,
-    trigger: run.trigger as "manual",
-    triggerPayload: run.triggerPayload ?? undefined,
-    cachedSteps: (run.steps as FlowStep[]) ?? [],
-    fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
-    approvedNodeIds: (run.approvedNodeIds as string[]) ?? [],
-  });
-  return { runId: result.runId };
+  try {
+    const result = await executeRunWithPorts({
+      flow,
+      tenantId,
+      trigger: run.trigger as "manual",
+      triggerPayload: run.triggerPayload ?? undefined,
+      cachedSteps: (run.steps as FlowStep[]) ?? [],
+      fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
+      approvedNodeIds: (run.approvedNodeIds as string[]) ?? [],
+    });
+    return { runId: result.runId };
+  } catch (err: any) {
+    await db
+      .update(flowRuns)
+      .set({ status: run.status })
+      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "restarted")));
+    return { error: err?.message || "Failed to start replacement run." };
+  }
 }
 
 export async function listRuns(flowId: string): Promise<{ runs: FlowRunRow[] }> {
