@@ -44,12 +44,15 @@ export const imageGenNode = defineNode({
 
     const { default: OpenAI } = await import("openai");
     const client = new OpenAI({ apiKey });
-    const result = await client.images.generate({
-      model: "gpt-image-1",
-      prompt,
-      size: config.size,
-      quality: config.quality,
-    });
+    const result = await client.images.generate(
+      {
+        model: "gpt-image-1",
+        prompt,
+        size: config.size,
+        quality: config.quality,
+      },
+      { signal: ctx.signal },
+    );
 
     const b64 = result.data?.[0]?.b64_json;
     const remoteUrl = result.data?.[0]?.url;
@@ -66,9 +69,17 @@ export const imageGenNode = defineNode({
       throw new Error("Image generation returned no output.");
     }
 
+    if (ctx.signal?.aborted) {
+      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+    }
+
     const { uploadBufferToR2 } = await import("@/lib/storage");
     const uploaded = await uploadBufferToR2(buffer, "image/png", ctx.tenantId);
     publicUrl = uploaded.publicUrl;
+
+    if (ctx.signal?.aborted) {
+      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+    }
 
     // Register asset in the library so it appears in assets list and drafts can use it
     const { db } = await import("@/lib/db");

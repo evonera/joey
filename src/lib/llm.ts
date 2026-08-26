@@ -87,9 +87,9 @@ export async function runLlm(opts: {
       // budget recording must never fail a flow node
     }
 
-    // Reject incomplete generations: token-limit truncation and refusals
-    // must never flow downstream as "successful" output.
-    const completeStops = new Set(["end_turn", "tool_use", "pause_turn"]);
+    // Reject incomplete generations: token-limit truncation, refusals, pause turns, and
+    // stop-sequence hits must never flow downstream as "successful" output.
+    const completeStops = new Set(["end_turn", "tool_use"]);
     if (!response.stop_reason || !completeStops.has(response.stop_reason)) {
       throw new Error(
         `Anthropic stopped with reason "${response.stop_reason ?? "none"}" — treating it as a failed generation.`,

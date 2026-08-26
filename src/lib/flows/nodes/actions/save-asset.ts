@@ -38,8 +38,16 @@ export const saveAssetNode = defineNode({
     const { buffer, contentType, finalUrl } = await fetchSafeMedia(url, ctx.signal);
     if (buffer.length > 25 * 1024 * 1024) throw new Error("File exceeds the 25MB asset limit.");
 
+    if (ctx.signal?.aborted) {
+      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+    }
+
     const { uploadBufferToR2 } = await import("@/lib/storage");
     const uploaded = await uploadBufferToR2(buffer, contentType.split(";")[0], ctx.tenantId);
+
+    if (ctx.signal?.aborted) {
+      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+    }
 
     // Register the asset with a direct tenant-scoped insert — registerAsset
     // requires a browser session and would throw Unauthorized during
