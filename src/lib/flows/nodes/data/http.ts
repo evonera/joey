@@ -76,11 +76,42 @@ export const httpNode = defineNode({
       else ctx.signal.addEventListener("abort", onExternalAbort, { once: true });
     }
 
+    const stripCredentials = (hdrs: Record<string, string>): Record<string, string> => {
+      const safe: Record<string, string> = {};
+      for (const [k, v] of Object.entries(hdrs)) {
+        const lower = k.toLowerCase();
+        if (
+          !lower.includes("auth") &&
+          !lower.includes("key") &&
+          !lower.includes("token") &&
+          !lower.includes("secret") &&
+          !lower.includes("cookie") &&
+          !lower.includes("credential") &&
+          !lower.includes("bearer")
+        ) {
+          safe[k] = v;
+        }
+      }
+      return safe;
+    };
+
     try {
       let currentUrl = url;
       let currentHeaders = { ...headers };
       let currentMethod = config.method;
       let currentBody = body;
+
+      // If the configured template had a static origin and dynamic interpolation changed it, strip credentials immediately
+      let staticOrigin: string | null = null;
+      try {
+        if (config.url && !config.url.includes("{{")) {
+          staticOrigin = new URL(config.url).origin;
+        }
+      } catch {}
+      if (staticOrigin && new URL(url).origin !== staticOrigin) {
+        currentHeaders = stripCredentials(currentHeaders);
+      }
+
       const initialOrigin = new URL(url).origin;
       let redirects = 0;
       while (redirects <= 5) {
@@ -98,22 +129,7 @@ export const httpNode = defineNode({
           const nextUrl = new URL(location, currentUrl);
           if (nextUrl.origin !== initialOrigin) {
             // Strip sensitive credentials and tokens on cross-origin redirects
-            const safeHeaders: Record<string, string> = {};
-            for (const [k, v] of Object.entries(currentHeaders)) {
-              const lower = k.toLowerCase();
-              if (
-                !lower.includes("auth") &&
-                !lower.includes("key") &&
-                !lower.includes("token") &&
-                !lower.includes("secret") &&
-                !lower.includes("cookie") &&
-                !lower.includes("credential") &&
-                !lower.includes("bearer")
-              ) {
-                safeHeaders[k] = v;
-              }
-            }
-            currentHeaders = safeHeaders;
+            currentHeaders = stripCredentials(currentHeaders);
             // Prevent request body disclosure across origins
             currentBody = undefined;
           }

@@ -14,15 +14,17 @@ export interface EmailOptions {
   to: string;
   subject: string;
   html: string;
+  idempotencyKey?: string;
 }
 
-export async function sendEmail({ to, subject, html }: EmailOptions): Promise<{ success: boolean; error?: string }> {
+export async function sendEmail({ to, subject, html, idempotencyKey }: EmailOptions): Promise<{ success: boolean; error?: string }> {
   try {
     const { error } = await getResend().emails.send({
       from: fromEmail,
       to,
       subject,
       html,
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
     });
 
     if (error) {
@@ -43,9 +45,10 @@ export interface NotificationEmailOptions {
   body: string;
   tenantId: string;
   link?: string | null;
+  idempotencyKey?: string;
 }
 
-export async function sendNotificationEmail({ to, subject, body, tenantId, link }: NotificationEmailOptions) {
+export async function sendNotificationEmail({ to, subject, body, tenantId, link, idempotencyKey }: NotificationEmailOptions) {
   const escapeHtml = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   
@@ -68,7 +71,7 @@ export async function sendNotificationEmail({ to, subject, body, tenantId, link 
     </div>
   `;
 
-  const res = await sendEmail({ to, subject, html });
+  const res = await sendEmail({ to, subject, html, idempotencyKey });
   if (!res.success) {
     throw new Error(`Failed to send notification email: ${res.error || "Unknown error"}`);
   }
