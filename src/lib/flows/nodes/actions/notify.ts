@@ -135,6 +135,7 @@ export const notifyNode = defineNode({
         tenantId: ctx.tenantId,
         link: fullLink,
         idempotencyKey: emailIdempotencyKey,
+        signal: ctx.signal,
       });
 
       // 3. Mark email as confirmed sent so subsequent replays never duplicate
