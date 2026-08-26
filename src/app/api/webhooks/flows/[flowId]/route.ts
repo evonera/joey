@@ -50,8 +50,16 @@ export async function POST(
       req.headers.get("x-webhook-id") ||
       req.headers.get("x-request-id") ||
       req.headers.get("x-idempotency-key") ||
-      (payload && typeof payload === "object" && "id" in (payload as Record<string, unknown>) && typeof (payload as Record<string, unknown>).id === "string"
-        ? String((payload as Record<string, unknown>).id)
+      req.headers.get("x-event-id") ||
+      req.headers.get("x-delivery") ||
+      req.headers.get("x-github-delivery") ||
+      req.headers.get("x-amzn-trace-id") ||
+      (payload && typeof payload === "object"
+        ? (payload as Record<string, unknown>).id ||
+          (payload as Record<string, unknown>).event_id ||
+          (payload as Record<string, unknown>).eventId ||
+          (payload as Record<string, unknown>).delivery_id ||
+          (payload as Record<string, unknown>).deliveryId
         : null);
 
     if (explicitId) {

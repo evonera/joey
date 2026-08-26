@@ -54,47 +54,8 @@ export const notifyNode = defineNode({
     const shouldSendEmail = prefs ? prefs.emailDraftReady : false;
     const emailRecipient = shouldSendEmail && prefs?.emailAddress ? prefs.emailAddress : null;
 
-    if (ctx.runId && ctx.nodeId) {
-      const itemKey = ctx.itemKey ?? "root";
-      const existing = await db.query.notifications.findFirst({
-        where: and(
-          eq(notifications.tenantId, ctx.tenantId),
-          sql`${notifications.metadata}->>'flowRunId' = ${ctx.runId}`,
-          sql`${notifications.metadata}->>'nodeId' = ${ctx.nodeId}`,
-          sql`${notifications.metadata}->>'itemKey' = ${itemKey}`,
-        ),
-      });
-      if (existing) {
-        if (!emailRecipient || (existing.metadata as Record<string, unknown>)?.emailSent) {
-          return { output: input };
-        }
-      }
-    }
-
-    if (ctx.runId) {
-      const [stillRunning] = await db
-        .select({ id: flowRuns.id })
-        .from(flowRuns)
-        .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")));
-      if (!stillRunning || ctx.signal?.aborted) {
-        throw (ctx.signal?.reason as Error) ?? new Error("Execution fenced: flow run is no longer running.");
-      }
-    }
-
-    if (emailRecipient && !ctx.signal?.aborted) {
-      const { sendNotificationEmail } = await import("@/lib/email");
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
-      await sendNotificationEmail({
-        to: emailRecipient,
-        subject: config.title,
-        body,
-        tenantId: ctx.tenantId,
-        link: fullLink,
-      });
-    }
-
-    await db.transaction(async (tx) => {
+    // 1. Transactionally lock active run and record in-app notification with emailStatus: 'pending' (or 'not_required')
+    const initialRecord = await db.transaction(async (tx) => {
       if (ctx.runId) {
         const [lockedRun] = await tx
           .select({ id: flowRuns.id })
@@ -106,23 +67,81 @@ export const notifyNode = defineNode({
         }
       }
 
-      const shouldCreateInApp = prefs ? prefs.inAppDraftReady : true;
-      if (shouldCreateInApp) {
-        await tx.insert(notifications).values({
-          tenantId: ctx.tenantId,
-          type: "draft_ready",
-          title: config.title,
-          body,
-          link: `/flows/runs?runId=${ctx.runId}`,
-          metadata: {
-            flowRunId: ctx.runId,
-            nodeId: ctx.nodeId,
-            itemKey: ctx.itemKey ?? "root",
-            emailSent: Boolean(emailRecipient),
-          },
+      if (ctx.runId && ctx.nodeId) {
+        const itemKey = ctx.itemKey ?? "root";
+        const existing = await tx.query.notifications.findFirst({
+          where: and(
+            eq(notifications.tenantId, ctx.tenantId),
+            sql`${notifications.metadata}->>'flowRunId' = ${ctx.runId}`,
+            sql`${notifications.metadata}->>'nodeId' = ${ctx.nodeId}`,
+            sql`${notifications.metadata}->>'itemKey' = ${itemKey}`,
+          ),
         });
+        if (existing) {
+          const emailStatus = (existing.metadata as Record<string, unknown>)?.emailStatus;
+          if (emailStatus === "sent" || emailStatus === "not_required" || !emailRecipient) {
+            return { alreadyDone: true, notificationId: existing.id };
+          }
+          return { alreadyDone: false, notificationId: existing.id };
+        }
       }
+
+      const shouldCreateInApp = prefs ? prefs.inAppDraftReady : true;
+      let notificationId: string | undefined;
+      if (shouldCreateInApp) {
+        const [inserted] = await tx
+          .insert(notifications)
+          .values({
+            tenantId: ctx.tenantId,
+            type: "draft_ready",
+            title: config.title,
+            body,
+            link: `/flows/runs?runId=${ctx.runId}`,
+            metadata: {
+              flowRunId: ctx.runId,
+              nodeId: ctx.nodeId,
+              itemKey: ctx.itemKey ?? "root",
+              emailStatus: emailRecipient ? "pending" : "not_required",
+            },
+          })
+          .returning({ id: notifications.id });
+        notificationId = inserted?.id;
+      }
+      return { alreadyDone: false, notificationId };
     });
+
+    if (initialRecord.alreadyDone) {
+      return { output: input };
+    }
+
+    // 2. If email is required, send it now
+    if (emailRecipient && !ctx.signal?.aborted) {
+      const { sendNotificationEmail } = await import("@/lib/email");
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
+      await sendNotificationEmail({
+        to: emailRecipient,
+        subject: config.title,
+        body,
+        tenantId: ctx.tenantId,
+        link: fullLink,
+      });
+
+      // 3. Mark email as confirmed sent
+      if (initialRecord.notificationId) {
+        await db
+          .update(notifications)
+          .set({
+            metadata: {
+              flowRunId: ctx.runId,
+              nodeId: ctx.nodeId,
+              itemKey: ctx.itemKey ?? "root",
+              emailStatus: "sent",
+            },
+          })
+          .where(eq(notifications.id, initialRecord.notificationId));
+      }
+    }
 
     return { output: input };
   },

@@ -97,11 +97,19 @@ export const httpNode = defineNode({
           if (!location) throw new Error(`Redirect response (${status}) missing location header.`);
           const nextUrl = new URL(location, currentUrl);
           if (nextUrl.origin !== initialOrigin) {
-            // Strip sensitive credentials on cross-origin redirects
+            // Strip sensitive credentials and tokens on cross-origin redirects
             const safeHeaders: Record<string, string> = {};
             for (const [k, v] of Object.entries(currentHeaders)) {
               const lower = k.toLowerCase();
-              if (lower !== "authorization" && lower !== "cookie" && lower !== "proxy-authorization") {
+              if (
+                !lower.includes("auth") &&
+                !lower.includes("key") &&
+                !lower.includes("token") &&
+                !lower.includes("secret") &&
+                !lower.includes("cookie") &&
+                !lower.includes("credential") &&
+                !lower.includes("bearer")
+              ) {
                 safeHeaders[k] = v;
               }
             }
