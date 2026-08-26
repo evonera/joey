@@ -47,9 +47,9 @@ export async function uploadBufferToR2(
   body: Buffer | Uint8Array,
   contentType: string,
   tenantId: string,
-  customKey?: string,
+  opts?: { customKey?: string; signal?: AbortSignal },
 ): Promise<{ key: string; publicUrl: string }> {
-  const key = customKey ?? `${tenantId}/${crypto.randomUUID()}`;
+  const key = opts?.customKey ?? `${tenantId}/${crypto.randomUUID()}`;
   const client = getS3Client();
   await client.send(
     new PutObjectCommand({
@@ -58,6 +58,7 @@ export async function uploadBufferToR2(
       Body: body,
       ContentType: contentType,
     }),
+    { abortSignal: opts?.signal },
   );
   return { key, publicUrl: buildPublicUrl(key) };
 }
