@@ -141,21 +141,17 @@ export const notifyNode = defineNode({
 
       // 3. Mark email as confirmed sent so subsequent replays never duplicate
       if (initialRecord.notificationId) {
-        try {
-          await db
-            .update(notifications)
-            .set({
-              metadata: {
-                flowRunId: ctx.runId,
-                nodeId: ctx.nodeId,
-                itemKey: ctx.itemKey ?? "root",
-                emailStatus: "sent",
-              },
-            })
-            .where(eq(notifications.id, initialRecord.notificationId));
-        } catch (updateErr) {
-          console.warn("[notify] Failed to update notification emailStatus to sent:", updateErr);
-        }
+        await db
+          .update(notifications)
+          .set({
+            metadata: {
+              flowRunId: ctx.runId,
+              nodeId: ctx.nodeId,
+              itemKey: ctx.itemKey ?? "root",
+              emailStatus: "sent",
+            },
+          })
+          .where(eq(notifications.id, initialRecord.notificationId));
       }
     }
 
