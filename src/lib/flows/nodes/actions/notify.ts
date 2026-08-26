@@ -81,6 +81,15 @@ export const notifyNode = defineNode({
     });
 
     if (emailRecipient && !ctx.signal?.aborted) {
+      if (ctx.runId) {
+        const [stillRunning] = await db
+          .select({ id: flowRuns.id })
+          .from(flowRuns)
+          .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")));
+        if (!stillRunning) {
+          throw new Error("Execution fenced: flow run is no longer running.");
+        }
+      }
       const { sendNotificationEmail } = await import("@/lib/email");
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
       const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
