@@ -81,7 +81,7 @@ export async function POST(
         const result = await startFlowRun({
           flow,
           trigger: "webhook",
-          triggerPayload: typeof payload === "object" && payload !== null ? { ...payload, webhookEventId } : { payload, webhookEventId },
+          triggerPayload: typeof payload === "object" && payload !== null ? { ...payload, id: explicitId, webhookEventId } : { payload, id: explicitId, webhookEventId },
         });
 
         await markWebhookProcessed(webhookEventId, result.status === "failed" ? "Flow execution failed" : undefined, event?.createdAt);
