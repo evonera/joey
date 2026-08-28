@@ -8,6 +8,25 @@ function template(text: string, input: unknown): string {
   return text.replaceAll("{{input}}", asText);
 }
 
+async function readBoundedText(response: Response, maxBytes = 10 * 1024 * 1024): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new Error("HTTP response exceeds the 10MB limit.");
+      chunks.push(value);
+    }
+  } finally {
+    if (bytes > maxBytes) await reader.cancel().catch(() => undefined);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export const httpNode = defineNode({
   type: "data.http",
   category: "data",
@@ -43,21 +62,27 @@ export const httpNode = defineNode({
 
     const hasDynamicUrl = config.url.includes("{{input}}");
     if (config.allowPrivateHosts && !hasDynamicUrl) {
-      // Trusted opt-out: plain fetch for static LAN/self-host APIs only.
-      // Dynamic/webhook-derived URLs must always go through the SSRF-safe path.
-      const response = await fetch(url, {
-        method: config.method,
-        headers,
-        ...(body !== undefined ? { body } : {}),
-        signal: ctx.signal,
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} from ${url}: ${text.slice(0, 300)}`);
+      // Trusted opt-out for static LAN/self-host APIs. It still receives the
+      // same deadline, cancellation propagation, and response bound as public
+      // requests; only private-address rejection is bypassed.
+      const abortCtrl = new AbortController();
+      const timer = setTimeout(() => abortCtrl.abort(new Error("HTTP request timed out.")), 60_000);
+      const onExternalAbort = () => abortCtrl.abort(ctx.signal?.reason ?? new Error("Aborted"));
+      if (ctx.signal) {
+        if (ctx.signal.aborted) onExternalAbort();
+        else ctx.signal.addEventListener("abort", onExternalAbort, { once: true });
       }
-      let parsed: unknown = text;
-      try { parsed = JSON.parse(text); } catch { /* keep text */ }
-      return { output: parsed };
+      try {
+        const response = await fetch(url, { method: config.method, headers, ...(body !== undefined ? { body } : {}), signal: abortCtrl.signal });
+        const text = await readBoundedText(response);
+        if (!response.ok) throw new Error(`HTTP ${response.status} from ${url}: ${text.slice(0, 300)}`);
+        let parsed: unknown = text;
+        try { parsed = JSON.parse(text); } catch { /* keep text */ }
+        return { output: parsed };
+      } finally {
+        clearTimeout(timer);
+        if (ctx.signal) ctx.signal.removeEventListener("abort", onExternalAbort);
+      }
     }
 
     // SSRF-safe path: DNS-pinned, private/metadata destinations rejected,

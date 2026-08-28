@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { flows } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { flows, flowRuns } from "@/lib/db/schema";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { startFlowRun } from "@/lib/flows/run-flow-server";
 import { hashWebhookSecret, isHashedWebhookSecret, verifyWebhookSecret } from "@/lib/flows/webhook-secret";
 import { randomUUID } from "node:crypto";
@@ -96,9 +96,41 @@ export async function POST(
     }
 
     try {
+      let cachedSteps: Parameters<typeof startFlowRun>[0]["cachedSteps"];
+      let fanoutProgress: Parameters<typeof startFlowRun>[0]["fanoutProgress"];
+      const priorRun = await db.query.flowRuns.findFirst({
+        where: and(
+          eq(flowRuns.flowId, flow.id),
+          eq(flowRuns.tenantId, flow.tenantId),
+          eq(flowRuns.trigger, "webhook"),
+          sql`${flowRuns.triggerPayload}->>'id' = ${effectiveId}`,
+        ),
+        orderBy: (runs, { desc }) => [desc(runs.startedAt)],
+      });
+      if (priorRun?.status === "succeeded" || priorRun?.status === "waiting_approval") {
+        return NextResponse.json({ received: true, deduplicated: true, runId: priorRun.id, status: priorRun.status });
+      }
+      if (priorRun?.status === "running") {
+        const staleCutoff = new Date(Date.now() - 30 * 60_000);
+        if (priorRun.updatedAt >= staleCutoff) {
+          return NextResponse.json({ received: true, deduplicated: true, runId: priorRun.id, status: priorRun.status });
+        }
+        const superseded = await db
+          .update(flowRuns)
+          .set({ status: "failed", error: "Superseded by stale webhook recovery.", finishedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(flowRuns.id, priorRun.id), eq(flowRuns.status, "running"), lt(flowRuns.updatedAt, staleCutoff)))
+          .returning({ id: flowRuns.id });
+        if (superseded.length === 0) {
+          return NextResponse.json({ received: true, deduplicated: true, runId: priorRun.id, status: "running" });
+        }
+      }
+      if (priorRun && Array.isArray(priorRun.steps)) cachedSteps = priorRun.steps as Parameters<typeof startFlowRun>[0]["cachedSteps"];
+      if (priorRun?.fanoutProgress) fanoutProgress = priorRun.fanoutProgress as Parameters<typeof startFlowRun>[0]["fanoutProgress"];
       const result = await startFlowRun({
         flow,
         trigger: "webhook",
+        cachedSteps,
+        fanoutProgress,
         triggerPayload:
           typeof payload === "object" && payload !== null
             ? { ...payload, id: effectiveId, webhookEventId }

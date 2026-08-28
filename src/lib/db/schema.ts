@@ -388,6 +388,7 @@ export const flowTemplates = pgTable("flow_templates", {
 export const r2CleanupTasks = pgTable("r2_cleanup_tasks", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  runId: text("run_id").references(() => flowRuns.id, { onDelete: "set null" }),
   key: text("key").notNull().unique(),
   reason: text("reason").notNull(),
   attempts: integer("attempts").default(0).notNull(),
