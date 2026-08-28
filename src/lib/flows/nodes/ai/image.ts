@@ -87,8 +87,12 @@ export const imageGenNode = defineNode({
       }
     }
 
-    const { buildPublicUrl, uploadBufferToR2, deleteObjectWithRetry } = await import("@/lib/storage");
+    const { uploadBufferToR2, deleteObjectWithRetry } = await import("@/lib/storage");
     const key = `${ctx.tenantId}/${crypto.randomUUID()}.png`;
+    const { enqueueR2Cleanup } = await import("@/lib/storage-cleanup");
+    await enqueueR2Cleanup(ctx.tenantId, key, "generated image upload pending registration", {
+      notBefore: new Date(Date.now() + 10 * 60_000),
+    });
     const uploaded = await uploadBufferToR2(buffer, "image/png", ctx.tenantId, {
       customKey: key,
       signal: ctx.signal,
@@ -104,7 +108,7 @@ export const imageGenNode = defineNode({
 
       // Register asset in the library so it appears in assets list and drafts can use it
       const { db } = await import("@/lib/db");
-      const { assets, flowRuns } = await import("@/lib/db/schema");
+      const { assets, flowRuns, r2CleanupTasks } = await import("@/lib/db/schema");
       const { eq, and } = await import("drizzle-orm");
 
       [asset] = await db.transaction(async (tx) => {
@@ -118,7 +122,7 @@ export const imageGenNode = defineNode({
             throw new Error("Execution fenced: flow run is no longer running.");
           }
         }
-        return await tx
+        const inserted = await tx
           .insert(assets)
           .values({
             tenantId: ctx.tenantId,
@@ -129,14 +133,17 @@ export const imageGenNode = defineNode({
             publicUrl: uploaded.publicUrl,
           })
           .returning({ id: assets.id, publicUrl: assets.publicUrl });
+        await tx.delete(r2CleanupTasks).where(eq(r2CleanupTasks.key, uploaded.key));
+        return inserted;
       });
       registered = true;
     } finally {
       if (!registered && uploaded?.key) {
         try {
           await deleteObjectWithRetry(uploaded.key);
+          const { cancelR2Cleanup } = await import("@/lib/storage-cleanup");
+          await cancelR2Cleanup(uploaded.key);
         } catch (cleanupError) {
-          const { enqueueR2Cleanup } = await import("@/lib/storage-cleanup");
           await enqueueR2Cleanup(ctx.tenantId, uploaded.key, "image asset registration failed");
           console.error("[flows/image] queued orphaned object cleanup", cleanupError);
         }

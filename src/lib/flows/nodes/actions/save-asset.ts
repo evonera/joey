@@ -56,9 +56,16 @@ export const saveAssetNode = defineNode({
       }
     }
 
-    const { buildPublicUrl, uploadBufferToR2, deleteObjectWithRetry } = await import("@/lib/storage");
+    const { uploadBufferToR2, deleteObjectWithRetry } = await import("@/lib/storage");
     const ext = url.split("?")[0].split(".").pop() || "bin";
     const key = `${ctx.tenantId}/${crypto.randomUUID()}.${ext}`;
+    const { enqueueR2Cleanup } = await import("@/lib/storage-cleanup");
+    // Reserve cleanup before the irreversible upload. The grace period prevents
+    // the scheduler from racing a healthy upload, while a crash after upload
+    // still leaves a durable owner that will remove the orphan.
+    await enqueueR2Cleanup(ctx.tenantId, key, "asset upload pending registration", {
+      notBefore: new Date(Date.now() + 10 * 60_000),
+    });
 
     const uploaded = await uploadBufferToR2(buffer, contentType.split(";")[0], ctx.tenantId, {
       customKey: key,
@@ -73,7 +80,7 @@ export const saveAssetNode = defineNode({
       }
 
       const { db } = await import("@/lib/db");
-      const { assets, flowRuns } = await import("@/lib/db/schema");
+      const { assets, flowRuns, r2CleanupTasks } = await import("@/lib/db/schema");
       const { eq, and } = await import("drizzle-orm");
 
       [asset] = await db.transaction(async (tx) => {
@@ -87,7 +94,7 @@ export const saveAssetNode = defineNode({
             throw new Error("Execution fenced: flow run is no longer running.");
           }
         }
-        return await tx
+        const inserted = await tx
           .insert(assets)
           .values({
             tenantId: ctx.tenantId,
@@ -98,6 +105,8 @@ export const saveAssetNode = defineNode({
             publicUrl: uploaded.publicUrl,
           })
           .returning({ id: assets.id, publicUrl: assets.publicUrl });
+        await tx.delete(r2CleanupTasks).where(eq(r2CleanupTasks.key, uploaded.key));
+        return inserted;
       });
       registered = true;
 
@@ -114,8 +123,9 @@ export const saveAssetNode = defineNode({
       if (!registered && uploaded?.key) {
         try {
           await deleteObjectWithRetry(uploaded.key);
+          const { cancelR2Cleanup } = await import("@/lib/storage-cleanup");
+          await cancelR2Cleanup(uploaded.key);
         } catch (cleanupError) {
-          const { enqueueR2Cleanup } = await import("@/lib/storage-cleanup");
           await enqueueR2Cleanup(ctx.tenantId, uploaded.key, "asset registration failed");
           console.error("[flows/save-asset] queued orphaned object cleanup", cleanupError);
         }
