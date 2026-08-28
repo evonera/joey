@@ -137,6 +137,19 @@ export const notifyNode = defineNode({
           await query.update(notifications).set({ metadata: { flowRunId: ctx.runId, nodeId: ctx.nodeId, itemKey: ctx.itemKey ?? "root", emailStatus: "sending" } }).where(eq(notifications.id, initialRecord.notificationId));
         }
         await sendNotificationEmail({ to: emailRecipient, subject: config.title, body, tenantId: ctx.tenantId, link: fullLink, idempotencyKey: emailIdempotencyKey, signal: ctx.signal });
+        // Renew the run lease before releasing the row lock. A stale-recovery
+        // update that was waiting on this lock re-checks updatedAt and becomes a
+        // no-op instead of terminally fencing the side effect we just delivered.
+        if (tx && ctx.runId) {
+          const renewed = await tx
+            .update(flowRuns)
+            .set({ updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (renewed.length === 0) {
+            throw new Error("Execution fenced: flow run is no longer running.");
+          }
+        }
         if (initialRecord.notificationId) {
           const query = tx ?? db;
           await query.update(notifications).set({ metadata: { flowRunId: ctx.runId, nodeId: ctx.nodeId, itemKey: ctx.itemKey ?? "root", emailStatus: "sent" } }).where(eq(notifications.id, initialRecord.notificationId));
