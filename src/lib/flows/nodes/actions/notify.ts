@@ -113,10 +113,16 @@ export const notifyNode = defineNode({
       return { output: input };
     }
 
-    // 2. If email is required, send it now under transactional run status fence with idempotencyKey
+    // 2. Keep the run row locked through the email request. Stale recovery's
+    // terminal update must wait until this side effect and its durable outcome
+    // are committed, otherwise a fenced run could still deliver an email.
     if (emailRecipient && !ctx.signal?.aborted) {
-      if (ctx.runId) {
-        await db.transaction(async (tx) => {
+      const { sendNotificationEmail } = await import("@/lib/email");
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
+      const emailIdempotencyKey = `${ctx.tenantId}:${ctx.runId || "direct"}:${ctx.nodeId || "notify"}:${ctx.itemKey ?? "root"}`;
+      const sendAndConfirm = async (tx?: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
+        if (tx && ctx.runId) {
           const [lockedRun] = await tx
             .select({ id: flowRuns.id })
             .from(flowRuns)
@@ -125,50 +131,19 @@ export const notifyNode = defineNode({
           if (!lockedRun || ctx.signal?.aborted) {
             throw (ctx.signal?.reason as Error) ?? new Error("Execution fenced: flow run is no longer running.");
           }
-          if (initialRecord.notificationId) {
-            await tx
-              .update(notifications)
-              .set({
-                metadata: {
-                  flowRunId: ctx.runId,
-                  nodeId: ctx.nodeId,
-                  itemKey: ctx.itemKey ?? "root",
-                  emailStatus: "sending",
-                },
-              })
-              .where(eq(notifications.id, initialRecord.notificationId));
-          }
-        });
-      }
-
-      const { sendNotificationEmail } = await import("@/lib/email");
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
-      const emailIdempotencyKey = `${ctx.tenantId}:${ctx.runId || "direct"}:${ctx.nodeId || "notify"}:${ctx.itemKey ?? "root"}`;
-      await sendNotificationEmail({
-        to: emailRecipient,
-        subject: config.title,
-        body,
-        tenantId: ctx.tenantId,
-        link: fullLink,
-        idempotencyKey: emailIdempotencyKey,
-        signal: ctx.signal,
-      });
-
-      // 3. Mark email as confirmed sent so subsequent replays never duplicate
-      if (initialRecord.notificationId) {
-        await db
-          .update(notifications)
-          .set({
-            metadata: {
-              flowRunId: ctx.runId,
-              nodeId: ctx.nodeId,
-              itemKey: ctx.itemKey ?? "root",
-              emailStatus: "sent",
-            },
-          })
-          .where(eq(notifications.id, initialRecord.notificationId));
-      }
+        }
+        if (initialRecord.notificationId) {
+          const query = tx ?? db;
+          await query.update(notifications).set({ metadata: { flowRunId: ctx.runId, nodeId: ctx.nodeId, itemKey: ctx.itemKey ?? "root", emailStatus: "sending" } }).where(eq(notifications.id, initialRecord.notificationId));
+        }
+        await sendNotificationEmail({ to: emailRecipient, subject: config.title, body, tenantId: ctx.tenantId, link: fullLink, idempotencyKey: emailIdempotencyKey, signal: ctx.signal });
+        if (initialRecord.notificationId) {
+          const query = tx ?? db;
+          await query.update(notifications).set({ metadata: { flowRunId: ctx.runId, nodeId: ctx.nodeId, itemKey: ctx.itemKey ?? "root", emailStatus: "sent" } }).where(eq(notifications.id, initialRecord.notificationId));
+        }
+      };
+      if (ctx.runId) await db.transaction(sendAndConfirm);
+      else await sendAndConfirm();
     }
 
     return { output: input };

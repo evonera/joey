@@ -4,11 +4,11 @@ import { flows } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { startFlowRun } from "@/lib/flows/run-flow-server";
 import { hashWebhookSecret, isHashedWebhookSecret, verifyWebhookSecret } from "@/lib/flows/webhook-secret";
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 /**
- * Per-flow inbound webhook: POST /api/webhooks/flows/<flowId>?secret=<secret>
- * (or X-Webhook-Secret header). Starts the flow when it is active and its
+ * Per-flow inbound webhook: POST /api/webhooks/flows/<flowId> with an
+ * X-Webhook-Secret header. Starts the flow when it is active and its
  * graph contains a trigger.incoming_webhook node.
  */
 export async function POST(
@@ -65,9 +65,10 @@ export async function POST(
           (payload as Record<string, unknown>).deliveryId
         : null);
 
-    const effectiveId =
-      explicitId ||
-      createHash("sha256").update(rawBody || "").digest("hex");
+    // A sender that supplies a delivery ID gets exactly-once admission. Without
+    // one, this endpoint deliberately preserves at-least-once delivery: identical
+    // payloads can be distinct real events, so a body hash is not a safe key.
+    const effectiveId = explicitId ? String(explicitId) : randomUUID();
 
     const webhookEventId = `flow:${flowId}:${effectiveId}`;
     const { storeWebhookEvent, markWebhookProcessed } = await import("@/lib/webhooks");
