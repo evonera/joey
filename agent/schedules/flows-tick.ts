@@ -25,6 +25,8 @@ import { getNode } from "@/lib/flows/registry";
 export default defineSchedule({
   cron: "* * * * *",
   async run() {
+    const { processR2CleanupTasks } = await import("@/lib/storage-cleanup");
+    await processR2CleanupTasks();
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
     // for >30 min (from any trigger, including approval resumes or crashed flows)
     // is reconciled based on its accumulated step execution state. Active runs
