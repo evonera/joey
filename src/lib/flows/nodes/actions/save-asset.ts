@@ -112,7 +112,13 @@ export const saveAssetNode = defineNode({
       };
     } finally {
       if (!registered && uploaded?.key) {
-        await deleteObjectWithRetry(uploaded.key);
+        try {
+          await deleteObjectWithRetry(uploaded.key);
+        } catch (cleanupError) {
+          const { enqueueR2Cleanup } = await import("@/lib/storage-cleanup");
+          await enqueueR2Cleanup(ctx.tenantId, uploaded.key, "asset registration failed");
+          console.error("[flows/save-asset] queued orphaned object cleanup", cleanupError);
+        }
       }
     }
   },

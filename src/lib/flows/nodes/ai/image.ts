@@ -133,7 +133,13 @@ export const imageGenNode = defineNode({
       registered = true;
     } finally {
       if (!registered && uploaded?.key) {
-        await deleteObjectWithRetry(uploaded.key);
+        try {
+          await deleteObjectWithRetry(uploaded.key);
+        } catch (cleanupError) {
+          const { enqueueR2Cleanup } = await import("@/lib/storage-cleanup");
+          await enqueueR2Cleanup(ctx.tenantId, uploaded.key, "image asset registration failed");
+          console.error("[flows/image] queued orphaned object cleanup", cleanupError);
+        }
       }
     }
 

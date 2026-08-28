@@ -328,7 +328,7 @@ export const flows = pgTable("flows", {
   description: text("description"),
   graph: jsonb("graph").notNull(),
   status: varchar("status", { length: 20 }).default("draft").notNull(), // 'draft' | 'active' | 'paused'
-  /** Secret for the flow's incoming-webhook trigger URL (?secret= / header). */
+  /** SHA-256 hash of the flow's incoming-webhook secret. */
   webhookSecret: text("webhook_secret"),
   lastRunAt: timestamp("last_run_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -383,6 +383,21 @@ export const flowTemplates = pgTable("flow_templates", {
   installs: integer("installs").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/** Durable compensation for R2 objects that could not be deleted synchronously. */
+export const r2CleanupTasks = pgTable("r2_cleanup_tasks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  key: text("key").notNull().unique(),
+  reason: text("reason").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  lastError: text("last_error"),
+  nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  dueIdx: index("r2_cleanup_tasks_due_idx").on(table.nextAttemptAt),
+}));
 /**
  * Deployment-wide fixed-window rate limiting for the public API. One row per
  * (token, window) so documented limits hold across instances and restarts.

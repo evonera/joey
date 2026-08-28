@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { startFlowRun } from "@/lib/flows/run-flow-server";
+import { hashWebhookSecret, isHashedWebhookSecret, verifyWebhookSecret } from "@/lib/flows/webhook-secret";
+import { createHash } from "node:crypto";
 
 /**
  * Per-flow inbound webhook: POST /api/webhooks/flows/<flowId>?secret=<secret>
@@ -15,16 +17,17 @@ export async function POST(
 ) {
   try {
     const { flowId } = await ctx.params;
-    const secret =
-      req.nextUrl.searchParams.get("secret") ??
-      req.headers.get("x-webhook-secret");
+    const secret = req.headers.get("x-webhook-secret");
 
     const flow = await db.query.flows.findFirst({
       where: eq(flows.id, flowId),
     });
     if (!flow) return NextResponse.json({ error: "Flow not found" }, { status: 404 });
-    if (!flow.webhookSecret || secret !== flow.webhookSecret) {
+    if (!verifyWebhookSecret(secret, flow.webhookSecret)) {
       return NextResponse.json({ error: "Invalid secret" }, { status: 401 });
+    }
+    if (!isHashedWebhookSecret(flow.webhookSecret)) {
+      await db.update(flows).set({ webhookSecret: hashWebhookSecret(secret!), updatedAt: new Date() }).where(eq(flows.id, flow.id));
     }
     if (flow.status !== "active") {
       return NextResponse.json({ error: "Flow is not active" }, { status: 409 });
@@ -64,7 +67,7 @@ export async function POST(
 
     const effectiveId =
       explicitId ||
-      crypto.createHash("sha256").update(rawBody || "").digest("hex");
+      createHash("sha256").update(rawBody || "").digest("hex");
 
     const webhookEventId = `flow:${flowId}:${effectiveId}`;
     const { storeWebhookEvent, markWebhookProcessed } = await import("@/lib/webhooks");

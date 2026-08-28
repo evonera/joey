@@ -9,6 +9,7 @@ import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/
 import { executeFlow } from "@/lib/flows/executor";
 import type { FlowStep, RunStatus } from "@/lib/flows/types";
 import { getNode } from "@/lib/flows/registry";
+import { hashWebhookSecret, isHashedWebhookSecret } from "@/lib/flows/webhook-secret";
 
 export type FlowRow = typeof flows.$inferSelect;
 export type FlowRunRow = typeof flowRuns.$inferSelect;
@@ -52,7 +53,7 @@ export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: Flow
     const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
     const updated = await db
       .update(flows)
-      .set({ webhookSecret: secret, updatedAt: new Date() })
+      .set({ webhookSecret: hashWebhookSecret(secret), updatedAt: new Date() })
       .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId), isNull(flows.webhookSecret)))
       .returning({ id: flows.id });
     if (updated.length > 0) {
@@ -65,11 +66,14 @@ export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: Flow
     }
   }
 
+  if (!flow) return { error: "Flow not found" };
+
   const runs = await db.query.flowRuns.findMany({
     where: and(eq(flowRuns.flowId, id), eq(flowRuns.tenantId, tenantId)),
     orderBy: [desc(flowRuns.startedAt)],
     limit: 20,
   });
+  if (isHashedWebhookSecret(flow.webhookSecret)) flow.webhookSecret = null;
   return { flow, runs };
 }
 
@@ -80,7 +84,7 @@ export async function regenerateWebhookSecret(
   const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
   const updated = await db
     .update(flows)
-    .set({ webhookSecret: secret, updatedAt: new Date() })
+    .set({ webhookSecret: hashWebhookSecret(secret), updatedAt: new Date() })
     .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)))
     .returning({ id: flows.id });
   if (updated.length === 0) return { error: "Flow not found" };

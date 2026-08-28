@@ -91,17 +91,19 @@ function FlowNode({ data, selected }: NodeProps) {
   );
 }
 
-function WebhookUrlBox({ flowId, secret }: { flowId: string; secret: string }) {
+function WebhookUrlBox({ flowId, secret: initialSecret }: { flowId: string; secret: string }) {
   const [copied, setCopied] = useState(false);
+  const [secret, setSecret] = useState(initialSecret);
   const url =
     typeof window === "undefined"
-      ? `https://joey.evonera.com/api/webhooks/flows/${flowId}?secret=${secret}`
-      : `${window.location.origin}/api/webhooks/flows/${flowId}?secret=${secret}`;
+      ? `https://joey.evonera.com/api/webhooks/flows/${flowId}`
+      : `${window.location.origin}/api/webhooks/flows/${flowId}`;
 
   return (
     <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 space-y-1.5">
-      <p className="text-[11px] font-medium">Webhook URL — POST JSON here to start this flow:</p>
+      <p className="text-[11px] font-medium">POST JSON with the X-Webhook-Secret header to start this flow:</p>
       <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[10px]">{url}</code>
+      {secret ? <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[10px]">X-Webhook-Secret: {secret}</code> : <p className="text-[10px] text-muted-foreground">Secret is hidden after first display. Regenerate to reveal a new one.</p>}
       <div className="flex gap-1.5">
         <Button
           size="sm" variant="outline" className="h-6 text-[10px]"
@@ -117,9 +119,8 @@ function WebhookUrlBox({ flowId, secret }: { flowId: string; secret: string }) {
           size="sm" variant="ghost" className="h-6 text-[10px]"
           onClick={async () => {
             const res = await regenerateWebhookSecret(flowId);
-            if (res.secret) toast.success("Secret regenerated — old URLs are invalid");
+            if (res.secret) { setSecret(res.secret); toast.success("Secret regenerated — old credentials are invalid"); }
             else toast.error(res.error ?? "Failed");
-            window.location.reload();
           }}
         >
           Regenerate secret
