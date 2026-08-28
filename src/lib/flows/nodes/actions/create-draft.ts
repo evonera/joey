@@ -13,8 +13,6 @@ export const createDraftNode = defineNode({
   outputs: ["draft"],
   configSchema,
   async execute(input, rawConfig, ctx) {
-    const { db } = await import("@/lib/db");
-    const { drafts } = await import("@/lib/db/schema");
     const config = configSchema.parse(rawConfig);
 
     const content =
@@ -25,20 +23,57 @@ export const createDraftNode = defineNode({
       throw new Error("No content to draft — incoming data was empty.");
     }
 
-    const [draft] = await db
-      .insert(drafts)
-      .values({
-        tenantId: ctx.tenantId,
-        content,
-        status: "pending_review",
-        platformOptions: {
-          platform: config.platform,
-          ...(config.accountId ? { accountId: config.accountId } : {}),
-          source: "flow",
-          flowRunId: ctx.runId,
-        },
-      })
-      .returning();
+    if (ctx.signal?.aborted) {
+      throw (ctx.signal.reason as Error) ?? new Error("Aborted");
+    }
+
+    const { db } = await import("@/lib/db");
+    const { drafts, flowRuns } = await import("@/lib/db/schema");
+    const { eq, and, sql } = await import("drizzle-orm");
+
+    const draft = await db.transaction(async (tx) => {
+      if (ctx.runId) {
+        const [lockedRun] = await tx
+          .select({ id: flowRuns.id })
+          .from(flowRuns)
+          .where(and(eq(flowRuns.id, ctx.runId), eq(flowRuns.status, "running")))
+          .for("update");
+        if (!lockedRun) {
+          throw new Error("Execution fenced: flow run is no longer running.");
+        }
+      }
+
+      if (ctx.runId && ctx.nodeId) {
+        const itemKey = ctx.itemKey ?? "root";
+        const existing = await tx.query.drafts.findFirst({
+          where: and(
+            eq(drafts.tenantId, ctx.tenantId),
+            sql`${drafts.platformOptions}->>'flowRunId' = ${ctx.runId}`,
+            sql`${drafts.platformOptions}->>'nodeId' = ${ctx.nodeId}`,
+            sql`${drafts.platformOptions}->>'itemKey' = ${itemKey}`,
+          ),
+        });
+        if (existing) return existing;
+      }
+
+      const [inserted] = await tx
+        .insert(drafts)
+        .values({
+          tenantId: ctx.tenantId,
+          content,
+          status: "pending_review",
+          platformOptions: {
+            platform: config.platform,
+            ...(config.accountId ? { accountId: config.accountId } : {}),
+            source: "flow",
+            flowRunId: ctx.runId,
+            nodeId: ctx.nodeId,
+            itemKey: ctx.itemKey ?? "root",
+          },
+        })
+        .returning();
+      return inserted;
+    });
 
     return { output: { draftId: draft.id, status: draft.status } };
   },

@@ -20,8 +20,12 @@ async function resolveKey(tenantId: string | undefined, provider: string): Promi
       return decrypt(tenantKey.encryptedKey);
     }
   }
-  const envKey =
-    provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY;
+  const envFallback: Record<string, string | undefined> = {
+    anthropic: process.env.ANTHROPIC_API_KEY,
+    openai: process.env.OPENAI_API_KEY,
+    openrouter: process.env.OPENROUTER_API_KEY,
+  };
+  const envKey = envFallback[provider];
   if (envKey) return envKey;
   throw new Error(
     `No ${provider} API key available. Add one in Settings → API Keys or set the environment variable.`,
@@ -42,12 +46,13 @@ export type LlmResult = {
  */
 export async function runLlm(opts: {
   tenantId: string;
-  provider: "openai" | "anthropic";
+  provider: "openai" | "anthropic" | "openrouter";
   model: string;
   messages: LlmMessage[];
   /** Optional JSON schema (as plain object) to force structured output. */
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
+  signal?: AbortSignal;
 }): Promise<LlmResult> {
   const apiKey = await resolveKey(opts.tenantId, opts.provider);
 
@@ -56,47 +61,74 @@ export async function runLlm(opts: {
     const client = new Anthropic({ apiKey });
     const system = opts.messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
     const rest = opts.messages.filter((m) => m.role !== "system");
-    const response = await client.messages.create({
-      model: opts.model,
-      max_tokens: opts.maxTokens ?? 2048,
-      system: system || undefined,
-      messages: rest.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
-      ...(opts.jsonSchema
-        ? {
-            tool_choice: { type: "tool", name: "emit_result" },
-            tools: [
-              {
-                name: "emit_result",
-                description: "Return the structured result",
-                input_schema: opts.jsonSchema as Parameters<never>[0] extends never ? never : Record<string, unknown>,
-              },
-            ],
-          }
-        : {}),
-    });
+    const response = await client.messages.create(
+      {
+        model: opts.model,
+        max_tokens: opts.maxTokens ?? 2048,
+        system: system || undefined,
+        messages: rest.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+        ...(opts.jsonSchema
+          ? {
+              tool_choice: { type: "tool", name: "emit_result" },
+              tools: [
+                {
+                  name: "emit_result",
+                  description: "Return the structured result",
+                  input_schema: opts.jsonSchema as Parameters<never>[0] extends never ? never : Record<string, unknown>,
+                },
+              ],
+            }
+          : {}),
+      },
+      { signal: opts.signal },
+    );
     try {
       await recordUsage(opts.tenantId, response.usage.input_tokens, response.usage.output_tokens);
     } catch {
       // budget recording must never fail a flow node
     }
-    const block = response.content[0];
+
+    // Reject incomplete generations: token-limit truncation, refusals, pause turns, and
+    // stop-sequence hits must never flow downstream as "successful" output.
+    const completeStops = new Set(["end_turn", "tool_use"]);
+    if (!response.stop_reason || !completeStops.has(response.stop_reason) || (response as any).stop_reason === "refusal") {
+      throw new Error(
+        `Anthropic stopped with reason "${response.stop_reason ?? "none"}" — treating it as a failed generation.`,
+      );
+    }
+    if ((response as any).refusal) {
+      throw new Error(`Anthropic refused request: ${(response as any).refusal}`);
+    }
+
     let text = "";
     let json: unknown;
-    if (block && block.type === "tool_use") {
-      json = block.input;
-      text = JSON.stringify(block.input);
-    } else if (block && block.type === "text") {
-      text = block.text;
+    for (const block of response.content) {
+      if ((block as any).type === "refusal") {
+        throw new Error(`Anthropic refused request: ${(block as any).refusal || (block as any).text}`);
+      }
+      if (block.type === "text") {
+        text += block.text;
+      } else if (block.type === "tool_use") {
+        json = block.input;
+        text = typeof block.input === "string" ? block.input : JSON.stringify(block.input);
+      }
+    }
+    if (json === undefined && text) {
       json = tryParse(text);
     }
     return { text, json };
   }
 
   const { default: OpenAI } = await import("openai");
-  const client = new OpenAI({ apiKey });
+  const isOpenRouter = opts.provider === "openrouter";
+  const client = new OpenAI(
+    isOpenRouter
+      ? { apiKey, baseURL: "https://openrouter.ai/api/v1" }
+      : { apiKey },
+  );
   const completionFormat = opts.jsonSchema
     ? {
         type: "json_schema" as const,
@@ -107,12 +139,15 @@ export async function runLlm(opts: {
       }
     : undefined;
 
-  const response = await client.chat.completions.create({
-    model: opts.model,
-    messages: opts.messages,
-    max_tokens: opts.maxTokens ?? 2048,
-    ...(completionFormat ? { response_format: completionFormat } : {}),
-  });
+  const response = await client.chat.completions.create(
+    {
+      model: opts.model,
+      messages: opts.messages,
+      max_tokens: opts.maxTokens ?? 2048,
+      ...(completionFormat ? { response_format: completionFormat } : {}),
+    },
+    { signal: opts.signal },
+  );
   try {
     await recordUsage(
       opts.tenantId,
@@ -122,7 +157,17 @@ export async function runLlm(opts: {
   } catch {
     // ignore
   }
-  const text = response.choices[0]?.message?.content ?? "";
+  const choice = response.choices[0];
+  if (choice?.message?.refusal) {
+    throw new Error(`OpenAI refused request: ${choice.message.refusal}`);
+  }
+  if (choice?.finish_reason === "content_filter") {
+    throw new Error("OpenAI generation stopped by content filter.");
+  }
+  if (choice?.finish_reason === "length") {
+    throw new Error("OpenAI generation stopped due to max tokens length limit.");
+  }
+  const text = choice?.message?.content ?? "";
   return { text, json: tryParse(text) };
 }
 

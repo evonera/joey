@@ -1,13 +1,15 @@
 'use server';
 
+import crypto from "crypto";
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowTemplates, drafts } from "@/lib/db/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, isNull, inArray } from "drizzle-orm";
 import { getActiveTenantId } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
 import { executeFlow } from "@/lib/flows/executor";
 import type { FlowStep, RunStatus } from "@/lib/flows/types";
 import { getNode } from "@/lib/flows/registry";
+import { hashWebhookSecret, isHashedWebhookSecret } from "@/lib/flows/webhook-secret";
 
 export type FlowRow = typeof flows.$inferSelect;
 export type FlowRunRow = typeof flowRuns.$inferSelect;
@@ -39,9 +41,31 @@ export async function createFlow(name: string): Promise<{ flow?: FlowRow; error?
 
 export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: FlowRunRow[]; error?: string }> {
   const tenantId = await getActiveTenantId();
-  const flow = await db.query.flows.findFirst({
+  let flow = await db.query.flows.findFirst({
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
+  if (!flow) return { error: "Flow not found" };
+
+  // Provision a webhook secret ATOMICALLY: the conditional UPDATE wins the
+  // race exactly once; concurrent callers re-read the stored secret instead
+  // of returning a value that was already overwritten.
+  if (!flow.webhookSecret) {
+    const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
+    const updated = await db
+      .update(flows)
+      .set({ webhookSecret: hashWebhookSecret(secret), updatedAt: new Date() })
+      .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId), isNull(flows.webhookSecret)))
+      .returning({ id: flows.id });
+    if (updated.length > 0) {
+      flow.webhookSecret = secret;
+    } else {
+      // Lost the race — read whatever the winner persisted.
+      flow = await db.query.flows.findFirst({
+        where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
+      });
+    }
+  }
+
   if (!flow) return { error: "Flow not found" };
 
   const runs = await db.query.flowRuns.findMany({
@@ -49,7 +73,22 @@ export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: Flow
     orderBy: [desc(flowRuns.startedAt)],
     limit: 20,
   });
+  if (isHashedWebhookSecret(flow.webhookSecret)) flow.webhookSecret = null;
   return { flow, runs };
+}
+
+export async function regenerateWebhookSecret(
+  id: string,
+): Promise<{ secret?: string; error?: string }> {
+  const tenantId = await getActiveTenantId();
+  const secret = `wf_${crypto.randomUUID().replace(/-/g, "")}`;
+  const updated = await db
+    .update(flows)
+    .set({ webhookSecret: hashWebhookSecret(secret), updatedAt: new Date() })
+    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)))
+    .returning({ id: flows.id });
+  if (updated.length === 0) return { error: "Flow not found" };
+  return { secret };
 }
 
 export async function validateFlowGraph(raw: unknown): Promise<{ ok: boolean; issues: ValidationIssue[] }> {
@@ -457,47 +496,144 @@ export async function resumeRun(
 /** Re-runs a failed/finished run reusing succeeded node outputs. */
 export async function restartRun(runId: string): Promise<{ runId?: string; error?: string }> {
   const tenantId = await getActiveTenantId();
-  const run = await db.query.flowRuns.findFirst({
-    where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
-  });
-  if (!run) return { error: "Run not found" };
-  if (run.status !== "failed" && run.status !== "succeeded") {
-    return { error: `Cannot restart run with status '${run.status}'. Only completed or failed runs can be restarted.` };
+
+  // Atomically claim the original run and insert the replacement run in a single transaction
+  let newRunId: string;
+  let flow: FlowRow;
+  let cachedSteps: FlowStep[];
+  let fanoutProgress: Record<string, Record<string, unknown>>;
+  let approvedNodeIds: string[];
+  let triggerPayload: unknown;
+
+  try {
+    const setup = await db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .select()
+        .from(flowRuns)
+        .where(
+          and(
+            eq(flowRuns.id, runId),
+            eq(flowRuns.tenantId, tenantId),
+            inArray(flowRuns.status, ["failed", "succeeded"]),
+          ),
+        )
+        .for("update");
+
+      if (!claimed) {
+        return { error: "Run not found or not in a restartable state (failed or succeeded)." };
+      }
+
+      const flowRecord = await tx.query.flows.findFirst({ where: eq(flows.id, claimed.flowId) });
+      if (!flowRecord) {
+        return { error: "Flow not found" };
+      }
+
+      // Mark original run as restarted
+      await tx
+        .update(flowRuns)
+        .set({ status: "restarted", updatedAt: new Date() })
+        .where(eq(flowRuns.id, runId));
+
+      // Insert the replacement run row atomically
+      const [insertedRun] = await tx
+        .insert(flowRuns)
+        .values({
+          flowId: flowRecord.id,
+          tenantId,
+          trigger: claimed.trigger,
+          triggerPayload: claimed.triggerPayload ?? null,
+          approvedNodeIds: (claimed.approvedNodeIds as string[]) ?? [],
+        })
+        .returning();
+
+      return {
+        flow: flowRecord,
+        newRunId: insertedRun.id,
+        cachedSteps: (claimed.steps as FlowStep[]) ?? [],
+        fanoutProgress: (claimed.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
+        approvedNodeIds: (claimed.approvedNodeIds as string[]) ?? [],
+        triggerPayload: claimed.triggerPayload ?? undefined,
+      };
+    });
+
+    if ("error" in setup) {
+      return { error: setup.error };
+    }
+
+    flow = setup.flow;
+    newRunId = setup.newRunId;
+    cachedSteps = setup.cachedSteps;
+    fanoutProgress = setup.fanoutProgress;
+    approvedNodeIds = setup.approvedNodeIds;
+    triggerPayload = setup.triggerPayload;
+  } catch (err: any) {
+    return { error: err?.message || "Failed to initialize replacement run." };
   }
 
-  // Atomically claim the run for restart by transitioning its status to restarted
-  const [claimed] = await db
-    .update(flowRuns)
-    .set({
-      status: "restarted",
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(flowRuns.id, runId),
-        eq(flowRuns.tenantId, tenantId),
-        eq(flowRuns.status, run.status),
-      ),
-    )
-    .returning();
-
-  if (!claimed) {
-    return { error: "Run was modified or restarted by another request." };
+  // Now execute the replacement run that was already inserted
+  let result;
+  let execError: unknown;
+  try {
+    result = await executeFlow(
+      flow.graph as Parameters<typeof executeFlow>[0],
+      {
+        tenantId,
+        runId: newRunId,
+        flowId: flow.id,
+        triggerPayload,
+        cachedSteps,
+        fanoutProgress,
+        approvedNodeIds,
+      },
+      {
+        onStepUpdate: (step, fanoutProgress) => persistStep(tenantId, newRunId, step, fanoutProgress),
+        onFanoutProgress: async (progress) => {
+          const updated = await db
+            .update(flowRuns)
+            .set({ fanoutProgress: progress, updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, newRunId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+          }
+        },
+        onHeartbeat: async () => {
+          const updated = await db
+            .update(flowRuns)
+            .set({ updatedAt: new Date() })
+            .where(and(eq(flowRuns.id, newRunId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
+            .returning({ id: flowRuns.id });
+          if (updated.length === 0) {
+            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
+          }
+        },
+      },
+    );
+  } catch (err) {
+    execError = err;
   }
 
-  const flow = await db.query.flows.findFirst({ where: eq(flows.id, run.flowId) });
-  if (!flow) return { error: "Flow not found" };
-
-  const result = await executeRunWithPorts({
-    flow,
+  const finalResult = await finalizeRun(
+    newRunId,
     tenantId,
-    trigger: run.trigger as "manual",
-    triggerPayload: run.triggerPayload ?? undefined,
-    cachedSteps: (run.steps as FlowStep[]) ?? [],
-    fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
-    approvedNodeIds: (run.approvedNodeIds as string[]) ?? [],
-  });
-  return { runId: result.runId };
+    result
+      ? { status: result.status, steps: result.steps, error: result.error ?? null }
+      : (execError instanceof Error ? execError : new Error(String(execError ?? "Execution crashed"))),
+  );
+
+  await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+
+  if (!finalResult.persisted) {
+    try {
+      await db
+        .update(flowRuns)
+        .set({ status: "failed", error: finalResult.error || "Failed to persist terminal status.", finishedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(flowRuns.id, newRunId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")));
+    } catch {}
+    return { runId: newRunId, error: finalResult.error || "Failed to persist terminal status to database." };
+  }
+
+  return { runId: newRunId };
 }
 
 export async function listRuns(flowId: string): Promise<{ runs: FlowRunRow[] }> {

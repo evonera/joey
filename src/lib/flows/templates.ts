@@ -17,7 +17,7 @@ function node(
   return { id, type, config, position: { x, y: 200 } };
 }
 
-const edge = (from: string, to: string): FlowGraphDoc["edges"][number] => ({ from, to });
+const edge = (from: string, to: string, branch?: string): FlowGraphDoc["edges"][number] => ({ from, to, ...(branch ? { branch } : {}) });
 
 export const officialTemplates: OfficialTemplate[] = [
   {
@@ -138,6 +138,124 @@ export const officialTemplates: OfficialTemplate[] = [
         }),
       ],
       edges: [edge("t1", "a1"), edge("a1", "g1"), edge("g1", "n1")],
+    },
+  },
+  {
+    slug: "blog-social-syndication",
+    name: "Blog → Social Syndication",
+    description:
+      "Watches your blog's RSS feed, skips already-seen posts via dedupe, writes a LinkedIn take and a punchy X hook, and drops both in your approval queue.",
+    category: "content",
+    graph: {
+      nodes: [
+        node("t1", "trigger.schedule", 0, { intervalMinutes: 360 }),
+        node("r1", "data.rss", 220, {
+          url: "https://yourblog.com/feed.xml",
+          limit: 10,
+        }),
+        node("a1", "ai.llm", 460, {
+          provider: "openai",
+          model: "gpt-4o-mini",
+          systemPrompt:
+            "From this blog post write TWO versions separated by the line '---'. Version 1: LinkedIn post (story-driven, <=1200 chars). Version 2: X/Twitter post (<=250 chars, one hook + link). Return plain text only.",
+          userTemplate: "Post:\n{{input}}",
+        }),
+        node("d1", "action.create_draft", 720, { platform: "linkedin" }),
+      ],
+      edges: [edge("t1", "r1"), edge("r1", "a1"), edge("a1", "d1")],
+    },
+  },
+  {
+    slug: "youtube-repurposer",
+    name: "YouTube → Multi-Platform Repurposer",
+    description:
+      "Grabs a YouTube video's transcript via Supadata, then AI writes platform-tuned variants (LinkedIn story + X thread opener) into your approval queue. Set your video URL in the manual trigger's sample payload before running.",
+    category: "repurpose",
+    graph: {
+      nodes: [
+        node("t1", "trigger.manual", 0, {
+          samplePayload: JSON.stringify({ url: "https://www.youtube.com/watch?v=REPLACE_WITH_VIDEO_ID" }),
+        }),
+        node("y1", "ai.youtube_transcript", 240, { videoUrlField: "url" }),
+        node("a1", "ai.llm", 500, {
+          provider: "openrouter",
+          model: "meta-llama/llama-3.3-70b-instruct",
+          systemPrompt:
+            "Repurpose this video transcript into two posts separated by '---'. LINKEDIN: narrative format with a strong first line, <=1300 chars. X THREAD OPENER: single tweet <=280 chars ending with '🧵'.",
+          userTemplate: "Title: {{input}}",
+        }),
+        node("d1", "action.create_draft", 780, { platform: "twitter" }),
+      ],
+      edges: [edge("t1", "y1"), edge("y1", "a1"), edge("a1", "d1")],
+    },
+  },
+  {
+    slug: "daily-branded-image-post",
+    name: "Daily Branded Image Post",
+    description:
+      "Every morning: AI picks today's topic from your niche, generates a branded image (gpt-image-1), saves it to your asset library, and queues an image post for approval.",
+    category: "content",
+    graph: {
+      nodes: [
+        node("t1", "trigger.schedule", 0, { intervalMinutes: 1440 }),
+        node("a1", "ai.llm", 240, {
+          provider: "openai",
+          model: "gpt-4o-mini",
+          systemPrompt:
+            "Invent ONE concrete, scroll-stopping social post idea for an indie-hacker audience. Output ONLY the image prompt: describe the visual scene, style (flat illustration, indigo palette), and overlay text.",
+        }),
+        node("i1", "ai.image", 500, {
+          prompt: "{{input}}",
+          size: "1024x1024",
+          quality: "medium",
+        }),
+        node("a2", "ai.llm", 760, {
+          provider: "openai",
+          model: "gpt-4o-mini",
+          systemPrompt:
+            "Write a short caption (<=200 chars) to accompany this image on Instagram. Reference the image concept but let it speak. No hashtags.",
+          userTemplate: "{{input}}",
+        }),
+        node("d1", "action.create_draft", 1020, { platform: "facebook" }),
+      ],
+      edges: [
+        edge("t1", "a1"), edge("a1", "i1"),
+        edge("i1", "a2"), edge("a2", "d1"),
+      ],
+    },
+  },
+  {
+    slug: "ab-hook-tester",
+    name: "A/B Hook Tester",
+    description:
+      "AI writes two competing hooks, then an A/B split randomly routes each run down branch a or b — over time your approval queue shows which style you actually prefer.",
+    category: "testing",
+    graph: {
+      nodes: [
+        node("t1", "trigger.manual", 0, {}),
+        node("a1", "ai.llm", 240, {
+          provider: "openai",
+          model: "gpt-4o-mini",
+          systemPrompt:
+            "Write ONE bold contrarian hook (<=150 chars) about building products with AI agents. No hashtags.",
+        }),
+        node("sp", "logic.split", 480, { aWeightPercent: 50 }),
+        node("v1", "ai.llm", 720, {
+          provider: "openai",
+          model: "gpt-4o-mini",
+          systemPrompt:
+            "Rewrite this hook as a QUESTION that creates curiosity. Keep <=150 chars. Output only the hook.",
+          userTemplate: "{{input}}",
+        }),
+        node("d1", "action.create_draft", 960, { platform: "twitter" }),
+        node("d2", "action.create_draft", 1200, { platform: "twitter" }),
+      ],
+      edges: [
+        edge("t1", "a1"), edge("a1", "sp"),
+        edge("sp", "d1", "a"),   // statement hook
+        edge("sp", "v1", "b"),   // question variant → draft
+        edge("v1", "d2"),
+      ],
     },
   },
 ];

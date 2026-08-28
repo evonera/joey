@@ -37,11 +37,14 @@ export const transcribeNode = defineNode({
     }
 
     const client = new OpenAI({ apiKey });
-    const transcription = await client.audio.transcriptions.create({
-      model: "whisper-1",
-      file: new File([buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer], "media.mp4", { type: contentType || "video/mp4" }),
-      ...(config.language ? { language: config.language } : {}),
-    });
+    const transcription = await client.audio.transcriptions.create(
+      {
+        model: "whisper-1",
+        file: new File([buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer], "media.mp4", { type: contentType || "video/mp4" }),
+        ...(config.language ? { language: config.language } : {}),
+      },
+      { signal: ctx.signal },
+    );
 
     try {
       const { recordTokenUsage } = await import("@/lib/usage");
@@ -73,10 +76,28 @@ function isPrivateIp(ip: string): boolean {
   if (normalized === "::1" || normalized === "::") return true;
   if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // ULA
   if (normalized.startsWith("fe80")) return true; // link-local
-  const mappedIpv4 = normalized.match(/^::ffff:(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (normalized.startsWith("ff")) return true; // multicast
+
+  // Dotted IPv4-mapped IPv6 (::ffff:10.0.0.1)
+  const mappedIpv4 = normalized.match(/^(?:0*:)*ffff:(\d+)\.(\d+)\.(\d+)\.(\d+)$/i);
   if (mappedIpv4 && isPrivateIp(mappedIpv4.slice(1).join("."))) {
     return true;
   }
+
+  // Hexadecimal IPv4-mapped IPv6 (::ffff:0a00:0001 or ::ffff:a00:1)
+  const hexMapped = normalized.match(/^(?:0*:)*ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (hexMapped) {
+    const high = parseInt(hexMapped[1], 16);
+    const low = parseInt(hexMapped[2], 16);
+    const a = (high >> 8) & 0xff;
+    const b = high & 0xff;
+    const c = (low >> 8) & 0xff;
+    const d = low & 0xff;
+    if (isPrivateIp(`${a}.${b}.${c}.${d}`)) {
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -88,25 +109,31 @@ export type SafeMediaTarget = { url: URL; ip: string };
  * rebinding attack cannot swap the hostname to an internal address after the
  * check — the checked address IS the connection address.
  */
-export async function validateSafeUrl(urlStr: string): Promise<SafeMediaTarget> {
+export async function validateSafeUrl(
+  input: string,
+  signal?: AbortSignal,
+): Promise<{ url: URL; ip: string }> {
+  if (signal?.aborted) {
+    throw (signal.reason as Error) ?? new Error("Aborted");
+  }
+
   let parsed: URL;
   try {
-    parsed = new URL(urlStr);
+    parsed = new URL(input);
   } catch {
-    throw new Error("Invalid media URL format.");
+    throw new Error("Invalid media URL.");
   }
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Invalid URL protocol. Only http: and https: are allowed.");
+    throw new Error(`Forbidden protocol: ${parsed.protocol}`);
   }
 
   const hostname = parsed.hostname.toLowerCase();
   if (
     hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
     hostname.endsWith(".local") ||
-    hostname.endsWith(".internal") ||
-    hostname.endsWith(".lan") ||
-    hostname === "0.0.0.0"
+    hostname.endsWith(".internal")
   ) {
     throw new Error("Target media hostname is forbidden.");
   }
@@ -118,7 +145,18 @@ export async function validateSafeUrl(urlStr: string): Promise<SafeMediaTarget> 
   const dns = await import("dns/promises");
   let resolvedIp: string | undefined;
   try {
-    const lookups = await dns.lookup(hostname, { all: true, verbatim: true });
+    const lookupPromise = dns.lookup(hostname, { all: true, verbatim: true });
+    let lookups;
+    if (signal) {
+      const abortPromise = new Promise<never>((_, reject) => {
+        const onAbort = () => reject((signal.reason as Error) ?? new Error("Aborted"));
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      });
+      lookups = await Promise.race([lookupPromise, abortPromise]);
+    } else {
+      lookups = await lookupPromise;
+    }
     // Prefer a globally routable IPv4; any private/mapped result is rejected.
     for (const { address } of lookups) {
       if (isPrivateIp(address)) {
@@ -128,7 +166,7 @@ export async function validateSafeUrl(urlStr: string): Promise<SafeMediaTarget> 
     }
     resolvedIp ??= lookups[0]?.address;
   } catch (dnsErr: any) {
-    if (dnsErr.message?.includes("forbidden")) throw dnsErr;
+    if (dnsErr.message?.includes("forbidden") || dnsErr.message?.includes("Aborted") || dnsErr.message?.includes("timed out")) throw dnsErr;
     throw new Error(`Failed to resolve media hostname: ${dnsErr.message}`);
   }
   if (!resolvedIp) {
@@ -141,86 +179,191 @@ export async function validateSafeUrl(urlStr: string): Promise<SafeMediaTarget> 
 export type SafeMediaResult = { buffer: Buffer; contentType: string; finalUrl: string };
 
 /**
- * Downloads media with SSRF-safe, TLS-safe semantics:
- * - DNS is resolved ONCE and validated (private/metadata ranges rejected).
- * - The validated IP is passed to Node's request `lookup` option, so the
- *   connection goes to exactly that IP (no rebinding)…
- * - …while hostname, SNI and certificate validation still use the original
- *   hostname — normal HTTPS certificates work.
- * Redirects are followed manually and each hop re-validates its own IP.
+ * SSRF-safe, TLS-safe HTTP request:
+ * - Entire operation (including DNS resolution) is bounded by timeoutMs.
+ * - DNS resolved ONCE and validated (private/metadata ranges rejected).
+ * - Connection pinned to the validated IP via `lookup`…
+ * - …while hostname, SNI and certificate validation use the real hostname.
+ * Throws on non-2xx; caller decides redirect handling.
  */
-export async function fetchSafeMedia(
-  initialUrl: string,
-  signal?: AbortSignal,
-): Promise<SafeMediaResult> {
-  let currentUrl = initialUrl;
-  let redirects = 0;
-  const maxRedirects = 5;
+export async function safeRequest(
+  urlStr: string,
+  opts: SafeRequestOptions = {},
+): Promise<SafeRequestResult> {
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const abortCtrl = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
 
-  while (redirects <= maxRedirects) {
-    const { url, ip } = await validateSafeUrl(currentUrl);
+  const onExternalAbort = () => {
+    abortCtrl.abort(opts.signal?.reason ?? new Error("Aborted"));
+  };
+  if (opts.signal) {
+    if (opts.signal.aborted) onExternalAbort();
+    else opts.signal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+
+  timer = setTimeout(() => {
+    abortCtrl.abort(new Error("Request timed out."));
+  }, timeoutMs);
+
+  const cleanup = () => {
+    if (timer) clearTimeout(timer);
+    if (opts.signal) opts.signal.removeEventListener("abort", onExternalAbort);
+  };
+
+  try {
+    const { url, ip } = await validateSafeUrl(urlStr, abortCtrl.signal);
     const isHttps = url.protocol === "https:";
     const requester = isHttps ? httpsRequest : httpRequest;
+    const maxBytes = opts.maxBytes ?? 25 * 1024 * 1024;
 
-    const { status, headers, buffer } = await new Promise<{
-      status: number;
-      headers: Record<string, string | string[] | undefined>;
-      buffer: Buffer;
-    }>((resolve, reject) => {
-      const req = requester(
+    return await new Promise<SafeRequestResult>((resolve, reject) => {
+      let done = false;
+      let req: ReturnType<typeof requester> | undefined;
+
+      const fail = (err: Error) => {
+        if (done) return;
+        done = true;
+        req?.destroy();
+        reject(err);
+      };
+
+      const onAbort = () => {
+        fail((abortCtrl.signal.reason as Error) ?? new Error("Aborted"));
+      };
+      if (abortCtrl.signal.aborted) {
+        onAbort();
+        return;
+      }
+      abortCtrl.signal.addEventListener("abort", onAbort, { once: true });
+
+      req = requester(
         {
           protocol: url.protocol,
           hostname: url.hostname, // TLS/SNI + Host use the real hostname
           port: url.port ? Number(url.port) : isHttps ? 443 : 80,
           path: `${url.pathname}${url.search}`,
-          method: "GET",
+          method: opts.method ?? "GET",
           // Pin the connection to the validated IP; TLS still validates the hostname.
-          lookup: (_host: string, _opts: unknown, cb: (err: Error | null, address: string, family: number) => void) =>
+          lookup: (_host: string, _o: unknown, cb: (err: Error | null, address: string, family: number) => void) =>
             cb(null, ip, ip.includes(":") ? 6 : 4),
-          headers: { accept: "*/*" },
+          headers: opts.headers ?? {},
         },
         (res) => {
+          const cl = res.headers["content-length"];
+          if (cl && Number(cl) > maxBytes) {
+            fail(new Error(`Response content-length (${cl}) exceeded the ${maxBytes} byte limit.`));
+            return;
+          }
           const chunks: Buffer[] = [];
-          res.on("data", (c: Buffer) => chunks.push(c));
-          res.on("end", () =>
+          let total = 0;
+          res.on("data", (c: Buffer) => {
+            if (done) return;
+            total += c.length;
+            if (total > maxBytes) {
+              fail(new Error(`Response exceeded the ${maxBytes} byte limit.`));
+              return;
+            }
+            chunks.push(c);
+          });
+          res.on("end", () => {
+            if (done) return;
+            done = true;
+            abortCtrl.signal.removeEventListener("abort", onAbort);
             resolve({
               status: res.statusCode ?? 0,
               headers: res.headers,
               buffer: Buffer.concat(chunks),
-            }),
-          );
+            });
+          });
+          res.on("error", (err) => fail(err));
         },
       );
-      req.on("error", (err) => reject(err));
-      if (signal) {
-        const abort = () => req.destroy(new Error("Aborted"));
-        if (signal.aborted) abort();
-        else signal.addEventListener("abort", abort, { once: true });
-      }
+      req.on("error", (err) => fail(err));
+      if (opts.body !== undefined) req.write(opts.body);
       req.end();
     });
+  } finally {
+    cleanup();
+  }
+}
 
-    if (status >= 300 && status < 400) {
-      const location = Array.isArray(headers.location) ? headers.location[0] : headers.location;
-      if (!location) {
-        throw new Error(`Redirect response (${status}) missing location header.`);
-      }
-      currentUrl = new URL(location, currentUrl).toString();
-      redirects++;
-      continue;
-    }
+export type SafeRequestOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  signal?: AbortSignal;
+  /** Hard cap on the buffered body (bytes). Default 25MB. */
+  maxBytes?: number;
+  /** Hard cap on request duration (ms). Default 60s. */
+  timeoutMs?: number;
+};
 
-    if (status < 200 || status >= 300) {
-      throw new Error(`Failed to download media (${status}).`);
-    }
+export type SafeRequestResult = {
+  status: number;
+  headers: Record<string, string | string[] | undefined>;
+  buffer: Buffer;
+};
 
-    const contentType =
-      (Array.isArray(headers["content-type"]) ? headers["content-type"][0] : headers["content-type"]) ??
-      "application/octet-stream";
-    return { buffer, contentType, finalUrl: currentUrl };
+export async function fetchSafeMedia(
+  initialUrl: string,
+  signal?: AbortSignal,
+  timeoutMs = 60_000,
+): Promise<SafeMediaResult> {
+  const abortCtrl = new AbortController();
+  const timer = setTimeout(() => {
+    abortCtrl.abort(new Error("Media download timed out."));
+  }, timeoutMs);
+
+  const onExternalAbort = () => {
+    abortCtrl.abort(signal?.reason ?? new Error("Aborted"));
+  };
+  if (signal) {
+    if (signal.aborted) onExternalAbort();
+    else signal.addEventListener("abort", onExternalAbort, { once: true });
   }
 
-  throw new Error("Too many redirects when downloading media.");
+  const cleanup = () => {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", onExternalAbort);
+  };
+
+  try {
+    let currentUrl = initialUrl;
+    let redirects = 0;
+    const maxRedirects = 5;
+
+    while (redirects <= maxRedirects) {
+      const { status, headers, buffer } = await safeRequest(currentUrl, {
+        method: "GET",
+        signal: abortCtrl.signal,
+        timeoutMs,
+      });
+
+      if (status >= 300 && status < 400) {
+        const location = Array.isArray(headers.location) ? headers.location[0] : headers.location;
+        if (!location) {
+          throw new Error(`Redirect response (${status}) missing location header.`);
+        }
+        currentUrl = new URL(location, currentUrl).toString();
+        redirects++;
+        continue;
+      }
+
+      if (status < 200 || status >= 300) {
+        throw new Error(`Failed to download media (${status}).`);
+      }
+
+      const contentType =
+        (Array.isArray(headers["content-type"]) ? headers["content-type"][0] : headers["content-type"]) ??
+        "application/octet-stream";
+      return { buffer, contentType, finalUrl: currentUrl };
+    }
+
+    throw new Error("Too many redirects when downloading media.");
+  } finally {
+    cleanup();
+  }
 }
 
 function extractUrl(input: unknown, field?: string): string | undefined {

@@ -72,19 +72,34 @@ export async function executeFlow(
   const outgoing = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.from === id);
   const incoming = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.to === id);
 
+  const abortController = new AbortController();
+  let fenceError: Error | undefined;
+
+  const triggerHeartbeat = async () => {
+    try {
+      await ports.onHeartbeat?.();
+    } catch (err: any) {
+      if (!fenceError) {
+        fenceError = err instanceof Error ? err : new Error(String(err));
+        abortController.abort(fenceError);
+      }
+    }
+  };
+
   const ctxBase: Omit<NodeContext, "nodeId"> = {
     tenantId: opts.tenantId,
     runId: opts.runId,
     flowId: opts.flowId,
     triggerPayload: opts.triggerPayload,
     approvedNodeIds: opts.approvedNodeIds,
-    heartbeat: () => ports.onHeartbeat?.(),
+    signal: abortController.signal,
+    heartbeat: triggerHeartbeat,
   };
 
   let heartbeatTimer: NodeJS.Timeout | undefined;
   if (ports.onHeartbeat) {
     heartbeatTimer = setInterval(() => {
-      void ports.onHeartbeat?.();
+      void triggerHeartbeat();
     }, 10_000);
   }
 
@@ -150,12 +165,24 @@ export async function executeFlow(
     }
   }
 
+  const sharedFanoutProgress: Record<string, Record<string, unknown>> = {
+    ...(opts.fanoutProgress ?? {}),
+  };
+
   const setStatus = async (
     step: FlowStep,
     fanoutProgress?: Record<string, Record<string, unknown>>,
   ) => {
     steps.set(step.nodeId, step);
-    await ports.onStepUpdate?.(step, fanoutProgress);
+    try {
+      await ports.onStepUpdate?.(step, fanoutProgress ?? sharedFanoutProgress);
+    } catch (err: any) {
+      if (!fenceError) {
+        fenceError = err instanceof Error ? err : new Error(String(err));
+        abortController.abort(fenceError);
+      }
+      throw fenceError;
+    }
   };
 
   function branchOf(id: string): string | undefined {
@@ -238,6 +265,11 @@ export async function executeFlow(
   }
 
   async function runNode(node: FlowGraphNode): Promise<"ok" | "failed" | "paused"> {
+    if (fenceError) throw fenceError;
+    if (abortController.signal.aborted) {
+      throw (abortController.signal.reason as Error) ?? new Error("Execution aborted.");
+    }
+
     const def = getNode(node.type);
     if (!def) {
       await setStatus({ nodeId: node.id, type: node.type, status: "failed", error: `Unknown node type ${node.type}` });
@@ -250,8 +282,19 @@ export async function executeFlow(
     await setStatus({ nodeId: node.id, type: node.type, status: "working", input, startedAt });
 
     try {
+      await triggerHeartbeat();
+      if (fenceError) throw fenceError;
+      if (abortController.signal.aborted) {
+        throw (abortController.signal.reason as Error) ?? new Error("Execution aborted.");
+      }
+
       const config = def.configSchema.parse(node.config ?? {});
-      const result = await def.execute(input, config, { ...ctxBase, nodeId: node.id });
+      const result = await def.execute(input, config, { ...ctxBase, nodeId: node.id, itemKey: activeFanout?.itemKey });
+
+      if (fenceError) throw fenceError;
+      if (abortController.signal.aborted) {
+        throw (abortController.signal.reason as Error) ?? new Error("Execution aborted.");
+      }
 
       const stored =
         result.branch !== undefined ? { __branch: result.branch, value: result.output } : result.output;
@@ -293,10 +336,14 @@ export async function executeFlow(
         activeFanout ? activeFanout.progress : undefined,
       );
 
-      await ports.onHeartbeat?.();
+      await triggerHeartbeat();
       return "ok";
     } catch (error) {
+      if (fenceError) throw fenceError;
       const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Execution fenced") || message.includes("Aborted")) {
+        throw error;
+      }
       await setStatus({
         nodeId: node.id,
         type: node.type,
@@ -386,6 +433,10 @@ export async function executeFlow(
     }
 
     while (frontier.length > 0) {
+      if (fenceError) throw fenceError;
+      if (abortController.signal.aborted) {
+        throw (abortController.signal.reason as Error) ?? new Error("Execution aborted.");
+      }
       if (pendingApproval) return "paused";
 
       // Failed branches must not starve independent healthy ones: on failure
@@ -452,70 +503,80 @@ export async function executeFlow(
       if (!doc.edges.some((e) => e.from === id)) collected[id] = [];
     }
     const chainNodes = Array.from(reachable);
-    const progress: Record<string, Record<string, unknown>> = {
-      ...opts.fanoutProgress,
-    };
 
-    for (let i = 0; i < items.length; i++) {
-      const itemKey = String(i);
-      const checkpoint = { ...(progress[itemKey] ?? {}) };
+    const prevFanout = activeFanout;
+    try {
+      for (let i = 0; i < items.length; i++) {
+        const itemKey = prevFanout ? `${prevFanout.itemKey}/${loopId}:${i}` : `${loopId}:${i}`;
+        const checkpoint = { ...(sharedFanoutProgress[itemKey] ?? (!prevFanout ? sharedFanoutProgress[String(i)] : undefined) ?? {}) };
 
-      // Restore this item's already-succeeded chain prefix…
-      for (const [nodeId, value] of Object.entries(checkpoint)) {
-        const node = nodeById.get(nodeId);
-        if (!node) continue;
-        const branch =
-          value && typeof value === "object" && "__branch" in (value as Record<string, unknown>)
-            ? ((value as Record<string, unknown>).__branch as string)
-            : undefined;
-        steps.set(nodeId, {
-          nodeId,
-          type: node.type,
-          status: "succeeded",
-          output: stripInternal(value),
-          ...(branch !== undefined ? { branch } : {}),
-          cached: true,
-        });
-        outputs.set(nodeId, value);
+        // Restore this item's already-succeeded chain prefix…
+        for (const [nodeId, value] of Object.entries(checkpoint)) {
+          const node = nodeById.get(nodeId);
+          if (!node) continue;
+          const branch =
+            value && typeof value === "object" && "__branch" in (value as Record<string, unknown>)
+              ? ((value as Record<string, unknown>).__branch as string)
+              : undefined;
+          steps.set(nodeId, {
+            nodeId,
+            type: node.type,
+            status: "succeeded",
+            output: stripInternal(value),
+            ...(branch !== undefined ? { branch } : {}),
+            cached: true,
+          });
+          outputs.set(nodeId, value);
+        }
+        // …then clear only the UNCHECKPOINTED remainder. Steps from the LAST
+        // iteration are intentionally kept afterwards for run inspection.
+        for (const id of reachable) {
+          if (!(id in checkpoint)) steps.delete(id);
+        }
+        outputs.set(loopId, items[i]);
+
+        activeFanout = {
+          itemKey,
+          chainNodes: new Set(chainNodes),
+          progress: sharedFanoutProgress,
+        };
+
+        let outcome: Outcome;
+        try {
+          outcome = await stageLoop(entries, new Set());
+        } finally {
+          activeFanout = prevFanout;
+        }
+
+        // Checkpoint every chain node that succeeded for this item (including on failure / pause)
+        // so restart-from-failed never replays already-succeeded side-effecting predecessor nodes!
+        const done: Record<string, unknown> = { ...checkpoint };
+        for (const id of chainNodes) {
+          const st = steps.get(id);
+          if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
+        }
+        sharedFanoutProgress[itemKey] = done;
+        try {
+          await ports.onFanoutProgress?.(sharedFanoutProgress);
+        } catch (err: any) {
+          if (!fenceError) {
+            fenceError = err instanceof Error ? err : new Error(String(err));
+            abortController.abort(fenceError);
+          }
+          throw fenceError;
+        }
+
+        if (outcome !== "completed") return outcome;
+
+        for (const sinkId of Object.keys(collected)) {
+          if (steps.get(sinkId)?.status !== "succeeded") continue;
+          const value = unwrap(outputs.get(sinkId));
+          if (Array.isArray(value)) collected[sinkId].push(...value);
+          else collected[sinkId].push(value);
+        }
       }
-      // …then clear only the UNCHECKPOINTED remainder. Steps from the LAST
-      // iteration are intentionally kept afterwards for run inspection.
-      for (const id of reachable) {
-        if (!(id in checkpoint)) steps.delete(id);
-      }
-      outputs.set(loopId, items[i]);
-
-      activeFanout = {
-        itemKey,
-        chainNodes: new Set(chainNodes),
-        progress,
-      };
-
-      let outcome: Outcome;
-      try {
-        outcome = await stageLoop(entries, new Set());
-      } finally {
-        activeFanout = undefined;
-      }
-
-      // Checkpoint every chain node that succeeded for this item (including on failure / pause)
-      // so restart-from-failed never replays already-succeeded side-effecting predecessor nodes!
-      const done: Record<string, unknown> = { ...checkpoint };
-      for (const id of chainNodes) {
-        const st = steps.get(id);
-        if (st?.status === "succeeded" && outputs.has(id)) done[id] = outputs.get(id);
-      }
-      progress[itemKey] = done;
-      await ports.onFanoutProgress?.(progress);
-
-      if (outcome !== "completed") return outcome;
-
-      for (const sinkId of Object.keys(collected)) {
-        if (steps.get(sinkId)?.status !== "succeeded") continue;
-        const value = unwrap(outputs.get(sinkId));
-        if (Array.isArray(value)) collected[sinkId].push(...value);
-        else collected[sinkId].push(value);
-      }
+    } finally {
+      activeFanout = prevFanout;
     }
 
     outputs.set(FANOUT_KEY(loopId), collected);

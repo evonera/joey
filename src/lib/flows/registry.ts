@@ -8,33 +8,49 @@ import { conditionNode } from "./nodes/logic/condition";
 import { llmTaskNode } from "./nodes/ai/llm-task";
 import { createDraftNode } from "./nodes/actions/create-draft";
 import { notifyNode } from "./nodes/actions/notify";
+import { saveAssetNode } from "./nodes/actions/save-asset";
 
 // P1 + P2 node catalog
 import { webhookTriggerNode } from "./nodes/triggers/webhook";
+import { incomingWebhookNode } from "./nodes/triggers/incoming-webhook";
 import { apifyActorNode } from "./nodes/data/apify-actor";
 import { exaSearchNode } from "./nodes/data/exa-search";
 import { tavilySearchNode } from "./nodes/data/tavily-search";
+import { httpNode } from "./nodes/data/http";
+import { rssNode } from "./nodes/data/rss";
+import { redditNode } from "./nodes/data/reddit";
 import { transcribeNode } from "./nodes/ai/transcribe";
+import { youtubeTranscriptNode } from "./nodes/ai/youtube-transcript";
+import { imageGenNode } from "./nodes/ai/image";
 import { loopNode } from "./nodes/logic/loop";
 import { approvalGateNode } from "./nodes/logic/approval-gate";
+import { splitNode } from "./nodes/logic/split";
 
 const definitions = {
   "trigger.manual": manualTriggerNode,
   "trigger.schedule": scheduleTriggerNode,
   "trigger.webhook": webhookTriggerNode,
+  "trigger.incoming_webhook": incomingWebhookNode,
   "transform.filter": filterNode,
   "transform.sort": sortTopNNode,
   "transform.dedupe": dedupeNode,
   "logic.condition": conditionNode,
   "logic.loop": loopNode,
   "logic.approval": approvalGateNode,
+  "logic.split": splitNode,
   "ai.llm": llmTaskNode,
   "ai.transcribe": transcribeNode,
+  "ai.youtube_transcript": youtubeTranscriptNode,
+  "ai.image": imageGenNode,
   "action.create_draft": createDraftNode,
   "action.notify": notifyNode,
+  "action.save_asset": saveAssetNode,
   "data.apify_actor": apifyActorNode,
   "data.exa_search": exaSearchNode,
   "data.tavily_search": tavilySearchNode,
+  "data.http": httpNode,
+  "data.rss": rssNode,
+  "data.reddit": redditNode,
 } satisfies Record<string, NodeDefinition>;
 
 // Compile-time drift guard: every key must equal the node's declared type.
@@ -49,19 +65,27 @@ const _keysMatch: AssertKeysMatch = {
   "trigger.manual": true,
   "trigger.schedule": true,
   "trigger.webhook": true,
+  "trigger.incoming_webhook": true,
   "transform.filter": true,
   "transform.sort": true,
   "transform.dedupe": true,
   "logic.condition": true,
   "logic.loop": true,
   "logic.approval": true,
+  "logic.split": true,
   "ai.llm": true,
   "ai.transcribe": true,
+  "ai.youtube_transcript": true,
+  "ai.image": true,
   "action.create_draft": true,
   "action.notify": true,
+  "action.save_asset": true,
   "data.apify_actor": true,
   "data.exa_search": true,
   "data.tavily_search": true,
+  "data.http": true,
+  "data.rss": true,
+  "data.reddit": true,
 };
 void _keysMatch;
 

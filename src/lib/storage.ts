@@ -42,6 +42,31 @@ export async function generateUploadUrl(filename: string, contentType: string, t
   return { uploadUrl, key, publicUrl: buildPublicUrl(key) };
 }
 
+/** Server-side direct upload (flow nodes, generated media). */
+export async function uploadBufferToR2(
+  body: Buffer | Uint8Array,
+  contentType: string,
+  tenantId: string,
+  opts?: { customKey?: string; signal?: AbortSignal },
+): Promise<{ key: string; publicUrl: string }> {
+  const key = opts?.customKey ?? `${tenantId}/${crypto.randomUUID()}`;
+  const client = getS3Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: getBucketName(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+    { abortSignal: opts?.signal },
+  );
+  return { key, publicUrl: buildPublicUrl(key) };
+}
+
+export function getBucket(): string {
+  return getBucketName();
+}
+
 export async function headObject(key: string) {
   const client = getS3Client();
   const command = new HeadObjectCommand({
@@ -68,4 +93,25 @@ export async function deleteObject(key: string) {
     Key: key,
   });
   return client.send(command);
+}
+
+/** Robust compensating deletion for unreferenced uploads with backoff retries. */
+export async function deleteObjectWithRetry(key: string, maxAttempts = 3): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await deleteObject(key);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        await new Promise((res) => setTimeout(res, 200 * attempt));
+      }
+    }
+  }
+  throw new Error(
+    `Compensating deletion failed: unable to delete orphaned R2 object (${key}) after ${maxAttempts} attempts: ${
+      lastErr instanceof Error ? lastErr.message : String(lastErr)
+    }`,
+  );
 }

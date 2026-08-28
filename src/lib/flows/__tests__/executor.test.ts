@@ -381,8 +381,9 @@ describe("cached fan-out trigger precision (round 4)", () => {
 
     expect(firstRun.status).toBe("failed");
     // stepA succeeded for item 0 before stepB failed, so item 0 checkpoint MUST contain stepA!
-    expect(savedFanoutProgress["0"]).toBeDefined();
-    expect(savedFanoutProgress["0"]["stepA"]).toEqual({ id: 1 });
+    const item0Progress = savedFanoutProgress["loop:0"] ?? savedFanoutProgress["0"];
+    expect(item0Progress).toBeDefined();
+    expect(item0Progress["stepA"]).toEqual({ id: 1 });
 
     // Now restart the run with a fixed graph and the saved fanoutProgress
     const fixedGraph = doc({

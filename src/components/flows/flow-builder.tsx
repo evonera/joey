@@ -40,11 +40,13 @@ import { ZodForm } from "./zod-form";
 import { RunsPanel } from "./runs-panel";
 import {
   saveFlow, validateFlowGraph, runFlow, setFlowStatus, publishTemplate,
+  regenerateWebhookSecret,
 } from "@/app/actions/flows";
 
 type FlowRow = {
   id: string; name: string; description: string | null;
   graph: unknown; status: string; lastRunAt: Date | string | null;
+  webhookSecret?: string | null;
 };
 
 const CATEGORY_ICON: Record<string, typeof Zap> = {
@@ -84,6 +86,45 @@ function FlowNode({ data, selected }: NodeProps) {
             />
           </span>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function WebhookUrlBox({ flowId, secret: initialSecret }: { flowId: string; secret: string }) {
+  const [copied, setCopied] = useState(false);
+  const [secret, setSecret] = useState(initialSecret);
+  const url =
+    typeof window === "undefined"
+      ? `https://joey.evonera.com/api/webhooks/flows/${flowId}`
+      : `${window.location.origin}/api/webhooks/flows/${flowId}`;
+
+  return (
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 space-y-1.5">
+      <p className="text-[11px] font-medium">POST JSON with the X-Webhook-Secret header to start this flow:</p>
+      <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[10px]">{url}</code>
+      {secret ? <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[10px]">X-Webhook-Secret: {secret}</code> : <p className="text-[10px] text-muted-foreground">Secret is hidden after first display. Regenerate to reveal a new one.</p>}
+      <div className="flex gap-1.5">
+        <Button
+          size="sm" variant="outline" className="h-6 text-[10px]"
+          onClick={() => {
+            void navigator.clipboard.writeText(url);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+        >
+          {copied ? "Copied!" : "Copy URL"}
+        </Button>
+        <Button
+          size="sm" variant="ghost" className="h-6 text-[10px]"
+          onClick={async () => {
+            const res = await regenerateWebhookSecret(flowId);
+            if (res.secret) { setSecret(res.secret); toast.success("Secret regenerated — old credentials are invalid"); }
+            else toast.error(res.error ?? "Failed");
+          }}
+        >
+          Regenerate secret
+        </Button>
       </div>
     </div>
   );
@@ -132,7 +173,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
       edges: rfEdges.map((e) => ({
         from: e.source,
         to: e.target,
-        ...(e.sourceHandle && ["true", "false"].includes(e.sourceHandle) ? { branch: e.sourceHandle } : {}),
+        ...(e.sourceHandle && ["true", "false", "a", "b"].includes(e.sourceHandle) ? { branch: e.sourceHandle } : {}),
       })),
     };
   }
@@ -341,6 +382,11 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
                 <button className="text-xs text-muted-foreground hover:text-foreground" onClick={()=>setSelectedId(null)}>✕</button>
               </div>
               <p className="text-xs text-muted-foreground">{selectedDef.description}</p>
+
+              {selectedDef.type === "trigger.incoming_webhook" && (
+                <WebhookUrlBox flowId={flow.id} secret={flow.webhookSecret ?? ""} />
+              )}
+
               {Object.keys(selectedNode.data as object).includes("config") && (
                 <ZodForm
                   schema={selectedDef.configSchema}

@@ -96,236 +96,241 @@ export default defineSchedule({
         );
     }
 
+    const { processR2CleanupTasks } = await import("@/lib/storage-cleanup");
+    await processR2CleanupTasks();
+
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
     });
 
-    for (const flow of activeFlows) {
-      try {
-        const graph = flow.graph as { nodes?: { id: string; type: string; config?: Record<string, unknown> }[] };
-        const triggerNode = graph.nodes?.find((n) => n.type === "trigger.schedule");
-        if (!triggerNode) continue;
+    await Promise.allSettled(
+      activeFlows.map(async (flow) => {
+        try {
+          const graph = flow.graph as { nodes?: { id: string; type: string; config?: Record<string, unknown> }[] };
+          const triggerNode = graph.nodes?.find((n) => n.type === "trigger.schedule");
+          if (!triggerNode) return;
 
-        const def = getNode("trigger.schedule");
-        const parsed = def?.configSchema.safeParse(triggerNode.config ?? {});
-        if (!parsed?.success) continue;
-        const config = parsed.data as { intervalMinutes: number };
+          const def = getNode("trigger.schedule");
+          const parsed = def?.configSchema.safeParse(triggerNode.config ?? {});
+          if (!parsed?.success) return;
+          const config = parsed.data as { intervalMinutes: number };
 
-        if (flow.lastRunAt) {
-          const elapsed = Date.now() - flow.lastRunAt.getTime();
-          if (elapsed < config.intervalMinutes * 60_000) continue;
-        }
+          if (flow.lastRunAt) {
+            const elapsed = Date.now() - flow.lastRunAt.getTime();
+            if (elapsed < config.intervalMinutes * 60_000) return;
+          }
 
-        // Skip if any run for this flow is still in flight — a WAITING
-        // approval also occupies the slot (it will transition back to
-        // running on approval), so a later tick must not admit another.
-        const inFlight = await db.query.flowRuns.findFirst({
-          where: and(
-            eq(flowRuns.flowId, flow.id),
-            or(
-              eq(flowRuns.status, "running"),
-              eq(flowRuns.status, "waiting_approval"),
+          // Skip if any run for this flow is still in flight — a WAITING
+          // approval also occupies the slot (it will transition back to
+          // running on approval), so a later tick must not admit another.
+          const inFlight = await db.query.flowRuns.findFirst({
+            where: and(
+              eq(flowRuns.flowId, flow.id),
+              or(
+                eq(flowRuns.status, "running"),
+                eq(flowRuns.status, "waiting_approval"),
+              ),
             ),
-          ),
-          columns: { id: true },
-        });
-        if (inFlight) continue;
+            columns: { id: true },
+          });
+          if (inFlight) return;
 
-        // Atomic admission: partial unique index (flow_runs_running_scheduled_idx) guarantees
-        // at most one running scheduled execution per flow across concurrent scheduler invocations.
-        let run;
-        try {
-          const inserted = await db
-            .insert(flowRuns)
-            .values({
-              flowId: flow.id,
-              tenantId: flow.tenantId,
-              trigger: "schedule",
-              triggerPayload: { scheduledAt: new Date().toISOString() },
-            })
-            .onConflictDoNothing()
-            .returning();
-          run = inserted[0];
-        } catch (err: any) {
-          if (err?.code === "23505" || err?.message?.includes("unique")) {
-            continue;
-          }
-          throw err;
-        }
-        if (!run) continue;
-
-        let result;
-        let execError: unknown;
-        try {
-          // Advance lastRunAt immediately upon admission so concurrent / subsequent ticks
-          // in this interval observe the new cadence window immediately.
-          await db
-            .update(flows)
-            .set({ lastRunAt: new Date(), updatedAt: new Date() })
-            .where(eq(flows.id, flow.id));
-
-          result = await executeFlow(
-            flow.graph as Parameters<typeof executeFlow>[0],
-            {
-              tenantId: flow.tenantId,
-              runId: run.id,
-              flowId: flow.id,
-              triggerPayload: { scheduledAt: new Date().toISOString() },
-            },
-            {
-              onStepUpdate: async (step, fanoutProgress) => {
-                const r = await db.query.flowRuns.findFirst({
-                  where: and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, flow.tenantId)),
-                  columns: { steps: true, status: true },
-                });
-                if (!r || r.status !== "running") {
-                  throw new Error("Execution fenced: run was transitioned out of running by stale recovery.");
-                }
-                const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
-                const idx = steps.findIndex((st) => st.nodeId === step.nodeId);
-                if (idx >= 0) steps[idx] = step;
-                else steps.push(step);
-                const updated = await db
-                  .update(flowRuns)
-                  .set({
-                    steps,
-                    ...(fanoutProgress ? { fanoutProgress } : {}),
-                    updatedAt: new Date(),
-                  })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                  .returning({ id: flowRuns.id });
-                if (updated.length === 0) {
-                  throw new Error("Execution fenced: update rejected because run is no longer running.");
-                }
-              },
-              onFanoutProgress: async (fanoutProgress) => {
-                const updated = await db
-                  .update(flowRuns)
-                  .set({ fanoutProgress, updatedAt: new Date() })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                  .returning({ id: flowRuns.id });
-                if (updated.length === 0) {
-                  throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
-                }
-              },
-              onHeartbeat: async () => {
-                const updated = await db
-                  .update(flowRuns)
-                  .set({ updatedAt: new Date() })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                  .returning({ id: flowRuns.id });
-                if (updated.length === 0) {
-                  throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
-                }
-              },
-            },
-          );
-        } catch (err) {
-          execError = err;
-        } finally {
-          // Resilient two-stage finalization with retries:
-          // 1. If result exists, attempt primary write with full steps & status.
-          // 2. If primary write fails or executeFlow threw, apply minimal fallback so run
-          //    is guaranteed to reach a terminal status and never dangles as 'running'.
-          const status = result ? result.status : "failed";
-          const error =
-            result?.error ??
-            (execError instanceof Error
-              ? execError.message
-              : execError
-                ? String(execError)
-                : null);
-          const finishedAt = new Date();
-          const updatedAt = new Date();
-
-          let finalized = false;
-          for (let attempt = 0; attempt < 5 && !finalized; attempt++) {
-            if (result) {
-              try {
-                const updated = await db
-                  .update(flowRuns)
-                  .set({
-                    status,
-                    steps: result.steps,
-                    error,
-                    finishedAt,
-                    updatedAt,
-                  })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                  .returning({ id: flowRuns.id });
-                if (updated.length > 0) finalized = true;
-              } catch (finErr) {
-                console.warn(`[flows-tick] Rich finalization attempt ${attempt + 1} failed for ${run.id}:`, finErr);
-              }
-            }
-
-            if (!finalized) {
-              try {
-                const updated = await db
-                  .update(flowRuns)
-                  .set({
-                    status,
-                    error: error ?? "Execution finalized with minimal fallback.",
-                    finishedAt,
-                    updatedAt,
-                  })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                  .returning({ id: flowRuns.id });
-                if (updated.length > 0) finalized = true;
-              } catch (fallbackErr) {
-                console.error(`[flows-tick] Minimal finalization attempt ${attempt + 1} failed for ${run.id}:`, fallbackErr);
-              }
-            }
-
-            if (!finalized) {
-              try {
-                const updated = await db
-                  .update(flowRuns)
-                  .set({
-                    status,
-                    finishedAt,
-                    updatedAt,
-                  })
-                  .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                  .returning({ id: flowRuns.id });
-                if (updated.length > 0) finalized = true;
-              } catch (bareErr) {
-                console.error(`[flows-tick] Bare finalization attempt ${attempt + 1} failed for ${run.id}:`, bareErr);
-              }
-            }
-
-            // Check if already finalized by stale recovery or another path
-            if (!finalized) {
-              try {
-                const existing = await db.query.flowRuns.findFirst({
-                  where: eq(flowRuns.id, run.id),
-                  columns: { status: true },
-                });
-                if (existing && existing.status !== "running") {
-                  finalized = true;
-                }
-              } catch {}
-            }
-
-            if (!finalized && attempt < 4) {
-              await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
-            }
-          }
-
-          if (!finalized) {
-            console.error(
-              `[flows-tick] CRITICAL: Finalization writes exhausted for run ${run.id}. Run remains persisted with accumulated steps; stale recovery will transition it when DB recovers.`,
-            );
-          }
-
+          // Atomic admission: partial unique index (flow_runs_running_scheduled_idx) guarantees
+          // at most one running scheduled execution per flow across concurrent scheduler invocations.
+          let run;
           try {
-            await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
-          } catch {}
+            const inserted = await db
+              .insert(flowRuns)
+              .values({
+                flowId: flow.id,
+                tenantId: flow.tenantId,
+                trigger: "schedule",
+                triggerPayload: { scheduledAt: new Date().toISOString() },
+              })
+              .onConflictDoNothing()
+              .returning();
+            run = inserted[0];
+          } catch (err: any) {
+            if (err?.code === "23505" || err?.message?.includes("unique")) {
+              return;
+            }
+            throw err;
+          }
+          if (!run) return;
+
+          let result;
+          let execError: unknown;
+          try {
+            // Advance lastRunAt immediately upon admission so concurrent / subsequent ticks
+            // in this interval observe the new cadence window immediately.
+            await db
+              .update(flows)
+              .set({ lastRunAt: new Date(), updatedAt: new Date() })
+              .where(eq(flows.id, flow.id));
+
+            result = await executeFlow(
+              flow.graph as Parameters<typeof executeFlow>[0],
+              {
+                tenantId: flow.tenantId,
+                runId: run.id,
+                flowId: flow.id,
+                triggerPayload: { scheduledAt: new Date().toISOString() },
+              },
+              {
+                onStepUpdate: async (step, fanoutProgress) => {
+                  const r = await db.query.flowRuns.findFirst({
+                    where: and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, flow.tenantId)),
+                    columns: { steps: true, status: true },
+                  });
+                  if (!r || r.status !== "running") {
+                    throw new Error("Execution fenced: run was transitioned out of running by stale recovery.");
+                  }
+                  const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
+                  const idx = steps.findIndex((st) => st.nodeId === step.nodeId);
+                  if (idx >= 0) steps[idx] = step;
+                  else steps.push(step);
+                  const updated = await db
+                    .update(flowRuns)
+                    .set({
+                      steps,
+                      ...(fanoutProgress ? { fanoutProgress } : {}),
+                      updatedAt: new Date(),
+                    })
+                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                    .returning({ id: flowRuns.id });
+                  if (updated.length === 0) {
+                    throw new Error("Execution fenced: update rejected because run is no longer running.");
+                  }
+                },
+                onFanoutProgress: async (fanoutProgress) => {
+                  const updated = await db
+                    .update(flowRuns)
+                    .set({ fanoutProgress, updatedAt: new Date() })
+                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                    .returning({ id: flowRuns.id });
+                  if (updated.length === 0) {
+                    throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
+                  }
+                },
+                onHeartbeat: async () => {
+                  const updated = await db
+                    .update(flowRuns)
+                    .set({ updatedAt: new Date() })
+                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                    .returning({ id: flowRuns.id });
+                  if (updated.length === 0) {
+                    throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
+                  }
+                },
+              },
+            );
+          } catch (err) {
+            execError = err;
+          } finally {
+            // Resilient two-stage finalization with retries:
+            // 1. If result exists, attempt primary write with full steps & status.
+            // 2. If primary write fails or executeFlow threw, apply minimal fallback so run
+            //    is guaranteed to reach a terminal status and never dangles as 'running'.
+            const status = result ? result.status : "failed";
+            const error =
+              result?.error ??
+              (execError instanceof Error
+                ? execError.message
+                : execError
+                  ? String(execError)
+                  : null);
+            const finishedAt = new Date();
+            const updatedAt = new Date();
+
+            let finalized = false;
+            for (let attempt = 0; attempt < 5 && !finalized; attempt++) {
+              if (result) {
+                try {
+                  const updated = await db
+                    .update(flowRuns)
+                    .set({
+                      status,
+                      steps: result.steps,
+                      error,
+                      finishedAt,
+                      updatedAt,
+                    })
+                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                    .returning({ id: flowRuns.id });
+                  if (updated.length > 0) finalized = true;
+                } catch (finErr) {
+                  console.warn(`[flows-tick] Rich finalization attempt ${attempt + 1} failed for ${run.id}:`, finErr);
+                }
+              }
+
+              if (!finalized) {
+                try {
+                  const updated = await db
+                    .update(flowRuns)
+                    .set({
+                      status,
+                      error: error ?? "Execution finalized with minimal fallback.",
+                      finishedAt,
+                      updatedAt,
+                    })
+                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                    .returning({ id: flowRuns.id });
+                  if (updated.length > 0) finalized = true;
+                } catch (fallbackErr) {
+                  console.error(`[flows-tick] Minimal finalization attempt ${attempt + 1} failed for ${run.id}:`, fallbackErr);
+                }
+              }
+
+              if (!finalized) {
+                try {
+                  const updated = await db
+                    .update(flowRuns)
+                    .set({
+                      status,
+                      finishedAt,
+                      updatedAt,
+                    })
+                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
+                    .returning({ id: flowRuns.id });
+                  if (updated.length > 0) finalized = true;
+                } catch (bareErr) {
+                  console.error(`[flows-tick] Bare finalization attempt ${attempt + 1} failed for ${run.id}:`, bareErr);
+                }
+              }
+
+              // Check if already finalized by stale recovery or another path
+              if (!finalized) {
+                try {
+                  const existing = await db.query.flowRuns.findFirst({
+                    where: eq(flowRuns.id, run.id),
+                    columns: { status: true },
+                  });
+                  if (existing && existing.status !== "running") {
+                    finalized = true;
+                  }
+                } catch {}
+              }
+
+              if (!finalized && attempt < 4) {
+                await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
+              }
+            }
+
+            if (!finalized) {
+              console.error(
+                `[flows-tick] CRITICAL: Finalization writes exhausted for run ${run.id}. Run remains persisted with accumulated steps; stale recovery will transition it when DB recovers.`,
+              );
+            }
+
+            try {
+              await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+            } catch {}
+          }
+        } catch (err) {
+          console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
         }
-      } catch (err) {
-        console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
-      }
-    }
+      }),
+    );
   },
 });
 
@@ -337,10 +342,14 @@ export function isGraphFullyCompleted(
   if (!graph || typeof graph !== "object") return false;
   const g = graph as {
     nodes?: { id: string; type: string }[];
-    edges?: { id: string; source: string; target: string; sourceHandle?: string | null }[];
+    edges?: { id: string; from?: string; to?: string; source?: string; target?: string; branch?: string | null; sourceHandle?: string | null }[];
   };
   const nodes = g.nodes ?? [];
-  const edges = g.edges ?? [];
+  const edges = (g.edges ?? []).map((e) => ({
+    source: e.from ?? e.source ?? "",
+    target: e.to ?? e.target ?? "",
+    sourceHandle: e.branch ?? e.sourceHandle ?? null,
+  }));
   if (nodes.length === 0) return false;
 
   const stepsByNodeId = new Map(steps.map((s) => [s.nodeId, s]));
@@ -372,14 +381,57 @@ export function isGraphFullyCompleted(
           }
         }
       }
-      for (let i = 0; i < items.length; i++) {
-        const itemProg = fanoutProgress[String(i)];
-        if (!itemProg) return false;
-        // Verify every non-skipped node in chain has recorded progress for this item
-        for (const chainId of chainNodes) {
-          const chainStep = stepsByNodeId.get(chainId);
-          if (chainStep?.status === "succeeded" && !(chainId in itemProg)) {
-            return false;
+      // Compute all prefix paths from ancestor loops
+      const ancestorLoops: { id: string; count: number }[] = [];
+      const visited = new Set<string>();
+      const aq = [feNode.id];
+      while (aq.length > 0) {
+        const curr = aq.shift()!;
+        for (const e of edges) {
+          if (e.target === curr && !visited.has(e.source)) {
+            visited.add(e.source);
+            const srcNode = nodes.find((n) => n.id === e.source);
+            if (srcNode && (srcNode.type === "logic.loop" || srcNode.type === "logic.forEach")) {
+              const pStep = stepsByNodeId.get(srcNode.id);
+              const pItems = Array.isArray(pStep?.output)
+                ? pStep.output
+                : Array.isArray(pStep?.input)
+                  ? pStep.input
+                  : (pStep?.input as any)?.data && Array.isArray((pStep?.input as any).data)
+                    ? (pStep?.input as any).data
+                    : null;
+              if (pItems && Array.isArray(pItems)) {
+                ancestorLoops.unshift({ id: srcNode.id, count: pItems.length });
+              }
+            }
+            aq.push(e.source);
+          }
+        }
+      }
+
+      // Generate all fully-qualified prefix paths
+      let prefixes: string[] = [""];
+      for (const anc of ancestorLoops) {
+        const nextPrefixes: string[] = [];
+        for (const p of prefixes) {
+          for (let pi = 0; pi < anc.count; pi++) {
+            nextPrefixes.push(p ? `${p}/${anc.id}:${pi}` : `${anc.id}:${pi}`);
+          }
+        }
+        prefixes = nextPrefixes;
+      }
+
+      for (const prefix of prefixes) {
+        for (let i = 0; i < items.length; i++) {
+          const itemKey = prefix ? `${prefix}/${feNode.id}:${i}` : `${feNode.id}:${i}`;
+          const itemProg = fanoutProgress[itemKey] ?? (prefix === "" ? fanoutProgress[String(i)] : undefined);
+          if (!itemProg) return false;
+          // Verify every non-skipped node in chain has recorded progress for this item
+          for (const chainId of chainNodes) {
+            const chainStep = stepsByNodeId.get(chainId);
+            if (chainStep?.status === "succeeded" && !(chainId in itemProg)) {
+              return false;
+            }
           }
         }
       }

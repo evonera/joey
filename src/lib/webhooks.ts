@@ -56,11 +56,17 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
         return { event: rearmed, isDuplicate: false };
       }
     } else if (existing.status === "pending" || existing.status === "processing") {
+      const rawId = String(payload.id).includes(":")
+        ? String(payload.id).split(":").slice(2).join(":") || String(payload.id).split(":").pop() || String(payload.id)
+        : String(payload.id);
+      const flowId = (payload.flowId as string) || (String(payload.id).startsWith("flow:") ? String(payload.id).split(":")[1] : undefined);
+
       // Check if there is an active flow execution emitting live heartbeats
       const recentLiveRun = await db.query.flowRuns.findFirst({
         where: and(
           eq(flowRuns.trigger, "webhook"),
-          sql`${flowRuns.triggerPayload}->>'id' = ${String(payload.id)}`,
+          flowId ? eq(flowRuns.flowId, flowId) : undefined,
+          sql`(${flowRuns.triggerPayload}->>'webhookEventId' = ${String(payload.id)} OR ${flowRuns.triggerPayload}->>'id' = ${String(payload.id)} OR ${flowRuns.triggerPayload}->>'id' = ${rawId})`,
           eq(flowRuns.status, "running"),
           gt(flowRuns.updatedAt, new Date(Date.now() - 60_000)),
         ),
