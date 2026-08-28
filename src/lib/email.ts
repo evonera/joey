@@ -1,21 +1,34 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@joey.app';
+
+// Constructed on first send so the app can boot without RESEND_API_KEY
+// (self-hosted installs that don't use email).
+function getResend(): Resend {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) throw new Error("RESEND_API_KEY is not set — email sending is unavailable.");
+    return new Resend(apiKey);
+}
 
 export interface EmailOptions {
   to: string;
   subject: string;
   html: string;
+  idempotencyKey?: string;
+  signal?: AbortSignal;
 }
 
-export async function sendEmail({ to, subject, html }: EmailOptions): Promise<{ success: boolean; error?: string }> {
+export async function sendEmail({ to, subject, html, idempotencyKey, signal }: EmailOptions): Promise<{ success: boolean; error?: string }> {
+  if (signal?.aborted) {
+    throw (signal.reason as Error) ?? new Error("Aborted");
+  }
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: fromEmail,
       to,
       subject,
       html,
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
     });
 
     if (error) {
@@ -36,9 +49,14 @@ export interface NotificationEmailOptions {
   body: string;
   tenantId: string;
   link?: string | null;
+  idempotencyKey?: string;
+  signal?: AbortSignal;
 }
 
-export async function sendNotificationEmail({ to, subject, body, tenantId, link }: NotificationEmailOptions) {
+export async function sendNotificationEmail({ to, subject, body, tenantId, link, idempotencyKey, signal }: NotificationEmailOptions) {
+  if (signal?.aborted) {
+    throw (signal.reason as Error) ?? new Error("Aborted");
+  }
   const escapeHtml = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   
@@ -49,7 +67,7 @@ export async function sendNotificationEmail({ to, subject, body, tenantId, link 
       ${link ? `
         <div style="margin-top: 24px;">
           <a href="${link}" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 500; display: inline-block;">
-            View Details
+            View in Joey
           </a>
         </div>
       ` : ''}
@@ -61,5 +79,9 @@ export async function sendNotificationEmail({ to, subject, body, tenantId, link 
     </div>
   `;
 
-  return sendEmail({ to, subject, html });
+  const res = await sendEmail({ to, subject, html, idempotencyKey, signal });
+  if (!res.success) {
+    throw new Error(`Failed to send notification email: ${res.error || "Unknown error"}`);
+  }
+  return res;
 }

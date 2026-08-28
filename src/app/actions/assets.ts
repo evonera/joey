@@ -7,6 +7,7 @@ import { assets, tenants } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { generateUploadUrl, deleteObject, buildPublicUrl } from "@/lib/storage";
 import { queryAssets } from "@/lib/assets";
+import { enqueueR2Cleanup } from "@/lib/storage-cleanup";
 
 export async function requestUploadUrl(filename: string, mimeType: string) {
   const tenantId = await getActiveTenantId();
@@ -73,6 +74,7 @@ export async function deleteAsset(id: string) {
     await deleteObject(asset.key);
   } catch (err) {
     console.error(`[assets] Failed to delete R2 object ${asset.key}:`, err);
+    await enqueueR2Cleanup(tenantId, asset.key, "asset deleted from database");
   }
 
   return { success: true };
