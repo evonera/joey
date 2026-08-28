@@ -26,8 +26,19 @@ export async function POST(
     if (!verifyWebhookSecret(secret, flow.webhookSecret)) {
       return NextResponse.json({ error: "Invalid secret" }, { status: 401 });
     }
-    if (!isHashedWebhookSecret(flow.webhookSecret)) {
-      await db.update(flows).set({ webhookSecret: hashWebhookSecret(secret!), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+    const storedSecret = flow.webhookSecret;
+    if (!isHashedWebhookSecret(storedSecret)) {
+      if (!storedSecret) return NextResponse.json({ error: "Invalid secret" }, { status: 401 });
+      // Compare-and-swap prevents a stale legacy request from restoring a
+      // credential that was rotated after this request read the flow.
+      const upgraded = await db
+        .update(flows)
+        .set({ webhookSecret: hashWebhookSecret(secret!), updatedAt: new Date() })
+        .where(and(eq(flows.id, flow.id), eq(flows.webhookSecret, storedSecret)))
+        .returning({ id: flows.id });
+      if (upgraded.length === 0) {
+        return NextResponse.json({ error: "Invalid secret" }, { status: 401 });
+      }
     }
     if (flow.status !== "active") {
       return NextResponse.json({ error: "Flow is not active" }, { status: 409 });

@@ -112,6 +112,14 @@ export const imageGenNode = defineNode({
       const { eq, and } = await import("drizzle-orm");
 
       [asset] = await db.transaction(async (tx) => {
+        const [reservation] = await tx
+          .select({ id: r2CleanupTasks.id })
+          .from(r2CleanupTasks)
+          .where(eq(r2CleanupTasks.key, uploaded.key))
+          .for("update");
+        if (!reservation) {
+          throw new Error("Generated image upload reservation expired before registration.");
+        }
         if (ctx.runId) {
           const [lockedRun] = await tx
             .select({ id: flowRuns.id })
@@ -133,7 +141,7 @@ export const imageGenNode = defineNode({
             publicUrl: uploaded.publicUrl,
           })
           .returning({ id: assets.id, publicUrl: assets.publicUrl });
-        await tx.delete(r2CleanupTasks).where(eq(r2CleanupTasks.key, uploaded.key));
+        await tx.delete(r2CleanupTasks).where(eq(r2CleanupTasks.id, reservation.id));
         return inserted;
       });
       registered = true;
