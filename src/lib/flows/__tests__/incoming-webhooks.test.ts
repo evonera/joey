@@ -87,6 +87,31 @@ describe("deferred incoming webhook execution", () => {
     expect(source).toContain('node.type === "trigger.incoming_webhook"');
     expect(source).not.toContain("flow: RunnableFlow");
   });
+
+  it("recovers an expired run without leaving the refreshed attempt ownerless", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/lib/flows/incoming-webhooks.ts"),
+      "utf8",
+    );
+    const deferredClaim = source.indexOf("const claim = await db.transaction");
+    const freshnessRefresh = source.indexOf(".set({ updatedAt: new Date() })", deferredClaim);
+    const staleRunClaim = source.indexOf(".update(flowRuns)", freshnessRefresh);
+    const replacementRun = source.indexOf(".insert(flowRuns)", staleRunClaim);
+    expect(freshnessRefresh).toBeGreaterThan(deferredClaim);
+    expect(staleRunClaim).toBeGreaterThan(freshnessRefresh);
+    expect(replacementRun).toBeGreaterThan(staleRunClaim);
+    expect(source).toContain("resumable = true");
+  });
+
+  it("fences execution to the active flow revision claimed with the run", () => {
+    const lifecycle = readFileSync(
+      resolve(process.cwd(), "src/lib/flows/run-flow-server.ts"),
+      "utf8",
+    );
+    expect(lifecycle).toContain("flowRevision?: number");
+    expect(lifecycle).toContain("eq(flows.executionRevision, opts.flowRevision)");
+    expect(lifecycle).toContain("Execution fenced: flow was paused or edited.");
+  });
 });
 
 describe("incoming webhook secret rotation", () => {

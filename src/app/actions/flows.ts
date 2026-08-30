@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowTemplates, drafts } from "@/lib/db/schema";
-import { and, eq, desc, inArray, isNull } from "drizzle-orm";
+import { and, eq, desc, inArray, isNull, sql } from "drizzle-orm";
 import { getActiveTenantId } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
 import type { FlowStep, RunStatus } from "@/lib/flows/types";
@@ -131,6 +131,9 @@ export async function saveFlow(
       ...(data.name !== undefined ? { name: data.name.trim().slice(0, 120) || existing.name } : {}),
       ...(data.description !== undefined ? { description: data.description } : {}),
       ...(data.graph !== undefined ? { graph: data.graph } : {}),
+      ...(data.graph !== undefined
+        ? { executionRevision: sql`${flows.executionRevision} + 1` }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(flows.id, id));
@@ -153,7 +156,14 @@ export async function setFlowStatus(
     if (!result.ok) return { issues: result.issues };
   }
 
-  await db.update(flows).set({ status, updatedAt: new Date() }).where(eq(flows.id, id));
+  await db
+    .update(flows)
+    .set({
+      status,
+      executionRevision: sql`${flows.executionRevision} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)));
   return { ok: true };
 }
 
