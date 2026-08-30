@@ -24,6 +24,8 @@ export const webhookTriggerConfig = z.object({
     .describe("Zernio event that starts this flow"),
 });
 
+export const incomingWebhookTriggerConfig = z.object({});
+
 export const filterConfig = z.object({
   field: z.string().describe("Item field to test (dot paths allowed, e.g. metrics.views)"),
   operator: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"]),
@@ -147,6 +149,7 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "trigger.manual", category: "trigger", label: "Manual start", description: "Starts the flow when run manually (or on a schedule you set).", inputs: [], outputs: ["data"], isTrigger: true, configSchema: manualTriggerConfig },
   { type: "trigger.schedule", category: "trigger", label: "Schedule", description: "Runs the flow on a fixed interval while the flow is active.", inputs: [], outputs: ["data"], isTrigger: true, configSchema: scheduleTriggerConfig },
   { type: "trigger.webhook", category: "trigger", label: "Zernio webhook", description: "Starts the flow when Zernio sends a matching real-time event (comments, mentions).", inputs: [], outputs: ["event"], isTrigger: true, configSchema: webhookTriggerConfig },
+  { type: "trigger.incoming_webhook", category: "trigger", label: "Incoming webhook", description: "Starts this flow when an authenticated JSON request reaches its public webhook URL.", inputs: [], outputs: ["payload"], isTrigger: true, configSchema: incomingWebhookTriggerConfig },
   { type: "data.apify_actor", category: "data", label: "Apify Actor", description: "Runs any Apify actor synchronously and returns its dataset items (scrapes, extracts…). Needs an Apify token in Settings → API Keys.", inputs: ["input"], outputs: ["items"], configSchema: apifyActorConfig },
   { type: "data.exa_search", category: "data", label: "Web Research (Exa)", description: "Neural web search via Exa for research-grade results on a topic. Needs an Exa key in Settings → API Keys.", inputs: ["topic"], outputs: ["results"], configSchema: exaSearchConfig },
   { type: "data.tavily_search", category: "data", label: "Web Research (Tavily)", description: "Fast web search with an LLM-ready answer via Tavily. Needs a Tavily key in Settings → API Keys.", inputs: ["topic"], outputs: ["results"], configSchema: tavilySearchConfig },
