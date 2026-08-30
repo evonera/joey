@@ -40,11 +40,13 @@ import { ZodForm } from "./zod-form";
 import { RunsPanel } from "./runs-panel";
 import {
   saveFlow, validateFlowGraph, runFlow, setFlowStatus, publishTemplate,
+  provisionFlowWebhookSecret, rotateFlowWebhookSecret,
 } from "@/app/actions/flows";
 
 type FlowRow = {
   id: string; name: string; description: string | null;
   graph: unknown; status: string; lastRunAt: Date | string | null;
+  webhookConfigured: boolean;
 };
 
 const CATEGORY_ICON: Record<string, typeof Zap> = {
@@ -114,6 +116,10 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   const [runsOpen, setRunsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [webhookOpen, setWebhookOpen] = useState(false);
+  const [webhookConfigured, setWebhookConfigured] = useState(flow.webhookConfigured);
+  const [revealedWebhookSecret, setRevealedWebhookSecret] = useState<string | null>(null);
+  const webhookUrl = `/api/webhooks/flows/${flow.id}`;
   const [publishMeta, setPublishMeta] = useState({ name: "", description: "", category: "" });
   const idCounter = useRef(1);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -236,6 +242,29 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
     } finally { setBusy(false); }
   }
 
+  async function handleWebhookSecret() {
+    setBusy(true);
+    try {
+      const res = webhookConfigured
+        ? await rotateFlowWebhookSecret(flow.id)
+        : await provisionFlowWebhookSecret(flow.id);
+      if (res.error) return toast.error(res.error);
+      if (res.secret) {
+        setWebhookConfigured(true);
+        setRevealedWebhookSecret(res.secret);
+        toast.success(webhookConfigured ? "Webhook secret rotated" : "Webhook secret created");
+      } else {
+        setWebhookConfigured(Boolean("configured" in res && res.configured));
+        toast.info("A webhook secret is already configured.");
+      }
+    } finally { setBusy(false); }
+  }
+
+  async function copyValue(value: string) {
+    await navigator.clipboard.writeText(value);
+    toast.success("Copied");
+  }
+
   function updateSelectedConfig(config: Record<string, unknown>) {
     if (!selectedId) return;
     setRfNodes((nds) => nds.map((n) => (n.id === selectedId ? { ...n, data: { ...n.data, config } } : n)));
@@ -291,6 +320,36 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
             <Button size="sm" variant={flow.status === "active" ? "secondary" : "default"} disabled={busy} onClick={handleToggleActive}>
               {flow.status === "active" ? <><Pause className="mr-1 h-3.5 w-3.5"/>Pause</> : <><Rocket className="mr-1 h-3.5 w-3.5"/>Activate</>}
             </Button>
+            <Dialog open={webhookOpen} onOpenChange={(open) => { setWebhookOpen(open); if (!open) setRevealedWebhookSecret(null); }}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="ghost"><Globe className="mr-1 h-3.5 w-3.5"/>Webhook</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Incoming webhook</DialogTitle></DialogHeader>
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">Endpoint</p>
+                    <div className="flex gap-2">
+                      <Input readOnly value={webhookUrl} />
+                      <Button size="icon" variant="outline" onClick={() => copyValue(webhookUrl)}><Copy className="h-4 w-4"/></Button>
+                    </div>
+                  </div>
+                  {revealedWebhookSecret && (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:bg-amber-950/30">
+                      <p className="mb-2 font-medium">Copy this secret now. It will not be shown again.</p>
+                      <div className="flex gap-2">
+                        <Input readOnly value={revealedWebhookSecret} className="font-mono text-xs" />
+                        <Button size="icon" variant="outline" onClick={() => copyValue(revealedWebhookSecret)}><Copy className="h-4 w-4"/></Button>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">Send JSON with <code>Authorization: Bearer &lt;secret&gt;</code>. Use <code>Idempotency-Key</code> when the sender provides a stable delivery ID.</p>
+                  <Button className="w-full" variant={webhookConfigured ? "destructive" : "default"} disabled={busy} onClick={handleWebhookSecret}>
+                    {webhookConfigured ? "Rotate secret" : "Create secret"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
             <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" variant="ghost"><BookMarked className="mr-1 h-3.5 w-3.5"/>Publish</Button>

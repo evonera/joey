@@ -22,6 +22,7 @@ export default async function FlowBuilderPage({
         graph: flow.graph,
         status: flow.status,
         lastRunAt: flow.lastRunAt,
+        webhookConfigured: flow.webhookConfigured,
       }}
     />
   );

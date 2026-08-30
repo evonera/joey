@@ -367,6 +367,27 @@ export const flowRuns = pgTable("flow_runs", {
     .where(sql`${table.status} IN ('running','waiting_approval') AND ${table.trigger} = 'webhook'`),
 }));
 
+/** Durable admission record for public per-flow webhook deliveries. */
+export const flowWebhookDeliveries = pgTable("flow_webhook_deliveries", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  flowId: text("flow_id").notNull().references(() => flows.id, { onDelete: "cascade" }),
+  /** Sender-provided idempotency identifier; null means deliberately at-least-once. */
+  deliveryId: text("delivery_id"),
+  payload: jsonb("payload").notNull(),
+  status: varchar("status", { length: 30 }).default("processing").notNull(),
+  attempt: integer("attempt").default(1).notNull(),
+  error: text("error"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  flowCreatedIdx: index("flow_webhook_deliveries_flow_created_idx").on(table.flowId, table.createdAt),
+  explicitDeliveryIdx: uniqueIndex("flow_webhook_deliveries_explicit_idx")
+    .on(table.tenantId, table.flowId, table.deliveryId)
+    .where(sql`${table.deliveryId} IS NOT NULL`),
+}));
+
 /**
  * Installable flow templates (Phase 3.5/3.6 merged into the Flow Builder):
  * official seeds ship with the app; users can publish their own flows here.
