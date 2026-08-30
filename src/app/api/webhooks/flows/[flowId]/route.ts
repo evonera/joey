@@ -123,7 +123,8 @@ export async function POST(
 
   after(() =>
     executeWebhookDelivery({
-      flow,
+      tenantId: flow.tenantId,
+      flowId: flow.id,
       deliveryRowId: admission.id,
       senderDeliveryId: deliveryId,
       attempt: admission.attempt,

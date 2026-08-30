@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { flowRuns, flowWebhookDeliveries } from "@/lib/db/schema";
-import { executeAdmittedFlowRun, type RunnableFlow } from "./run-flow-server";
+import { flows, flowRuns, flowWebhookDeliveries } from "@/lib/db/schema";
+import { executeAdmittedFlowRun } from "./run-flow-server";
 import type { FlowStep } from "./types";
 
 export const WEBHOOK_REQUEST_LIMIT_BYTES = 1024 * 1024;
@@ -49,25 +49,6 @@ type DeliveryAdmission =
   | { admitted: true; id: string; attempt: number }
   | { admitted: false; reason: "duplicate" | "active" };
 
-async function hasLiveDeliveryRun(tenantId: string, flowId: string, deliveryRowId: string) {
-  const run = await db.query.flowRuns.findFirst({
-    where: and(
-      eq(flowRuns.tenantId, tenantId),
-      eq(flowRuns.flowId, flowId),
-      eq(flowRuns.trigger, "webhook"),
-      sql`${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${deliveryRowId}`,
-      sql`${flowRuns.status} IN ('running', 'waiting_approval')`,
-    ),
-    columns: { status: true, updatedAt: true },
-    orderBy: [desc(flowRuns.startedAt)],
-  });
-  if (!run) return false;
-  return (
-    run.status === "waiting_approval" ||
-    run.updatedAt.getTime() > Date.now() - WEBHOOK_STALE_AFTER_MS
-  );
-}
-
 export async function admitWebhookDelivery(input: {
   tenantId: string;
   flowId: string;
@@ -84,43 +65,84 @@ export async function admitWebhookDelivery(input: {
   // Only explicit sender identifiers can conflict. Null identifiers intentionally
   // create a new admission row for every request.
   if (!input.deliveryId) throw new Error("Webhook delivery admission failed.");
-  const existing = await db.query.flowWebhookDeliveries.findFirst({
-    where: and(
-      eq(flowWebhookDeliveries.tenantId, input.tenantId),
-      eq(flowWebhookDeliveries.flowId, input.flowId),
-      eq(flowWebhookDeliveries.deliveryId, input.deliveryId),
-    ),
-  });
-  if (!existing) throw new Error("Webhook delivery conflict could not be resolved.");
+  return db.transaction(async (tx): Promise<DeliveryAdmission> => {
+    const existing = await tx.query.flowWebhookDeliveries.findFirst({
+      where: and(
+        eq(flowWebhookDeliveries.tenantId, input.tenantId),
+        eq(flowWebhookDeliveries.flowId, input.flowId),
+        eq(flowWebhookDeliveries.deliveryId, input.deliveryId!),
+      ),
+    });
+    if (!existing) throw new Error("Webhook delivery conflict could not be resolved.");
 
-  const hasLiveRun = await hasLiveDeliveryRun(input.tenantId, input.flowId, existing.id);
-  if (!mayRearmDelivery({ ...existing, hasLiveRun })) {
-    return { admitted: false, reason: hasLiveRun ? "active" : "duplicate" };
-  }
+    const priorRun = await tx.query.flowRuns.findFirst({
+      where: and(
+        eq(flowRuns.tenantId, input.tenantId),
+        eq(flowRuns.flowId, input.flowId),
+        eq(flowRuns.trigger, "webhook"),
+        sql`${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${existing.id}`,
+      ),
+      orderBy: [desc(flowRuns.startedAt)],
+    });
+    if (priorRun?.status === "succeeded" || priorRun?.status === "waiting_approval") {
+      await tx
+        .update(flowWebhookDeliveries)
+        .set({ status: "processed", processedAt: new Date(), updatedAt: new Date() })
+        .where(and(
+          eq(flowWebhookDeliveries.id, existing.id),
+          eq(flowWebhookDeliveries.attempt, existing.attempt),
+        ));
+      return { admitted: false, reason: "duplicate" };
+    }
 
-  const [claimed] = await db
-    .update(flowWebhookDeliveries)
-    .set({
-      payload: input.payload,
-      status: "processing",
-      attempt: existing.attempt + 1,
-      error: null,
-      processedAt: null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
+    if (priorRun?.status === "running") {
+      const staleBefore = new Date(Date.now() - WEBHOOK_STALE_AFTER_MS);
+      if (priorRun.updatedAt > staleBefore) return { admitted: false, reason: "active" };
+      const [superseded] = await tx
+        .update(flowRuns)
+        .set({
+          status: "failed",
+          error: "Superseded after its webhook execution lease expired.",
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(flowRuns.id, priorRun.id),
+          eq(flowRuns.tenantId, input.tenantId),
+          eq(flowRuns.status, "running"),
+          eq(flowRuns.updatedAt, priorRun.updatedAt),
+        ))
+        .returning({ id: flowRuns.id });
+      // A resumed heartbeat changed the lease first. Do not increment the
+      // delivery attempt because that run still owns the current attempt.
+      if (!superseded) return { admitted: false, reason: "active" };
+    }
+
+    if (!mayRearmDelivery({ ...existing, hasLiveRun: false })) {
+      return { admitted: false, reason: "duplicate" };
+    }
+    const [claimed] = await tx
+      .update(flowWebhookDeliveries)
+      .set({
+        payload: input.payload,
+        status: "processing",
+        attempt: existing.attempt + 1,
+        error: null,
+        processedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(and(
         eq(flowWebhookDeliveries.id, existing.id),
         eq(flowWebhookDeliveries.tenantId, input.tenantId),
         eq(flowWebhookDeliveries.flowId, input.flowId),
         eq(flowWebhookDeliveries.attempt, existing.attempt),
         eq(flowWebhookDeliveries.updatedAt, existing.updatedAt),
-      ),
-    )
-    .returning({ id: flowWebhookDeliveries.id, attempt: flowWebhookDeliveries.attempt });
-  return claimed
-    ? { admitted: true, ...claimed }
-    : { admitted: false, reason: "active" };
+      ))
+      .returning({ id: flowWebhookDeliveries.id, attempt: flowWebhookDeliveries.attempt });
+    return claimed
+      ? { admitted: true, ...claimed }
+      : { admitted: false, reason: "active" };
+  });
 }
 
 async function finishDelivery(
@@ -149,7 +171,8 @@ async function finishDelivery(
 }
 
 export async function executeWebhookDelivery(input: {
-  flow: RunnableFlow;
+  tenantId: string;
+  flowId: string;
   deliveryRowId: string;
   senderDeliveryId: string | null;
   attempt: number;
@@ -158,82 +181,104 @@ export async function executeWebhookDelivery(input: {
   const triggerPayload = {
     id: input.deliveryRowId,
     webhookDeliveryId: input.deliveryRowId,
+    webhookDeliveryAttempt: input.attempt,
     senderDeliveryId: input.senderDeliveryId,
     payload: input.payload,
   };
   try {
-    const prior = await db.query.flowRuns.findFirst({
-      where: and(
-        eq(flowRuns.tenantId, input.flow.tenantId),
-        eq(flowRuns.flowId, input.flow.id),
-        eq(flowRuns.trigger, "webhook"),
-        sql`${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${input.deliveryRowId}`,
-      ),
-      orderBy: [desc(flowRuns.startedAt)],
+    const claim = await db.transaction(async (tx) => {
+      // This conditional write both validates the attempt and locks its delivery
+      // row until run admission commits. A stale callback and a re-arm therefore
+      // cannot cross between attempt validation and run creation.
+      const [owned] = await tx
+        .update(flowWebhookDeliveries)
+        .set({ updatedAt: new Date() })
+        .where(and(
+          eq(flowWebhookDeliveries.id, input.deliveryRowId),
+          eq(flowWebhookDeliveries.tenantId, input.tenantId),
+          eq(flowWebhookDeliveries.flowId, input.flowId),
+          eq(flowWebhookDeliveries.attempt, input.attempt),
+          eq(flowWebhookDeliveries.status, "processing"),
+        ))
+        .returning({ id: flowWebhookDeliveries.id });
+      if (!owned) return { kind: "obsolete" as const };
+
+      // Deferred work uses the current status and graph, not the route's snapshot.
+      const flow = await tx.query.flows.findFirst({
+        where: and(
+          eq(flows.id, input.flowId),
+          eq(flows.tenantId, input.tenantId),
+          eq(flows.status, "active"),
+        ),
+      });
+      const graph = flow?.graph as { nodes?: Array<{ type?: string }> } | undefined;
+      if (!flow || !graph?.nodes?.some((node) => node.type === "trigger.incoming_webhook")) {
+        return { kind: "inactive" as const };
+      }
+
+      const prior = await tx.query.flowRuns.findFirst({
+        where: and(
+          eq(flowRuns.tenantId, input.tenantId),
+          eq(flowRuns.flowId, input.flowId),
+          eq(flowRuns.trigger, "webhook"),
+          sql`${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${input.deliveryRowId}`,
+        ),
+        orderBy: [desc(flowRuns.startedAt)],
+      });
+      if (prior?.status === "succeeded" || prior?.status === "waiting_approval") {
+        return { kind: "complete" as const };
+      }
+      if (prior?.status === "running") return { kind: "active" as const };
+
+      const cachedSteps = prior?.status === "failed" ? (prior.steps as FlowStep[]) : undefined;
+      const fanoutProgress = prior?.status === "failed"
+        ? (prior.fanoutProgress as Record<string, Record<string, unknown>>)
+        : undefined;
+      const [run] = await tx
+        .insert(flowRuns)
+        .values({
+          flowId: input.flowId,
+          tenantId: input.tenantId,
+          trigger: "webhook",
+          triggerPayload,
+          steps: cachedSteps ?? [],
+          fanoutProgress: fanoutProgress ?? {},
+        })
+        .onConflictDoNothing()
+        .returning({ id: flowRuns.id });
+      return run
+        ? { kind: "claimed" as const, flow, runId: run.id, cachedSteps, fanoutProgress }
+        : { kind: "active" as const };
     });
-    if (prior?.status === "succeeded" || prior?.status === "waiting_approval") {
-      await finishDelivery(input.flow.tenantId, input.deliveryRowId, input.attempt, "processed");
+
+    if (claim.kind === "obsolete" || claim.kind === "active") return;
+    if (claim.kind === "inactive") {
+      await finishDelivery(
+        input.tenantId,
+        input.deliveryRowId,
+        input.attempt,
+        "failed",
+        "Flow was paused, removed, or no longer has an incoming webhook trigger.",
+      );
       return;
     }
-    if (
-      prior?.status === "running" &&
-      prior.updatedAt.getTime() > Date.now() - WEBHOOK_STALE_AFTER_MS
-    ) return;
-
-    let supersededStaleRun = false;
-    if (prior?.status === "running") {
-      const superseded = await db
-        .update(flowRuns)
-        .set({
-          status: "failed",
-          error: "Superseded after its webhook execution lease expired.",
-          finishedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(flowRuns.id, prior.id),
-            eq(flowRuns.tenantId, input.flow.tenantId),
-            eq(flowRuns.status, "running"),
-            eq(flowRuns.updatedAt, prior.updatedAt),
-          ),
-        )
-        .returning({ id: flowRuns.id });
-      if (!superseded[0]) return;
-      supersededStaleRun = true;
+    if (claim.kind === "complete") {
+      await finishDelivery(input.tenantId, input.deliveryRowId, input.attempt, "processed");
+      return;
     }
 
-    const canResume = prior?.status === "failed" || supersededStaleRun;
-    const cachedSteps = canResume ? (prior?.steps as FlowStep[]) : undefined;
-    const fanoutProgress = canResume
-      ? (prior?.fanoutProgress as Record<string, Record<string, unknown>>)
-      : undefined;
-    const [run] = await db
-      .insert(flowRuns)
-      .values({
-        flowId: input.flow.id,
-        tenantId: input.flow.tenantId,
-        trigger: "webhook",
-        triggerPayload,
-        steps: cachedSteps ?? [],
-        fanoutProgress: fanoutProgress ?? {},
-      })
-      .onConflictDoNothing()
-      .returning({ id: flowRuns.id });
-    if (!run) return;
-
     const result = await executeAdmittedFlowRun({
-      flow: input.flow,
-      runId: run.id,
+      flow: claim.flow,
+      runId: claim.runId,
       triggerPayload,
-      cachedSteps,
-      fanoutProgress,
+      cachedSteps: claim.cachedSteps,
+      fanoutProgress: claim.fanoutProgress,
     });
     if (result.status === "succeeded" || result.status === "waiting_approval") {
-      await finishDelivery(input.flow.tenantId, input.deliveryRowId, input.attempt, "processed");
+      await finishDelivery(input.tenantId, input.deliveryRowId, input.attempt, "processed");
     } else {
       await finishDelivery(
-        input.flow.tenantId,
+        input.tenantId,
         input.deliveryRowId,
         input.attempt,
         "failed",
@@ -242,7 +287,7 @@ export async function executeWebhookDelivery(input: {
     }
   } catch (error) {
     await finishDelivery(
-      input.flow.tenantId,
+      input.tenantId,
       input.deliveryRowId,
       input.attempt,
       "failed",

@@ -7,8 +7,19 @@ import {
   WEBHOOK_STALE_AFTER_MS,
 } from "../incoming-webhooks";
 import { hashWebhookSecret, verifyWebhookSecret } from "../webhook-secret";
+import { unwrapIncomingWebhookPayload } from "../nodes/triggers/incoming-webhook";
 
 describe("incoming webhook admission", () => {
+  it("exposes the submitted JSON body as the trigger payload output", () => {
+    const payload = { account: { id: "acct-1" }, event: "created" };
+    expect(unwrapIncomingWebhookPayload({
+      id: "internal-delivery-id",
+      webhookDeliveryId: "internal-delivery-id",
+      senderDeliveryId: "sender-id",
+      payload,
+    })).toEqual(payload);
+  });
+
   it("scopes duplicate explicit delivery IDs to one tenant and flow", () => {
     const first = deliveryIdentityKey("tenant-a", "flow-a", "delivery-1");
     expect(deliveryIdentityKey("tenant-a", "flow-a", "delivery-1")).toBe(first);
@@ -42,6 +53,20 @@ describe("incoming webhook admission", () => {
     }, now)).toBe(false);
   });
 
+  it("supersedes a stale run transactionally before incrementing the attempt", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/lib/flows/incoming-webhooks.ts"),
+      "utf8",
+    );
+    const transaction = source.indexOf("return db.transaction");
+    const runClaim = source.indexOf(".update(flowRuns)", transaction);
+    const deliveryClaim = source.indexOf(".update(flowWebhookDeliveries)", runClaim);
+    expect(transaction).toBeGreaterThan(-1);
+    expect(runClaim).toBeGreaterThan(transaction);
+    expect(deliveryClaim).toBeGreaterThan(runClaim);
+    expect(source).toContain("eq(flowRuns.updatedAt, priorRun.updatedAt)");
+  });
+
   it("isolates the same sender ID across tenants and flows", () => {
     const keys = new Set([
       deliveryIdentityKey("tenant-a", "flow-a", "same"),
@@ -49,6 +74,18 @@ describe("incoming webhook admission", () => {
       deliveryIdentityKey("tenant-a", "flow-b", "same"),
     ]);
     expect(keys.size).toBe(3);
+  });
+});
+
+describe("deferred incoming webhook execution", () => {
+  it("re-reads an active flow and its current graph before starting", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/lib/flows/incoming-webhooks.ts"),
+      "utf8",
+    );
+    expect(source).toContain('eq(flows.status, "active")');
+    expect(source).toContain('node.type === "trigger.incoming_webhook"');
+    expect(source).not.toContain("flow: RunnableFlow");
   });
 });
 
