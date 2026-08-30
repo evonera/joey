@@ -5,9 +5,9 @@ import { flows, flowRuns, flowTemplates, drafts } from "@/lib/db/schema";
 import { and, eq, desc, inArray } from "drizzle-orm";
 import { getActiveTenantId } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
-import { executeFlow } from "@/lib/flows/executor";
 import type { FlowStep, RunStatus } from "@/lib/flows/types";
 import { getNode } from "@/lib/flows/registry";
+import { executeAdmittedFlowRun, startFlowRun } from "@/lib/flows/run-flow-server";
 
 export type FlowRow = typeof flows.$inferSelect;
 export type FlowRunRow = typeof flowRuns.$inferSelect;
@@ -111,129 +111,6 @@ export async function setFlowStatus(
   return { ok: true };
 }
 
-async function persistStep(
-  tenantId: string,
-  runId: string,
-  step: FlowStep,
-  fanoutProgress?: Record<string, Record<string, unknown>>,
-) {
-  const run = await db.query.flowRuns.findFirst({
-    where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
-    columns: { steps: true, status: true },
-  });
-  if (!run || run.status !== "running") {
-    throw new Error("Execution fenced: run was transitioned out of running.");
-  }
-  const steps = (run.steps as FlowStep[]) ?? [];
-  const idx = steps.findIndex((s) => s.nodeId === step.nodeId);
-  if (idx >= 0) steps[idx] = step;
-  else steps.push(step);
-  const updated = await db
-    .update(flowRuns)
-    .set({
-      steps,
-      ...(fanoutProgress ? { fanoutProgress } : {}),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-    .returning({ id: flowRuns.id });
-  if (updated.length === 0) {
-    throw new Error("Execution fenced: update rejected because run is no longer running.");
-  }
-}
-
-async function finalizeRun(
-  runId: string,
-  tenantId: string,
-  outcome: { status: RunStatus; steps?: FlowStep[]; error?: string | null } | Error,
-): Promise<{ persisted: boolean; status: RunStatus; error?: string }> {
-  const isErr = outcome instanceof Error;
-  const status: RunStatus = isErr ? "failed" : outcome.status;
-  const steps = isErr ? undefined : outcome.steps;
-  const error = isErr ? outcome.message : (outcome.error ?? null);
-  const finishedAt = new Date();
-  const updatedAt = new Date();
-
-  // Retry up to 5 times with exponential backoff across rich, minimal, and bare status writes
-  for (let attempt = 0; attempt < 5; attempt++) {
-    // 1. Primary write with full steps payload
-    try {
-      const updated = await db
-        .update(flowRuns)
-        .set({
-          status,
-          ...(steps !== undefined ? { steps } : {}),
-          error,
-          finishedAt,
-          updatedAt,
-        })
-        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-        .returning({ id: flowRuns.id });
-
-      if (updated.length > 0) return { persisted: true, status };
-    } catch (primaryErr) {
-      console.warn(`[flow-finalize] Rich finalization attempt ${attempt + 1} failed for run ${runId}:`, primaryErr);
-    }
-
-    // 2. Fallback: minimal update omitting steps payload
-    try {
-      const fallbackUpdated = await db
-        .update(flowRuns)
-        .set({
-          status,
-          error: error ? `${error}` : "Finalization fallback applied (steps omitted).",
-          finishedAt,
-          updatedAt,
-        })
-        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-        .returning({ id: flowRuns.id });
-
-      if (fallbackUpdated.length > 0) return { persisted: true, status };
-    } catch (fallbackErr) {
-      console.error(`[flow-finalize] Minimal finalization attempt ${attempt + 1} failed for run ${runId}:`, fallbackErr);
-    }
-
-    // 3. Fallback: bare status-only update
-    try {
-      const bareUpdated = await db
-        .update(flowRuns)
-        .set({
-          status,
-          finishedAt,
-          updatedAt,
-        })
-        .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-        .returning({ id: flowRuns.id });
-
-      if (bareUpdated.length > 0) return { persisted: true, status };
-    } catch (bareErr) {
-      console.error(`[flow-finalize] Bare finalization attempt ${attempt + 1} failed for run ${runId}:`, bareErr);
-    }
-
-    // Check if the run has already been transitioned to a terminal status by stale recovery
-    try {
-      const existing = await db.query.flowRuns.findFirst({
-        where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
-        columns: { status: true },
-      });
-      if (existing && existing.status !== "running") {
-        return { persisted: true, status: existing.status as RunStatus };
-      }
-    } catch {}
-
-    if (attempt < 4) {
-      await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
-    }
-  }
-
-  // All persistence attempts exhausted
-  return {
-    persisted: false,
-    status,
-    error: "Failed to persist terminal status to database after retries.",
-  };
-}
-
 export async function runFlow(
   id: string,
   triggerPayload?: unknown,
@@ -244,89 +121,12 @@ export async function runFlow(
   });
   if (!flow) return { error: "Flow not found" };
 
-  return executeRunWithPorts({
+  const result = await startFlowRun({
     flow,
-    tenantId,
     trigger: "manual",
     triggerPayload,
   });
-}
-
-async function executeRunWithPorts(opts: {
-  flow: FlowRow;
-  tenantId: string;
-  trigger: "manual" | "schedule" | "webhook";
-  triggerPayload?: unknown;
-  cachedSteps?: FlowStep[];
-  fanoutProgress?: Record<string, Record<string, unknown>>;
-  approvedNodeIds?: string[];
-}): Promise<{ runId: string; status: RunStatus; error?: string }> {
-  let runId = "";
-  const [run] = await db
-    .insert(flowRuns)
-    .values({
-      flowId: opts.flow.id,
-      tenantId: opts.tenantId,
-      trigger: opts.trigger,
-      triggerPayload: opts.triggerPayload ?? null,
-      approvedNodeIds: opts.approvedNodeIds ?? [],
-    })
-    .returning();
-  runId = run.id;
-
-  let result;
-  let execError: unknown;
-  try {
-    result = await executeFlow(
-      opts.flow.graph as Parameters<typeof executeFlow>[0],
-      {
-        tenantId: opts.tenantId,
-        runId,
-        flowId: opts.flow.id,
-        triggerPayload: opts.triggerPayload,
-        cachedSteps: opts.cachedSteps,
-        fanoutProgress: opts.fanoutProgress,
-        approvedNodeIds: opts.approvedNodeIds,
-      },
-      {
-        onStepUpdate: (step, fanoutProgress) => persistStep(opts.tenantId, runId, step, fanoutProgress),
-        onFanoutProgress: async (progress) => {
-          const updated = await db
-            .update(flowRuns)
-            .set({ fanoutProgress: progress, updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")))
-            .returning({ id: flowRuns.id });
-          if (updated.length === 0) {
-            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
-          }
-        },
-        onHeartbeat: async () => {
-          const updated = await db
-            .update(flowRuns)
-            .set({ updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, opts.tenantId), eq(flowRuns.status, "running")))
-            .returning({ id: flowRuns.id });
-          if (updated.length === 0) {
-            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
-          }
-        },
-      },
-    );
-  } catch (err) {
-    execError = err;
-  }
-
-  const finalResult = await finalizeRun(
-    runId,
-    opts.tenantId,
-    result
-      ? { status: result.status, steps: result.steps, error: result.error ?? null }
-      : (execError instanceof Error ? execError : new Error(String(execError ?? "Execution crashed"))),
-  );
-
-  await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, opts.flow.id));
-
-  return { runId, status: finalResult.status, error: finalResult.persisted ? undefined : finalResult.error };
+  return { runId: result.runId, ...(result.persisted ? {} : { error: result.error }) };
 }
 
 export async function resumeRun(
@@ -390,55 +190,14 @@ export async function resumeRun(
     return { error: "Run is not waiting for approval (already resumed)." };
   }
 
-  let result;
-  let execError: unknown;
-  try {
-    result = await executeFlow(
-      flow.graph as Parameters<typeof executeFlow>[0],
-      {
-        tenantId,
-        runId,
-        flowId: flow.id,
-        triggerPayload: run.triggerPayload ?? undefined,
-        cachedSteps: clearedSteps,
-        fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
-        approvedNodeIds,
-      },
-      {
-        onStepUpdate: (step, fanoutProgress) => persistStep(tenantId, runId, step, fanoutProgress),
-        onFanoutProgress: async (progress) => {
-          const updated = await db
-            .update(flowRuns)
-            .set({ fanoutProgress: progress, updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-            .returning({ id: flowRuns.id });
-          if (updated.length === 0) {
-            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
-          }
-        },
-        onHeartbeat: async () => {
-          const updated = await db
-            .update(flowRuns)
-            .set({ updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-            .returning({ id: flowRuns.id });
-          if (updated.length === 0) {
-            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
-          }
-        },
-      },
-    );
-  } catch (err) {
-    execError = err;
-  }
-
-  const finalResult = await finalizeRun(
+  const finalResult = await executeAdmittedFlowRun({
+    flow,
     runId,
-    tenantId,
-    result
-      ? { status: result.status, steps: result.steps, error: result.error ?? null }
-      : (execError instanceof Error ? execError : new Error(String(execError ?? "Resumed execution crashed"))),
-  );
+    triggerPayload: run.triggerPayload ?? undefined,
+    cachedSteps: clearedSteps,
+    fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
+    approvedNodeIds,
+  });
 
   if (!finalResult.persisted) {
     console.error(
@@ -531,58 +290,14 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
     return { error: err?.message || "Failed to initialize replacement run." };
   }
 
-  // Now execute the replacement run that was already inserted
-  let result;
-  let execError: unknown;
-  try {
-    result = await executeFlow(
-      flow.graph as Parameters<typeof executeFlow>[0],
-      {
-        tenantId,
-        runId: newRunId,
-        flowId: flow.id,
-        triggerPayload,
-        cachedSteps,
-        fanoutProgress,
-        approvedNodeIds,
-      },
-      {
-        onStepUpdate: (step, fanoutProgress) => persistStep(tenantId, newRunId, step, fanoutProgress),
-        onFanoutProgress: async (progress) => {
-          const updated = await db
-            .update(flowRuns)
-            .set({ fanoutProgress: progress, updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, newRunId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-            .returning({ id: flowRuns.id });
-          if (updated.length === 0) {
-            throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
-          }
-        },
-        onHeartbeat: async () => {
-          const updated = await db
-            .update(flowRuns)
-            .set({ updatedAt: new Date() })
-            .where(and(eq(flowRuns.id, newRunId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running")))
-            .returning({ id: flowRuns.id });
-          if (updated.length === 0) {
-            throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
-          }
-        },
-      },
-    );
-  } catch (err) {
-    execError = err;
-  }
-
-  const finalResult = await finalizeRun(
-    newRunId,
-    tenantId,
-    result
-      ? { status: result.status, steps: result.steps, error: result.error ?? null }
-      : (execError instanceof Error ? execError : new Error(String(execError ?? "Execution crashed"))),
-  );
-
-  await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
+  const finalResult = await executeAdmittedFlowRun({
+    flow,
+    runId: newRunId,
+    triggerPayload,
+    cachedSteps,
+    fanoutProgress,
+    approvedNodeIds,
+  });
 
   if (!finalResult.persisted) {
     try {

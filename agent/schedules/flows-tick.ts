@@ -14,8 +14,8 @@ import { defineSchedule } from "eve/schedules";
 import { db } from "@/lib/db";
 import { flows, flowRuns } from "@/lib/db/schema";
 import { and, eq, lt, or } from "drizzle-orm";
-import { executeFlow } from "@/lib/flows/executor";
 import { getNode } from "@/lib/flows/registry";
+import { executeAdmittedFlowRun } from "@/lib/flows/run-flow-server";
 
 /**
  * Ticks every minute: starts any ACTIVE flow whose trigger is a due
@@ -25,8 +25,6 @@ import { getNode } from "@/lib/flows/registry";
 export default defineSchedule({
   cron: "* * * * *",
   async run() {
-    const { processR2CleanupTasks } = await import("@/lib/storage-cleanup");
-    await processR2CleanupTasks();
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
     // for >30 min (from any trigger, including approval resumes or crashed flows)
     // is reconciled based on its accumulated step execution state. Active runs
@@ -98,6 +96,11 @@ export default defineSchedule({
         );
     }
 
+    // Run cleanup only after stale reconciliation. Reservations owned by a
+    // live run remain protected; abandoned runs have now become terminal.
+    const { processR2CleanupTasks } = await import("@/lib/storage-cleanup");
+    await processR2CleanupTasks();
+
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
     });
@@ -114,10 +117,19 @@ export default defineSchedule({
           if (!parsed?.success) return;
           const config = parsed.data as { intervalMinutes: number };
 
-          if (flow.lastRunAt) {
-            const elapsed = Date.now() - flow.lastRunAt.getTime();
-            if (elapsed < config.intervalMinutes * 60_000) return;
-          }
+          // Cadence is anchored only to scheduled admissions. `lastRunAt` is
+          // intentionally generic UI activity and may be changed by manual or
+          // webhook runs on a mixed-trigger flow.
+          const latestScheduledRun = await db.query.flowRuns.findFirst({
+            where: and(
+              eq(flowRuns.flowId, flow.id),
+              eq(flowRuns.tenantId, flow.tenantId),
+              eq(flowRuns.trigger, "schedule"),
+            ),
+            columns: { startedAt: true },
+            orderBy: (runs, { desc }) => [desc(runs.startedAt)],
+          });
+          if (!isScheduleDue(latestScheduledRun?.startedAt, config.intervalMinutes)) return;
 
           // Skip if any run for this flow is still in flight — a WAITING
           // approval also occupies the slot (it will transition back to
@@ -136,6 +148,7 @@ export default defineSchedule({
 
           // Atomic admission: partial unique index (flow_runs_running_scheduled_idx) guarantees
           // at most one running scheduled execution per flow across concurrent scheduler invocations.
+          const triggerPayload = { scheduledAt: new Date().toISOString() };
           let run;
           try {
             const inserted = await db
@@ -144,7 +157,7 @@ export default defineSchedule({
                 flowId: flow.id,
                 tenantId: flow.tenantId,
                 trigger: "schedule",
-                triggerPayload: { scheduledAt: new Date().toISOString() },
+                triggerPayload,
               })
               .onConflictDoNothing()
               .returning();
@@ -157,173 +170,19 @@ export default defineSchedule({
           }
           if (!run) return;
 
-          let result;
-          let execError: unknown;
-          try {
-            // Advance lastRunAt immediately upon admission so concurrent / subsequent ticks
-            // in this interval observe the new cadence window immediately.
-            await db
-              .update(flows)
-              .set({ lastRunAt: new Date(), updatedAt: new Date() })
-              .where(eq(flows.id, flow.id));
-
-            result = await executeFlow(
-              flow.graph as Parameters<typeof executeFlow>[0],
-              {
-                tenantId: flow.tenantId,
-                runId: run.id,
-                flowId: flow.id,
-                triggerPayload: { scheduledAt: new Date().toISOString() },
-              },
-              {
-                onStepUpdate: async (step, fanoutProgress) => {
-                  const r = await db.query.flowRuns.findFirst({
-                    where: and(eq(flowRuns.id, run.id), eq(flowRuns.tenantId, flow.tenantId)),
-                    columns: { steps: true, status: true },
-                  });
-                  if (!r || r.status !== "running") {
-                    throw new Error("Execution fenced: run was transitioned out of running by stale recovery.");
-                  }
-                  const steps = ((r.steps as unknown[]) ?? []) as typeof step[];
-                  const idx = steps.findIndex((st) => st.nodeId === step.nodeId);
-                  if (idx >= 0) steps[idx] = step;
-                  else steps.push(step);
-                  const updated = await db
-                    .update(flowRuns)
-                    .set({
-                      steps,
-                      ...(fanoutProgress ? { fanoutProgress } : {}),
-                      updatedAt: new Date(),
-                    })
-                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                    .returning({ id: flowRuns.id });
-                  if (updated.length === 0) {
-                    throw new Error("Execution fenced: update rejected because run is no longer running.");
-                  }
-                },
-                onFanoutProgress: async (fanoutProgress) => {
-                  const updated = await db
-                    .update(flowRuns)
-                    .set({ fanoutProgress, updatedAt: new Date() })
-                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                    .returning({ id: flowRuns.id });
-                  if (updated.length === 0) {
-                    throw new Error("Execution fenced: fan-out update rejected because run is no longer running.");
-                  }
-                },
-                onHeartbeat: async () => {
-                  const updated = await db
-                    .update(flowRuns)
-                    .set({ updatedAt: new Date() })
-                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                    .returning({ id: flowRuns.id });
-                  if (updated.length === 0) {
-                    throw new Error("Execution fenced: heartbeat rejected because run is no longer running.");
-                  }
-                },
-              },
-            );
-          } catch (err) {
-            execError = err;
-          } finally {
-            // Resilient two-stage finalization with retries:
-            // 1. If result exists, attempt primary write with full steps & status.
-            // 2. If primary write fails or executeFlow threw, apply minimal fallback so run
-            //    is guaranteed to reach a terminal status and never dangles as 'running'.
-            const status = result ? result.status : "failed";
-            const error =
-              result?.error ??
-              (execError instanceof Error
-                ? execError.message
-                : execError
-                  ? String(execError)
-                  : null);
-            const finishedAt = new Date();
-            const updatedAt = new Date();
-
-            let finalized = false;
-            for (let attempt = 0; attempt < 5 && !finalized; attempt++) {
-              if (result) {
-                try {
-                  const updated = await db
-                    .update(flowRuns)
-                    .set({
-                      status,
-                      steps: result.steps,
-                      error,
-                      finishedAt,
-                      updatedAt,
-                    })
-                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                    .returning({ id: flowRuns.id });
-                  if (updated.length > 0) finalized = true;
-                } catch (finErr) {
-                  console.warn(`[flows-tick] Rich finalization attempt ${attempt + 1} failed for ${run.id}:`, finErr);
-                }
-              }
-
-              if (!finalized) {
-                try {
-                  const updated = await db
-                    .update(flowRuns)
-                    .set({
-                      status,
-                      error: error ?? "Execution finalized with minimal fallback.",
-                      finishedAt,
-                      updatedAt,
-                    })
-                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                    .returning({ id: flowRuns.id });
-                  if (updated.length > 0) finalized = true;
-                } catch (fallbackErr) {
-                  console.error(`[flows-tick] Minimal finalization attempt ${attempt + 1} failed for ${run.id}:`, fallbackErr);
-                }
-              }
-
-              if (!finalized) {
-                try {
-                  const updated = await db
-                    .update(flowRuns)
-                    .set({
-                      status,
-                      finishedAt,
-                      updatedAt,
-                    })
-                    .where(and(eq(flowRuns.id, run.id), eq(flowRuns.status, "running")))
-                    .returning({ id: flowRuns.id });
-                  if (updated.length > 0) finalized = true;
-                } catch (bareErr) {
-                  console.error(`[flows-tick] Bare finalization attempt ${attempt + 1} failed for ${run.id}:`, bareErr);
-                }
-              }
-
-              // Check if already finalized by stale recovery or another path
-              if (!finalized) {
-                try {
-                  const existing = await db.query.flowRuns.findFirst({
-                    where: eq(flowRuns.id, run.id),
-                    columns: { status: true },
-                  });
-                  if (existing && existing.status !== "running") {
-                    finalized = true;
-                  }
-                } catch {}
-              }
-
-              if (!finalized && attempt < 4) {
-                await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
-              }
-            }
-
-            if (!finalized) {
-              console.error(
-                `[flows-tick] CRITICAL: Finalization writes exhausted for run ${run.id}. Run remains persisted with accumulated steps; stale recovery will transition it when DB recovers.`,
-              );
-            }
-
-            try {
-              await db.update(flows).set({ lastRunAt: new Date(), updatedAt: new Date() }).where(eq(flows.id, flow.id));
-            } catch {}
+          // Advance cadence immediately after atomic admission. The shared run
+          // service owns all subsequent persistence, heartbeat, and finalization.
+          await db
+            .update(flows)
+            .set({ lastRunAt: new Date(), updatedAt: new Date() })
+            .where(and(eq(flows.id, flow.id), eq(flows.tenantId, flow.tenantId)));
+          const execution = await executeAdmittedFlowRun({
+            flow,
+            runId: run.id,
+            triggerPayload,
+          });
+          if (!execution.persisted) {
+            console.error(`[flows-tick] Run ${run.id} could not persist its terminal state: ${execution.error}`);
           }
         } catch (err) {
           console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
@@ -332,6 +191,15 @@ export default defineSchedule({
     );
   },
 });
+
+export function isScheduleDue(
+  lastScheduledStartedAt: Date | null | undefined,
+  intervalMinutes: number,
+  now = Date.now(),
+): boolean {
+  if (!lastScheduledStartedAt) return true;
+  return now - lastScheduledStartedAt.getTime() >= intervalMinutes * 60_000;
+}
 
 export function isGraphFullyCompleted(
   graph: unknown,

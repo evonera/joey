@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
 
 describe("Flow scheduler stale sweep & admission invariants", () => {
+  it("anchors cadence to scheduled runs instead of newer webhook or manual activity", async () => {
+    const { isScheduleDue } = await import("../../../../agent/schedules/flows-tick");
+    const now = new Date("2026-08-30T12:00:00.000Z").getTime();
+    const latestScheduledRun = new Date("2026-08-30T11:00:00.000Z");
+    const newerWebhookRun = new Date("2026-08-30T11:55:00.000Z");
+
+    expect(isScheduleDue(latestScheduledRun, 30, now)).toBe(true);
+    // The newer non-scheduled timestamp remains useful for UI activity, but
+    // must never become the cadence input.
+    expect(isScheduleDue(newerWebhookRun, 30, now)).toBe(false);
+  });
+
   it("discriminates stale vs active runs by updatedAt rather than startedAt", () => {
     const now = Date.now();
     const staleCutoff = new Date(now - 2 * 60_000); // 2-minute cutoff (12x 10s heartbeat)
@@ -702,4 +714,3 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     expect(safeTestRegex(longPattern, "a")).toBe(false);
   });
 });
-

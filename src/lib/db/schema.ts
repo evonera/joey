@@ -328,6 +328,8 @@ export const flows = pgTable("flows", {
   description: text("description"),
   graph: jsonb("graph").notNull(),
   status: varchar("status", { length: 20 }).default("draft").notNull(), // 'draft' | 'active' | 'paused'
+  /** SHA-256 hash of the flow's incoming-webhook secret. */
+  webhookSecret: text("webhook_secret"),
   lastRunAt: timestamp("last_run_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -386,6 +388,7 @@ export const flowTemplates = pgTable("flow_templates", {
 export const r2CleanupTasks = pgTable("r2_cleanup_tasks", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  runId: text("run_id").references(() => flowRuns.id, { onDelete: "set null" }),
   key: text("key").notNull().unique(),
   reason: text("reason").notNull(),
   attempts: integer("attempts").default(0).notNull(),
