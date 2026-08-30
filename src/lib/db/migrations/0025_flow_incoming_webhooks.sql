@@ -1,3 +1,5 @@
+ALTER TABLE "flows" ADD COLUMN "execution_revision" integer DEFAULT 1 NOT NULL;
+--> statement-breakpoint
 CREATE TABLE "flow_webhook_deliveries" (
 	"id" text PRIMARY KEY NOT NULL,
 	"tenant_id" text NOT NULL,

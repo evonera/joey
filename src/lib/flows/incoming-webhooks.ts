@@ -228,11 +228,32 @@ export async function executeWebhookDelivery(input: {
       if (prior?.status === "succeeded" || prior?.status === "waiting_approval") {
         return { kind: "complete" as const };
       }
-      if (prior?.status === "running") return { kind: "active" as const };
+      let resumable = prior?.status === "failed";
+      if (prior?.status === "running") {
+        const staleBefore = new Date(Date.now() - WEBHOOK_STALE_AFTER_MS);
+        if (prior.updatedAt > staleBefore) return { kind: "active" as const };
+        const [superseded] = await tx
+          .update(flowRuns)
+          .set({
+            status: "failed",
+            error: "Superseded by its current webhook delivery attempt after lease expiry.",
+            finishedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(flowRuns.id, prior.id),
+            eq(flowRuns.tenantId, input.tenantId),
+            eq(flowRuns.status, "running"),
+            eq(flowRuns.updatedAt, prior.updatedAt),
+          ))
+          .returning({ id: flowRuns.id });
+        if (!superseded) return { kind: "active" as const };
+        resumable = true;
+      }
 
-      const cachedSteps = prior?.status === "failed" ? (prior.steps as FlowStep[]) : undefined;
-      const fanoutProgress = prior?.status === "failed"
-        ? (prior.fanoutProgress as Record<string, Record<string, unknown>>)
+      const cachedSteps = resumable ? (prior?.steps as FlowStep[]) : undefined;
+      const fanoutProgress = resumable
+        ? (prior?.fanoutProgress as Record<string, Record<string, unknown>>)
         : undefined;
       const [run] = await tx
         .insert(flowRuns)
@@ -270,6 +291,7 @@ export async function executeWebhookDelivery(input: {
     const result = await executeAdmittedFlowRun({
       flow: claim.flow,
       runId: claim.runId,
+      flowRevision: claim.flow.executionRevision,
       triggerPayload,
       cachedSteps: claim.cachedSteps,
       fanoutProgress: claim.fanoutProgress,

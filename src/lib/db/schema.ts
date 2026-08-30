@@ -330,6 +330,8 @@ export const flows = pgTable("flows", {
   status: varchar("status", { length: 20 }).default("draft").notNull(), // 'draft' | 'active' | 'paused'
   /** SHA-256 hash of the flow's incoming-webhook secret. */
   webhookSecret: text("webhook_secret"),
+  /** Incremented only when status or executable graph semantics change. */
+  executionRevision: integer("execution_revision").default(1).notNull(),
   lastRunAt: timestamp("last_run_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
