@@ -179,7 +179,9 @@ export const auth = betterAuth({
     ],
 });
 
-import { headers } from "next/headers";
+// The explicit extension keeps Eve's Node ESM authored-module evaluator from
+// resolving this as a relative, extensionless Next.js package import.
+import { headers } from "next/headers.js";
 
 type AuthSession = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
 
