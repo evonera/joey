@@ -117,10 +117,19 @@ export default defineSchedule({
           if (!parsed?.success) return;
           const config = parsed.data as { intervalMinutes: number };
 
-          if (flow.lastRunAt) {
-            const elapsed = Date.now() - flow.lastRunAt.getTime();
-            if (elapsed < config.intervalMinutes * 60_000) return;
-          }
+          // Cadence is anchored only to scheduled admissions. `lastRunAt` is
+          // intentionally generic UI activity and may be changed by manual or
+          // webhook runs on a mixed-trigger flow.
+          const latestScheduledRun = await db.query.flowRuns.findFirst({
+            where: and(
+              eq(flowRuns.flowId, flow.id),
+              eq(flowRuns.tenantId, flow.tenantId),
+              eq(flowRuns.trigger, "schedule"),
+            ),
+            columns: { startedAt: true },
+            orderBy: (runs, { desc }) => [desc(runs.startedAt)],
+          });
+          if (!isScheduleDue(latestScheduledRun?.startedAt, config.intervalMinutes)) return;
 
           // Skip if any run for this flow is still in flight — a WAITING
           // approval also occupies the slot (it will transition back to
@@ -182,6 +191,15 @@ export default defineSchedule({
     );
   },
 });
+
+export function isScheduleDue(
+  lastScheduledStartedAt: Date | null | undefined,
+  intervalMinutes: number,
+  now = Date.now(),
+): boolean {
+  if (!lastScheduledStartedAt) return true;
+  return now - lastScheduledStartedAt.getTime() >= intervalMinutes * 60_000;
+}
 
 export function isGraphFullyCompleted(
   graph: unknown,
