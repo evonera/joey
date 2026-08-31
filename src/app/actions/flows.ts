@@ -150,6 +150,7 @@ export async function setFlowStatus(
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
   if (!existing) return { error: "Flow not found" };
+  if (existing.status === status) return { ok: true };
 
   if (status === "active") {
     const result = await validateFlowGraph(existing.graph);
