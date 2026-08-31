@@ -463,6 +463,21 @@ export const telegramOutbox = pgTable("telegram_outbox", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   sentAt: timestamp("sent_at"),
 }, (table) => ({ tenantIdempotencyIdx: uniqueIndex("telegram_outbox_tenant_idempotency_idx").on(table.tenantId, table.idempotencyKey), pendingIdx: index("telegram_outbox_pending_idx").on(table.status, table.createdAt) }));
+
+export const telegramApprovals = pgTable("telegram_approvals", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  installationId: text("installation_id").notNull().references(() => telegramBotInstallations.id, { onDelete: "cascade" }),
+  runId: text("run_id").notNull().references(() => flowRuns.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  status: varchar("status", { length: 30 }).default("pending").notNull(),
+  decision: boolean("decision"),
+  decidedByTelegramUserId: bigint("decided_by_telegram_user_id", { mode: "number" }),
+  expiresAt: timestamp("expires_at").notNull(),
+  decidedAt: timestamp("decided_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({ pendingIdx: index("telegram_approvals_pending_idx").on(table.status, table.expiresAt), runIdx: index("telegram_approvals_run_idx").on(table.runId), onePendingRunIdx: uniqueIndex("telegram_approvals_one_pending_run_idx").on(table.runId).where(sql`${table.status} = 'pending'`) }));
 /**
  * Deployment-wide fixed-window rate limiting for the public API. One row per
  * (token, window) so documented limits hold across instances and restarts.
