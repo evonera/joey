@@ -142,6 +142,8 @@ describe("deferred incoming webhook execution", () => {
     );
     expect(webhookSource).toContain("export async function recoverStaleWebhookDeliveries");
     expect(webhookSource).toContain("eq(flowWebhookDeliveries.status, \"processing\")");
+    expect(webhookSource).toContain("const prior = await tx.query.flowRuns.findFirst");
+    expect(webhookSource).toContain("if (prior.updatedAt > staleBefore) return null");
   });
 });
 

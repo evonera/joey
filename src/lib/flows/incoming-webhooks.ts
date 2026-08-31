@@ -350,34 +350,49 @@ export async function recoverStaleWebhookDeliveries(limit = 10, now = new Date()
 
   let recoveredCount = 0;
   for (const delivery of staleDeliveries) {
-    const prior = await db.query.flowRuns.findFirst({
-      where: and(
-        eq(flowRuns.tenantId, delivery.tenantId),
-        eq(flowRuns.flowId, delivery.flowId),
-        eq(flowRuns.trigger, "webhook"),
-        sql`${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${delivery.id}`,
-      ),
-      orderBy: [desc(flowRuns.startedAt)],
-    });
-
-    if (prior?.status === "succeeded" || prior?.status === "waiting_approval") {
-      await db
-        .update(flowWebhookDeliveries)
-        .set({ status: "processed", processedAt: new Date(), updatedAt: new Date() })
-        .where(and(
-          eq(flowWebhookDeliveries.id, delivery.id),
-          eq(flowWebhookDeliveries.attempt, delivery.attempt),
-          eq(flowWebhookDeliveries.status, "processing"),
-        ));
-      recoveredCount++;
-      continue;
-    }
-
-    if (prior?.status === "running" && prior.updatedAt > staleBefore) {
-      continue;
-    }
-
     const rearm = await db.transaction(async (tx) => {
+      const prior = await tx.query.flowRuns.findFirst({
+        where: and(
+          eq(flowRuns.tenantId, delivery.tenantId),
+          eq(flowRuns.flowId, delivery.flowId),
+          eq(flowRuns.trigger, "webhook"),
+          sql`${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${delivery.id}`,
+        ),
+        orderBy: [desc(flowRuns.startedAt)],
+      });
+
+      if (prior?.status === "succeeded" || prior?.status === "waiting_approval") {
+        await tx
+          .update(flowWebhookDeliveries)
+          .set({ status: "processed", processedAt: new Date(), updatedAt: new Date() })
+          .where(and(
+            eq(flowWebhookDeliveries.id, delivery.id),
+            eq(flowWebhookDeliveries.attempt, delivery.attempt),
+            eq(flowWebhookDeliveries.status, "processing"),
+          ));
+        return { kind: "completed" as const };
+      }
+
+      if (prior?.status === "running") {
+        if (prior.updatedAt > staleBefore) return null;
+        const [superseded] = await tx
+          .update(flowRuns)
+          .set({
+            status: "failed",
+            error: "Superseded after its webhook execution lease expired.",
+            finishedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(flowRuns.id, prior.id),
+            eq(flowRuns.tenantId, delivery.tenantId),
+            eq(flowRuns.status, "running"),
+            eq(flowRuns.updatedAt, prior.updatedAt),
+          ))
+          .returning({ id: flowRuns.id });
+        if (!superseded) return null;
+      }
+
       const [claimed] = await tx
         .update(flowWebhookDeliveries)
         .set({
@@ -394,10 +409,12 @@ export async function recoverStaleWebhookDeliveries(limit = 10, now = new Date()
           sql`${flowWebhookDeliveries.updatedAt} <= ${staleBefore}`,
         ))
         .returning({ id: flowWebhookDeliveries.id, attempt: flowWebhookDeliveries.attempt });
-      return claimed;
+      return claimed ? { kind: "claimed" as const, attempt: claimed.attempt } : null;
     });
 
-    if (rearm) {
+    if (rearm?.kind === "completed") {
+      recoveredCount++;
+    } else if (rearm?.kind === "claimed") {
       recoveredCount++;
       await executeWebhookDelivery({
         tenantId: delivery.tenantId,
