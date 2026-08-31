@@ -345,6 +345,7 @@ export async function recoverStaleWebhookDeliveries(limit = 10, now = new Date()
       eq(flowWebhookDeliveries.status, "processing"),
       sql`${flowWebhookDeliveries.updatedAt} <= ${staleBefore}`,
     ),
+    orderBy: (delivs, { asc }) => [asc(delivs.updatedAt)],
     limit,
   });
 
@@ -374,7 +375,19 @@ export async function recoverStaleWebhookDeliveries(limit = 10, now = new Date()
       }
 
       if (prior?.status === "running") {
-        if (prior.updatedAt > staleBefore) return null;
+        if (prior.updatedAt > staleBefore) {
+          // Touch delivery updatedAt to reflect the active run's heartbeat
+          // and prevent live runs from monopolizing the recovery queue.
+          await tx
+            .update(flowWebhookDeliveries)
+            .set({ updatedAt: prior.updatedAt })
+            .where(and(
+              eq(flowWebhookDeliveries.id, delivery.id),
+              eq(flowWebhookDeliveries.attempt, delivery.attempt),
+              eq(flowWebhookDeliveries.status, "processing"),
+            ));
+          return null;
+        }
         const [superseded] = await tx
           .update(flowRuns)
           .set({
