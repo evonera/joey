@@ -82,7 +82,7 @@ export async function processR2CleanupTasks(limit = 25): Promise<void> {
 
     try {
       await deleteObject(task.key);
-      await db
+      const [deleted] = await db
         .delete(r2CleanupTasks)
         .where(
           and(
@@ -90,16 +90,19 @@ export async function processR2CleanupTasks(limit = 25): Promise<void> {
             eq(r2CleanupTasks.tenantId, task.tenantId),
             eq(r2CleanupTasks.nextAttemptAt, leaseUntil),
           ),
-        );
-      operationalEvent("info", "r2_cleanup.completed", {
-        tenantId: task.tenantId,
-        cleanupTaskId: task.id,
-        runId: task.runId,
-        attempt: task.attempts + 1,
-      });
+        )
+        .returning({ id: r2CleanupTasks.id });
+      if (deleted) {
+        operationalEvent("info", "r2_cleanup.completed", {
+          tenantId: task.tenantId,
+          cleanupTaskId: task.id,
+          runId: task.runId,
+          attempt: task.attempts + 1,
+        });
+      }
     } catch (error) {
       const attempts = task.attempts + 1;
-      await db
+      const [updated] = await db
         .update(r2CleanupTasks)
         .set({
           lastError: error instanceof Error ? error.message : String(error),
@@ -112,14 +115,17 @@ export async function processR2CleanupTasks(limit = 25): Promise<void> {
             eq(r2CleanupTasks.tenantId, task.tenantId),
             eq(r2CleanupTasks.nextAttemptAt, leaseUntil),
           ),
-        );
-      operationalEvent("error", "r2_cleanup.failed", {
-        tenantId: task.tenantId,
-        cleanupTaskId: task.id,
-        runId: task.runId,
-        attempt: attempts,
-        error: error instanceof Error ? error.message : "Unknown R2 cleanup error",
-      });
+        )
+        .returning({ id: r2CleanupTasks.id });
+      if (updated) {
+        operationalEvent("error", "r2_cleanup.failed", {
+          tenantId: task.tenantId,
+          cleanupTaskId: task.id,
+          runId: task.runId,
+          attempt: attempts,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }
