@@ -45,6 +45,11 @@ export function deliveryIdentityKey(
   return deliveryId === null ? null : JSON.stringify([tenantId, flowId, deliveryId]);
 }
 
+/** Checkpoints are safe to reuse only for the identical submitted JSON value. */
+export function sameWebhookPayload(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 type DeliveryAdmission =
   | { admitted: true; id: string; attempt: number }
   | { admitted: false; reason: "duplicate" | "active" };
@@ -228,7 +233,8 @@ export async function executeWebhookDelivery(input: {
       if (prior?.status === "succeeded" || prior?.status === "waiting_approval") {
         return { kind: "complete" as const };
       }
-      let resumable = prior?.status === "failed";
+      const priorPayload = (prior?.triggerPayload as { payload?: unknown } | null)?.payload;
+      let resumable = prior?.status === "failed" && sameWebhookPayload(priorPayload, input.payload);
       if (prior?.status === "running") {
         const staleBefore = new Date(Date.now() - WEBHOOK_STALE_AFTER_MS);
         if (prior.updatedAt > staleBefore) return { kind: "active" as const };
@@ -248,7 +254,7 @@ export async function executeWebhookDelivery(input: {
           ))
           .returning({ id: flowRuns.id });
         if (!superseded) return { kind: "active" as const };
-        resumable = true;
+        resumable = sameWebhookPayload(priorPayload, input.payload);
       }
 
       const cachedSteps = resumable ? (prior?.steps as FlowStep[]) : undefined;

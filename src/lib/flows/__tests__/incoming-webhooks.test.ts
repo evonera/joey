@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   deliveryIdentityKey,
   mayRearmDelivery,
+  sameWebhookPayload,
   WEBHOOK_STALE_AFTER_MS,
 } from "../incoming-webhooks";
 import { hashWebhookSecret, verifyWebhookSecret } from "../webhook-secret";
@@ -42,6 +43,16 @@ describe("incoming webhook admission", () => {
       updatedAt: new Date(now.getTime() - WEBHOOK_STALE_AFTER_MS - 1),
       hasLiveRun: false,
     }, now)).toBe(true);
+  });
+
+  it("does not reuse checkpoints when a retry replaces the JSON payload", () => {
+    expect(sameWebhookPayload({ event: "created", id: "a" }, { event: "created", id: "a" })).toBe(true);
+    expect(sameWebhookPayload({ event: "created", id: "a" }, { event: "updated", id: "a" })).toBe(false);
+    const source = readFileSync(
+      resolve(process.cwd(), "src/lib/flows/incoming-webhooks.ts"),
+      "utf8",
+    );
+    expect(source).toContain("sameWebhookPayload(priorPayload, input.payload)");
   });
 
   it("does not re-arm while a live or approval-paused run owns the delivery", () => {
@@ -100,7 +111,7 @@ describe("deferred incoming webhook execution", () => {
     expect(freshnessRefresh).toBeGreaterThan(deferredClaim);
     expect(staleRunClaim).toBeGreaterThan(freshnessRefresh);
     expect(replacementRun).toBeGreaterThan(staleRunClaim);
-    expect(source).toContain("resumable = true");
+    expect(source).toContain("resumable = sameWebhookPayload(priorPayload, input.payload)");
   });
 
   it("fences execution to the active flow revision claimed with the run", () => {
@@ -132,5 +143,19 @@ describe("incoming webhook secret rotation", () => {
       "utf8",
     );
     expect(route).toContain("eq(flows.webhookSecret, flow.webhookSecret)");
+  });
+});
+
+describe("flow execution revisions", () => {
+  it("does not bump the execution revision for a no-op status request", () => {
+    const actions = readFileSync(
+      resolve(process.cwd(), "src/app/actions/flows.ts"),
+      "utf8",
+    );
+    const statusAction = actions.slice(actions.indexOf("export async function setFlowStatus"));
+    const noOp = statusAction.indexOf("if (existing.status === status) return { ok: true };");
+    const increment = statusAction.indexOf("executionRevision: sql");
+    expect(noOp).toBeGreaterThan(-1);
+    expect(increment).toBeGreaterThan(noOp);
   });
 });
