@@ -1,16 +1,19 @@
 'use server';
 
+import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowTemplates, drafts } from "@/lib/db/schema";
-import { and, eq, desc, inArray } from "drizzle-orm";
+import { and, eq, desc, inArray, isNull, sql } from "drizzle-orm";
 import { getActiveTenantId } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
 import type { FlowStep, RunStatus } from "@/lib/flows/types";
 import { getNode } from "@/lib/flows/registry";
 import { executeAdmittedFlowRun, startFlowRun } from "@/lib/flows/run-flow-server";
+import { hashWebhookSecret } from "@/lib/flows/webhook-secret";
 
 export type FlowRow = typeof flows.$inferSelect;
 export type FlowRunRow = typeof flowRuns.$inferSelect;
+export type FlowDetails = FlowRow & { webhookConfigured: boolean; webhookSecret: null };
 
 export async function listFlows(): Promise<{ flows: FlowRow[] }> {
   const tenantId = await getActiveTenantId();
@@ -18,7 +21,8 @@ export async function listFlows(): Promise<{ flows: FlowRow[] }> {
     where: eq(flows.tenantId, tenantId),
     orderBy: [desc(flows.updatedAt)],
   });
-  return { flows: rows };
+  // Never serialize stored secret hashes into client components.
+  return { flows: rows.map((flow) => ({ ...flow, webhookSecret: null })) };
 }
 
 export async function createFlow(name: string): Promise<{ flow?: FlowRow; error?: string }> {
@@ -37,7 +41,7 @@ export async function createFlow(name: string): Promise<{ flow?: FlowRow; error?
   return { flow };
 }
 
-export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: FlowRunRow[]; error?: string }> {
+export async function getFlow(id: string): Promise<{ flow?: FlowDetails; runs?: FlowRunRow[]; error?: string }> {
   const tenantId = await getActiveTenantId();
   const flow = await db.query.flows.findFirst({
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
@@ -49,7 +53,49 @@ export async function getFlow(id: string): Promise<{ flow?: FlowRow; runs?: Flow
     orderBy: [desc(flowRuns.startedAt)],
     limit: 20,
   });
-  return { flow, runs };
+  return {
+    flow: { ...flow, webhookConfigured: Boolean(flow.webhookSecret), webhookSecret: null },
+    runs,
+  };
+}
+
+function generateWebhookSecret(): string {
+  return `wf_${randomBytes(32).toString("base64url")}`;
+}
+
+/** Provisions once. A concurrent loser never receives a secret that was not persisted. */
+export async function provisionFlowWebhookSecret(
+  id: string,
+): Promise<{ secret?: string; configured?: boolean; error?: string }> {
+  const tenantId = await getActiveTenantId();
+  const secret = generateWebhookSecret();
+  const [updated] = await db
+    .update(flows)
+    .set({ webhookSecret: hashWebhookSecret(secret), updatedAt: new Date() })
+    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId), isNull(flows.webhookSecret)))
+    .returning({ id: flows.id });
+  if (updated) return { secret, configured: true };
+
+  const existing = await db.query.flows.findFirst({
+    where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
+    columns: { webhookSecret: true },
+  });
+  if (!existing) return { error: "Flow not found" };
+  return { configured: Boolean(existing.webhookSecret) };
+}
+
+/** Rotates atomically; the returned plaintext is never stored or returned again. */
+export async function rotateFlowWebhookSecret(
+  id: string,
+): Promise<{ secret?: string; error?: string }> {
+  const tenantId = await getActiveTenantId();
+  const secret = generateWebhookSecret();
+  const [updated] = await db
+    .update(flows)
+    .set({ webhookSecret: hashWebhookSecret(secret), updatedAt: new Date() })
+    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)))
+    .returning({ id: flows.id });
+  return updated ? { secret } : { error: "Flow not found" };
 }
 
 export async function validateFlowGraph(raw: unknown): Promise<{ ok: boolean; issues: ValidationIssue[] }> {
@@ -78,6 +124,7 @@ export async function saveFlow(
     const result = await validateFlowGraph(data.graph);
     if (!result.ok) return { issues: result.issues };
   }
+  const graphJson = data.graph === undefined ? undefined : JSON.stringify(data.graph);
 
   await db
     .update(flows)
@@ -85,9 +132,14 @@ export async function saveFlow(
       ...(data.name !== undefined ? { name: data.name.trim().slice(0, 120) || existing.name } : {}),
       ...(data.description !== undefined ? { description: data.description } : {}),
       ...(data.graph !== undefined ? { graph: data.graph } : {}),
+      ...(graphJson !== undefined
+        ? {
+            executionRevision: sql`CASE WHEN ${flows.graph} IS DISTINCT FROM ${graphJson}::jsonb THEN ${flows.executionRevision} + 1 ELSE ${flows.executionRevision} END`,
+          }
+        : {}),
       updatedAt: new Date(),
     })
-    .where(eq(flows.id, id));
+    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)));
 
   return { ok: true };
 }
@@ -107,7 +159,24 @@ export async function setFlowStatus(
     if (!result.ok) return { issues: result.issues };
   }
 
-  await db.update(flows).set({ status, updatedAt: new Date() }).where(eq(flows.id, id));
+  const [updated] = await db
+    .update(flows)
+    .set({
+      status,
+      executionRevision: sql`${flows.executionRevision} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(flows.id, id),
+      eq(flows.tenantId, tenantId),
+      sql`${flows.status} <> ${status}`,
+    ))
+    .returning({ id: flows.id });
+  if (!updated) {
+    // The database observed the requested status at the write boundary, so a
+    // concurrent same-target submission does not create a second revision.
+    return { ok: true };
+  }
   return { ok: true };
 }
 

@@ -11,6 +11,7 @@ import { notifyNode } from "./nodes/actions/notify";
 
 // P1 + P2 node catalog
 import { webhookTriggerNode } from "./nodes/triggers/webhook";
+import { incomingWebhookTriggerNode } from "./nodes/triggers/incoming-webhook";
 import { apifyActorNode } from "./nodes/data/apify-actor";
 import { exaSearchNode } from "./nodes/data/exa-search";
 import { tavilySearchNode } from "./nodes/data/tavily-search";
@@ -22,6 +23,7 @@ const definitions = {
   "trigger.manual": manualTriggerNode,
   "trigger.schedule": scheduleTriggerNode,
   "trigger.webhook": webhookTriggerNode,
+  "trigger.incoming_webhook": incomingWebhookTriggerNode,
   "transform.filter": filterNode,
   "transform.sort": sortTopNNode,
   "transform.dedupe": dedupeNode,
@@ -49,6 +51,7 @@ const _keysMatch: AssertKeysMatch = {
   "trigger.manual": true,
   "trigger.schedule": true,
   "trigger.webhook": true,
+  "trigger.incoming_webhook": true,
   "transform.filter": true,
   "transform.sort": true,
   "transform.dedupe": true,

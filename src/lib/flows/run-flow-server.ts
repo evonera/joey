@@ -17,6 +17,8 @@ type RunExecutionOptions = {
   cachedSteps?: FlowStep[];
   fanoutProgress?: Record<string, Record<string, unknown>>;
   approvedNodeIds?: string[];
+  /** Fences deferred webhook execution to the graph/status revision it claimed. */
+  flowRevision?: number;
 };
 
 export type FlowRunExecutionResult = {
@@ -27,6 +29,7 @@ export type FlowRunExecutionResult = {
 };
 
 const FENCE_ERROR = "Execution fenced: run is no longer running.";
+const FLOW_REVISION_FENCE_ERROR = "Execution fenced: flow was paused or edited.";
 
 function runFence(runId: string, tenantId: string) {
   return and(
@@ -140,6 +143,20 @@ export async function executeAdmittedFlowRun(
   let result: Awaited<ReturnType<typeof executeFlow>> | undefined;
   let executionError: unknown;
 
+  const assertFlowRevision = async () => {
+    if (!opts.flowRevision) return;
+    const current = await db.query.flows.findFirst({
+      where: and(
+        eq(flows.id, opts.flow.id),
+        eq(flows.tenantId, opts.flow.tenantId),
+        eq(flows.status, "active"),
+        eq(flows.executionRevision, opts.flowRevision),
+      ),
+      columns: { id: true },
+    });
+    if (!current) throw new Error(FLOW_REVISION_FENCE_ERROR);
+  };
+
   try {
     result = await executeFlow(
       opts.flow.graph as Parameters<typeof executeFlow>[0],
@@ -153,9 +170,12 @@ export async function executeAdmittedFlowRun(
         approvedNodeIds: opts.approvedNodeIds,
       },
       {
-        onStepUpdate: (step, progress) =>
-          persistFlowStep(opts.flow.tenantId, opts.runId, step, progress),
+        onStepUpdate: async (step, progress) => {
+          await assertFlowRevision();
+          await persistFlowStep(opts.flow.tenantId, opts.runId, step, progress);
+        },
         onFanoutProgress: async (progress) => {
+          await assertFlowRevision();
           const updated = await db
             .update(flowRuns)
             .set({ fanoutProgress: progress, updatedAt: new Date() })
@@ -164,6 +184,7 @@ export async function executeAdmittedFlowRun(
           if (updated.length === 0) throw new Error(FENCE_ERROR);
         },
         onHeartbeat: async () => {
+          await assertFlowRevision();
           const updated = await db
             .update(flowRuns)
             .set({ updatedAt: new Date() })
