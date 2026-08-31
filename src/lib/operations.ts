@@ -18,6 +18,7 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60_000);
   const staleRunCutoff = new Date(now.getTime() - 30 * 60_000);
   const staleDeliveryCutoff = new Date(now.getTime() - 10 * 60_000);
+  const staleWebhookRunCutoff = new Date(now.getTime() - 2 * 60_000);
   const oldOutboxCutoff = new Date(now.getTime() - 5 * 60_000);
 
   const [
@@ -45,7 +46,7 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
             AND ${flowRuns.trigger} = 'webhook'
             AND ${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${flowWebhookDeliveries.id}
             AND ${flowRuns.status} IN ('running', 'waiting_approval')
-            AND ${flowRuns.updatedAt} >= ${staleRunCutoff}
+            AND ${flowRuns.updatedAt} >= ${staleWebhookRunCutoff}
         )`,
       ),
     ),
