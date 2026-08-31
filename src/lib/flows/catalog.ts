@@ -24,6 +24,8 @@ export const webhookTriggerConfig = z.object({
     .describe("Zernio event that starts this flow"),
 });
 
+export const incomingWebhookTriggerConfig = z.object({});
+
 export const filterConfig = z.object({
   field: z.string().describe("Item field to test (dot paths allowed, e.g. metrics.views)"),
   operator: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"]),
@@ -63,7 +65,7 @@ export const approvalGateConfig = z.object({
 });
 
 export const llmTaskConfig = z.object({
-  provider: z.enum(["openai", "anthropic"]).default("openai"),
+  provider: z.enum(["openai", "anthropic", "openrouter"]).default("openai"),
   model: z
     .string()
     .default("gpt-4o-mini")
@@ -88,12 +90,25 @@ export const transcribeConfig = z.object({
   language: z.string().optional().describe("ISO code hint, e.g. en"),
 });
 
+export const imageGenConfig = z.object({
+  prompt: z.string().min(1),
+  size: z.enum(["1024x1024", "1536x1024", "1024x1536"]).default("1024x1024"),
+  quality: z.enum(["low", "medium", "high"]).default("medium"),
+});
+export const saveAssetConfig = z.object({ urlField: z.string().optional(), filename: z.string().optional() });
+export const youtubeTranscriptConfig = z.object({ videoUrlField: z.string().optional() });
+export const telegramSendConfig = z.object({ chatId: z.string().min(1), messageTemplate: z.string().min(1).max(4096) });
+
 export const createDraftConfig = z.object({
   platform: z.enum(["twitter", "linkedin", "facebook"]).default("twitter"),
   contentField: z
     .string()
     .optional()
     .describe("Field of the incoming data holding the post text (blank = use the whole input)"),
+  mediaUrlField: z
+    .string()
+    .optional()
+    .describe("Field of the incoming data holding image/video URL(s) (blank = auto-detect from input)"),
   accountId: z.string().optional().describe("Connected account id (blank = tenant default)"),
 });
 
@@ -131,6 +146,18 @@ export const tavilySearchConfig = z.object({
   includeAnswer: z.boolean().default(true),
 });
 
+export const httpConfig = z.object({
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
+  url: z.string().url().or(z.string().includes("{{input}}")),
+  headersJson: z.string().optional(),
+  bodyJson: z.string().optional(),
+  timeoutMs: z.number().int().min(1_000).max(60_000).default(30_000),
+  maxResponseBytes: z.number().int().min(1_024).max(10 * 1024 * 1024).default(5 * 1024 * 1024),
+});
+export const rssConfig = z.object({ url: z.string().url(), limit: z.number().int().min(1).max(100).default(20) });
+export const redditConfig = z.object({ subreddit: z.string(), sort: z.enum(["hot", "new", "top"]).default("hot"), limit: z.number().int().min(1).max(50).default(10) });
+export const splitConfig = z.object({ aWeightPercent: z.number().int().min(0).max(100).default(50) });
+
 export type CatalogMeta = {
   type: string;
   category: "trigger" | "data" | "transform" | "ai" | "action" | "logic";
@@ -147,19 +174,28 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "trigger.manual", category: "trigger", label: "Manual start", description: "Starts the flow when run manually (or on a schedule you set).", inputs: [], outputs: ["data"], isTrigger: true, configSchema: manualTriggerConfig },
   { type: "trigger.schedule", category: "trigger", label: "Schedule", description: "Runs the flow on a fixed interval while the flow is active.", inputs: [], outputs: ["data"], isTrigger: true, configSchema: scheduleTriggerConfig },
   { type: "trigger.webhook", category: "trigger", label: "Zernio webhook", description: "Starts the flow when Zernio sends a matching real-time event (comments, mentions).", inputs: [], outputs: ["event"], isTrigger: true, configSchema: webhookTriggerConfig },
+  { type: "trigger.incoming_webhook", category: "trigger", label: "Incoming webhook", description: "Starts this flow when an authenticated JSON request reaches its public webhook URL.", inputs: [], outputs: ["payload"], isTrigger: true, configSchema: incomingWebhookTriggerConfig },
   { type: "data.apify_actor", category: "data", label: "Apify Actor", description: "Runs any Apify actor synchronously and returns its dataset items (scrapes, extracts…). Needs an Apify token in Settings → API Keys.", inputs: ["input"], outputs: ["items"], configSchema: apifyActorConfig },
   { type: "data.exa_search", category: "data", label: "Web Research (Exa)", description: "Neural web search via Exa for research-grade results on a topic. Needs an Exa key in Settings → API Keys.", inputs: ["topic"], outputs: ["results"], configSchema: exaSearchConfig },
   { type: "data.tavily_search", category: "data", label: "Web Research (Tavily)", description: "Fast web search with an LLM-ready answer via Tavily. Needs a Tavily key in Settings → API Keys.", inputs: ["topic"], outputs: ["results"], configSchema: tavilySearchConfig },
+  { type: "data.http", category: "data", label: "HTTP Request", description: "Calls REST APIs with bounded SSRF-safe requests.", inputs: ["input"], outputs: ["response"], configSchema: httpConfig },
+  { type: "data.rss", category: "data", label: "RSS / Atom feed", description: "Fetches the latest public feed entries.", inputs: [], outputs: ["items"], configSchema: rssConfig },
+  { type: "data.reddit", category: "data", label: "Reddit r/", description: "Pulls public subreddit posts.", inputs: [], outputs: ["posts"], configSchema: redditConfig },
   { type: "transform.filter", category: "transform", label: "Filter", description: "Keeps array items matching a condition. Non-array input passes through unchanged.", inputs: ["items"], outputs: ["items"], configSchema: filterConfig },
   { type: "transform.sort", category: "transform", label: "Sort / Top-N", description: "Sorts array items by a field and optionally keeps the top N.", inputs: ["items"], outputs: ["items"], configSchema: sortTopNConfig },
   { type: "transform.dedupe", category: "transform", label: "Dedupe", description: "Removes duplicate array items by a field value.", inputs: ["items"], outputs: ["items"], configSchema: dedupeConfig },
   { type: "logic.condition", category: "logic", label: "Condition", description: "Branches the flow. Connect downstream edges from the 'true' or 'false' handle; non-matching branches are skipped.", inputs: ["data"], outputs: ["true", "false"], configSchema: conditionConfig },
   { type: "logic.loop", category: "logic", label: "For each item", description: "Runs everything downstream once per item of the incoming array, then merges each branch's results into a single list.", inputs: ["items"], outputs: ["item"], forEach: true, configSchema: loopConfig },
   { type: "logic.approval", category: "logic", label: "Approval gate", description: "Pauses the run until you approve or reject in the dashboard. On approve, downstream nodes execute; on reject the run ends.", inputs: ["data"], outputs: ["data"], configSchema: approvalGateConfig },
+  { type: "logic.split", category: "logic", label: "A/B split", description: "Deterministically routes a run to branch a or b.", inputs: ["data"], outputs: ["a", "b"], configSchema: splitConfig },
   { type: "ai.llm", category: "ai", label: "AI Task", description: "Runs an LLM over the incoming data. Optionally forces structured JSON via a schema. Spend counts against your LLM budget.", inputs: ["data"], outputs: ["result"], configSchema: llmTaskConfig },
   { type: "ai.transcribe", category: "ai", label: "Transcribe", description: "Downloads an audio/video URL and transcribes it with OpenAI Whisper. Uses your OpenAI key; spend counts against budget.", inputs: ["media"], outputs: ["transcript"], configSchema: transcribeConfig },
+  { type: "ai.image", category: "ai", label: "Generate image", description: "Generates and durably stores an image asset.", inputs: ["idea"], outputs: ["image"], configSchema: imageGenConfig },
+  { type: "ai.youtube_transcript", category: "ai", label: "YouTube transcript", description: "Fetches a YouTube transcript through Supadata.", inputs: ["video"], outputs: ["transcript"], configSchema: youtubeTranscriptConfig },
   { type: "action.create_draft", category: "action", label: "Create Draft", description: "Creates a draft in your approval queue. Nothing publishes until you approve it — this is how every flow must end.", inputs: ["data"], outputs: ["draft"], configSchema: createDraftConfig },
   { type: "action.notify", category: "action", label: "Notify me", description: "Sends you an in-app notification (and email if your preferences allow).", inputs: ["data"], outputs: ["data"], configSchema: notifyConfig },
+  { type: "action.save_asset", category: "action", label: "Save to Assets", description: "Downloads and registers a public file.", inputs: ["file"], outputs: ["asset"], configSchema: saveAssetConfig },
+  { type: "action.telegram_send", category: "action", label: "Send Telegram", description: "Queues an idempotent Telegram message.", inputs: ["data"], outputs: ["message"], configSchema: telegramSendConfig },
 ];
 
 const metaByType = new Map(NODE_CATALOG.map((m) => [m.type, m]));

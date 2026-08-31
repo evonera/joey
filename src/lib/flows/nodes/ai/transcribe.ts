@@ -22,7 +22,12 @@ export const transcribeNode = defineNode({
     const initialUrl = extractUrl(input, config.mediaUrlField);
     if (!initialUrl) throw new Error("No media URL found on the incoming data.");
 
-    const { buffer, contentType, finalUrl } = await fetchSafeMedia(initialUrl, ctx.signal);
+    const { outboundRequest } = await import("../../outbound-request");
+    const media = await outboundRequest(initialUrl, { signal: ctx.signal, timeoutMs: 60_000, maxBytes: 25 * 1024 * 1024 });
+    if (media.status < 200 || media.status >= 300) throw new Error(`Media download returned HTTP ${media.status}.`);
+    const buffer = media.buffer;
+    const contentType = String(media.headers["content-type"] ?? "application/octet-stream");
+    const finalUrl = media.finalUrl;
     if (buffer.length > 25 * 1024 * 1024) {
       throw new Error("Media exceeds Whisper's 25MB limit.");
     }
@@ -41,7 +46,7 @@ export const transcribeNode = defineNode({
       model: "whisper-1",
       file: new File([buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer], "media.mp4", { type: contentType || "video/mp4" }),
       ...(config.language ? { language: config.language } : {}),
-    });
+    }, { signal: ctx.signal });
 
     try {
       const { recordTokenUsage } = await import("@/lib/usage");

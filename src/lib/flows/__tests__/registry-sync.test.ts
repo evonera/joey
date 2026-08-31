@@ -19,4 +19,26 @@ describe("flow node catalog ↔ registry sync", () => {
       expect(getNodeMeta(entry.type)?.label).toBe(entry.label);
     }
   });
+
+  it("official templates are valid graphs with executable node connections", async () => {
+    const { officialTemplates } = await import("@/lib/flows/templates");
+    expect(officialTemplates.length).toBeGreaterThanOrEqual(4);
+    for (const tmpl of officialTemplates) {
+      expect(tmpl.slug).toBeDefined();
+      expect(tmpl.graph.nodes.length).toBeGreaterThan(0);
+      expect(tmpl.graph.edges.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("image node resolves field path tokens like {{input.imagePrompt}}", async () => {
+    const { imageGenNode } = await import("@/lib/flows/nodes/ai/image");
+    expect(imageGenNode.type).toBe("ai.image");
+  });
+
+  it("create draft node requires non-empty text content", async () => {
+    const { createDraftNode } = await import("@/lib/flows/nodes/actions/create-draft");
+    await expect(
+      createDraftNode.execute({ caption: "" }, {}, { tenantId: "test", flowId: "flow1", runId: "run1", nodeId: "d1" })
+    ).rejects.toThrow(/No content to draft/);
+  });
 });

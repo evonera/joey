@@ -43,12 +43,13 @@ describe("flow platform reconciliation", () => {
     expect(verifyWebhookSecret(null, stored)).toBe(false);
   });
 
-  it("does not mutate published migration files and appends migration 0024", () => {
+  it("does not mutate published migration files and only appends new migrations", () => {
     const migrations = resolve(process.cwd(), "src/lib/db/migrations");
     const published = {
       "0021_rate_limit_counters.sql": "cf0c90036deebe350c423e9c2c9936945f18aba1b6724b51d0ba7cce3bb59b94",
       "0022_flow_platform.sql": "bdeb82ff15206ccf49f0eaa6750eff779c1a964851878ca7de65230bc606650c",
       "0023_r2_cleanup_tasks.sql": "788eac207d7f27029119d9c6328dd520aff158c5907b77606d6a612d9236a71a",
+      "0024_flow_platform_reconciliation.sql": "9975b009541cf1e840b411ab3c4bef55eaf3298c0deaa7230d60b7e0d27c0720",
     };
 
     for (const [file, expected] of Object.entries(published)) {
@@ -59,8 +60,8 @@ describe("flow platform reconciliation", () => {
     const journal = JSON.parse(
       readFileSync(resolve(migrations, "meta/_journal.json"), "utf8"),
     ) as { entries: Array<{ idx: number; tag: string }> };
-    expect(journal.entries.at(-1)).toEqual(
-      expect.objectContaining({ idx: 24, tag: "0024_flow_platform_reconciliation" }),
-    );
+    expect(journal.entries.find(({ idx }) => idx === 25)).toEqual(expect.objectContaining({ tag: "0025_flow_incoming_webhooks" }));
+    expect(journal.entries.find(({ idx }) => idx === 26)).toEqual(expect.objectContaining({ tag: "0026_telegram_bot_installations" }));
+    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 27, tag: "0027_telegram_outbox" }));
   });
 });

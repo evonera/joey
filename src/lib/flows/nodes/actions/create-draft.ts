@@ -15,9 +15,39 @@ export const createDraftNode = defineNode({
   async execute(input, rawConfig, ctx) {
     const config = configSchema.parse(rawConfig);
 
-    const content =
+    let content =
       (config.contentField && extractField(input, config.contentField)) ??
-      (typeof input === "string" ? input : JSON.stringify(input));
+      (typeof input === "string" ? input : undefined);
+
+    const mediaUrls: string[] = [];
+    if (input && typeof input === "object" && input !== null) {
+      const record = input as Record<string, unknown>;
+      if (!content) {
+        if (typeof record.caption === "string") {
+          content = record.caption.trim();
+        } else if (typeof record.content === "string") {
+          content = record.content.trim();
+        } else if (typeof record.text === "string") {
+          content = record.text.trim();
+        } else if (typeof record.message === "string") {
+          content = record.message.trim();
+        }
+      }
+      if (config.mediaUrlField) {
+        const extracted = extractField(input, config.mediaUrlField);
+        if (extracted) mediaUrls.push(extracted);
+      } else {
+        if (typeof record.imageUrl === "string" && record.imageUrl.trim()) {
+          mediaUrls.push(record.imageUrl.trim());
+        } else if (typeof record.url === "string" && record.url.trim() && /\.(?:png|jpe?g|webp|gif|mp4|mov)$/i.test(record.url)) {
+          mediaUrls.push(record.url.trim());
+        } else if (Array.isArray(record.mediaUrls)) {
+          for (const item of record.mediaUrls) {
+            if (typeof item === "string" && item.trim()) mediaUrls.push(item.trim());
+          }
+        }
+      }
+    }
 
     if (!content || !content.trim()) {
       throw new Error("No content to draft — incoming data was empty.");
@@ -65,6 +95,7 @@ export const createDraftNode = defineNode({
           platformOptions: {
             platform: config.platform,
             ...(config.accountId ? { accountId: config.accountId } : {}),
+            ...(mediaUrls.length > 0 ? { mediaUrls } : {}),
             source: "flow",
             flowRunId: ctx.runId,
             nodeId: ctx.nodeId,

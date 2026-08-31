@@ -330,6 +330,8 @@ export const flows = pgTable("flows", {
   status: varchar("status", { length: 20 }).default("draft").notNull(), // 'draft' | 'active' | 'paused'
   /** SHA-256 hash of the flow's incoming-webhook secret. */
   webhookSecret: text("webhook_secret"),
+  /** Incremented only when status or executable graph semantics change. */
+  executionRevision: integer("execution_revision").default(1).notNull(),
   lastRunAt: timestamp("last_run_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -367,6 +369,27 @@ export const flowRuns = pgTable("flow_runs", {
     .where(sql`${table.status} IN ('running','waiting_approval') AND ${table.trigger} = 'webhook'`),
 }));
 
+/** Durable admission record for public per-flow webhook deliveries. */
+export const flowWebhookDeliveries = pgTable("flow_webhook_deliveries", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  flowId: text("flow_id").notNull().references(() => flows.id, { onDelete: "cascade" }),
+  /** Sender-provided idempotency identifier; null means deliberately at-least-once. */
+  deliveryId: text("delivery_id"),
+  payload: jsonb("payload").notNull(),
+  status: varchar("status", { length: 30 }).default("processing").notNull(),
+  attempt: integer("attempt").default(1).notNull(),
+  error: text("error"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  flowCreatedIdx: index("flow_webhook_deliveries_flow_created_idx").on(table.flowId, table.createdAt),
+  explicitDeliveryIdx: uniqueIndex("flow_webhook_deliveries_explicit_idx")
+    .on(table.tenantId, table.flowId, table.deliveryId)
+    .where(sql`${table.deliveryId} IS NOT NULL`),
+}));
+
 /**
  * Installable flow templates (Phase 3.5/3.6 merged into the Flow Builder):
  * official seeds ship with the app; users can publish their own flows here.
@@ -399,6 +422,47 @@ export const r2CleanupTasks = pgTable("r2_cleanup_tasks", {
 }, (table) => ({
   dueIdx: index("r2_cleanup_tasks_due_idx").on(table.nextAttemptAt),
 }));
+
+export const telegramBotInstallations = pgTable("telegram_bot_installations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }).unique(),
+  encryptedToken: text("encrypted_token").notNull(),
+  webhookSecretHash: text("webhook_secret_hash").notNull(),
+  botTelegramId: bigint("bot_telegram_id", { mode: "number" }).notNull(),
+  botUsername: varchar("bot_username", { length: 64 }),
+  allowedUserIds: bigint("allowed_user_ids", { mode: "number" }).array().default([]).notNull(),
+  status: varchar("status", { length: 30 }).default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const telegramUpdates = pgTable("telegram_updates", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  installationId: text("installation_id").notNull().references(() => telegramBotInstallations.id, { onDelete: "cascade" }),
+  updateId: bigint("update_id", { mode: "number" }).notNull(),
+  payload: jsonb("payload").notNull(),
+  status: varchar("status", { length: 30 }).default("pending").notNull(),
+  error: text("error"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({ installationUpdateIdx: uniqueIndex("telegram_updates_installation_update_idx").on(table.installationId, table.updateId), pendingIdx: index("telegram_updates_pending_idx").on(table.status, table.createdAt) }));
+
+export const telegramOutbox = pgTable("telegram_outbox", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  installationId: text("installation_id").notNull().references(() => telegramBotInstallations.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  chatId: text("chat_id").notNull(),
+  text: text("text").notNull(),
+  replyMarkup: jsonb("reply_markup"),
+  status: varchar("status", { length: 30 }).default("pending").notNull(),
+  telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  sentAt: timestamp("sent_at"),
+}, (table) => ({ tenantIdempotencyIdx: uniqueIndex("telegram_outbox_tenant_idempotency_idx").on(table.tenantId, table.idempotencyKey), pendingIdx: index("telegram_outbox_pending_idx").on(table.status, table.createdAt) }));
 /**
  * Deployment-wide fixed-window rate limiting for the public API. One row per
  * (token, window) so documented limits hold across instances and restarts.
