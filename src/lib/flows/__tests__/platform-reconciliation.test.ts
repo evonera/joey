@@ -43,7 +43,7 @@ describe("flow platform reconciliation", () => {
     expect(verifyWebhookSecret(null, stored)).toBe(false);
   });
 
-  it("does not mutate published migration files and appends migration 0024", () => {
+  it("does not mutate published migration files and only appends new migrations", () => {
     const migrations = resolve(process.cwd(), "src/lib/db/migrations");
     const published = {
       "0021_rate_limit_counters.sql": "cf0c90036deebe350c423e9c2c9936945f18aba1b6724b51d0ba7cce3bb59b94",
@@ -60,8 +60,7 @@ describe("flow platform reconciliation", () => {
     const journal = JSON.parse(
       readFileSync(resolve(migrations, "meta/_journal.json"), "utf8"),
     ) as { entries: Array<{ idx: number; tag: string }> };
-    expect(journal.entries.at(-1)).toEqual(
-      expect.objectContaining({ idx: 25, tag: "0025_flow_incoming_webhooks" }),
-    );
+    expect(journal.entries.find(({ idx }) => idx === 25)).toEqual(expect.objectContaining({ tag: "0025_flow_incoming_webhooks" }));
+    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 26, tag: "0026_telegram_bot_installations" }));
   });
 });

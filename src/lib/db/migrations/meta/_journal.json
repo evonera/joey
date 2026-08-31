@@ -183,6 +183,13 @@
       "when": 1788146400000,
       "tag": "0025_flow_incoming_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788174000000,
+      "tag": "0026_telegram_bot_installations",
+      "breakpoints": true
     }
   ]
 }

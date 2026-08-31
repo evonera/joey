@@ -1,0 +1,60 @@
+import { randomBytes } from "node:crypto";
+import { Bot } from "grammy";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { telegramBotInstallations, telegramUpdates } from "@/lib/db/schema";
+import { decrypt, encrypt } from "@/lib/crypto";
+import { hashWebhookSecret, verifyWebhookSecret } from "@/lib/flows/webhook-secret";
+
+export const TELEGRAM_UPDATE_LIMIT_BYTES = 1024 * 1024;
+export const newTelegramWebhookSecret = () => randomBytes(32).toString("base64url");
+
+export function telegramSenderId(payload: Record<string, unknown>): number | null {
+  const message = payload.message as Record<string, unknown> | undefined;
+  const callback = payload.callback_query as Record<string, unknown> | undefined;
+  const sender = (message?.from ?? callback?.from) as Record<string, unknown> | undefined;
+  return Number.isSafeInteger(sender?.id) ? sender!.id as number : null;
+}
+
+export function telegramSenderAllowed(allowedUserIds: number[], senderId: number | null): boolean {
+  return allowedUserIds.length === 0 || (senderId !== null && allowedUserIds.includes(senderId));
+}
+
+function telegramBot(token: string) { return new Bot(token, { client: { timeoutSeconds: 10 } }); }
+
+export async function installTelegramBot(input: { tenantId: string; token: string; allowedUserIds: number[]; appUrl: string }) {
+  const bot = telegramBot(input.token);
+  const me = await bot.api.getMe();
+  const secret = newTelegramWebhookSecret();
+  const existing = await db.query.telegramBotInstallations.findFirst({ where: eq(telegramBotInstallations.tenantId, input.tenantId) });
+  const id = existing?.id ?? crypto.randomUUID();
+  const webhookUrl = `${input.appUrl.replace(/\/$/, "")}/api/webhooks/telegram/${id}`;
+  const values = { encryptedToken: encrypt(input.token), webhookSecretHash: hashWebhookSecret(secret), botTelegramId: me.id, botUsername: me.username, allowedUserIds: [...new Set(input.allowedUserIds)], status: "configuring", updatedAt: new Date() };
+  await db.insert(telegramBotInstallations).values({ id, tenantId: input.tenantId, ...values }).onConflictDoUpdate({ target: telegramBotInstallations.tenantId, set: values });
+  try {
+    await bot.api.setWebhook(webhookUrl, { secret_token: secret, allowed_updates: ["message", "callback_query"] });
+    await db.update(telegramBotInstallations).set({ status: "active", updatedAt: new Date() }).where(and(eq(telegramBotInstallations.id, id), eq(telegramBotInstallations.tenantId, input.tenantId), eq(telegramBotInstallations.webhookSecretHash, hashWebhookSecret(secret))));
+  } catch (error) {
+    await db.update(telegramBotInstallations).set({ status: "setup_failed", updatedAt: new Date() }).where(and(eq(telegramBotInstallations.id, id), eq(telegramBotInstallations.tenantId, input.tenantId), eq(telegramBotInstallations.webhookSecretHash, hashWebhookSecret(secret))));
+    throw error;
+  }
+  return { id, username: me.username, webhookUrl };
+}
+
+export async function telegramInstallationStatus(tenantId: string) {
+  const installation = await db.query.telegramBotInstallations.findFirst({ where: eq(telegramBotInstallations.tenantId, tenantId) });
+  if (!installation) return null;
+  const info = await telegramBot(decrypt(installation.encryptedToken)).api.getWebhookInfo();
+  return { id: installation.id, username: installation.botUsername, status: installation.status, webhookUrl: info.url, pendingUpdates: info.pending_update_count, lastError: info.last_error_message };
+}
+
+export async function admitTelegramUpdate(installationId: string, secret: string | null, payload: Record<string, unknown>) {
+  const installation = await db.query.telegramBotInstallations.findFirst({ where: and(eq(telegramBotInstallations.id, installationId), eq(telegramBotInstallations.status, "active")) });
+  if (!installation || !verifyWebhookSecret(secret, installation.webhookSecretHash)) return { authenticated: false as const };
+  const updateId = payload.update_id;
+  if (!Number.isSafeInteger(updateId)) throw new Error("Telegram update_id must be a safe integer.");
+  const senderId = telegramSenderId(payload);
+  if (!telegramSenderAllowed(installation.allowedUserIds, senderId)) return { authenticated: true as const, admitted: false as const, reason: "forbidden_sender" as const };
+  const inserted = await db.insert(telegramUpdates).values({ installationId, updateId: updateId as number, payload }).onConflictDoNothing().returning({ id: telegramUpdates.id });
+  return { authenticated: true as const, admitted: Boolean(inserted[0]), duplicate: !inserted[0] };
+}
