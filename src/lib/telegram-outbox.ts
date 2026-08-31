@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { Bot } from "grammy";
 import type { InlineKeyboardMarkup } from "grammy/types";
 import { db } from "@/lib/db";
@@ -10,6 +10,7 @@ export function telegramOutboxKey(parts: { runId: string; nodeId: string; itemKe
 }
 
 export async function enqueueTelegramMessage(input: { tenantId: string; idempotencyKey: string; chatId: string; text: string; replyMarkup?: InlineKeyboardMarkup }) {
+  if (input.text.length > 4096) throw new Error(`Telegram message exceeds 4096 characters (${input.text.length} chars).`);
   const installation = await db.query.telegramBotInstallations.findFirst({ where: and(eq(telegramBotInstallations.tenantId, input.tenantId), eq(telegramBotInstallations.status, "active")) });
   if (!installation) throw new Error("No active Telegram bot is configured.");
   const inserted = await db.insert(telegramOutbox).values({ tenantId: input.tenantId, installationId: installation.id, idempotencyKey: input.idempotencyKey, chatId: input.chatId, text: input.text, replyMarkup: input.replyMarkup }).onConflictDoNothing().returning({ id: telegramOutbox.id, status: telegramOutbox.status });
@@ -19,7 +20,20 @@ export async function enqueueTelegramMessage(input: { tenantId: string; idempote
   return { id: existing.id, status: existing.status };
 }
 
+export async function recoverStaleOutboxMessages(staleAfterMs = 2 * 60 * 1000) {
+  const staleThreshold = new Date(Date.now() - staleAfterMs);
+  return db
+    .update(telegramOutbox)
+    .set({
+      status: "uncertain",
+      error: "Delivery timed out during transmission; status uncertain.",
+      updatedAt: new Date(),
+    })
+    .where(and(eq(telegramOutbox.status, "sending"), lt(telegramOutbox.updatedAt, staleThreshold)));
+}
+
 export async function processTelegramOutbox(limit = 20) {
+  await recoverStaleOutboxMessages();
   const pending = await db.query.telegramOutbox.findMany({ where: eq(telegramOutbox.status, "pending"), orderBy: (rows, { asc }) => [asc(rows.createdAt)], limit });
   for (const row of pending) {
     const [claimed] = await db.update(telegramOutbox).set({ status: "sending", updatedAt: new Date() }).where(and(eq(telegramOutbox.id, row.id), eq(telegramOutbox.tenantId, row.tenantId), eq(telegramOutbox.status, "pending"))).returning({ id: telegramOutbox.id });
