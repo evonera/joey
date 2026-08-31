@@ -61,6 +61,7 @@ describe("flow platform reconciliation", () => {
       readFileSync(resolve(migrations, "meta/_journal.json"), "utf8"),
     ) as { entries: Array<{ idx: number; tag: string }> };
     expect(journal.entries.find(({ idx }) => idx === 25)).toEqual(expect.objectContaining({ tag: "0025_flow_incoming_webhooks" }));
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 26, tag: "0026_telegram_bot_installations" }));
+    expect(journal.entries.find(({ idx }) => idx === 26)).toEqual(expect.objectContaining({ tag: "0026_telegram_bot_installations" }));
+    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 27, tag: "0027_telegram_outbox" }));
   });
 });
