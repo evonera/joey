@@ -17,7 +17,7 @@ function node(
   return { id, type, config, position: { x, y: 200 } };
 }
 
-const edge = (from: string, to: string): FlowGraphDoc["edges"][number] => ({ from, to });
+const edge = (from: string, to: string, branch?: string): FlowGraphDoc["edges"][number] => ({ from, to, ...(branch ? { branch } : {}) });
 
 export const officialTemplates: OfficialTemplate[] = [
   {
@@ -139,5 +139,42 @@ export const officialTemplates: OfficialTemplate[] = [
       ],
       edges: [edge("t1", "a1"), edge("a1", "g1"), edge("g1", "n1")],
     },
+  },
+  {
+    slug: "blog-social-syndication", name: "Blog → Social Syndication", description: "Turns recent RSS entries into approval-ready social drafts.", category: "content",
+    graph: { nodes: [
+      node("t1", "trigger.schedule", 0, { intervalMinutes: 360 }),
+      node("r1", "data.rss", 220, { url: "https://yourblog.com/feed.xml", limit: 10 }),
+      node("a1", "ai.llm", 460, { provider: "openai", model: "gpt-4o-mini", systemPrompt: "Write a concise, original LinkedIn take on this article. Include the source link and output plain text.", userTemplate: "{{input}}" }),
+      node("d1", "action.create_draft", 720, { platform: "linkedin" }),
+    ], edges: [edge("t1", "r1"), edge("r1", "a1"), edge("a1", "d1")] },
+  },
+  {
+    slug: "youtube-repurposer", name: "YouTube → Social Repurposer", description: "Turns a Supadata transcript into an approval-ready post using OpenRouter.", category: "repurpose",
+    graph: { nodes: [
+      node("t1", "trigger.manual", 0, { samplePayload: JSON.stringify({ url: "https://www.youtube.com/watch?v=VIDEO_ID" }) }),
+      node("y1", "ai.youtube_transcript", 240, { videoUrlField: "url" }),
+      node("a1", "ai.llm", 500, { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct", systemPrompt: "Turn this transcript into a sharp X thread opener under 280 characters.", userTemplate: "{{input}}" }),
+      node("d1", "action.create_draft", 760, { platform: "twitter" }),
+    ], edges: [edge("t1", "y1"), edge("y1", "a1"), edge("a1", "d1")] },
+  },
+  {
+    slug: "daily-branded-image-post", name: "Daily Image Post", description: "Generates an image and caption for the approval queue every day.", category: "content",
+    graph: { nodes: [
+      node("t1", "trigger.schedule", 0, { intervalMinutes: 1440 }),
+      node("a1", "ai.llm", 240, { provider: "openai", model: "gpt-4o-mini", systemPrompt: "Output one detailed social image prompt." }),
+      node("i1", "ai.image", 500, { prompt: "{{input}}", size: "1024x1024", quality: "medium" }),
+      node("d1", "action.create_draft", 760, { platform: "facebook" }),
+    ], edges: [edge("t1", "a1"), edge("a1", "i1"), edge("i1", "d1")] },
+  },
+  {
+    slug: "ab-hook-tester", name: "A/B Hook Tester", description: "Deterministically routes runs between statement and question hooks.", category: "testing",
+    graph: { nodes: [
+      node("t1", "trigger.manual", 0, {}),
+      node("a1", "ai.llm", 240, { provider: "openai", model: "gpt-4o-mini", systemPrompt: "Write one bold hook under 150 characters." }),
+      node("sp", "logic.split", 480, { aWeightPercent: 50 }),
+      node("v1", "ai.llm", 720, { provider: "openai", model: "gpt-4o-mini", systemPrompt: "Rewrite this as a curiosity question under 150 characters.", userTemplate: "{{input}}" }),
+      node("d1", "action.create_draft", 960, { platform: "twitter" }), node("d2", "action.create_draft", 960, { platform: "twitter" }),
+    ], edges: [edge("t1", "a1"), edge("a1", "sp"), edge("sp", "d1", "a"), edge("sp", "v1", "b"), edge("v1", "d2")] },
   },
 ];
