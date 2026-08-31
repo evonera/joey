@@ -2,6 +2,7 @@ import { and, eq, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { flowRuns, r2CleanupTasks } from "@/lib/db/schema";
 import { deleteObject } from "@/lib/storage";
+import { operationalEvent } from "@/lib/operations-log";
 
 export function cleanupRetryDelayMs(attempts: number): number {
   return Math.min(60 * 60_000, 1_000 * 2 ** Math.min(attempts, 12));
@@ -90,6 +91,12 @@ export async function processR2CleanupTasks(limit = 25): Promise<void> {
             eq(r2CleanupTasks.nextAttemptAt, leaseUntil),
           ),
         );
+      operationalEvent("info", "r2_cleanup.completed", {
+        tenantId: task.tenantId,
+        cleanupTaskId: task.id,
+        runId: task.runId,
+        attempt: task.attempts + 1,
+      });
     } catch (error) {
       const attempts = task.attempts + 1;
       await db
@@ -106,6 +113,13 @@ export async function processR2CleanupTasks(limit = 25): Promise<void> {
             eq(r2CleanupTasks.nextAttemptAt, leaseUntil),
           ),
         );
+      operationalEvent("error", "r2_cleanup.failed", {
+        tenantId: task.tenantId,
+        cleanupTaskId: task.id,
+        runId: task.runId,
+        attempt: attempts,
+        error: error instanceof Error ? error.message : "Unknown R2 cleanup error",
+      });
     }
   }
 }

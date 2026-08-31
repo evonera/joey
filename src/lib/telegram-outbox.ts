@@ -4,6 +4,7 @@ import type { InlineKeyboardMarkup } from "grammy/types";
 import { db } from "@/lib/db";
 import { telegramBotInstallations, telegramOutbox } from "@/lib/db/schema";
 import { decrypt } from "@/lib/crypto";
+import { operationalEvent } from "@/lib/operations-log";
 
 export function telegramOutboxKey(parts: { runId: string; nodeId: string; itemKey?: string }) {
   return `flow:${parts.runId}:${parts.nodeId}:${parts.itemKey ?? "root"}`;
@@ -43,10 +44,16 @@ export async function processTelegramOutbox(limit = 20) {
       if (!installation) throw new Error("Telegram installation is inactive.");
       const message = await new Bot(decrypt(installation.encryptedToken), { client: { timeoutSeconds: 10 } }).api.sendMessage(row.chatId, row.text, row.replyMarkup ? { reply_markup: row.replyMarkup as InlineKeyboardMarkup } : undefined);
       await db.update(telegramOutbox).set({ status: "sent", telegramMessageId: message.message_id, sentAt: new Date(), updatedAt: new Date(), error: null }).where(and(eq(telegramOutbox.id, row.id), eq(telegramOutbox.status, "sending")));
+      operationalEvent("info", "telegram_outbox.sent", { tenantId: row.tenantId, outboxId: row.id });
     } catch (error) {
       // `sending` is intentionally terminal-ambiguous: Telegram may have accepted
       // the message before the connection failed. Never auto-replay it.
       await db.update(telegramOutbox).set({ status: "uncertain", error: error instanceof Error ? error.message.slice(0, 500) : "Telegram send failed", updatedAt: new Date() }).where(and(eq(telegramOutbox.id, row.id), eq(telegramOutbox.status, "sending")));
+      operationalEvent("error", "telegram_outbox.uncertain", {
+        tenantId: row.tenantId,
+        outboxId: row.id,
+        error: error instanceof Error ? error.message : "Telegram send failed",
+      });
     }
   }
 }
