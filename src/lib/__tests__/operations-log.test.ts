@@ -26,4 +26,16 @@ describe("operational logging", () => {
     expect(record.error).toHaveLength(500);
     expect(record.timestamp).toBeTypeOf("string");
   });
+
+  it("redacts sensitive substrings embedded within error messages", () => {
+    const sanitized = sanitizeOperationalContext({
+      error: "Request failed with Bearer secret123 and token=my-token-val and https://user:pwd@db.host/name",
+    });
+    expect(sanitized.error).toContain("Bearer [REDACTED]");
+    expect(sanitized.error).toContain("token=[REDACTED]");
+    expect(sanitized.error).toContain("https://[REDACTED]:[REDACTED]@db.host/name");
+    expect(sanitized.error).not.toContain("secret123");
+    expect(sanitized.error).not.toContain("my-token-val");
+    expect(sanitized.error).not.toContain("pwd");
+  });
 });
