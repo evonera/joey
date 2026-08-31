@@ -204,6 +204,13 @@
       "when": 1788181200000,
       "tag": "0028_telegram_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788249600000,
+      "tag": "0029_engagement_delivery_safety",
+      "breakpoints": true
     }
   ]
 }

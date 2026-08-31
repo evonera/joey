@@ -2,7 +2,7 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { replyDrafts, engagementItems, agentConfigs } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 export default defineTool({
   description:
@@ -17,36 +17,41 @@ export default defineTool({
     if (!tenantId) {
       throw new Error("Unable to identify tenant from session auth.");
     }
+    if (typeof tenantId !== "string") {
+      throw new Error("Invalid tenant identity in session auth.");
+    }
 
     const item = await db.query.engagementItems.findFirst({
-      where: eq(engagementItems.id, engagementItemId),
+      where: and(
+        eq(engagementItems.id, engagementItemId),
+        eq(engagementItems.tenantId, tenantId),
+      ),
     });
     if (!item) {
       throw new Error(`Engagement item ${engagementItemId} not found.`);
     }
-    if (item.tenantId !== tenantId) {
-      throw new Error("Engagement item does not belong to this tenant.");
-    }
-
     const existing = await db.query.replyDrafts.findFirst({
-      where: eq(replyDrafts.engagementItemId, engagementItemId),
+      where: and(
+        eq(replyDrafts.tenantId, tenantId),
+        eq(replyDrafts.engagementItemId, engagementItemId),
+      ),
     });
     if (existing && existing.status === "pending_review") {
       await db.update(replyDrafts)
         .set({ content, feedback: tone || null })
-        .where(eq(replyDrafts.id, existing.id));
+        .where(and(eq(replyDrafts.id, existing.id), eq(replyDrafts.tenantId, tenantId)));
       return { success: true, replyDraftId: existing.id, message: "Existing reply draft updated." };
     }
 
     const [draft] = await db.insert(replyDrafts).values({
-      tenantId: tenantId as string,
+      tenantId,
       engagementItemId,
       content,
       status: "pending_review",
     }).returning();
 
     const { createNotification } = await import('@/lib/notifications');
-    await createNotification(tenantId as string, 'engagement_reply_needed', 'Comment Needs Reply', 'Your AI agent has drafted a reply to a comment for your review.', { link: '/engagement' });
+    await createNotification(tenantId, 'engagement_reply_needed', 'Comment Needs Reply', 'Your AI agent has drafted a reply to a comment for your review.', { link: '/engagement' });
 
     return { success: true, replyDraftId: draft.id, message: "Reply draft saved for review." };
   },

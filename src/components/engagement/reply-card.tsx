@@ -56,7 +56,8 @@ export function ReplyCard({
     setDraftContent(item.replyDraft?.content || "");
   }, [item.replyDraft?.content]);
 
-  const pendingReply = item.replyDraft && item.replyDraft.status === "pending_review";
+  const pendingReply = item.replyDraft && ["pending_review", "failed"].includes(item.replyDraft.status);
+  const sendFailed = item.replyDraft?.status === "failed";
   const hasSentReply = item.replyDraft?.status === "sent";
   const noReplyYet = !item.replyDraft;
 
@@ -175,7 +176,7 @@ export function ReplyCard({
               <div className="flex items-center gap-1.5 mb-1.5">
                 <IconMessage className="w-3.5 h-3.5 text-green-600" />
                 <span className="text-xs font-medium text-green-700 dark:text-green-400">
-                  AI Draft Reply
+                  {sendFailed ? "Send Failed — Review & Retry" : "AI Draft Reply"}
                 </span>
               </div>
               <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap">
@@ -194,7 +195,7 @@ export function ReplyCard({
                 disabled={loading}
               >
                 <IconSend className="w-3.5 h-3.5" />
-                {loading ? "Sending..." : "Approve & Send"}
+                {loading ? "Sending..." : sendFailed ? "Retry Send" : "Approve & Send"}
               </Button>
               <Button
                 variant="outline"
