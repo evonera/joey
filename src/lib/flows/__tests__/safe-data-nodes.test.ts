@@ -85,4 +85,10 @@ describe("safe data nodes", () => {
     const second = await executeFlow(graph, { tenantId: "tenant", flowId: "flow", runId: "run" });
     expect(first.steps.find((step) => step.nodeId === "split")?.branch).toBe(second.steps.find((step) => step.nodeId === "split")?.branch);
   });
+
+  it("does not expose allowPrivateHosts in user-configurable http schema", async () => {
+    const { httpConfig } = await import("../catalog");
+    const parsed = httpConfig.parse({ url: "https://example.com/api" });
+    expect(parsed).not.toHaveProperty("allowPrivateHosts");
+  });
 });

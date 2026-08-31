@@ -138,7 +138,6 @@ export const httpConfig = z.object({
   url: z.string().url().or(z.string().includes("{{input}}")),
   headersJson: z.string().optional(),
   bodyJson: z.string().optional(),
-  allowPrivateHosts: z.boolean().default(false),
   timeoutMs: z.number().int().min(1_000).max(60_000).default(30_000),
   maxResponseBytes: z.number().int().min(1_024).max(10 * 1024 * 1024).default(5 * 1024 * 1024),
 });

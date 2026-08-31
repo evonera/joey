@@ -24,7 +24,6 @@ export const httpNode = defineNode({
     const response = await outboundRequest(url, {
       method: config.method, headers, body, signal: ctx.signal,
       maxBytes: config.maxResponseBytes, timeoutMs: config.timeoutMs,
-      allowPrivateHosts: config.allowPrivateHosts,
     });
     const text = response.buffer.toString("utf8");
     if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}: ${text.slice(0, 300)}`);
