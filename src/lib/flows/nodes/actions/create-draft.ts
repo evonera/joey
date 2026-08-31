@@ -51,11 +51,7 @@ export const createDraftNode = defineNode({
       }
     }
 
-    if (!content && mediaUrls.length > 0) {
-      content = "";
-    }
-
-    if (content === undefined || (content === "" && mediaUrls.length === 0)) {
+    if (!content || !content.trim()) {
       throw new Error("No content to draft — incoming data was empty.");
     }
 

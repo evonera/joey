@@ -31,6 +31,14 @@ function imageMimeAndExt(buf: Buffer): { mimeType: string; ext: string } {
   return { mimeType: "image/png", ext: ".png" };
 }
 
+function interpolatePrompt(template: string, input: unknown): string {
+  return template.replace(/\{\{input(?:\.([a-zA-Z0-9_.$]+))?\}\}/g, (_match, path) => {
+    if (!path) return typeof input === "string" ? input : JSON.stringify(input);
+    const value = path.split(".").reduce((acc: unknown, key: string) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined), input);
+    return value === undefined || value === null ? "" : typeof value === "string" ? value : JSON.stringify(value);
+  });
+}
+
 export const imageGenNode = defineNode({
   type: "ai.image", category: "ai", label: "Generate image", description: "Generates and durably registers an image asset.",
   inputs: ["idea"], outputs: ["image"], configSchema: imageGenConfig,
@@ -38,7 +46,7 @@ export const imageGenNode = defineNode({
     const config = imageGenConfig.parse(rawConfig);
     const budget = await (await import("@/lib/usage")).assertBudget(ctx.tenantId);
     if (!budget.allowed) throw new Error("Monthly LLM budget reached.");
-    const prompt = config.prompt.replaceAll("{{input}}", typeof input === "string" ? input : JSON.stringify(input));
+    const prompt = interpolatePrompt(config.prompt, input);
     const result = await new OpenAI({ apiKey: await openAiKey(ctx.tenantId) }).images.generate({ model: "gpt-image-1", prompt, size: config.size, quality: config.quality }, { signal: ctx.signal });
     const generated = result.data?.[0];
     let body: Buffer | undefined;
