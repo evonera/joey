@@ -1,4 +1,4 @@
-import { and, count, eq, gte, lt, lte } from "drizzle-orm";
+import { and, count, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { flowRuns, flowWebhookDeliveries, r2CleanupTasks, telegramOutbox } from "@/lib/db/schema";
 
@@ -33,10 +33,31 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
     db.select({ value: count() }).from(flowRuns).where(and(eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "failed"), gte(flowRuns.updatedAt, dayAgo))),
     db.select({ value: count() }).from(flowRuns).where(and(eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running"), lt(flowRuns.updatedAt, staleRunCutoff))),
     db.select({ value: count() }).from(flowWebhookDeliveries).where(and(eq(flowWebhookDeliveries.tenantId, tenantId), eq(flowWebhookDeliveries.status, "failed"), gte(flowWebhookDeliveries.updatedAt, dayAgo))),
-    db.select({ value: count() }).from(flowWebhookDeliveries).where(and(eq(flowWebhookDeliveries.tenantId, tenantId), eq(flowWebhookDeliveries.status, "processing"), lt(flowWebhookDeliveries.updatedAt, staleDeliveryCutoff))),
+    db.select({ value: count() }).from(flowWebhookDeliveries).where(
+      and(
+        eq(flowWebhookDeliveries.tenantId, tenantId),
+        eq(flowWebhookDeliveries.status, "processing"),
+        lt(flowWebhookDeliveries.updatedAt, staleDeliveryCutoff),
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${flowRuns}
+          WHERE ${flowRuns.tenantId} = ${flowWebhookDeliveries.tenantId}
+            AND ${flowRuns.flowId} = ${flowWebhookDeliveries.flowId}
+            AND ${flowRuns.trigger} = 'webhook'
+            AND ${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${flowWebhookDeliveries.id}
+            AND ${flowRuns.status} IN ('running', 'waiting_approval')
+            AND ${flowRuns.updatedAt} >= ${staleRunCutoff}
+        )`,
+      ),
+    ),
     db.select({ value: count() }).from(r2CleanupTasks).where(and(eq(r2CleanupTasks.tenantId, tenantId), lte(r2CleanupTasks.nextAttemptAt, now))),
     db.select({ value: count() }).from(r2CleanupTasks).where(and(eq(r2CleanupTasks.tenantId, tenantId), gte(r2CleanupTasks.attempts, 3))),
-    db.select({ value: count() }).from(telegramOutbox).where(and(eq(telegramOutbox.tenantId, tenantId), eq(telegramOutbox.status, "pending"), lt(telegramOutbox.createdAt, oldOutboxCutoff))),
+    db.select({ value: count() }).from(telegramOutbox).where(
+      and(
+        eq(telegramOutbox.tenantId, tenantId),
+        sql`${telegramOutbox.status} IN ('pending', 'sending')`,
+        lt(telegramOutbox.updatedAt, oldOutboxCutoff),
+      ),
+    ),
     db.select({ value: count() }).from(telegramOutbox).where(and(eq(telegramOutbox.tenantId, tenantId), eq(telegramOutbox.status, "uncertain"))),
   ]);
 
