@@ -164,7 +164,7 @@ export async function sendReply(replyDraftId: string) {
     // compare-and-swap prevents double clicks and concurrent workers from sending
     // the same reply more than once.
     const [draft] = await db.update(replyDrafts)
-      .set({ status: "sending" })
+      .set({ status: "sending", sendClaimedAt: new Date() })
       .where(and(
         eq(replyDrafts.id, replyDraftId),
         eq(replyDrafts.tenantId, tenantId),
@@ -182,7 +182,7 @@ export async function sendReply(replyDraftId: string) {
     });
     if (!item) {
       await db.update(replyDrafts)
-        .set({ status: "failed" })
+          .set({ status: "failed", sendClaimedAt: null })
         .where(and(
           eq(replyDrafts.id, replyDraftId),
           eq(replyDrafts.tenantId, tenantId),
@@ -221,7 +221,7 @@ export async function sendReply(replyDraftId: string) {
 
       await db.transaction(async (tx) => {
         await tx.update(replyDrafts)
-          .set({ status: "sent", sentAt: new Date() })
+          .set({ status: "sent", sentAt: new Date(), sendClaimedAt: null })
           .where(and(
             eq(replyDrafts.id, replyDraftId),
             eq(replyDrafts.tenantId, tenantId),
@@ -239,18 +239,23 @@ export async function sendReply(replyDraftId: string) {
       return { success: true };
     } catch (error: any) {
       const status = error?.status || error?.response?.status;
-      if (status === 401 || status === 403) {
-        await db.update(agentConfigs)
-          .set({ isPaused: true })
-          .where(eq(agentConfigs.tenantId, tenantId));
-      }
       await db.update(replyDrafts)
-        .set({ status: "failed" })
+        .set({ status: "failed", sendClaimedAt: null })
         .where(and(
           eq(replyDrafts.id, replyDraftId),
           eq(replyDrafts.tenantId, tenantId),
           eq(replyDrafts.status, "sending"),
         ));
+
+      if (status === 401 || status === 403) {
+        try {
+          await db.update(agentConfigs)
+            .set({ isPaused: true })
+            .where(eq(agentConfigs.tenantId, tenantId));
+        } catch (pauseError) {
+          console.error("Failed to pause agent after Zernio authorization error:", pauseError);
+        }
+      }
 
       return { error: error?.message || "Failed to send reply" };
     }

@@ -282,6 +282,7 @@ export const replyDrafts = pgTable("reply_drafts", {
   status: varchar("status", { length: 50 }).default("pending_review").notNull(), // 'pending_review', 'approved', 'rejected', 'sent'
   feedback: text("feedback"),
   sentAt: timestamp("sent_at"),
+  sendClaimedAt: timestamp("send_claimed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   activeEngagementIdx: uniqueIndex("reply_drafts_active_engagement_idx")
