@@ -38,7 +38,8 @@ describe("Tauri v2 security baseline", () => {
 
   it("produces signed updater artifacts on every supported desktop platform", () => {
     expect(config.bundle.createUpdaterArtifacts).toBe(true);
-    expect(releaseWorkflow).toContain("tauri-apps/tauri-action@v1");
+    expect(releaseWorkflow).toContain("tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f");
+    expect(releaseWorkflow).toContain("Validate release tag matches application version");
     expect(releaseWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY:");
     expect(releaseWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY_PASSWORD:");
     expect(releaseWorkflow).toContain("macos-latest");
