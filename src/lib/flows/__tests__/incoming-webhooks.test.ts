@@ -152,6 +152,20 @@ describe("incoming webhook secret rotation", () => {
 });
 
 describe("flow execution revisions", () => {
+  it("does not bump the execution revision for an unchanged graph save", () => {
+    const actions = readFileSync(
+      resolve(process.cwd(), "src/app/actions/flows.ts"),
+      "utf8",
+    );
+    const saveAction = actions.slice(
+      actions.indexOf("export async function saveFlow"),
+      actions.indexOf("export async function setFlowStatus"),
+    );
+    expect(saveAction).toContain("IS DISTINCT FROM");
+    expect(saveAction).toContain("CASE WHEN");
+    expect(saveAction).not.toContain("executionRevision: sql`${flows.executionRevision} + 1`");
+  });
+
   it("does not bump the execution revision for a no-op status request", () => {
     const actions = readFileSync(
       resolve(process.cwd(), "src/app/actions/flows.ts"),

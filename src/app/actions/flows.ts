@@ -124,19 +124,22 @@ export async function saveFlow(
     const result = await validateFlowGraph(data.graph);
     if (!result.ok) return { issues: result.issues };
   }
+  const graphJson = data.graph === undefined ? undefined : JSON.stringify(data.graph);
 
-  const [updated] = await db
+  await db
     .update(flows)
     .set({
       ...(data.name !== undefined ? { name: data.name.trim().slice(0, 120) || existing.name } : {}),
       ...(data.description !== undefined ? { description: data.description } : {}),
       ...(data.graph !== undefined ? { graph: data.graph } : {}),
-      ...(data.graph !== undefined
-        ? { executionRevision: sql`${flows.executionRevision} + 1` }
+      ...(graphJson !== undefined
+        ? {
+            executionRevision: sql`CASE WHEN ${flows.graph} IS DISTINCT FROM ${graphJson}::jsonb THEN ${flows.executionRevision} + 1 ELSE ${flows.executionRevision} END`,
+          }
         : {}),
       updatedAt: new Date(),
     })
-    .where(eq(flows.id, id));
+    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)));
 
   return { ok: true };
 }
