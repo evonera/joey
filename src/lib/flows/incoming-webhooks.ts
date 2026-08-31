@@ -45,9 +45,23 @@ export function deliveryIdentityKey(
   return deliveryId === null ? null : JSON.stringify([tenantId, flowId, deliveryId]);
 }
 
+/** Canonical JSON preserves array order while ignoring irrelevant object-key order. */
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((key) => [key, canonicalJson(record[key])]),
+    );
+  }
+  return value;
+}
+
 /** Checkpoints are safe to reuse only for the identical submitted JSON value. */
 export function sameWebhookPayload(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return JSON.stringify(canonicalJson(left)) === JSON.stringify(canonicalJson(right));
 }
 
 type DeliveryAdmission =
