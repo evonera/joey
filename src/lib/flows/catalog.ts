@@ -133,6 +133,19 @@ export const tavilySearchConfig = z.object({
   includeAnswer: z.boolean().default(true),
 });
 
+export const httpConfig = z.object({
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
+  url: z.string().url().or(z.string().includes("{{input}}")),
+  headersJson: z.string().optional(),
+  bodyJson: z.string().optional(),
+  allowPrivateHosts: z.boolean().default(false),
+  timeoutMs: z.number().int().min(1_000).max(60_000).default(30_000),
+  maxResponseBytes: z.number().int().min(1_024).max(10 * 1024 * 1024).default(5 * 1024 * 1024),
+});
+export const rssConfig = z.object({ url: z.string().url(), limit: z.number().int().min(1).max(100).default(20) });
+export const redditConfig = z.object({ subreddit: z.string(), sort: z.enum(["hot", "new", "top"]).default("hot"), limit: z.number().int().min(1).max(50).default(10) });
+export const splitConfig = z.object({ aWeightPercent: z.number().int().min(0).max(100).default(50) });
+
 export type CatalogMeta = {
   type: string;
   category: "trigger" | "data" | "transform" | "ai" | "action" | "logic";
@@ -153,12 +166,16 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "data.apify_actor", category: "data", label: "Apify Actor", description: "Runs any Apify actor synchronously and returns its dataset items (scrapes, extracts…). Needs an Apify token in Settings → API Keys.", inputs: ["input"], outputs: ["items"], configSchema: apifyActorConfig },
   { type: "data.exa_search", category: "data", label: "Web Research (Exa)", description: "Neural web search via Exa for research-grade results on a topic. Needs an Exa key in Settings → API Keys.", inputs: ["topic"], outputs: ["results"], configSchema: exaSearchConfig },
   { type: "data.tavily_search", category: "data", label: "Web Research (Tavily)", description: "Fast web search with an LLM-ready answer via Tavily. Needs a Tavily key in Settings → API Keys.", inputs: ["topic"], outputs: ["results"], configSchema: tavilySearchConfig },
+  { type: "data.http", category: "data", label: "HTTP Request", description: "Calls REST APIs with bounded SSRF-safe requests.", inputs: ["input"], outputs: ["response"], configSchema: httpConfig },
+  { type: "data.rss", category: "data", label: "RSS / Atom feed", description: "Fetches the latest public feed entries.", inputs: [], outputs: ["items"], configSchema: rssConfig },
+  { type: "data.reddit", category: "data", label: "Reddit r/", description: "Pulls public subreddit posts.", inputs: [], outputs: ["posts"], configSchema: redditConfig },
   { type: "transform.filter", category: "transform", label: "Filter", description: "Keeps array items matching a condition. Non-array input passes through unchanged.", inputs: ["items"], outputs: ["items"], configSchema: filterConfig },
   { type: "transform.sort", category: "transform", label: "Sort / Top-N", description: "Sorts array items by a field and optionally keeps the top N.", inputs: ["items"], outputs: ["items"], configSchema: sortTopNConfig },
   { type: "transform.dedupe", category: "transform", label: "Dedupe", description: "Removes duplicate array items by a field value.", inputs: ["items"], outputs: ["items"], configSchema: dedupeConfig },
   { type: "logic.condition", category: "logic", label: "Condition", description: "Branches the flow. Connect downstream edges from the 'true' or 'false' handle; non-matching branches are skipped.", inputs: ["data"], outputs: ["true", "false"], configSchema: conditionConfig },
   { type: "logic.loop", category: "logic", label: "For each item", description: "Runs everything downstream once per item of the incoming array, then merges each branch's results into a single list.", inputs: ["items"], outputs: ["item"], forEach: true, configSchema: loopConfig },
   { type: "logic.approval", category: "logic", label: "Approval gate", description: "Pauses the run until you approve or reject in the dashboard. On approve, downstream nodes execute; on reject the run ends.", inputs: ["data"], outputs: ["data"], configSchema: approvalGateConfig },
+  { type: "logic.split", category: "logic", label: "A/B split", description: "Deterministically routes a run to branch a or b.", inputs: ["data"], outputs: ["a", "b"], configSchema: splitConfig },
   { type: "ai.llm", category: "ai", label: "AI Task", description: "Runs an LLM over the incoming data. Optionally forces structured JSON via a schema. Spend counts against your LLM budget.", inputs: ["data"], outputs: ["result"], configSchema: llmTaskConfig },
   { type: "ai.transcribe", category: "ai", label: "Transcribe", description: "Downloads an audio/video URL and transcribes it with OpenAI Whisper. Uses your OpenAI key; spend counts against budget.", inputs: ["media"], outputs: ["transcript"], configSchema: transcribeConfig },
   { type: "action.create_draft", category: "action", label: "Create Draft", description: "Creates a draft in your approval queue. Nothing publishes until you approve it — this is how every flow must end.", inputs: ["data"], outputs: ["draft"], configSchema: createDraftConfig },
