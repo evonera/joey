@@ -391,7 +391,6 @@ export default function SettingsPage() {
                       className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-600"
                     />
                     {acc.avatarUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={acc.avatarUrl} alt={acc.accountName || ""} className="h-8 w-8 rounded-full object-cover" />
                     ) : (
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 capitalize text-xs">

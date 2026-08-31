@@ -64,7 +64,6 @@ export function EntitySelector({ platform, entities, onSelect }: EntitySelectorP
             } ${isSubmitting ? "opacity-50" : ""}`}
           >
             {entity.picture ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={entity.picture}
                 alt={entity.name}
