@@ -11,6 +11,8 @@ import { getAgentConfig } from "@/app/actions/agent"
 import { getUnreadNotificationCount } from "@/app/actions/notifications"
 import { AlertCircle } from "lucide-react"
 
+export const dynamic = "force-dynamic"
+
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const { count } = await getPendingDraftCount()
   const { config } = await getAgentConfig()

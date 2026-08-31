@@ -54,6 +54,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.platform.rust-target }}
 
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.7.7
@@ -65,11 +66,13 @@ jobs:
 
       - name: Validate release tag matches application version
         shell: bash
+        env:
+          GITHUB_REF_VALUE: ${{ github.ref }}
         run: |
           CONFIG_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
           EXPECTED_TAG="refs/tags/app-v${CONFIG_VERSION}"
-          if [ "${{ github.ref }}" != "$EXPECTED_TAG" ]; then
-            echo "Error: Pushed tag '${{ github.ref }}' does not match configured version '${CONFIG_VERSION}' (expected '${EXPECTED_TAG}')" >&2
+          if [ "$GITHUB_REF_VALUE" != "$EXPECTED_TAG" ]; then
+            echo "Error: Pushed tag '$GITHUB_REF_VALUE' does not match configured version '${CONFIG_VERSION}' (expected '${EXPECTED_TAG}')" >&2
             exit 1
           fi
 

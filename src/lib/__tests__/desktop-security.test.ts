@@ -8,6 +8,7 @@ describe("Tauri v2 security baseline", () => {
   const capability = JSON.parse(readFileSync(resolve(root, "src-tauri/capabilities/default.json"), "utf8"));
   const rust = readFileSync(resolve(root, "src-tauri/src/main.rs"), "utf8");
   const releaseWorkflow = readFileSync(resolve(root, ".github/workflows/desktop-release.yml"), "utf8");
+  const qualityWorkflow = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
 
   it("explicitly enables only the bundled default capability", () => {
     expect(config.app.security.capabilities).toEqual(["default"]);
@@ -40,6 +41,10 @@ describe("Tauri v2 security baseline", () => {
     expect(config.bundle.createUpdaterArtifacts).toBe(true);
     expect(releaseWorkflow).toContain("tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f");
     expect(releaseWorkflow).toContain("Validate release tag matches application version");
+    expect(releaseWorkflow).toContain("GITHUB_REF_VALUE: ${{ github.ref }}");
+    expect(releaseWorkflow).not.toContain('if [ "${{ github.ref }}"');
+    expect(releaseWorkflow).toMatch(/toolchain:\s+stable/);
+    expect(qualityWorkflow).toMatch(/toolchain:\s+stable/);
     expect(releaseWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY:");
     expect(releaseWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY_PASSWORD:");
     expect(releaseWorkflow).toContain("macos-latest");

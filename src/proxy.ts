@@ -24,7 +24,11 @@ export async function proxy(request: NextRequest) {
 		request.nextUrl.pathname.startsWith('/callback') ||
 		request.nextUrl.pathname.startsWith('/brandkit') ||
 		request.nextUrl.pathname.startsWith('/insights') ||
-		request.nextUrl.pathname.startsWith('/assets');
+		request.nextUrl.pathname.startsWith('/assets') ||
+		request.nextUrl.pathname.startsWith('/flows') ||
+		request.nextUrl.pathname.startsWith('/engagement') ||
+		request.nextUrl.pathname.startsWith('/notifications') ||
+		request.nextUrl.pathname.startsWith('/operations');
 
 	if (!session) {
 		if (isProtectedRoute) {
