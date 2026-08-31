@@ -26,10 +26,12 @@ describe("durable R2 reservation protocol", () => {
     expect(rearm).toHaveBeenCalledOnce();
   });
 
-  it("validates HTTP status on image URL downloads", async () => {
+  it("validates HTTP status and image magic bytes on image downloads", async () => {
     const { readFileSync } = await import("node:fs");
     const { resolve } = await import("node:path");
     const source = readFileSync(resolve(process.cwd(), "src/lib/flows/nodes/ai/image.ts"), "utf8");
     expect(source).toContain("response.status < 200 || response.status >= 300");
+    expect(source).toContain("isImageBuffer(body)");
+    expect(source).toContain("imageMimeAndExt(body)");
   });
 });
