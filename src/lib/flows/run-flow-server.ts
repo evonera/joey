@@ -208,6 +208,15 @@ export async function executeAdmittedFlowRun(
         : new Error(String(executionError ?? "Flow execution crashed")),
   );
 
+  if (finalized.status === "waiting_approval" && result?.pendingApproval) {
+    try {
+      const { notifyTelegramApproval } = await import("@/lib/telegram-approvals");
+      await notifyTelegramApproval({ tenantId: opts.flow.tenantId, runId: opts.runId, prompt: result.pendingApproval.prompt });
+    } catch (error) {
+      console.error("[telegram] failed to queue approval notification", error instanceof Error ? error.message : "unknown error");
+    }
+  }
+
   await db
     .update(flows)
     .set({ lastRunAt: new Date(), updatedAt: new Date() })
