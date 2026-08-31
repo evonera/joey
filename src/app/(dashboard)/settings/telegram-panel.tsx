@@ -33,6 +33,6 @@ export function TelegramPanel() {
       <Input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} placeholder="BotFather token" />
       <Input value={users} onChange={(event) => setUsers(event.target.value)} placeholder="Allowed Telegram user IDs, comma separated" />
     </div>
-    <Button className="mt-3" disabled={saving || !token.trim()} onClick={connect}>{saving ? "Connecting…" : status ? "Rotate bot token" : "Connect bot"}</Button>
+    <Button type="button" className="mt-3" disabled={saving || !token.trim()} onClick={connect}>{saving ? "Connecting…" : status ? "Rotate bot token" : "Connect bot"}</Button>
   </section>;
 }

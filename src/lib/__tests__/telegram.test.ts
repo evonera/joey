@@ -24,4 +24,9 @@ describe("Telegram webhook security", () => {
     expect(telegramSenderAllowed([42], 99)).toBe(false);
     expect(telegramSenderAllowed([42], null)).toBe(false);
   });
+
+  it("exports processTelegramUpdate handler for update lifecycle", async () => {
+    const { processTelegramUpdate } = await import("../telegram");
+    expect(typeof processTelegramUpdate).toBe("function");
+  });
 });

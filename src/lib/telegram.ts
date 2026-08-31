@@ -48,6 +48,29 @@ export async function telegramInstallationStatus(tenantId: string) {
   return { id: installation.id, username: installation.botUsername, status: installation.status, webhookUrl: info.url, pendingUpdates: info.pending_update_count, lastError: info.last_error_message };
 }
 
+export async function processTelegramUpdate(
+  installation: typeof telegramBotInstallations.$inferSelect,
+  updateRowId: string,
+  payload: Record<string, unknown>
+) {
+  try {
+    const token = decrypt(installation.encryptedToken);
+    const bot = telegramBot(token);
+    await bot.handleUpdate(payload as any);
+    await db
+      .update(telegramUpdates)
+      .set({ status: "processed", processedAt: new Date(), updatedAt: new Date() })
+      .where(eq(telegramUpdates.id, updateRowId));
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await db
+      .update(telegramUpdates)
+      .set({ status: "failed", error: errorMessage.slice(0, 500), updatedAt: new Date() })
+      .where(eq(telegramUpdates.id, updateRowId));
+    throw error;
+  }
+}
+
 export async function admitTelegramUpdate(installationId: string, secret: string | null, payload: Record<string, unknown>) {
   const installation = await db.query.telegramBotInstallations.findFirst({ where: and(eq(telegramBotInstallations.id, installationId), eq(telegramBotInstallations.status, "active")) });
   if (!installation || !verifyWebhookSecret(secret, installation.webhookSecretHash)) return { authenticated: false as const };
@@ -55,6 +78,13 @@ export async function admitTelegramUpdate(installationId: string, secret: string
   if (!Number.isSafeInteger(updateId)) throw new Error("Telegram update_id must be a safe integer.");
   const senderId = telegramSenderId(payload);
   if (!telegramSenderAllowed(installation.allowedUserIds, senderId)) return { authenticated: true as const, admitted: false as const, reason: "forbidden_sender" as const };
-  const inserted = await db.insert(telegramUpdates).values({ installationId, updateId: updateId as number, payload }).onConflictDoNothing().returning({ id: telegramUpdates.id });
-  return { authenticated: true as const, admitted: Boolean(inserted[0]), duplicate: !inserted[0] };
+  const [inserted] = await db.insert(telegramUpdates).values({ installationId, updateId: updateId as number, payload }).onConflictDoNothing().returning({ id: telegramUpdates.id });
+  if (inserted?.id) {
+    try {
+      await processTelegramUpdate(installation, inserted.id, payload);
+    } catch (err) {
+      console.error("[telegram] error processing update", err);
+    }
+  }
+  return { authenticated: true as const, admitted: Boolean(inserted), duplicate: !inserted };
 }
