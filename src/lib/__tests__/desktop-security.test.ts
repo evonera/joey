@@ -26,4 +26,12 @@ describe("Tauri v2 security baseline", () => {
     expect(rust).not.toContain("tauri_plugin_store");
     expect(rust).not.toContain("invoke_handler");
   });
+
+  it("does not mutate application source during desktop builds and restricts navigation", () => {
+    const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+    expect(pkg.scripts["build:desktop"]).toBe("tauri build");
+    expect(rust).toContain("WebviewWindowBuilder");
+    expect(rust).toContain("on_navigation");
+    expect(config.app.windows).toEqual([]);
+  });
 });
