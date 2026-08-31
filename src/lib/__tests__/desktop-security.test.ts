@@ -7,6 +7,7 @@ describe("Tauri v2 security baseline", () => {
   const config = JSON.parse(readFileSync(resolve(root, "src-tauri/tauri.conf.json"), "utf8"));
   const capability = JSON.parse(readFileSync(resolve(root, "src-tauri/capabilities/default.json"), "utf8"));
   const rust = readFileSync(resolve(root, "src-tauri/src/main.rs"), "utf8");
+  const releaseWorkflow = readFileSync(resolve(root, ".github/workflows/desktop-release.yml"), "utf8");
 
   it("explicitly enables only the bundled default capability", () => {
     expect(config.app.security.capabilities).toEqual(["default"]);
@@ -33,5 +34,17 @@ describe("Tauri v2 security baseline", () => {
     expect(rust).toContain("WebviewWindowBuilder");
     expect(rust).toContain("on_navigation");
     expect(config.app.windows).toEqual([]);
+  });
+
+  it("produces signed updater artifacts on every supported desktop platform", () => {
+    expect(config.bundle.createUpdaterArtifacts).toBe(true);
+    expect(releaseWorkflow).toContain("tauri-apps/tauri-action@v1");
+    expect(releaseWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY:");
+    expect(releaseWorkflow).toContain("TAURI_SIGNING_PRIVATE_KEY_PASSWORD:");
+    expect(releaseWorkflow).toContain("macos-latest");
+    expect(releaseWorkflow).toContain("ubuntu-22.04");
+    expect(releaseWorkflow).toContain("windows-latest");
+    expect(releaseWorkflow).toContain("--target aarch64-apple-darwin");
+    expect(releaseWorkflow).toContain("--target x86_64-apple-darwin");
   });
 });
