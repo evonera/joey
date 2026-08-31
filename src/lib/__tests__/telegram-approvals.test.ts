@@ -13,4 +13,9 @@ describe("Telegram approval callbacks", () => {
     expect(parseTelegramApprovalCallback("ja:run-id:1")).toBeNull();
     expect(parseTelegramApprovalCallback(`ja:${"a".repeat(70)}:1`)).toBeNull();
   });
+
+  it("exports recoverStaleTelegramApprovals for stale claim recovery", async () => {
+    const { recoverStaleTelegramApprovals } = await import("../telegram-approvals");
+    expect(typeof recoverStaleTelegramApprovals).toBe("function");
+  });
 });
