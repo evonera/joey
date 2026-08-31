@@ -6,6 +6,7 @@ export default [
       "node_modules/**",
       ".next/**",
       ".eve/**",
+      ".output/**",
       "repos/**",
       "repomix.xml",
       "src/lib/db/migrations/**",
