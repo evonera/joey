@@ -25,4 +25,11 @@ describe("durable R2 reservation protocol", () => {
     await expect(runReservedUpload({ reserve: vi.fn(), upload: vi.fn(), register: async () => { throw new Error("db failed"); }, compensate: async () => { throw new Error("r2 unavailable"); }, rearm })).rejects.toThrow("db failed");
     expect(rearm).toHaveBeenCalledOnce();
   });
+
+  it("validates HTTP status on image URL downloads", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const source = readFileSync(resolve(process.cwd(), "src/lib/flows/nodes/ai/image.ts"), "utf8");
+    expect(source).toContain("response.status < 200 || response.status >= 300");
+  });
 });
