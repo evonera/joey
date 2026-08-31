@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowWebhookDeliveries } from "@/lib/db/schema";
+import { operationalEvent } from "@/lib/operations-log";
 import { executeAdmittedFlowRun } from "./run-flow-server";
 import type { FlowStep } from "./types";
 
@@ -171,7 +172,7 @@ async function finishDelivery(
   status: "processed" | "failed",
   error?: string,
 ) {
-  await db
+  const completed = await db
     .update(flowWebhookDeliveries)
     .set({
       status,
@@ -186,7 +187,17 @@ async function finishDelivery(
         eq(flowWebhookDeliveries.attempt, attempt),
         eq(flowWebhookDeliveries.status, "processing"),
       ),
-    );
+    )
+    .returning({ id: flowWebhookDeliveries.id, flowId: flowWebhookDeliveries.flowId });
+  if (completed[0]) {
+    operationalEvent(status === "processed" ? "info" : "error", `flow_webhook.${status}`, {
+      tenantId,
+      flowId: completed[0].flowId,
+      deliveryRowId: id,
+      attempt,
+      error,
+    });
+  }
 }
 
 export async function executeWebhookDelivery(input: {

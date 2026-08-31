@@ -16,6 +16,7 @@ import { flows, flowRuns } from "@/lib/db/schema";
 import { and, eq, lt, or } from "drizzle-orm";
 import { getNode } from "@/lib/flows/registry";
 import { executeAdmittedFlowRun } from "@/lib/flows/run-flow-server";
+import { operationalEvent } from "@/lib/operations-log";
 
 /**
  * Ticks every minute: starts any ACTIVE flow whose trigger is a due
@@ -79,7 +80,7 @@ export default defineSchedule({
         }
       }
 
-      await db
+      const reconciled = await db
         .update(flowRuns)
         .set({
           status: resolvedStatus,
@@ -93,7 +94,17 @@ export default defineSchedule({
             eq(flowRuns.status, "running"),
             lt(flowRuns.updatedAt, staleCutoff),
           ),
-        );
+        )
+        .returning({ id: flowRuns.id, tenantId: flowRuns.tenantId });
+      if (reconciled[0]) {
+        operationalEvent(resolvedStatus === "failed" ? "error" : "warn", "flow_run.stale_reconciled", {
+          tenantId: reconciled[0].tenantId,
+          flowId: stale.flowId,
+          runId: stale.id,
+          status: resolvedStatus,
+          error: errorMsg,
+        });
+      }
     }
 
     // Run cleanup only after stale reconciliation. Reservations owned by a

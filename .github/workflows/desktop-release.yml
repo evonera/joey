@@ -1,0 +1,100 @@
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - "app-v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: macOS arm64
+            os: macos-latest
+            args: --target aarch64-apple-darwin
+            rust-target: aarch64-apple-darwin
+          - name: macOS x64
+            os: macos-latest
+            args: --target x86_64-apple-darwin
+            rust-target: x86_64-apple-darwin
+          - name: Linux x64
+            os: ubuntu-22.04
+            args: ""
+            rust-target: ""
+          - name: Windows x64
+            os: windows-latest
+            args: ""
+            rust-target: ""
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.platform.rust-target }}
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.7.7
+        with:
+          workspaces: src-tauri
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Validate release tag matches application version
+        shell: bash
+        env:
+          GITHUB_REF_VALUE: ${{ github.ref }}
+        run: |
+          CONFIG_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          EXPECTED_TAG="refs/tags/app-v${CONFIG_VERSION}"
+          if [ "$GITHUB_REF_VALUE" != "$EXPECTED_TAG" ]; then
+            echo "Error: Pushed tag '$GITHUB_REF_VALUE' does not match configured version '${CONFIG_VERSION}' (expected '${EXPECTED_TAG}')" >&2
+            exit 1
+          fi
+
+      - name: Verify updater signing secrets
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY" || { echo "TAURI_SIGNING_PRIVATE_KEY is required" >&2; exit 1; }
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" || { echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required" >&2; exit 1; }
+
+      - name: Build and publish draft release
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: app-v__VERSION__
+          releaseName: Joey v__VERSION__
+          releaseBody: See the assets below to install this Joey desktop release.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.platform.args }}

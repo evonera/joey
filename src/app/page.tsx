@@ -47,7 +47,6 @@ export default function LandingPage() {
             aria-label="Joey on GitHub"
             className="hidden sm:inline-flex items-center transition-opacity hover:opacity-80"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="https://img.shields.io/github/stars/evonera/joey?style=social&label=Star"
               alt="GitHub star count for evonera/joey"
@@ -119,7 +118,6 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl w-full text-left">
 
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/screenshots/composer.svg"
                 alt="Joey's AI composer drafting a platform-specific social post from your brand voice settings"
@@ -136,7 +134,6 @@ export default function LandingPage() {
             </div>
 
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/screenshots/approval.svg"
                 alt="Approval dashboard showing pending drafts with one-click approve and reject buttons"
@@ -153,7 +150,6 @@ export default function LandingPage() {
             </div>
 
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/screenshots/calendar.svg"
                 alt="Content calendar with color-coded scheduled posts across days of the month"
@@ -170,7 +166,6 @@ export default function LandingPage() {
             </div>
 
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/screenshots/dashboard.svg"
                 alt="Joey dashboard with engagement charts, draft queue, and cross-platform performance stats"
@@ -206,7 +201,6 @@ export default function LandingPage() {
               aria-label="Joey is licensed under MIT"
               className="inline-flex transition-opacity hover:opacity-80"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="https://img.shields.io/badge/License-MIT-blue.svg"
                 alt="MIT License"

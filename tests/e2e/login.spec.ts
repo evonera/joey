@@ -13,10 +13,10 @@ test('login page loads successfully', async ({ page }) => {
   await expect(page.locator('button[type="submit"]')).toContainText('Sign in');
 });
 
-test('login page redirects to dashboard on successful login', async ({ page }) => {
-
-});
-
 test('login page shows error on invalid credentials', async ({ page }) => {
-
+  await page.goto('/login');
+  await page.locator('input[type="email"]').fill('nobody@example.com');
+  await page.locator('input[type="password"]').fill('incorrect-password');
+  await page.locator('button[type="submit"]').click();
+  await expect(page.locator('.text-red-500')).toBeVisible();
 });

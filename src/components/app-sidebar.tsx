@@ -12,6 +12,7 @@ import {
   IconMessage,
   IconChartBar,
   IconGitBranch,
+  IconActivity,
 } from "@tabler/icons-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -73,6 +74,11 @@ export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: R
       title: "Assets",
       url: "/assets",
       icon: IconPhoto,
+    },
+    {
+      title: "Operations",
+      url: "/operations",
+      icon: IconActivity,
     },
     {
       title: "Settings",
