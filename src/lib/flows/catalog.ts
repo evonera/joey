@@ -65,7 +65,7 @@ export const approvalGateConfig = z.object({
 });
 
 export const llmTaskConfig = z.object({
-  provider: z.enum(["openai", "anthropic"]).default("openai"),
+  provider: z.enum(["openai", "anthropic", "openrouter"]).default("openai"),
   model: z
     .string()
     .default("gpt-4o-mini")
@@ -96,6 +96,7 @@ export const imageGenConfig = z.object({
   quality: z.enum(["low", "medium", "high"]).default("medium"),
 });
 export const saveAssetConfig = z.object({ urlField: z.string().optional(), filename: z.string().optional() });
+export const youtubeTranscriptConfig = z.object({ videoUrlField: z.string().optional() });
 
 export const createDraftConfig = z.object({
   platform: z.enum(["twitter", "linkedin", "facebook"]).default("twitter"),
@@ -185,6 +186,7 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "ai.llm", category: "ai", label: "AI Task", description: "Runs an LLM over the incoming data. Optionally forces structured JSON via a schema. Spend counts against your LLM budget.", inputs: ["data"], outputs: ["result"], configSchema: llmTaskConfig },
   { type: "ai.transcribe", category: "ai", label: "Transcribe", description: "Downloads an audio/video URL and transcribes it with OpenAI Whisper. Uses your OpenAI key; spend counts against budget.", inputs: ["media"], outputs: ["transcript"], configSchema: transcribeConfig },
   { type: "ai.image", category: "ai", label: "Generate image", description: "Generates and durably stores an image asset.", inputs: ["idea"], outputs: ["image"], configSchema: imageGenConfig },
+  { type: "ai.youtube_transcript", category: "ai", label: "YouTube transcript", description: "Fetches a YouTube transcript through Supadata.", inputs: ["video"], outputs: ["transcript"], configSchema: youtubeTranscriptConfig },
   { type: "action.create_draft", category: "action", label: "Create Draft", description: "Creates a draft in your approval queue. Nothing publishes until you approve it — this is how every flow must end.", inputs: ["data"], outputs: ["draft"], configSchema: createDraftConfig },
   { type: "action.notify", category: "action", label: "Notify me", description: "Sends you an in-app notification (and email if your preferences allow).", inputs: ["data"], outputs: ["data"], configSchema: notifyConfig },
   { type: "action.save_asset", category: "action", label: "Save to Assets", description: "Downloads and registers a public file.", inputs: ["file"], outputs: ["asset"], configSchema: saveAssetConfig },

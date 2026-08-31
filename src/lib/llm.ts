@@ -20,8 +20,7 @@ async function resolveKey(tenantId: string | undefined, provider: string): Promi
       return decrypt(tenantKey.encryptedKey);
     }
   }
-  const envKey =
-    provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY;
+  const envKey = provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : provider === "openrouter" ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY;
   if (envKey) return envKey;
   throw new Error(
     `No ${provider} API key available. Add one in Settings → API Keys or set the environment variable.`,
@@ -42,7 +41,7 @@ export type LlmResult = {
  */
 export async function runLlm(opts: {
   tenantId: string;
-  provider: "openai" | "anthropic";
+  provider: "openai" | "anthropic" | "openrouter";
   model: string;
   messages: LlmMessage[];
   /** Optional JSON schema (as plain object) to force structured output. */
@@ -118,7 +117,7 @@ export async function runLlm(opts: {
   }
 
   const { default: OpenAI } = await import("openai");
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, ...(opts.provider === "openrouter" ? { baseURL: "https://openrouter.ai/api/v1", defaultHeaders: { "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "https://joey.evonera.com", "X-Title": "Joey" } } : {}) });
   const completionFormat = opts.jsonSchema
     ? {
         type: "json_schema" as const,

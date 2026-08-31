@@ -20,6 +20,7 @@ import { rssNode } from "./nodes/data/rss";
 import { redditNode } from "./nodes/data/reddit";
 import { transcribeNode } from "./nodes/ai/transcribe";
 import { imageGenNode } from "./nodes/ai/image";
+import { youtubeTranscriptNode } from "./nodes/ai/youtube-transcript";
 import { saveAssetNode } from "./nodes/actions/save-asset";
 import { loopNode } from "./nodes/logic/loop";
 import { approvalGateNode } from "./nodes/logic/approval-gate";
@@ -40,6 +41,7 @@ const definitions = {
   "ai.llm": llmTaskNode,
   "ai.transcribe": transcribeNode,
   "ai.image": imageGenNode,
+  "ai.youtube_transcript": youtubeTranscriptNode,
   "action.create_draft": createDraftNode,
   "action.notify": notifyNode,
   "action.save_asset": saveAssetNode,
@@ -74,6 +76,7 @@ const _keysMatch: AssertKeysMatch = {
   "ai.llm": true,
   "ai.transcribe": true,
   "ai.image": true,
+  "ai.youtube_transcript": true,
   "action.create_draft": true,
   "action.notify": true,
   "action.save_asset": true,
