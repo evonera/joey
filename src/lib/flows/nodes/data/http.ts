@@ -20,7 +20,7 @@ export const httpNode = defineNode({
     }
     const dynamicOrigin = config.url.includes("{{input}}") && !/^https?:\/\/[^/{]+\//.test(config.url.split("{{input}}")[0]);
     if (dynamicOrigin) headers = stripSensitiveHeaders(headers);
-    const body = config.method === "GET" || !config.bodyJson ? undefined : interpolate(config.bodyJson, input);
+    const body = dynamicOrigin || config.method === "GET" || !config.bodyJson ? undefined : interpolate(config.bodyJson, input);
     const response = await outboundRequest(url, {
       method: config.method, headers, body, signal: ctx.signal,
       maxBytes: config.maxResponseBytes, timeoutMs: config.timeoutMs,

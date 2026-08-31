@@ -91,4 +91,11 @@ describe("safe data nodes", () => {
     const parsed = httpConfig.parse({ url: "https://example.com/api" });
     expect(parsed).not.toHaveProperty("allowPrivateHosts");
   });
+
+  it("strips configured bodies when destination origin is dynamically selected", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const source = readFileSync(resolve(process.cwd(), "src/lib/flows/nodes/data/http.ts"), "utf8");
+    expect(source).toContain("const body = dynamicOrigin || config.method === \"GET\" || !config.bodyJson ? undefined");
+  });
 });
