@@ -2,7 +2,7 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { replyDrafts, engagementItems, agentConfigs } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 export default defineTool({
   description:
@@ -34,11 +34,15 @@ export default defineTool({
       where: and(
         eq(replyDrafts.tenantId, tenantId),
         eq(replyDrafts.engagementItemId, engagementItemId),
+        inArray(replyDrafts.status, ["pending_review", "approved", "sending", "failed"]),
       ),
     });
-    if (existing && existing.status === "pending_review") {
+    if (existing) {
+      if (existing.status !== "pending_review" && existing.status !== "failed") {
+        return { success: true, replyDraftId: existing.id, message: "An active reply draft already exists." };
+      }
       await db.update(replyDrafts)
-        .set({ content, feedback: tone || null })
+        .set({ content, feedback: tone || null, status: "pending_review" })
         .where(and(eq(replyDrafts.id, existing.id), eq(replyDrafts.tenantId, tenantId)));
       return { success: true, replyDraftId: existing.id, message: "Existing reply draft updated." };
     }
@@ -48,7 +52,25 @@ export default defineTool({
       engagementItemId,
       content,
       status: "pending_review",
-    }).returning();
+    }).onConflictDoNothing().returning();
+
+    if (!draft) {
+      const concurrentlyCreated = await db.query.replyDrafts.findFirst({
+        where: and(
+          eq(replyDrafts.tenantId, tenantId),
+          eq(replyDrafts.engagementItemId, engagementItemId),
+          inArray(replyDrafts.status, ["pending_review", "approved", "sending", "failed"]),
+        ),
+      });
+      if (!concurrentlyCreated) {
+        throw new Error("Reply draft could not be created.");
+      }
+      return {
+        success: true,
+        replyDraftId: concurrentlyCreated.id,
+        message: "A concurrent reply draft already exists.",
+      };
+    }
 
     const { createNotification } = await import('@/lib/notifications');
     await createNotification(tenantId, 'engagement_reply_needed', 'Comment Needs Reply', 'Your AI agent has drafted a reply to a comment for your review.', { link: '/engagement' });

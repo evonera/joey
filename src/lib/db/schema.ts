@@ -283,7 +283,11 @@ export const replyDrafts = pgTable("reply_drafts", {
   feedback: text("feedback"),
   sentAt: timestamp("sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  activeEngagementIdx: uniqueIndex("reply_drafts_active_engagement_idx")
+    .on(table.tenantId, table.engagementItemId)
+    .where(sql`${table.status} in ('pending_review', 'approved', 'sending', 'failed')`),
+}));
 
 export const notifications = pgTable("notifications", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

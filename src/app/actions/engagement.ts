@@ -173,7 +173,8 @@ export async function sendReply(replyDraftId: string) {
       .returning();
     if (!draft) return { error: "Reply must be approved and not already sending" };
 
-    const item = await db.query.engagementItems.findFirst({
+    try {
+      const item = await db.query.engagementItems.findFirst({
       where: and(
         eq(engagementItems.id, draft.engagementItemId),
         eq(engagementItems.tenantId, tenantId),
@@ -190,9 +191,9 @@ export async function sendReply(replyDraftId: string) {
       return { error: "Engagement item not found" };
     }
 
-    const { zernio } = await getZernioClient();
+      const { zernio } = await getZernioClient();
 
-    const account = await db.query.socialAccounts.findFirst({
+      const account = await db.query.socialAccounts.findFirst({
       where: and(
         eq(socialAccounts.tenantId, tenantId),
         item.socialAccountId
@@ -200,23 +201,12 @@ export async function sendReply(replyDraftId: string) {
           : eq(socialAccounts.platform, item.platform),
       ),
     });
-    if (!account) {
-      await db.update(replyDrafts)
-        .set({ status: "failed" })
-        .where(and(eq(replyDrafts.id, replyDraftId), eq(replyDrafts.tenantId, tenantId)));
-      return { error: `No connected account found for ${item.platform}` };
-    }
+      if (!account) throw new Error(`No connected account found for ${item.platform}`);
 
-    const platformPostId = item.metadata as any;
-    const postId = item.platformPostId || platformPostId?.comment?.postId;
-    if (!postId) {
-      await db.update(replyDrafts)
-        .set({ status: "failed" })
-        .where(and(eq(replyDrafts.id, replyDraftId), eq(replyDrafts.tenantId, tenantId)));
-      return { error: "No post ID available for reply" };
-    }
+      const platformPostId = item.metadata as any;
+      const postId = item.platformPostId || platformPostId?.comment?.postId;
+      if (!postId) throw new Error("No post ID available for reply");
 
-    try {
       const response = await zernio.comments.replyToInboxPost({
         path: { postId },
         headers: { "Idempotency-Key": `engagement-reply:${replyDraftId}` },
