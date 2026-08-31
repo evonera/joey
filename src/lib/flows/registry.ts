@@ -22,6 +22,7 @@ import { transcribeNode } from "./nodes/ai/transcribe";
 import { imageGenNode } from "./nodes/ai/image";
 import { youtubeTranscriptNode } from "./nodes/ai/youtube-transcript";
 import { saveAssetNode } from "./nodes/actions/save-asset";
+import { telegramSendNode } from "./nodes/actions/telegram-send";
 import { loopNode } from "./nodes/logic/loop";
 import { approvalGateNode } from "./nodes/logic/approval-gate";
 import { splitNode } from "./nodes/logic/split";
@@ -45,6 +46,7 @@ const definitions = {
   "action.create_draft": createDraftNode,
   "action.notify": notifyNode,
   "action.save_asset": saveAssetNode,
+  "action.telegram_send": telegramSendNode,
   "data.apify_actor": apifyActorNode,
   "data.exa_search": exaSearchNode,
   "data.tavily_search": tavilySearchNode,
@@ -80,6 +82,7 @@ const _keysMatch: AssertKeysMatch = {
   "action.create_draft": true,
   "action.notify": true,
   "action.save_asset": true,
+  "action.telegram_send": true,
   "data.apify_actor": true,
   "data.exa_search": true,
   "data.tavily_search": true,

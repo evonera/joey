@@ -447,6 +447,22 @@ export const telegramUpdates = pgTable("telegram_updates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({ installationUpdateIdx: uniqueIndex("telegram_updates_installation_update_idx").on(table.installationId, table.updateId), pendingIdx: index("telegram_updates_pending_idx").on(table.status, table.createdAt) }));
+
+export const telegramOutbox = pgTable("telegram_outbox", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  installationId: text("installation_id").notNull().references(() => telegramBotInstallations.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  chatId: text("chat_id").notNull(),
+  text: text("text").notNull(),
+  replyMarkup: jsonb("reply_markup"),
+  status: varchar("status", { length: 30 }).default("pending").notNull(),
+  telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  sentAt: timestamp("sent_at"),
+}, (table) => ({ tenantIdempotencyIdx: uniqueIndex("telegram_outbox_tenant_idempotency_idx").on(table.tenantId, table.idempotencyKey), pendingIdx: index("telegram_outbox_pending_idx").on(table.status, table.createdAt) }));
 /**
  * Deployment-wide fixed-window rate limiting for the public API. One row per
  * (token, window) so documented limits hold across instances and restarts.
