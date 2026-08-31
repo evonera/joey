@@ -101,6 +101,9 @@ export default defineSchedule({
     const { processR2CleanupTasks } = await import("@/lib/storage-cleanup");
     await processR2CleanupTasks();
 
+    const { recoverStaleWebhookDeliveries } = await import("@/lib/flows/incoming-webhooks");
+    await recoverStaleWebhookDeliveries();
+
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
     });

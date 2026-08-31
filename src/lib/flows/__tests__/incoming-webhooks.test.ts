@@ -128,6 +128,21 @@ describe("deferred incoming webhook execution", () => {
     expect(lifecycle).toContain("eq(flows.executionRevision, opts.flowRevision)");
     expect(lifecycle).toContain("Execution fenced: flow was paused or edited.");
   });
+
+  it("sweeps and recovers stranded processing webhook deliveries autonomously", () => {
+    const tickSource = readFileSync(
+      resolve(process.cwd(), "agent/schedules/flows-tick.ts"),
+      "utf8",
+    );
+    expect(tickSource).toContain("recoverStaleWebhookDeliveries");
+
+    const webhookSource = readFileSync(
+      resolve(process.cwd(), "src/lib/flows/incoming-webhooks.ts"),
+      "utf8",
+    );
+    expect(webhookSource).toContain("export async function recoverStaleWebhookDeliveries");
+    expect(webhookSource).toContain("eq(flowWebhookDeliveries.status, \"processing\")");
+  });
 });
 
 describe("incoming webhook secret rotation", () => {

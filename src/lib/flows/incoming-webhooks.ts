@@ -337,3 +337,79 @@ export async function executeWebhookDelivery(input: {
     );
   }
 }
+
+export async function recoverStaleWebhookDeliveries(limit = 10, now = new Date()): Promise<number> {
+  const staleBefore = new Date(now.getTime() - WEBHOOK_STALE_AFTER_MS);
+  const staleDeliveries = await db.query.flowWebhookDeliveries.findMany({
+    where: and(
+      eq(flowWebhookDeliveries.status, "processing"),
+      sql`${flowWebhookDeliveries.updatedAt} <= ${staleBefore}`,
+    ),
+    limit,
+  });
+
+  let recoveredCount = 0;
+  for (const delivery of staleDeliveries) {
+    const prior = await db.query.flowRuns.findFirst({
+      where: and(
+        eq(flowRuns.tenantId, delivery.tenantId),
+        eq(flowRuns.flowId, delivery.flowId),
+        eq(flowRuns.trigger, "webhook"),
+        sql`${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${delivery.id}`,
+      ),
+      orderBy: [desc(flowRuns.startedAt)],
+    });
+
+    if (prior?.status === "succeeded" || prior?.status === "waiting_approval") {
+      await db
+        .update(flowWebhookDeliveries)
+        .set({ status: "processed", processedAt: new Date(), updatedAt: new Date() })
+        .where(and(
+          eq(flowWebhookDeliveries.id, delivery.id),
+          eq(flowWebhookDeliveries.attempt, delivery.attempt),
+          eq(flowWebhookDeliveries.status, "processing"),
+        ));
+      recoveredCount++;
+      continue;
+    }
+
+    if (prior?.status === "running" && prior.updatedAt > staleBefore) {
+      continue;
+    }
+
+    const rearm = await db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .update(flowWebhookDeliveries)
+        .set({
+          status: "processing",
+          attempt: delivery.attempt + 1,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(flowWebhookDeliveries.id, delivery.id),
+          eq(flowWebhookDeliveries.tenantId, delivery.tenantId),
+          eq(flowWebhookDeliveries.flowId, delivery.flowId),
+          eq(flowWebhookDeliveries.attempt, delivery.attempt),
+          eq(flowWebhookDeliveries.status, "processing"),
+          sql`${flowWebhookDeliveries.updatedAt} <= ${staleBefore}`,
+        ))
+        .returning({ id: flowWebhookDeliveries.id, attempt: flowWebhookDeliveries.attempt });
+      return claimed;
+    });
+
+    if (rearm) {
+      recoveredCount++;
+      await executeWebhookDelivery({
+        tenantId: delivery.tenantId,
+        flowId: delivery.flowId,
+        deliveryRowId: delivery.id,
+        senderDeliveryId: delivery.deliveryId,
+        attempt: rearm.attempt,
+        payload: (delivery.payload as Record<string, unknown>) ?? {},
+      });
+    }
+  }
+
+  return recoveredCount;
+}
+
