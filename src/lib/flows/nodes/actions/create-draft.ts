@@ -20,19 +20,17 @@ export const createDraftNode = defineNode({
       (typeof input === "string" ? input : undefined);
 
     const mediaUrls: string[] = [];
-    if (input && typeof input === "object") {
+    if (input && typeof input === "object" && input !== null) {
       const record = input as Record<string, unknown>;
       if (!content) {
-        if (typeof record.caption === "string" && record.caption.trim()) {
+        if (typeof record.caption === "string") {
           content = record.caption.trim();
-        } else if (typeof record.content === "string" && record.content.trim()) {
+        } else if (typeof record.content === "string") {
           content = record.content.trim();
-        } else if (typeof record.text === "string" && record.text.trim()) {
+        } else if (typeof record.text === "string") {
           content = record.text.trim();
-        } else if (typeof record.message === "string" && record.message.trim()) {
+        } else if (typeof record.message === "string") {
           content = record.message.trim();
-        } else if (!record.imageUrl && !record.url && !record.mediaUrls) {
-          content = JSON.stringify(input);
         }
       }
       if (config.mediaUrlField) {

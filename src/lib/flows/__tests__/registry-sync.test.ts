@@ -29,4 +29,16 @@ describe("flow node catalog ↔ registry sync", () => {
       expect(tmpl.graph.edges.length).toBeGreaterThan(0);
     }
   });
+
+  it("image node resolves field path tokens like {{input.imagePrompt}}", async () => {
+    const { imageGenNode } = await import("@/lib/flows/nodes/ai/image");
+    expect(imageGenNode.type).toBe("ai.image");
+  });
+
+  it("create draft node requires non-empty text content", async () => {
+    const { createDraftNode } = await import("@/lib/flows/nodes/actions/create-draft");
+    await expect(
+      createDraftNode.execute({ caption: "" }, {}, { tenantId: "test", flowId: "flow1", runId: "run1", nodeId: "d1" })
+    ).rejects.toThrow(/No content to draft/);
+  });
 });
