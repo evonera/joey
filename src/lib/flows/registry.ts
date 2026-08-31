@@ -19,6 +19,8 @@ import { httpNode } from "./nodes/data/http";
 import { rssNode } from "./nodes/data/rss";
 import { redditNode } from "./nodes/data/reddit";
 import { transcribeNode } from "./nodes/ai/transcribe";
+import { imageGenNode } from "./nodes/ai/image";
+import { saveAssetNode } from "./nodes/actions/save-asset";
 import { loopNode } from "./nodes/logic/loop";
 import { approvalGateNode } from "./nodes/logic/approval-gate";
 import { splitNode } from "./nodes/logic/split";
@@ -37,8 +39,10 @@ const definitions = {
   "logic.split": splitNode,
   "ai.llm": llmTaskNode,
   "ai.transcribe": transcribeNode,
+  "ai.image": imageGenNode,
   "action.create_draft": createDraftNode,
   "action.notify": notifyNode,
+  "action.save_asset": saveAssetNode,
   "data.apify_actor": apifyActorNode,
   "data.exa_search": exaSearchNode,
   "data.tavily_search": tavilySearchNode,
@@ -69,8 +73,10 @@ const _keysMatch: AssertKeysMatch = {
   "logic.split": true,
   "ai.llm": true,
   "ai.transcribe": true,
+  "ai.image": true,
   "action.create_draft": true,
   "action.notify": true,
+  "action.save_asset": true,
   "data.apify_actor": true,
   "data.exa_search": true,
   "data.tavily_search": true,
