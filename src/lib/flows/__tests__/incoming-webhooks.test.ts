@@ -48,6 +48,11 @@ describe("incoming webhook admission", () => {
   it("does not reuse checkpoints when a retry replaces the JSON payload", () => {
     expect(sameWebhookPayload({ event: "created", id: "a" }, { event: "created", id: "a" })).toBe(true);
     expect(sameWebhookPayload({ event: "created", id: "a" }, { event: "updated", id: "a" })).toBe(false);
+    expect(sameWebhookPayload(
+      { event: "created", account: { id: "a", type: "person" } },
+      { account: { type: "person", id: "a" }, event: "created" },
+    )).toBe(true);
+    expect(sameWebhookPayload({ values: ["a", "b"] }, { values: ["b", "a"] })).toBe(false);
     const source = readFileSync(
       resolve(process.cwd(), "src/lib/flows/incoming-webhooks.ts"),
       "utf8",
@@ -153,9 +158,9 @@ describe("flow execution revisions", () => {
       "utf8",
     );
     const statusAction = actions.slice(actions.indexOf("export async function setFlowStatus"));
-    const noOp = statusAction.indexOf("if (existing.status === status) return { ok: true };");
     const increment = statusAction.indexOf("executionRevision: sql");
-    expect(noOp).toBeGreaterThan(-1);
-    expect(increment).toBeGreaterThan(noOp);
+    expect(increment).toBeGreaterThan(-1);
+    expect(statusAction).toContain("sql`${flows.status} <> ${status}`");
+    expect(statusAction).toContain("const [updated] = await db");
   });
 });

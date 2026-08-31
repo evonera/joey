@@ -125,7 +125,7 @@ export async function saveFlow(
     if (!result.ok) return { issues: result.issues };
   }
 
-  await db
+  const [updated] = await db
     .update(flows)
     .set({
       ...(data.name !== undefined ? { name: data.name.trim().slice(0, 120) || existing.name } : {}),
@@ -150,21 +150,30 @@ export async function setFlowStatus(
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
   if (!existing) return { error: "Flow not found" };
-  if (existing.status === status) return { ok: true };
 
   if (status === "active") {
     const result = await validateFlowGraph(existing.graph);
     if (!result.ok) return { issues: result.issues };
   }
 
-  await db
+  const [updated] = await db
     .update(flows)
     .set({
       status,
       executionRevision: sql`${flows.executionRevision} + 1`,
       updatedAt: new Date(),
     })
-    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)));
+    .where(and(
+      eq(flows.id, id),
+      eq(flows.tenantId, tenantId),
+      sql`${flows.status} <> ${status}`,
+    ))
+    .returning({ id: flows.id });
+  if (!updated) {
+    // The database observed the requested status at the write boundary, so a
+    // concurrent same-target submission does not create a second revision.
+    return { ok: true };
+  }
   return { ok: true };
 }
 
