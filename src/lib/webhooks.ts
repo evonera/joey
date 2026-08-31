@@ -134,24 +134,28 @@ export async function storeEngagementItem(payload: ZernioWebhookPayload, tenantI
   const comment = data.comment || data.mention || {};
   const account = data.account || {};
 
-  // Dedup by platform comment id (or webhook event id) scoped by tenant
-  const existing = await db.query.engagementItems.findFirst({
-    where: and(
-      eq(engagementItems.tenantId, tenantId),
-      eq(engagementItems.platformCommentId, comment.id || payload.id)
-    ),
-  });
-  if (existing) return existing;
-
   const eventType = payload.event; // 'comment.received' or 'message.received'
 
   if (eventType !== "comment.received") return null;
 
+  const platform = account.platform || data.platform || "unknown";
+  const platformCommentId = comment.id || payload.id;
+  const socialAccount = account.id
+    ? await db.query.socialAccounts.findFirst({
+        where: and(
+          eq(socialAccounts.tenantId, tenantId),
+          eq(socialAccounts.platformAccountId, String(account.id)),
+        ),
+        columns: { id: true },
+      })
+    : undefined;
+
   const [item] = await db.insert(engagementItems).values({
     tenantId,
-    platform: account.platform || data.platform || "unknown",
+    socialAccountId: socialAccount?.id,
+    platform,
     platformPostId: comment.postId || comment.mediaId,
-    platformCommentId: comment.id || payload.id,
+    platformCommentId,
     commenterName: comment.fromName || comment.username,
     commenterHandle: comment.fromHandle || comment.fromUsername,
     commenterAvatar: comment.fromAvatar,
@@ -159,7 +163,21 @@ export async function storeEngagementItem(payload: ZernioWebhookPayload, tenantI
     type: "comment",
     status: "pending",
     metadata: payload as any,
+  }).onConflictDoNothing({
+    target: [
+      engagementItems.tenantId,
+      engagementItems.platform,
+      engagementItems.platformCommentId,
+    ],
   }).returning();
 
-  return item;
+  if (item) return item;
+
+  return db.query.engagementItems.findFirst({
+    where: and(
+      eq(engagementItems.tenantId, tenantId),
+      eq(engagementItems.platform, platform),
+      eq(engagementItems.platformCommentId, platformCommentId),
+    ),
+  });
 }

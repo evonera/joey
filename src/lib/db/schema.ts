@@ -253,6 +253,7 @@ export const messages = pgTable("messages", {
 export const engagementItems = pgTable("engagement_items", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  socialAccountId: text("social_account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
   platform: varchar("platform", { length: 50 }).notNull(),
   platformPostId: text("platform_post_id"),
   platformCommentId: text("platform_comment_id"),
@@ -266,7 +267,11 @@ export const engagementItems = pgTable("engagement_items", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   tenantStatusIdx: index("engagement_items_tenant_status_idx").on(table.tenantId, table.status),
-  platformCommentIdx: uniqueIndex("engagement_items_platform_comment_idx").on(table.platformCommentId),
+  platformCommentIdx: uniqueIndex("engagement_items_tenant_platform_comment_idx").on(
+    table.tenantId,
+    table.platform,
+    table.platformCommentId,
+  ),
 }));
 
 export const replyDrafts = pgTable("reply_drafts", {
@@ -277,8 +282,13 @@ export const replyDrafts = pgTable("reply_drafts", {
   status: varchar("status", { length: 50 }).default("pending_review").notNull(), // 'pending_review', 'approved', 'rejected', 'sent'
   feedback: text("feedback"),
   sentAt: timestamp("sent_at"),
+  sendClaimedAt: timestamp("send_claimed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  activeEngagementIdx: uniqueIndex("reply_drafts_active_engagement_idx")
+    .on(table.tenantId, table.engagementItemId)
+    .where(sql`${table.status} in ('pending_review', 'approved', 'sending', 'failed')`),
+}));
 
 export const notifications = pgTable("notifications", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

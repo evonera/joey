@@ -63,6 +63,7 @@ describe("flow platform reconciliation", () => {
     expect(journal.entries.find(({ idx }) => idx === 25)).toEqual(expect.objectContaining({ tag: "0025_flow_incoming_webhooks" }));
     expect(journal.entries.find(({ idx }) => idx === 26)).toEqual(expect.objectContaining({ tag: "0026_telegram_bot_installations" }));
     expect(journal.entries.find(({ idx }) => idx === 27)).toEqual(expect.objectContaining({ tag: "0027_telegram_outbox" }));
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 28, tag: "0028_telegram_approvals" }));
+    expect(journal.entries.find(({ idx }) => idx === 28)).toEqual(expect.objectContaining({ tag: "0028_telegram_approvals" }));
+    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 29, tag: "0029_engagement_delivery_safety" }));
   });
 });

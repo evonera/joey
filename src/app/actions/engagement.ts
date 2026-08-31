@@ -116,9 +116,16 @@ export async function approveReply(replyDraftId: string) {
   try {
     const tenantId = await getActiveTenantId();
 
-    await db.update(replyDrafts)
+    const [approved] = await db.update(replyDrafts)
       .set({ status: "approved" })
-      .where(and(eq(replyDrafts.id, replyDraftId), eq(replyDrafts.tenantId, tenantId)));
+      .where(and(
+        eq(replyDrafts.id, replyDraftId),
+        eq(replyDrafts.tenantId, tenantId),
+        inArray(replyDrafts.status, ["pending_review", "rejected", "failed"]),
+      ))
+      .returning({ id: replyDrafts.id });
+
+    if (!approved) return { error: "Reply is no longer available for approval" };
 
     return { success: true };
   } catch (error: any) {
@@ -131,9 +138,16 @@ export async function rejectReply(replyDraftId: string, feedback: string) {
   try {
     const tenantId = await getActiveTenantId();
 
-    await db.update(replyDrafts)
+    const [rejected] = await db.update(replyDrafts)
       .set({ status: "rejected", feedback })
-      .where(and(eq(replyDrafts.id, replyDraftId), eq(replyDrafts.tenantId, tenantId)));
+      .where(and(
+        eq(replyDrafts.id, replyDraftId),
+        eq(replyDrafts.tenantId, tenantId),
+        eq(replyDrafts.status, "pending_review"),
+      ))
+      .returning({ id: replyDrafts.id });
+
+    if (!rejected) return { error: "Reply is no longer pending review" };
 
     return { success: true };
   } catch (error: any) {
@@ -146,85 +160,105 @@ export async function sendReply(replyDraftId: string) {
   try {
     const tenantId = await getActiveTenantId();
 
-    const draft = await db.query.replyDrafts.findFirst({
-      where: and(eq(replyDrafts.id, replyDraftId), eq(replyDrafts.tenantId, tenantId)),
-    });
-    if (!draft) return { error: "Reply draft not found" };
+    // Claim the approved draft before performing the external side effect. This
+    // compare-and-swap prevents double clicks and concurrent workers from sending
+    // the same reply more than once.
+    const [draft] = await db.update(replyDrafts)
+      .set({ status: "sending", sendClaimedAt: new Date() })
+      .where(and(
+        eq(replyDrafts.id, replyDraftId),
+        eq(replyDrafts.tenantId, tenantId),
+        eq(replyDrafts.status, "approved"),
+      ))
+      .returning();
+    if (!draft) return { error: "Reply must be approved and not already sending" };
 
-    const item = await db.query.engagementItems.findFirst({
-      where: eq(engagementItems.id, draft.engagementItemId),
+    try {
+      const item = await db.query.engagementItems.findFirst({
+      where: and(
+        eq(engagementItems.id, draft.engagementItemId),
+        eq(engagementItems.tenantId, tenantId),
+      ),
     });
     if (!item) {
-      await db.update(replyDrafts).set({ status: "failed" }).where(eq(replyDrafts.id, replyDraftId));
+      await db.update(replyDrafts)
+          .set({ status: "failed", sendClaimedAt: null })
+        .where(and(
+          eq(replyDrafts.id, replyDraftId),
+          eq(replyDrafts.tenantId, tenantId),
+          eq(replyDrafts.status, "sending"),
+        ));
       return { error: "Engagement item not found" };
     }
 
-    const { zernio } = await getZernioClient();
+      const { zernio } = await getZernioClient();
 
-    const account = await db.query.socialAccounts.findFirst({
+      const account = await db.query.socialAccounts.findFirst({
       where: and(
         eq(socialAccounts.tenantId, tenantId),
-        eq(socialAccounts.platform, item.platform)
+        item.socialAccountId
+          ? eq(socialAccounts.id, item.socialAccountId)
+          : eq(socialAccounts.platform, item.platform),
       ),
     });
-    if (!account) {
-      await db.update(replyDrafts).set({ status: "pending_review" }).where(eq(replyDrafts.id, replyDraftId));
-      return { error: `No connected account found for ${item.platform}` };
-    }
+      if (!account) throw new Error(`No connected account found for ${item.platform}`);
 
-    const platformPostId = item.metadata as any;
-    const postId = item.platformPostId || platformPostId?.comment?.postId;
-    if (!postId) {
-      await db.update(replyDrafts).set({ status: "pending_review" }).where(eq(replyDrafts.id, replyDraftId));
-      return { error: "No post ID available for reply" };
-    }
+      const platformPostId = item.metadata as any;
+      const postId = item.platformPostId || platformPostId?.comment?.postId;
+      if (!postId) throw new Error("No post ID available for reply");
 
-    let lastError: any = null;
-    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const response = await zernio.comments.replyToInboxPost({
+        path: { postId },
+        headers: { "Idempotency-Key": `engagement-reply:${replyDraftId}` },
+        body: {
+          accountId: account.platformAccountId,
+          message: draft.content,
+          ...(item.platformCommentId ? { commentId: item.platformCommentId } : {}),
+        },
+      });
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const response = await zernio.comments.replyToInboxPost({
-          path: { postId },
-          body: {
-            message: draft.content,
-            ...(item.platformCommentId ? { parentCommentId: item.platformCommentId } : {}),
-          },
-        });
+      if (response.error) throw response.error;
 
-        if (response.error) throw response.error;
+      await db.transaction(async (tx) => {
+        await tx.update(replyDrafts)
+          .set({ status: "sent", sentAt: new Date(), sendClaimedAt: null })
+          .where(and(
+            eq(replyDrafts.id, replyDraftId),
+            eq(replyDrafts.tenantId, tenantId),
+            eq(replyDrafts.status, "sending"),
+          ));
 
-        await db.transaction(async (tx) => {
-          await tx.update(replyDrafts)
-            .set({ status: "sent", sentAt: new Date() })
-            .where(eq(replyDrafts.id, replyDraftId));
+        await tx.update(engagementItems)
+          .set({ status: "replied" })
+          .where(and(
+            eq(engagementItems.id, item.id),
+            eq(engagementItems.tenantId, tenantId),
+          ));
+      });
 
-          await tx.update(engagementItems)
-            .set({ status: "replied" })
-            .where(eq(engagementItems.id, item.id));
-        });
+      return { success: true };
+    } catch (error: any) {
+      const status = error?.status || error?.response?.status;
+      await db.update(replyDrafts)
+        .set({ status: "failed", sendClaimedAt: null })
+        .where(and(
+          eq(replyDrafts.id, replyDraftId),
+          eq(replyDrafts.tenantId, tenantId),
+          eq(replyDrafts.status, "sending"),
+        ));
 
-        return { success: true };
-      } catch (error: any) {
-        lastError = error;
-        const status = error?.status || error?.response?.status;
-        if (status === 401 || status === 403) {
+      if (status === 401 || status === 403) {
+        try {
           await db.update(agentConfigs)
             .set({ isPaused: true })
             .where(eq(agentConfigs.tenantId, tenantId));
-          break;
+        } catch (pauseError) {
+          console.error("Failed to pause agent after Zernio authorization error:", pauseError);
         }
-        if (attempt < 3) await delay(1000 * attempt);
       }
-    }
 
-    if (lastError) {
-      await db.update(replyDrafts)
-        .set({ status: "pending_review" })
-        .where(eq(replyDrafts.id, replyDraftId));
+      return { error: error?.message || "Failed to send reply" };
     }
-
-    return { error: lastError?.message || "Failed to send reply after retries" };
   } catch (error: any) {
     console.error("Failed to send reply:", error);
     return { error: error.message || "An unexpected error occurred" };
@@ -235,9 +269,19 @@ export async function updateReplyDraft(replyDraftId: string, content: string) {
   try {
     const tenantId = await getActiveTenantId();
 
-    await db.update(replyDrafts)
-      .set({ content })
-      .where(and(eq(replyDrafts.id, replyDraftId), eq(replyDrafts.tenantId, tenantId)));
+    const normalizedContent = content.trim();
+    if (!normalizedContent) return { error: "Reply cannot be empty" };
+
+    const [updated] = await db.update(replyDrafts)
+      .set({ content: normalizedContent })
+      .where(and(
+        eq(replyDrafts.id, replyDraftId),
+        eq(replyDrafts.tenantId, tenantId),
+        inArray(replyDrafts.status, ["pending_review", "rejected", "failed"]),
+      ))
+      .returning({ id: replyDrafts.id });
+
+    if (!updated) return { error: "Reply can no longer be edited" };
 
     return { success: true };
   } catch (error: any) {
