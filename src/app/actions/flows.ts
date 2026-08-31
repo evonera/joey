@@ -203,83 +203,8 @@ export async function resumeRun(
   approve: boolean,
 ): Promise<{ ok?: boolean; status?: RunStatus; error?: string }> {
   const tenantId = await getActiveTenantId();
-  const run = await db.query.flowRuns.findFirst({
-    where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
-  });
-  if (!run) return { error: "Run not found" };
-
-  const flow = await db.query.flows.findFirst({
-    where: eq(flows.id, run.flowId),
-  });
-  if (!flow) return { error: "Flow not found" };
-
-  // Atomic claim: exactly one concurrent caller can move the run out of
-  // waiting_approval, so downstream side effects can never execute twice.
-  if (!approve) {
-    const steps = (run.steps as FlowStep[]) ?? [];
-    for (const step of steps) {
-      if (step.status === "waiting_approval") step.status = "failed";
-      else if (step.status === "working" || step.status === "ready") step.status = "skipped";
-    }
-    const claimed = await db
-      .update(flowRuns)
-      .set({ status: "failed", steps, error: "Rejected at approval gate.", finishedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "waiting_approval")))
-      .returning();
-
-    if (claimed.length === 0) {
-      return { error: "Run is not waiting for approval (already resumed)." };
-    }
-    return { ok: true, status: "failed" };
-  }
-
-  const pending = (run.steps as FlowStep[]).find((s) => s.status === "waiting_approval");
-  const approvedNodeIds = [...((run.approvedNodeIds as string[]) ?? []), ...(pending ? [pending.nodeId] : [])];
-
-  // Full step list preserves clean branch-skips and failure markers for replay.
-  const clearedSteps = ((run.steps as FlowStep[]) ?? []).filter((s) => s.status !== "waiting_approval");
-
-  let claimed;
-  try {
-    claimed = await db
-      .update(flowRuns)
-      .set({ approvedNodeIds, steps: clearedSteps, status: "running", error: null, updatedAt: new Date() })
-      .where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "waiting_approval")))
-      .returning();
-  } catch (claimErr: any) {
-    // Unique-index conflict: a newer scheduled execution already owns this
-    // flow's running slot. Keep the older run waiting rather than fail it.
-    if (claimErr?.code === "23505" || claimErr?.message?.includes("unique")) {
-      return { error: "A newer scheduled run already owns this flow's slot; this approval stays pending." };
-    }
-    throw claimErr;
-  }
-
-  if (claimed.length === 0) {
-    return { error: "Run is not waiting for approval (already resumed)." };
-  }
-
-  const finalResult = await executeAdmittedFlowRun({
-    flow,
-    runId,
-    triggerPayload: run.triggerPayload ?? undefined,
-    cachedSteps: clearedSteps,
-    fanoutProgress: (run.fanoutProgress as Record<string, Record<string, unknown>>) ?? {},
-    approvedNodeIds,
-  });
-
-  if (!finalResult.persisted) {
-    console.error(
-      `[flow-resume] CRITICAL: Finalization writes exhausted for resumed run ${runId}. Steps remain persisted; stale recovery will transition status if DB was unreachable.`,
-    );
-    return {
-      ok: false,
-      status: finalResult.status,
-      error: `Run execution finished with status '${finalResult.status}', but terminal state could not be persisted to the database.`,
-    };
-  }
-
-  return { ok: true, status: finalResult.status };
+  const { resumeFlowRunInternal } = await import("@/lib/flows/resume-flow");
+  return resumeFlowRunInternal(tenantId, runId, approve);
 }
 
 /** Re-runs a failed/finished run reusing succeeded node outputs. */
