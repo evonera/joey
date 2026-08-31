@@ -162,10 +162,22 @@ export const officialTemplates: OfficialTemplate[] = [
     slug: "daily-branded-image-post", name: "Daily Image Post", description: "Generates an image and caption for the approval queue every day.", category: "content",
     graph: { nodes: [
       node("t1", "trigger.schedule", 0, { intervalMinutes: 1440 }),
-      node("a1", "ai.llm", 240, { provider: "openai", model: "gpt-4o-mini", systemPrompt: "Output one detailed social image prompt." }),
-      node("i1", "ai.image", 500, { prompt: "{{input}}", size: "1024x1024", quality: "medium" }),
-      node("d1", "action.create_draft", 760, { platform: "facebook" }),
-    ], edges: [edge("t1", "a1"), edge("a1", "i1"), edge("i1", "d1")] },
+      node("a1", "ai.llm", 240, {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        systemPrompt: "Generate a daily social media post idea with an image prompt and an engaging caption.",
+        outputSchema: JSON.stringify({
+          type: "object",
+          properties: {
+            imagePrompt: { type: "string" },
+            caption: { type: "string" },
+          },
+          required: ["imagePrompt", "caption"],
+        }),
+      }),
+      node("i1", "ai.image", 500, { prompt: "{{input.imagePrompt}}", size: "1024x1024", quality: "medium" }),
+      node("d1", "action.create_draft", 760, { platform: "facebook", contentField: "caption", mediaUrlField: "imageUrl" }),
+    ], edges: [edge("t1", "a1"), edge("a1", "i1"), edge("a1", "d1"), edge("i1", "d1")] },
   },
   {
     slug: "ab-hook-tester", name: "A/B Hook Tester", description: "Deterministically routes runs between statement and question hooks.", category: "testing",

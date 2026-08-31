@@ -25,28 +25,37 @@ export const createDraftNode = defineNode({
       if (!content) {
         if (typeof record.caption === "string" && record.caption.trim()) {
           content = record.caption.trim();
-        } else if (typeof record.prompt === "string" && record.prompt.trim()) {
-          content = record.prompt.trim();
         } else if (typeof record.content === "string" && record.content.trim()) {
           content = record.content.trim();
         } else if (typeof record.text === "string" && record.text.trim()) {
           content = record.text.trim();
-        } else {
+        } else if (typeof record.message === "string" && record.message.trim()) {
+          content = record.message.trim();
+        } else if (!record.imageUrl && !record.url && !record.mediaUrls) {
           content = JSON.stringify(input);
         }
       }
-      if (typeof record.imageUrl === "string" && record.imageUrl.trim()) {
-        mediaUrls.push(record.imageUrl.trim());
-      } else if (typeof record.url === "string" && record.url.trim() && /\.(?:png|jpe?g|webp|gif|mp4|mov)$/i.test(record.url)) {
-        mediaUrls.push(record.url.trim());
-      } else if (Array.isArray(record.mediaUrls)) {
-        for (const item of record.mediaUrls) {
-          if (typeof item === "string" && item.trim()) mediaUrls.push(item.trim());
+      if (config.mediaUrlField) {
+        const extracted = extractField(input, config.mediaUrlField);
+        if (extracted) mediaUrls.push(extracted);
+      } else {
+        if (typeof record.imageUrl === "string" && record.imageUrl.trim()) {
+          mediaUrls.push(record.imageUrl.trim());
+        } else if (typeof record.url === "string" && record.url.trim() && /\.(?:png|jpe?g|webp|gif|mp4|mov)$/i.test(record.url)) {
+          mediaUrls.push(record.url.trim());
+        } else if (Array.isArray(record.mediaUrls)) {
+          for (const item of record.mediaUrls) {
+            if (typeof item === "string" && item.trim()) mediaUrls.push(item.trim());
+          }
         }
       }
     }
 
-    if (!content || !content.trim()) {
+    if (!content && mediaUrls.length > 0) {
+      content = "";
+    }
+
+    if (content === undefined || (content === "" && mediaUrls.length === 0)) {
       throw new Error("No content to draft — incoming data was empty.");
     }
 

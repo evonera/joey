@@ -104,6 +104,10 @@ export const createDraftConfig = z.object({
     .string()
     .optional()
     .describe("Field of the incoming data holding the post text (blank = use the whole input)"),
+  mediaUrlField: z
+    .string()
+    .optional()
+    .describe("Field of the incoming data holding image/video URL(s) (blank = auto-detect from input)"),
   accountId: z.string().optional().describe("Connected account id (blank = tenant default)"),
 });
 
