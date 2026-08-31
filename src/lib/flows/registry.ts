@@ -15,9 +15,13 @@ import { incomingWebhookTriggerNode } from "./nodes/triggers/incoming-webhook";
 import { apifyActorNode } from "./nodes/data/apify-actor";
 import { exaSearchNode } from "./nodes/data/exa-search";
 import { tavilySearchNode } from "./nodes/data/tavily-search";
+import { httpNode } from "./nodes/data/http";
+import { rssNode } from "./nodes/data/rss";
+import { redditNode } from "./nodes/data/reddit";
 import { transcribeNode } from "./nodes/ai/transcribe";
 import { loopNode } from "./nodes/logic/loop";
 import { approvalGateNode } from "./nodes/logic/approval-gate";
+import { splitNode } from "./nodes/logic/split";
 
 const definitions = {
   "trigger.manual": manualTriggerNode,
@@ -30,6 +34,7 @@ const definitions = {
   "logic.condition": conditionNode,
   "logic.loop": loopNode,
   "logic.approval": approvalGateNode,
+  "logic.split": splitNode,
   "ai.llm": llmTaskNode,
   "ai.transcribe": transcribeNode,
   "action.create_draft": createDraftNode,
@@ -37,6 +42,9 @@ const definitions = {
   "data.apify_actor": apifyActorNode,
   "data.exa_search": exaSearchNode,
   "data.tavily_search": tavilySearchNode,
+  "data.http": httpNode,
+  "data.rss": rssNode,
+  "data.reddit": redditNode,
 } satisfies Record<string, NodeDefinition>;
 
 // Compile-time drift guard: every key must equal the node's declared type.
@@ -58,6 +66,7 @@ const _keysMatch: AssertKeysMatch = {
   "logic.condition": true,
   "logic.loop": true,
   "logic.approval": true,
+  "logic.split": true,
   "ai.llm": true,
   "ai.transcribe": true,
   "action.create_draft": true,
@@ -65,6 +74,9 @@ const _keysMatch: AssertKeysMatch = {
   "data.apify_actor": true,
   "data.exa_search": true,
   "data.tavily_search": true,
+  "data.http": true,
+  "data.rss": true,
+  "data.reddit": true,
 };
 void _keysMatch;
 
