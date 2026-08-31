@@ -114,7 +114,6 @@ export default function AccountsPage() {
               {accounts.map((acc) => (
                 <div key={acc.id} className="flex items-center gap-4 p-4 border rounded-lg">
                   {acc.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={acc.avatarUrl} alt={acc.accountName} className="h-12 w-12 rounded-full object-cover" />
                   ) : (
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 capitalize">

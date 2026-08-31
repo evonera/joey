@@ -6,9 +6,14 @@ const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const migrationsDirectory = join(repositoryRoot, "src/lib/db/migrations");
 const journalPath = join(migrationsDirectory, "meta/_journal.json");
 
-const files = (await readdir(migrationsDirectory))
-  .filter((file) => /^\d{4}_.+\.sql$/.test(file))
-  .sort();
+const allFiles = await readdir(migrationsDirectory);
+const sqlFiles = allFiles.filter((file) => file.endsWith(".sql"));
+for (const file of sqlFiles) {
+  if (!/^\d{4}_.+\.sql$/.test(file)) {
+    throw new Error(`Migration SQL file ${file} does not match expected naming convention (0000_name.sql)`);
+  }
+}
+const files = sqlFiles.sort();
 const journal = JSON.parse(await readFile(journalPath, "utf8"));
 
 if (!Array.isArray(journal.entries)) {

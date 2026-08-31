@@ -129,7 +129,6 @@ export default function AboutPage() {
               className="flex gap-5 rounded-2xl border bg-white dark:bg-zinc-900 p-6 shadow-sm"
             >
               {member.photo ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={member.photo}
                   alt={`Photo of ${member.name}`}

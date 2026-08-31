@@ -43,7 +43,6 @@ export function PlatformSelector({
                 />
                 <div className="flex items-center gap-2 overflow-hidden">
                   {acc.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={acc.avatarUrl} alt={acc.accountName} className="h-8 w-8 rounded-full object-cover" />
                   ) : (
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-zinc-500 text-xs font-semibold capitalize">
