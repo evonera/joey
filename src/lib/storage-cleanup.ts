@@ -15,16 +15,20 @@ export async function enqueueR2Cleanup(
   tenantId: string,
   key: string,
   reason: string,
-  opts?: { runId?: string },
+  opts?: { runId?: string; notBefore?: Date },
 ): Promise<void> {
   await db
     .insert(r2CleanupTasks)
-    .values({ tenantId, key, reason, ...(opts?.runId ? { runId: opts.runId } : {}) })
+    .values({ tenantId, key, reason, ...(opts?.runId ? { runId: opts.runId } : {}), ...(opts?.notBefore ? { nextAttemptAt: opts.notBefore } : {}) })
     .onConflictDoNothing();
 }
 
 export async function cancelR2Cleanup(key: string): Promise<void> {
   await db.delete(r2CleanupTasks).where(eq(r2CleanupTasks.key, key));
+}
+
+export async function rearmR2Cleanup(tenantId: string, key: string, reason: string): Promise<void> {
+  await db.update(r2CleanupTasks).set({ reason, nextAttemptAt: new Date(), updatedAt: new Date() }).where(and(eq(r2CleanupTasks.key, key), eq(r2CleanupTasks.tenantId, tenantId)));
 }
 
 export async function processR2CleanupTasks(limit = 25): Promise<void> {

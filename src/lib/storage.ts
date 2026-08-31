@@ -42,6 +42,17 @@ export async function generateUploadUrl(filename: string, contentType: string, t
   return { uploadUrl, key, publicUrl: buildPublicUrl(key) };
 }
 
+export async function uploadBufferToR2(
+  body: Buffer | Uint8Array,
+  contentType: string,
+  tenantId: string,
+  opts?: { customKey?: string; signal?: AbortSignal },
+): Promise<{ key: string; publicUrl: string }> {
+  const key = opts?.customKey ?? `${tenantId}/${crypto.randomUUID()}`;
+  await getS3Client().send(new PutObjectCommand({ Bucket: getBucketName(), Key: key, Body: body, ContentType: contentType }), { abortSignal: opts?.signal });
+  return { key, publicUrl: buildPublicUrl(key) };
+}
+
 export async function headObject(key: string) {
   const client = getS3Client();
   const command = new HeadObjectCommand({
@@ -68,4 +79,16 @@ export async function deleteObject(key: string) {
     Key: key,
   });
   return client.send(command);
+}
+
+export async function deleteObjectWithRetry(key: string, maxAttempts = 3): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try { await deleteObject(key); return; }
+    catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+    }
+  }
+  throw new Error(`Unable to delete orphaned R2 object ${key}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }

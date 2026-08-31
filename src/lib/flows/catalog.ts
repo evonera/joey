@@ -90,6 +90,13 @@ export const transcribeConfig = z.object({
   language: z.string().optional().describe("ISO code hint, e.g. en"),
 });
 
+export const imageGenConfig = z.object({
+  prompt: z.string().min(1),
+  size: z.enum(["1024x1024", "1536x1024", "1024x1536"]).default("1024x1024"),
+  quality: z.enum(["low", "medium", "high"]).default("medium"),
+});
+export const saveAssetConfig = z.object({ urlField: z.string().optional(), filename: z.string().optional() });
+
 export const createDraftConfig = z.object({
   platform: z.enum(["twitter", "linkedin", "facebook"]).default("twitter"),
   contentField: z
@@ -177,8 +184,10 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "logic.split", category: "logic", label: "A/B split", description: "Deterministically routes a run to branch a or b.", inputs: ["data"], outputs: ["a", "b"], configSchema: splitConfig },
   { type: "ai.llm", category: "ai", label: "AI Task", description: "Runs an LLM over the incoming data. Optionally forces structured JSON via a schema. Spend counts against your LLM budget.", inputs: ["data"], outputs: ["result"], configSchema: llmTaskConfig },
   { type: "ai.transcribe", category: "ai", label: "Transcribe", description: "Downloads an audio/video URL and transcribes it with OpenAI Whisper. Uses your OpenAI key; spend counts against budget.", inputs: ["media"], outputs: ["transcript"], configSchema: transcribeConfig },
+  { type: "ai.image", category: "ai", label: "Generate image", description: "Generates and durably stores an image asset.", inputs: ["idea"], outputs: ["image"], configSchema: imageGenConfig },
   { type: "action.create_draft", category: "action", label: "Create Draft", description: "Creates a draft in your approval queue. Nothing publishes until you approve it — this is how every flow must end.", inputs: ["data"], outputs: ["draft"], configSchema: createDraftConfig },
   { type: "action.notify", category: "action", label: "Notify me", description: "Sends you an in-app notification (and email if your preferences allow).", inputs: ["data"], outputs: ["data"], configSchema: notifyConfig },
+  { type: "action.save_asset", category: "action", label: "Save to Assets", description: "Downloads and registers a public file.", inputs: ["file"], outputs: ["asset"], configSchema: saveAssetConfig },
 ];
 
 const metaByType = new Map(NODE_CATALOG.map((m) => [m.type, m]));
