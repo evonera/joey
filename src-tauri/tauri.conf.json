@@ -9,17 +9,7 @@
     "beforeBuildCommand": ""
   },
   "app": {
-    "windows": [
-      {
-        "title": "Joey — Autonomous Social Media Agent",
-        "url": "https://joey.evonera.com",
-        "width": 1280,
-        "height": 800,
-        "resizable": true,
-        "decorations": true,
-        "fullscreen": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": {
         "default-src": "'self'",
