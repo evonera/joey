@@ -10,6 +10,7 @@ import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle, Sparkles, Eye, 
 import { ConnectionsPanel } from "./connections-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
 import { IntegrationsPanel } from "./integrations-panel";
+import { TelegramPanel } from "./telegram-panel";
 
 const DAYS_OF_WEEK = [
   { id: "mon", label: "Monday" },
@@ -720,6 +721,7 @@ export default function SettingsPage() {
             API keys used by Flow Builder nodes. Stored encrypted per workspace.
           </p>
           <IntegrationsPanel />
+          <TelegramPanel />
         </section>
 
       </form>
