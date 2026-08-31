@@ -19,4 +19,14 @@ describe("flow node catalog ↔ registry sync", () => {
       expect(getNodeMeta(entry.type)?.label).toBe(entry.label);
     }
   });
+
+  it("official templates are valid graphs with executable node connections", async () => {
+    const { officialTemplates } = await import("@/lib/flows/templates");
+    expect(officialTemplates.length).toBeGreaterThanOrEqual(4);
+    for (const tmpl of officialTemplates) {
+      expect(tmpl.slug).toBeDefined();
+      expect(tmpl.graph.nodes.length).toBeGreaterThan(0);
+      expect(tmpl.graph.edges.length).toBeGreaterThan(0);
+    }
+  });
 });
