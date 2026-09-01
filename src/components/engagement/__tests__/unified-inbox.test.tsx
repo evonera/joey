@@ -205,10 +205,12 @@ describe("UnifiedInbox", () => {
 
     resolveSelection(result(
       conversationC,
-      [activity("gamma-message", "Gamma timeline", "2026-09-01T10:02:00Z")],
+      [activity("older-gamma-message", "Older Gamma timeline", "2026-09-01T10:01:00Z")],
     ));
     await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("heading", { name: "Gamma" })).toBeInTheDocument();
+    expect(screen.getByText("Gamma timeline")).toBeInTheDocument();
+    expect(screen.queryByText("Older Gamma timeline")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
     await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(3));

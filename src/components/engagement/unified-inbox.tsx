@@ -72,7 +72,10 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
       && "selectedConversation" in response
       && response.selectedConversation?.id === requestedSelectedId,
     );
-    if (requestId !== loadRequestId.current && !responseEstablishesRequestedSelection) return false;
+    if (requestId !== loadRequestId.current) {
+      if (!responseEstablishesRequestedSelection) return false;
+      if (selectedRef.current?.id === requestedSelectedId) return true;
+    }
     if (requestedSelectedId && selectedConversationIdRef.current && requestedSelectedId !== selectedConversationIdRef.current) {
       setLoading(false);
       return false;
@@ -85,13 +88,11 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
     if ("conversations" in response) {
       const conversations = response.conversations ?? [];
       const responseActivities = response.activities ?? [];
-      if (options?.selected) {
-        selectedRef.current = response.selectedConversation ?? null;
-        selectedItemRef.current = response.selectedEngagementItem ?? null;
-        activitiesRef.current = options.prependActivities
-          ? [...responseActivities, ...activitiesRef.current]
-          : responseActivities;
-      }
+      selectedRef.current = response.selectedConversation ?? null;
+      selectedItemRef.current = response.selectedEngagementItem ?? null;
+      activitiesRef.current = options?.prependActivities
+        ? [...responseActivities, ...activitiesRef.current]
+        : responseActivities;
       if (options?.append) setPages((current) => [...current, ...conversations]);
       else if (!options?.selected) setPages(conversations);
       if (!selectedConversationIdRef.current && response.selectedConversation?.id) {
