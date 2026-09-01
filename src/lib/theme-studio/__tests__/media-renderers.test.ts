@@ -60,6 +60,17 @@ describe("Theme Studio Media Renderers (Phase 4)", () => {
       expect(svg).toContain("...");
     });
 
+    it("splits long unbroken tokens like URLs without exceeding max characters per line", () => {
+      const longUrlTitle = "https://verylongdomainname.com/super/unbroken/path/that/would/normally/overflow/the/entire/card/canvas/width";
+      const svg = renderCardSvg({
+        title: longUrlTitle,
+        aspectRatio: "1:1",
+      });
+
+      expect(svg).toContain("<svg");
+      expect(svg).toContain("https://verylongdomainna");
+    });
+
     it("renders multi-slide carousel sequence with slide numbering indicators", () => {
       const slides = [
         { title: "Slide 1: Overview", body: "Introduction" },

@@ -30,19 +30,33 @@ function escapeXml(unsafe: string): string {
 }
 
 /**
- * Wraps text into lines with a maximum character count.
+ * Wraps text into lines with a maximum character count, splitting long unbroken tokens to prevent canvas overflow.
  */
 function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let currentLine = "";
 
-  for (const word of words) {
-    if ((currentLine + " " + word).trim().length <= maxCharsPerLine) {
-      currentLine = (currentLine + " " + word).trim();
+  for (const rawWord of words) {
+    if (!rawWord) continue;
+    let remainingWord = rawWord;
+
+    while (remainingWord.length > maxCharsPerLine) {
+      if (currentLine) {
+        lines.push(currentLine);
+        currentLine = "";
+      }
+      lines.push(remainingWord.slice(0, maxCharsPerLine));
+      remainingWord = remainingWord.slice(maxCharsPerLine);
+    }
+
+    if (!remainingWord) continue;
+
+    if ((currentLine + " " + remainingWord).trim().length <= maxCharsPerLine) {
+      currentLine = (currentLine + " " + remainingWord).trim();
     } else {
       if (currentLine) lines.push(currentLine);
-      currentLine = word;
+      currentLine = remainingWord;
     }
   }
   if (currentLine) lines.push(currentLine);
