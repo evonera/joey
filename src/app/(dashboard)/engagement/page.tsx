@@ -1,5 +1,7 @@
+import { getUnifiedInbox } from "@/app/actions/engagement";
 import { UnifiedInbox } from "@/components/engagement/unified-inbox";
 
-export default function EngagementPage() {
-  return <UnifiedInbox />;
+export default async function EngagementPage() {
+  const initialResult = await getUnifiedInbox();
+  return <UnifiedInbox initialResult={initialResult} />;
 }
