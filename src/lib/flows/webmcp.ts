@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { NODE_CATALOG, getNodeMeta } from "@/lib/flows/catalog";
 import type { FlowGraphDoc, FlowGraphEdge, FlowGraphNode } from "@/lib/flows/types";
+import { defineWebMcpTool } from "@/lib/webmcp";
 
 const categorySchema = z.enum(["trigger", "data", "transform", "ai", "action", "logic"]);
 const nodeIdSchema = z.string().trim().min(1).max(128);
@@ -42,54 +43,6 @@ export type FlowWebMcpController = {
     signal: AbortSignal,
   ) => Promise<{ ok: boolean; issues: Array<{ severity: string; message: string; nodeId?: string }> }>;
 };
-
-type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
-};
-
-function result(value: unknown, isError = false): ToolResult {
-  return {
-    content: [{ type: "text", text: JSON.stringify(value) }],
-    ...(isError ? { isError: true } : {}),
-  };
-}
-
-function failure(error: unknown): ToolResult {
-  if (error instanceof z.ZodError) {
-    return result({
-      ok: false,
-      error: "Invalid tool input",
-      issues: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
-    }, true);
-  }
-  return result({ ok: false, error: error instanceof Error ? error.message : "Unknown error" }, true);
-}
-
-function tool<T extends Record<string, unknown>>(
-  definition: Omit<WebMCP.ModelContextTool, "execute">,
-  schema: z.ZodType<T>,
-  execute: (input: T, options: WebMCP.ToolExecuteCallbackOptions) => Promise<unknown> | unknown,
-): WebMCP.ModelContextTool {
-  return {
-    ...definition,
-    execute: async (raw, options) => {
-      try {
-        // Chrome's current preview can omit the callback options even though
-        // webmcp-types declares them as required. Preserve cancellation when
-        // supplied and remain compatible with that preview implementation.
-        const signal = options?.signal ?? new AbortController().signal;
-        signal.throwIfAborted();
-        const output = await execute(schema.parse(raw), { signal });
-        signal.throwIfAborted();
-        return result(output);
-      } catch (error) {
-        if (options?.signal?.aborted) throw error;
-        return failure(error);
-      }
-    },
-  };
-}
 
 function graphWith(graph: FlowGraphDoc, changes: Partial<FlowGraphDoc>): FlowGraphDoc {
   return {
@@ -267,7 +220,7 @@ function safeConfigForAgent(value: unknown, key = "", depth = 0): unknown {
 
 export function createFlowWebMcpTools(controller: FlowWebMcpController): WebMCP.ModelContextTool[] {
   return [
-    tool({
+    defineWebMcpTool({
       name: "joey_list_flow_nodes",
       title: "List Joey flow nodes",
       description: "List flow node types available on Joey's current visual flow-builder page, optionally filtered by category.",
@@ -284,14 +237,14 @@ export function createFlowWebMcpTools(controller: FlowWebMcpController): WebMCP.
           type, category: nodeCategory, label, description, inputs, outputs,
         })),
     })),
-    tool({
+    defineWebMcpTool({
       name: "joey_inspect_staged_flow",
       title: "Inspect staged Joey flow",
       description: "Inspect the flow currently visible in Joey's builder. The returned graph can contain user-authored content and is not necessarily saved.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
     }, inspectFlowInput, () => compactGraph(controller.getState())),
-    tool({
+    defineWebMcpTool({
       name: "joey_add_flow_node",
       title: "Stage a Joey flow node",
       description: "Add one node to the visible Joey canvas. This only stages a reversible UI change; the human must review and explicitly Save or Test run it.",
@@ -311,7 +264,7 @@ export function createFlowWebMcpTools(controller: FlowWebMcpController): WebMCP.
       controller.stageGraph(added.graph, added.node.id, `Added ${added.node.type}`);
       return { ok: true, stagedOnly: true, node: added.node, instruction: "Review the canvas, then use Joey's Save or Test run button." };
     }),
-    tool({
+    defineWebMcpTool({
       name: "joey_configure_flow_node",
       title: "Configure a staged Joey node",
       description: "Replace one visible flow node's config after validating it against Joey's node schema. This stages only; the human must explicitly Save or Test run.",
@@ -330,7 +283,7 @@ export function createFlowWebMcpTools(controller: FlowWebMcpController): WebMCP.
       controller.stageGraph(graph, input.nodeId, `Configured ${input.nodeId}`);
       return { ok: true, stagedOnly: true, nodeId: input.nodeId, instruction: "Review the canvas, then use Joey's Save or Test run button." };
     }),
-    tool({
+    defineWebMcpTool({
       name: "joey_connect_flow_nodes",
       title: "Connect staged Joey nodes",
       description: "Connect two nodes on the visible Joey canvas, with an output branch when required. Cycles and invalid handles are rejected. This stages only.",
@@ -350,7 +303,7 @@ export function createFlowWebMcpTools(controller: FlowWebMcpController): WebMCP.
       controller.stageGraph(graph, input.toNodeId, `Connected ${input.fromNodeId} to ${input.toNodeId}`);
       return { ok: true, stagedOnly: true, edge: graph.edges.at(-1), instruction: "Review the canvas, then use Joey's Save or Test run button." };
     }),
-    tool({
+    defineWebMcpTool({
       name: "joey_rename_staged_flow",
       title: "Rename staged Joey flow",
       description: "Change the flow name visible in Joey's builder. This stages only; the human must explicitly Save or Test run.",
@@ -364,7 +317,7 @@ export function createFlowWebMcpTools(controller: FlowWebMcpController): WebMCP.
       controller.stageName(name, `Renamed flow to ${name}`);
       return { ok: true, stagedOnly: true, name, instruction: "Review the name, then use Joey's Save or Test run button." };
     }),
-    tool({
+    defineWebMcpTool({
       name: "joey_validate_staged_flow",
       title: "Validate staged Joey flow",
       description: "Validate the currently visible staged graph without saving or executing it.",

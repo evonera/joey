@@ -42,9 +42,15 @@ function getPlatformIcon(platform: string) {
 export function ReplyCard({
   item,
   onActionComplete,
+  stagedContent,
+  onDiscardStagedEdit,
+  onStagedEditSaved,
 }: {
   item: any;
   onActionComplete: () => void;
+  stagedContent?: string;
+  onDiscardStagedEdit?: () => void;
+  onStagedEditSaved?: (savedContent: string) => boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftContent, setDraftContent] = useState(item.replyDraft?.content || "");
@@ -53,8 +59,9 @@ export function ReplyCard({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setDraftContent(item.replyDraft?.content || "");
-  }, [item.replyDraft?.content]);
+    setDraftContent(stagedContent ?? item.replyDraft?.content ?? "");
+    if (stagedContent !== undefined) setIsEditing(true);
+  }, [item.replyDraft?.content, stagedContent]);
 
   const pendingReply = item.replyDraft && ["pending_review", "failed"].includes(item.replyDraft.status);
   const sendFailed = item.replyDraft?.status === "failed";
@@ -106,10 +113,21 @@ export function ReplyCard({
   const handleSaveEdit = async () => {
     if (!item.replyDraft) return;
     setLoading(true);
-    await updateReplyDraft(item.replyDraft.id, draftContent);
+    const response = await updateReplyDraft(item.replyDraft.id, draftContent);
     setLoading(false);
-    setIsEditing(false);
+    if (response.error) {
+      alert(response.error);
+      return;
+    }
+    const stagedSnapshotCleared = onStagedEditSaved?.(draftContent) ?? true;
+    setIsEditing(!stagedSnapshotCleared);
     onActionComplete();
+  };
+
+  const handleCancelEdit = () => {
+    if (stagedContent !== undefined) onDiscardStagedEdit?.();
+    setDraftContent(item.replyDraft?.content ?? "");
+    setIsEditing(false);
   };
 
   return (
@@ -146,9 +164,13 @@ export function ReplyCard({
           <div className="mt-1 bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-sm text-zinc-700 dark:text-zinc-300 border-l-2 border-zinc-300 dark:border-zinc-600">
             <p className="whitespace-pre-wrap">{item.text}</p>
           </div>
-          <div className="mt-1 text-xs text-zinc-400">
+          <time
+            className="mt-1 block text-xs text-zinc-400"
+            dateTime={new Date(item.createdAt).toISOString()}
+            suppressHydrationWarning
+          >
             {new Date(item.createdAt).toLocaleString()}
-          </div>
+          </time>
         </div>
       </div>
 
@@ -157,14 +179,15 @@ export function ReplyCard({
         <>
           {isEditing ? (
             <div className="space-y-2">
+              {stagedContent !== undefined ? <div role="status" className="flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-2 text-xs text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200">WebMCP staged this edit. Review it before saving.</div> : null}
               <Textarea
                 value={draftContent}
                 onChange={(e) => setDraftContent(e.target.value)}
                 className="min-h-[80px] text-sm"
               />
               <div className="flex gap-2 justify-end">
-                <Button variant="outline" size="sm" onClick={() => setIsEditing(false)}>
-                  Cancel
+                <Button variant="outline" size="sm" onClick={handleCancelEdit}>
+                  {stagedContent !== undefined ? "Discard" : "Cancel"}
                 </Button>
                 <Button size="sm" onClick={handleSaveEdit} disabled={loading}>
                   Save
