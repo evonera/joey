@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 describe("Flow scheduler stale sweep & admission invariants", () => {
   it("anchors cadence to scheduled runs instead of newer webhook or manual activity", async () => {
@@ -290,6 +290,11 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
   });
 
   it("rejects SSRF private and link-local URLs including hostnames resolving to private IPs", async () => {
+    vi.doMock("dns/promises", () => ({
+      lookup: vi.fn(async (hostname: string) => hostname === "rebind.example"
+        ? [{ address: "10.0.0.7", family: 4 }]
+        : [{ address: "142.250.190.144", family: 4 }]),
+    }));
     const { validateSafeUrl } = await import("../nodes/ai/transcribe");
 
     // Dangerous/internal URLs that must be rejected
@@ -305,11 +310,13 @@ describe("Flow scheduler stale sweep & admission invariants", () => {
     await expect(validateSafeUrl("http://172.20.0.5/audio")).rejects.toThrow();
     await expect(validateSafeUrl("ftp://example.com/audio.mp3")).rejects.toThrow();
     await expect(validateSafeUrl("http://service.internal/audio.mp3")).rejects.toThrow();
+    await expect(validateSafeUrl("https://rebind.example/audio.mp3")).rejects.toThrow("resolves to private IP");
 
     // Safe public URLs that must be allowed
     const parsed = await validateSafeUrl("https://storage.googleapis.com/bucket/audio.mp3");
     expect(parsed.url.hostname).toBe("storage.googleapis.com");
-    expect(parsed.ip).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    expect(parsed.ip).toBe("142.250.190.144");
+    vi.doUnmock("dns/promises");
   });
 
   it("fences execution when run is transitioned out of running by stale recovery", () => {
