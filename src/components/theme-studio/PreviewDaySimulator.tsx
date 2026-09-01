@@ -151,7 +151,7 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
       ) : (
         <div className="space-y-6">
           {(() => {
-            const allCompliant = simulatedPackages.every((p) => p.provenance.isCompliant);
+            const allCompliant = simulatedPackages.length > 0 && simulatedPackages.every((p) => p.provenance.isCompliant);
             return (
               <div
                 className={`flex items-center justify-between p-4 rounded-xl text-xs border ${
