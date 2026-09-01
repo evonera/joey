@@ -252,6 +252,7 @@ export async function synthesizeAndAllocatePackages(
         caption,
         hashtags,
         renderedAssetUrls: [],
+        metrics: { failurePhase: "render_pending" },
         provenance: {
           clusterId: cluster.id,
           sourcesCount: members.length,

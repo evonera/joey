@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { contentPackages, themeSources } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { pollAndIngestSource } from "./source-poller";
 import { clusterSourceItems } from "./story-clusterer";
 import { synthesizeAndAllocatePackages, PackageGenerationResult } from "./angle-synthesizer";
@@ -20,7 +20,11 @@ export interface PipelineExecutionReport {
   timestamp: string;
 }
 
-export function shouldRetryFailedRender(renderedAssetUrls: unknown, metrics: unknown): boolean {
+export function shouldRetryPackageRender(
+  status: string,
+  renderedAssetUrls: unknown,
+  metrics: unknown,
+): boolean {
   const assets = Array.isArray(renderedAssetUrls) ? renderedAssetUrls : [];
   const hasPublicAsset = assets.some((asset) => (
     Boolean(asset) && typeof asset === "object" && "url" in asset
@@ -28,7 +32,11 @@ export function shouldRetryFailedRender(renderedAssetUrls: unknown, metrics: unk
   ));
   const failurePhase = metrics && typeof metrics === "object" && !Array.isArray(metrics)
     && "failurePhase" in metrics ? metrics.failurePhase : undefined;
-  return !hasPublicAsset && failurePhase === "render";
+  if (hasPublicAsset) return false;
+  if (status === "pending_review") {
+    return failurePhase === undefined || failurePhase === null || failurePhase === "render_pending" || failurePhase === "render";
+  }
+  return status === "failed" && failurePhase === "render";
 }
 
 /**
@@ -67,13 +75,13 @@ export async function runEditorialPipeline(
     where: and(
       eq(contentPackages.tenantId, tenantId),
       eq(contentPackages.themePageId, themePageId),
-      eq(contentPackages.status, "failed"),
+      inArray(contentPackages.status, ["pending_review", "failed"]),
     ),
-    columns: { id: true, renderedAssetUrls: true, metrics: true },
+    columns: { id: true, status: true, renderedAssetUrls: true, metrics: true },
     limit: 50,
   });
   const retryPackageIds = failedPackages
-    .filter((pkg) => shouldRetryFailedRender(pkg.renderedAssetUrls, pkg.metrics))
+    .filter((pkg) => shouldRetryPackageRender(pkg.status, pkg.renderedAssetUrls, pkg.metrics))
     .map((pkg) => pkg.id);
   const packageIdsToRender = [...new Set([...retryPackageIds, ...packageResult.packageIds])];
   let packagesRendered = 0;
