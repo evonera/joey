@@ -17,6 +17,7 @@ import {
   type Connection,
   type NodeProps,
   type NodeTypes,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Link from "next/link";
@@ -25,7 +26,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Play, Save, CheckCircle2, XCircle, Rocket, Pause, BookMarked,
   Clock3, Zap, Database, Filter, ArrowDownUp, Copy, GitBranch, Brain,
-  FileText, Bell, Repeat2, ShieldCheck, Globe, History,
+  FileText, Bell, Repeat2, ShieldCheck, Globe, History, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,9 @@ import {
 import { getNodeMeta as getNode } from "@/lib/flows/catalog";
 import type { FlowGraphDoc } from "@/lib/flows/types";
 import { catalog } from "@/lib/flows/catalog";
+import { createFlowWebMcpTools } from "@/lib/flows/webmcp";
+import { builderStateToGraphDoc } from "@/lib/flows/builder-state";
+import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
 import { ZodForm } from "./zod-form";
 import { RunsPanel } from "./runs-panel";
 import {
@@ -65,7 +69,7 @@ function FlowNode({ data, selected }: NodeProps) {
   const outputs = def?.outputs ?? [];
   return (
     <div
-      className={`rounded-xl border-2 bg-white dark:bg-zinc-900 px-3 py-2 shadow-md min-w-[150px] ${accent} ${selected ? "ring-2 ring-indigo-400" : ""}`}
+      className={`min-w-[150px] rounded-xl border-2 bg-card px-3 py-2 text-card-foreground shadow-md ${accent} ${selected ? "ring-2 ring-indigo-400" : ""}`}
     >
       {(def?.inputs.length ?? 0) > 0 && <Handle type="target" position={Position.Left} />}
       <div className="flex items-center gap-2">
@@ -93,22 +97,41 @@ function FlowNode({ data, selected }: NodeProps) {
 
 const nodeTypes: NodeTypes = { flowNode: FlowNode };
 
+function graphNodeToReactFlow(node: FlowGraphDoc["nodes"][number]): Node {
+  const definition = getNode(node.type);
+  return {
+    id: node.id,
+    type: "flowNode",
+    position: node.position,
+    data: {
+      label: definition?.label ?? node.type,
+      nodeType: node.type,
+      category: definition?.category ?? "logic",
+      config: node.config,
+    },
+  };
+}
+
+function graphEdgeToReactFlow(edge: FlowGraphDoc["edges"][number]): Edge {
+  return {
+    id: `${edge.from}->${edge.to}:${edge.branch ?? "default"}`,
+    source: edge.from,
+    target: edge.to,
+    sourceHandle: edge.branch,
+    animated: true,
+    markerEnd: { type: MarkerType.ArrowClosed },
+  };
+}
+
 export function FlowBuilder({ flow }: { flow: FlowRow }) {
   const router = useRouter();
   const initialGraph = (flow.graph ?? { nodes: [], edges: [] }) as FlowGraphDoc;
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState(
-    initialGraph.nodes.map((n) => ({
-      id: n.id, type: "flowNode", position: n.position,
-      data: { label: getNode(n.type)?.label ?? n.type, nodeType: n.type, category: getNode(n.type)?.category ?? "logic", config: n.config },
-    })) as Node[],
+    initialGraph.nodes.map(graphNodeToReactFlow),
   );
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(
-    initialGraph.edges.map((e) => ({
-      id: `${e.from}->${e.to}${e.branch ?? ""}`, source: e.from, target: e.to,
-      sourceHandle: e.branch, animated: true,
-      markerEnd: { type: MarkerType.ArrowClosed },
-    })) as Edge[],
+    initialGraph.edges.map(graphEdgeToReactFlow),
   );
 
   const [name, setName] = useState(flow.name);
@@ -121,27 +144,71 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   const [revealedWebhookSecret, setRevealedWebhookSecret] = useState<string | null>(null);
   const webhookUrl = `/api/webhooks/flows/${flow.id}`;
   const [publishMeta, setPublishMeta] = useState({ name: "", description: "", category: "" });
+  const [agentChangeCount, setAgentChangeCount] = useState(0);
+  const [lastAgentChange, setLastAgentChange] = useState<string | null>(null);
   const idCounter = useRef(1);
+  const webMcpNodeCounter = useRef(1);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const reactFlowRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
+  const graphRef = useRef<FlowGraphDoc>(initialGraph);
+  const nameRef = useRef(name);
+  graphRef.current = builderStateToGraphDoc(rfNodes, rfEdges);
+  nameRef.current = name;
 
   const selectedNode = useMemo(() => rfNodes.find((n) => n.id === selectedId), [rfNodes, selectedId]);
   const selectedDef = selectedNode ? getNode((selectedNode.data as { nodeType: string }).nodeType) : undefined;
 
   function toGraphDoc(): FlowGraphDoc {
-    return {
-      nodes: rfNodes.map((n) => ({
-        id: n.id,
-        type: (n.data as { nodeType: string }).nodeType,
-        config: ((n.data as { config?: Record<string, unknown> }).config ?? {}),
-        position: n.position,
-      })),
-      edges: rfEdges.map((e) => ({
-        from: e.source,
-        to: e.target,
-        ...(e.sourceHandle && ["true", "false"].includes(e.sourceHandle) ? { branch: e.sourceHandle } : {}),
-      })),
-    };
+    return graphRef.current;
   }
+
+  const stageAgentGraph = useCallback((graph: FlowGraphDoc, selectedNodeId: string, summary: string) => {
+    graphRef.current = graph;
+    setRfNodes(graph.nodes.map(graphNodeToReactFlow));
+    setRfEdges(graph.edges.map(graphEdgeToReactFlow));
+    setSelectedId(selectedNodeId);
+    setAgentChangeCount((count) => count + 1);
+    setLastAgentChange(summary);
+    requestAnimationFrame(() => {
+      void reactFlowRef.current?.fitView({ padding: 0.25, duration: 300 });
+    });
+  }, [setRfEdges, setRfNodes]);
+
+  const stageAgentName = useCallback((nextName: string, summary: string) => {
+    nameRef.current = nextName;
+    setName(nextName);
+    setAgentChangeCount((count) => count + 1);
+    setLastAgentChange(summary);
+  }, []);
+
+  const nextWebMcpNodeId = useCallback(() => {
+    let id: string;
+    do {
+      id = `wmcp-${Date.now().toString(36)}-${webMcpNodeCounter.current++}`;
+    } while (graphRef.current.nodes.some((node) => node.id === id));
+    return id;
+  }, []);
+
+  const validateStagedGraph = useCallback(async (graph: FlowGraphDoc, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const validation = await validateFlowGraph(graph);
+    signal.throwIfAborted();
+    return validation;
+  }, []);
+
+  const webMcpTools = useMemo(() => createFlowWebMcpTools({
+    getState: () => ({
+      id: flow.id,
+      name: nameRef.current,
+      status: flow.status,
+      graph: graphRef.current,
+    }),
+    stageGraph: stageAgentGraph,
+    stageName: stageAgentName,
+    nextNodeId: nextWebMcpNodeId,
+    validate: validateStagedGraph,
+  }), [flow.id, flow.status, nextWebMcpNodeId, stageAgentGraph, stageAgentName, validateStagedGraph]);
+  const webMcpAvailable = useWebMcpTools(webMcpTools);
 
   const onConnect = useCallback(
     (connection: Connection) =>
@@ -193,6 +260,8 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
         toast.error(res.error ?? res.issues!.filter(i=>i.severity==="error").map(i=>i.message).join("\n"));
       } else {
         toast.success("Saved");
+        setAgentChangeCount(0);
+        setLastAgentChange(null);
         router.refresh();
       }
     } finally { setBusy(false); }
@@ -206,6 +275,8 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
         toast.error(saveRes.error ?? saveRes.issues!.map(i=>i.message).join("\n"));
         return;
       }
+      setAgentChangeCount(0);
+      setLastAgentChange(null);
       const res = await runFlow(flow.id);
       if (res.runId) {
         toast.success("Run finished — opening runs panel");
@@ -313,11 +384,22 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
         <div className="flex items-center gap-2 border-b px-4 py-2.5">
           <Input value={name} onChange={(e)=>setName(e.target.value)} className="h-8 w-56 text-sm font-semibold border-none shadow-none px-1" />
           <Badge variant={flow.status === "active" ? "default" : "secondary"} className="text-[10px]">{flow.status}</Badge>
+          {webMcpAvailable && (
+            <Badge variant="outline" className="gap-1 border-indigo-300 text-[10px] text-indigo-700 dark:border-indigo-800 dark:text-indigo-300">
+              <Sparkles className="h-3 w-3" />WebMCP ready
+            </Badge>
+          )}
           <div className="ml-auto flex items-center gap-1.5">
             <Button size="sm" variant="outline" disabled={busy} onClick={handleValidate}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>Validate</Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={handleSave}><Save className="mr-1 h-3.5 w-3.5"/>Save</Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={handleTestRun}><Play className="mr-1 h-3.5 w-3.5"/>Test run</Button>
-            <Button size="sm" variant={flow.status === "active" ? "secondary" : "default"} disabled={busy} onClick={handleToggleActive}>
+            <Button
+              size="sm"
+              variant={flow.status === "active" ? "secondary" : "default"}
+              disabled={busy || agentChangeCount > 0}
+              title={agentChangeCount > 0 ? "Save the staged agent changes before changing activation" : undefined}
+              onClick={handleToggleActive}
+            >
               {flow.status === "active" ? <><Pause className="mr-1 h-3.5 w-3.5"/>Pause</> : <><Rocket className="mr-1 h-3.5 w-3.5"/>Activate</>}
             </Button>
             <Dialog open={webhookOpen} onOpenChange={(open) => { setWebhookOpen(open); if (!open) setRevealedWebhookSecret(null); }}>
@@ -368,6 +450,19 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
           </div>
         </div>
 
+        {agentChangeCount > 0 && (
+          <div
+            role="status"
+            data-testid="webmcp-staged-banner"
+            className="flex items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-xs text-indigo-950 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"
+          >
+            <Sparkles className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-medium">WebMCP staged {agentChangeCount} {agentChangeCount === 1 ? "change" : "changes"}.</span>
+            <span className="truncate text-indigo-700 dark:text-indigo-300">{lastAgentChange}</span>
+            <span className="ml-auto shrink-0">Review the canvas, then Save or Test run.</span>
+          </div>
+        )}
+
         <div className="relative min-h-0 flex-1" ref={wrapperRef}>
           <ReactFlow
             nodes={rfNodes}
@@ -375,6 +470,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onInit={(instance) => { reactFlowRef.current = instance; }}
             nodeTypes={nodeTypes}
             onNodeClick={(_, node) => setSelectedId(node.id)}
             onPaneClick={() => setSelectedId(null)}
