@@ -32,6 +32,27 @@ interface ThemePageWizardProps {
   availableFormats: FormatItem[];
 }
 
+const MIX_PRESETS = [
+  {
+    id: "growth",
+    title: "Growth Mix ⭐",
+    desc: "2 News Cards + 1 Carousel",
+    sub: "A varied, production-ready mix for reach, saves, and shares",
+  },
+  {
+    id: "authority",
+    title: "Authority Mix",
+    desc: "2 Carousels Daily",
+    sub: "Best for high saves, shares, and educational authority",
+  },
+  {
+    id: "news",
+    title: "News Digest",
+    desc: "2 Breaking News Cards",
+    sub: "Best for fast turnaround sports and tech curation",
+  },
+] as const;
+
 export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
   const router = useRouter();
   const [step, setStep] = React.useState(1);
@@ -78,14 +99,14 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
     }
 
     setLoading(true);
-    let createdPageId: string | null = null;
+    let createdPageId: string | undefined;
     try {
       // 1. Create Theme Page
       const pageRes = await createThemePage({
         name: name.trim(),
-        niche: niche.trim(),
-        voice: `Insightful, data-backed analysis tailored for ${niche}.`,
-        audience: "Niche community professionals and enthusiasts.",
+        niche: niche.trim() || undefined,
+        audience: audience.trim() || undefined,
+        voice: voice.trim() || undefined,
         brandKit: {
           primaryColor,
           accentColor,
@@ -100,59 +121,44 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
       const pageId = pageRes.page.id;
       createdPageId = pageId;
 
+      const requireSuccess = (result: { error?: string }, operation: string) => {
+        if (result.error) throw new Error(`${operation}: ${result.error}`);
+      };
+
       // 2. Add Sources
       for (const src of sources) {
         if (src.url.trim()) {
-          const srcRes = await createThemeSource({
+          const result = await createThemeSource({
             themePageId: pageId,
             name: src.name.trim() || "Source Feed",
             sourceType: src.type,
             url: src.url.trim(),
-            rightsCategory: "cc_by",
+            rightsCategory: "unknown",
           });
-          if (srcRes.error) {
-            throw new Error(`Failed to configure source "${src.name}": ${srcRes.error}`);
-          }
+          requireSuccess(result, `Could not add source "${src.name || src.url}"`);
         }
       }
 
       // 3. Add Slots based on preset
-      const squareCard = availableFormats.find((f) => f.slug === "instagram-card-1080") || availableFormats[0];
-      const carousel = availableFormats.find((f) => f.slug === "instagram-carousel-1080") || availableFormats[0];
-      const video = availableFormats.find((f) => f.slug === "instagram-reel-9x16") || availableFormats[0];
-
+      const productionFormats = availableFormats.filter((format) => format.mediaType !== "video");
+      const squareCard = productionFormats.find((f) => f.slug === "instagram-card-1080") || productionFormats[0];
+      const carousel = productionFormats.find((f) => f.slug === "instagram-carousel-1080") || productionFormats[0];
+      if (!squareCard || !carousel) throw new Error("Theme Studio has no production-ready image formats configured");
       if (selectedPreset === "growth") {
-        if (squareCard) {
-          const r = await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Daily News Card", priority: 0 });
-          if (r.error) throw new Error(`Failed to create slot: ${r.error}`);
-        }
-        if (carousel) {
-          const r = await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "5-Slide Deep Dive Carousel", priority: 1 });
-          if (r.error) throw new Error(`Failed to create slot: ${r.error}`);
-        }
-        if (video) {
-          const r = await createThemeSlot({ themePageId: pageId, formatId: video.id, label: "9:16 Short Breakdown Video", priority: 2 });
-          if (r.error) throw new Error(`Failed to create slot: ${r.error}`);
-        }
+        if (squareCard) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Daily News Card", priority: 0 }), "Could not add Daily News Card slot");
+        if (carousel) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "5-Slide Deep Dive Carousel", priority: 1 }), "Could not add carousel slot");
+        if (squareCard) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Evening News Card", priority: 2 }), "Could not add Evening News Card slot");
       } else if (selectedPreset === "authority") {
-        if (carousel) {
-          const r1 = await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Morning Carousel Playbook", priority: 0 });
-          if (r1.error) throw new Error(`Failed to create slot: ${r1.error}`);
-          const r2 = await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Evening Strategy Breakdown", priority: 1 });
-          if (r2.error) throw new Error(`Failed to create slot: ${r2.error}`);
-        }
+        if (carousel) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Morning Carousel Playbook", priority: 0 }), "Could not add morning carousel slot");
+        if (carousel) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Evening Strategy Breakdown", priority: 1 }), "Could not add evening carousel slot");
       } else {
-        if (squareCard) {
-          const r1 = await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Morning Flash News", priority: 0 });
-          if (r1.error) throw new Error(`Failed to create slot: ${r1.error}`);
-          const r2 = await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Evening Recap Card", priority: 1 });
-          if (r2.error) throw new Error(`Failed to create slot: ${r2.error}`);
-        }
+        if (squareCard) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Morning Flash News", priority: 0 }), "Could not add morning news slot");
+        if (squareCard) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Evening Recap Card", priority: 1 }), "Could not add evening news slot");
       }
 
       // 4. Create Default Visual Template
       if (squareCard) {
-        const tmplRes = await createThemeTemplate({
+        const result = await createThemeTemplate({
           themePageId: pageId,
           name: `${name} Official Card Template`,
           formatId: squareCard.id,
@@ -166,27 +172,14 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
             bodyTemplate: "{{summary}}",
           },
         });
-        if (tmplRes.error) {
-          throw new Error(`Failed to create default template: ${tmplRes.error}`);
-        }
+        requireSuccess(result, "Could not create the default visual template");
       }
 
       toast.success("Theme page created successfully!");
       router.push(`/theme-studio/${pageId}`);
     } catch (err: any) {
-      let rollbackError: string | null = null;
-      if (createdPageId) {
-        try {
-          const delRes = await deleteThemePage(createdPageId);
-          if (delRes?.error) {
-            rollbackError = delRes.error;
-          }
-        } catch (delErr: any) {
-          rollbackError = delErr.message || "Failed to rollback partial theme page";
-        }
-      }
-      const baseMsg = err.message || "Failed to create theme page";
-      toast.error(rollbackError ? `${baseMsg} (Rollback warning: ${rollbackError})` : baseMsg);
+      if (createdPageId) await deleteThemePage(createdPageId);
+      toast.error(err.message || "Failed to create theme page");
     } finally {
       setLoading(false);
     }
@@ -355,30 +348,13 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              {
-                id: "growth",
-                title: "Growth Mix ⭐",
-                desc: "1 News Card + 1 Carousel + 1 Short Video",
-                sub: "Best for rapid follower growth and algorithm discovery",
-              },
-              {
-                id: "authority",
-                title: "Authority Mix",
-                desc: "2 Carousels Daily",
-                sub: "Best for high saves, shares, and educational authority",
-              },
-              {
-                id: "news",
-                title: "News Digest",
-                desc: "2 Breaking News Cards",
-                sub: "Best for fast turnaround sports & tech curation",
-              },
-            ].map((p) => (
-              <div
+            {MIX_PRESETS.map((p) => (
+              <button
+                type="button"
                 key={p.id}
-                onClick={() => setSelectedPreset(p.id as any)}
-                className={`p-4 border-2 rounded-2xl cursor-pointer transition-all ${
+                onClick={() => setSelectedPreset(p.id)}
+                aria-pressed={selectedPreset === p.id}
+                className={`p-4 border-2 rounded-2xl cursor-pointer text-left transition-all ${
                   selectedPreset === p.id
                     ? "border-primary bg-primary/5 shadow-md"
                     : "border-border hover:border-muted-foreground/40 bg-card"
@@ -387,7 +363,7 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
                 <h3 className="font-bold text-sm">{p.title}</h3>
                 <p className="text-xs font-semibold text-primary mt-1">{p.desc}</p>
                 <p className="text-[11px] text-muted-foreground mt-2">{p.sub}</p>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -399,7 +375,7 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
           <div>
             <h2 className="text-xl font-bold">Set Up Your Brand Style</h2>
             <p className="text-xs text-muted-foreground mt-1">
-              Deterministic styling applied to all generated cards, carousels, and videos.
+              Deterministic styling applied to all generated cards and carousels.
             </p>
           </div>
 

@@ -7,13 +7,12 @@ import {
   IconPhoto, 
   IconCards, 
   IconVideo, 
-  IconGripVertical,
   IconBrandInstagram,
   IconBrandTiktok,
   IconBrandX,
   IconLoader2
 } from "@tabler/icons-react";
-import { createThemeSlot, deleteThemeSlot, reorderThemeSlots } from "@/app/actions/theme-slots";
+import { createThemeSlot, deleteThemeSlot } from "@/app/actions/theme-slots";
 import { toast } from "sonner";
 
 interface SlotItem {
@@ -51,9 +50,10 @@ interface DailyMixSchedulerProps {
 }
 
 export function DailyMixScheduler({ themePageId, initialSlots, availableFormats }: DailyMixSchedulerProps) {
+  const supportedFormats = availableFormats.filter((format) => format.mediaType !== "video");
   const [slots, setSlots] = React.useState<SlotItem[]>(initialSlots);
   const [isAdding, setIsAdding] = React.useState(false);
-  const [selectedFormatId, setSelectedFormatId] = React.useState(availableFormats[0]?.id || "");
+  const [selectedFormatId, setSelectedFormatId] = React.useState(supportedFormats[0]?.id || "");
   const [slotLabel, setSlotLabel] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -117,6 +117,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
           </p>
         </div>
         <button
+          type="button"
           onClick={() => setIsAdding(true)}
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors shadow-sm self-start"
         >
@@ -138,7 +139,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
                 required
               >
-                {availableFormats.map((fmt) => (
+                {supportedFormats.map((fmt) => (
                   <option key={fmt.id} value={fmt.id}>
                     {fmt.name} ({fmt.platform} · {fmt.mediaType} · {fmt.aspectRatio || "1:1"})
                   </option>
@@ -185,9 +186,10 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
           </div>
           <h3 className="text-sm font-semibold">No slots in daily mix yet</h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1 mb-4">
-            Add cards, carousels, or video slots to define your daily recipe.
+            Add cards or carousels to define your daily recipe. Video recipes will become available with the production MP4 worker.
           </p>
           <button
+            type="button"
             onClick={() => setIsAdding(true)}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg"
           >
@@ -213,6 +215,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
                     </span>
                   </div>
                   <button
+                    type="button"
                     onClick={() => handleDeleteSlot(slot.id)}
                     className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
                     title="Remove slot"

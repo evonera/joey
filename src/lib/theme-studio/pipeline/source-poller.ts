@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { sourceItems, themeSources } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { hashCanonicalUrl, hashContentBody, checkItemDuplicate } from "./deduplicator";
+import { outboundRequest } from "@/lib/flows/outbound-request";
 
 export interface NormalizedFeedItem {
   title: string;
@@ -13,13 +13,28 @@ export interface NormalizedFeedItem {
   metadata?: Record<string, unknown>;
 }
 
+function publicReferenceUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length > 4_096) return undefined;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parsedDate(value: unknown): Date {
+  const result = typeof value === "string" || typeof value === "number" ? new Date(value) : new Date();
+  return Number.isNaN(result.getTime()) ? new Date() : result;
+}
+
 /**
  * Parses simple RSS / Atom XML into normalized feed items.
  */
 export function parseRssXml(xml: string, defaultRights: string = "unknown"): NormalizedFeedItem[] {
   const items: NormalizedFeedItem[] = [];
 
-  const itemMatches = xml.match(/<item[\s\S]*?<\/item>/gi) || xml.match(/<entry[\s\S]*?<\/entry>/gi) || [];
+  const itemMatches = (xml.match(/<item[\s\S]*?<\/item>/gi) || xml.match(/<entry[\s\S]*?<\/entry>/gi) || []).slice(0, 100);
 
   for (const itemXml of itemMatches) {
     const titleMatch = itemXml.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
@@ -33,17 +48,16 @@ export function parseRssXml(xml: string, defaultRights: string = "unknown"): Nor
                       itemXml.match(/<updated[^>]*>([\s\S]*?)<\/updated>/i);
 
     const title = titleMatch ? titleMatch[1].trim() : "Untitled";
-    const url = linkMatch ? (linkMatch[1] || "").trim() : "";
+    const url = publicReferenceUrl(linkMatch ? (linkMatch[1] || "").trim() : "");
     const body = descMatch ? descMatch[1].replace(/<[^>]*>/g, " ").trim() : title;
-    const parsedDate = dateMatch ? new Date(dateMatch[1].trim()) : null;
-    const publishedAt = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : undefined;
+    const publishedAt = dateMatch ? new Date(dateMatch[1].trim()) : new Date();
 
     if (title && url) {
       items.push({
-        title,
-        body,
+        title: title.slice(0, 500),
+        body: body.slice(0, 20_000),
         url,
-        publishedAt,
+        publishedAt: isNaN(publishedAt.getTime()) ? new Date() : publishedAt,
         rightsCategory: defaultRights,
       });
     }
@@ -55,14 +69,14 @@ export function parseRssXml(xml: string, defaultRights: string = "unknown"): Nor
 /**
  * Ingests a single theme source, applies deduplication, and persists new items.
  */
-export async function pollAndIngestSource(sourceId: string): Promise<{
+export async function pollAndIngestSource(tenantId: string, sourceId: string, signal?: AbortSignal): Promise<{
   sourceId: string;
   ingestedCount: number;
   duplicateCount: number;
   errors?: string[];
 }> {
   const source = await db.query.themeSources.findFirst({
-    where: eq(themeSources.id, sourceId),
+    where: and(eq(themeSources.id, sourceId), eq(themeSources.tenantId, tenantId)),
   });
 
   if (!source || !source.isActive) {
@@ -74,76 +88,62 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
 
   try {
     if (source.sourceType === "rss") {
-      const res = await fetch(source.url, {
+      const res = await outboundRequest(source.url, {
         headers: { "User-Agent": "JoeyThemeStudioBot/1.0 (+https://eve.dev)" },
+        signal,
+        timeoutMs: 20_000,
+        maxBytes: 2 * 1024 * 1024,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      const xml = await res.text();
+      if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`);
+      const xml = res.buffer.toString("utf8");
       items.push(...parseRssXml(xml, source.rightsCategory));
     } else if (source.sourceType === "reddit") {
       const cleanSub = source.url.replace(/^https?:\/\/(?:www\.)?reddit\.com\/r\//, "").replace(/^r\//, "").replace(/\/.*$/, "");
-      const res = await fetch(`https://www.reddit.com/r/${cleanSub}/hot.json?limit=25`, {
+      if (!/^[A-Za-z0-9_]{2,21}$/.test(cleanSub)) throw new Error("Invalid subreddit name");
+      const res = await outboundRequest(`https://www.reddit.com/r/${encodeURIComponent(cleanSub)}/hot.json?limit=25`, {
         headers: { "User-Agent": "JoeyThemeStudioBot/1.0" },
+        signal,
+        timeoutMs: 20_000,
+        maxBytes: 2 * 1024 * 1024,
       });
-      if (!res.ok) throw new Error(`Reddit HTTP ${res.status}`);
-      const data = await res.json();
-      const posts = data?.data?.children || [];
+      if (res.status < 200 || res.status >= 300) throw new Error(`Reddit HTTP ${res.status}`);
+      const data = JSON.parse(res.buffer.toString("utf8"));
+      const posts = Array.isArray(data?.data?.children) ? data.data.children.slice(0, 25) : [];
       for (const p of posts) {
         const post = p.data;
         if (post && !post.stickied) {
           items.push({
-            title: post.title || "",
-            body: post.selftext || post.title || "",
+            title: String(post.title || "").slice(0, 500),
+            body: String(post.selftext || post.title || "").slice(0, 20_000),
             url: `https://reddit.com${post.permalink || ""}`,
-            publishedAt: new Date(post.created_utc * 1000),
+            publishedAt: parsedDate(Number(post.created_utc) * 1000),
             rightsCategory: source.rightsCategory,
             metadata: { score: post.score, author: post.author, numComments: post.num_comments },
           });
         }
       }
     } else if (source.sourceType === "http") {
-      const res = await fetch(source.url, {
+      const res = await outboundRequest(source.url, {
         headers: { "User-Agent": "JoeyThemeStudioBot/1.0" },
+        signal,
+        timeoutMs: 20_000,
+        maxBytes: 2 * 1024 * 1024,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const rawArray = Array.isArray(json) ? json : json.articles || json.data || json.items || [];
-      for (const row of rawArray) {
-        if (row.title) {
-          const rawDate = row.publishedAt || row.published_at || row.date;
-          const parsedHttpDate = rawDate ? new Date(rawDate) : null;
-          const publishedAt = parsedHttpDate && !isNaN(parsedHttpDate.getTime()) ? parsedHttpDate : undefined;
-
-          let itemUrl = row.url || row.link;
-          if (!itemUrl) {
-            try {
-              const parsed = new URL(source.url);
-              parsed.hash = "";
-              if (row.id) {
-                parsed.searchParams.set("item_id", String(row.id));
-              } else {
-                const hash = createHash("sha256")
-                  .update(row.title + (row.description || row.body || row.summary || ""))
-                  .digest("hex")
-                  .slice(0, 16);
-                parsed.searchParams.set("item_hash", hash);
-              }
-              itemUrl = parsed.toString();
-            } catch {
-              const cleanBase = source.url.split("#")[0];
-              const sep = cleanBase.includes("?") ? "&" : "?";
-              const suffix = row.id
-                ? `item_id=${encodeURIComponent(String(row.id))}`
-                : `item_hash=${createHash("sha256").update(row.title + (row.description || row.body || row.summary || "")).digest("hex").slice(0, 16)}`;
-              itemUrl = `${cleanBase}${sep}${suffix}`;
-            }
-          }
-
+      if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`);
+      const json = JSON.parse(res.buffer.toString("utf8"));
+      const candidateArray = Array.isArray(json) ? json : json?.articles || json?.data || json?.items || [];
+      const rawArray = Array.isArray(candidateArray) ? candidateArray.slice(0, 100) : [];
+      for (const candidate of rawArray) {
+        const row = candidate && typeof candidate === "object" && !Array.isArray(candidate)
+          ? candidate as Record<string, unknown>
+          : {};
+        const itemUrl = publicReferenceUrl(row.url ?? row.link ?? source.url);
+        if (typeof row.title === "string" && row.title.trim() && itemUrl) {
           items.push({
-            title: row.title,
-            body: row.description || row.body || row.summary || row.title,
+            title: row.title.slice(0, 500),
+            body: String(row.description || row.body || row.summary || row.title).slice(0, 20_000),
             url: itemUrl,
-            publishedAt,
+            publishedAt: parsedDate(row.publishedAt),
             rightsCategory: source.rightsCategory,
           });
         }
@@ -157,7 +157,10 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
   let duplicateCount = 0;
 
   for (const item of items) {
-    const dupCheck = await checkItemDuplicate(source.themePageId, item.url, item.body);
+    signal?.throwIfAborted();
+    const freshnessCutoff = Date.now() - source.freshnessWindowHours * 60 * 60 * 1000;
+    if (item.publishedAt && item.publishedAt.getTime() < freshnessCutoff) continue;
+    const dupCheck = await checkItemDuplicate(tenantId, source.themePageId, item.url, item.body);
     if (dupCheck.isDuplicate) {
       duplicateCount++;
       continue;
@@ -166,7 +169,7 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
     const urlHash = hashCanonicalUrl(item.url);
     const bodyHash = hashContentBody(item.body);
 
-    await db.insert(sourceItems).values({
+    const inserted = await db.insert(sourceItems).values({
       tenantId: source.tenantId,
       themePageId: source.themePageId,
       sourceId: source.id,
@@ -175,18 +178,19 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
       url: item.url,
       canonicalUrlHash: urlHash,
       contentHash: bodyHash,
-      publishedAt: item.publishedAt || null,
+      publishedAt: item.publishedAt || new Date(),
       rightsCategory: item.rightsCategory || source.rightsCategory || "unknown",
       metadata: item.metadata || {},
       status: "raw",
-    });
+    }).onConflictDoNothing().returning({ id: sourceItems.id });
 
-    ingestedCount++;
+    if (inserted.length > 0) ingestedCount++;
+    else duplicateCount++;
   }
 
   await db.update(themeSources)
     .set({ lastPolledAt: new Date(), updatedAt: new Date() })
-    .where(eq(themeSources.id, source.id));
+    .where(and(eq(themeSources.id, source.id), eq(themeSources.tenantId, tenantId)));
 
   return {
     sourceId,

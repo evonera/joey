@@ -44,7 +44,7 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
     setBusyId(packageId);
     try {
       const result = await publishThemePackage(packageId);
-      if (result.status === "failed") throw new Error(result.error || "Publishing failed");
+      if (!result.success) throw new Error(result.error || "Publishing failed");
       toast.success(result.status === "published" ? "Package published" : "Package queued with Zernio");
       router.refresh();
     } catch (error) {

@@ -24,8 +24,6 @@ const TRACKING_PARAMS = new Set([
 export function normalizeCanonicalUrl(rawUrl: string): string {
   try {
     const parsed = new URL(rawUrl.trim());
-    parsed.protocol = parsed.protocol.toLowerCase();
-    parsed.hostname = parsed.hostname.toLowerCase();
     parsed.hash = ""; // remove anchor
 
     // Remove tracking query parameters
@@ -38,6 +36,8 @@ export function normalizeCanonicalUrl(rawUrl: string): string {
     cleanedParams.sort();
     parsed.search = cleanedParams.toString();
 
+    parsed.protocol = parsed.protocol.toLowerCase();
+    parsed.hostname = parsed.hostname.toLowerCase();
     let clean = parsed.toString();
     if (clean.endsWith("/") && parsed.pathname !== "/") {
       clean = clean.slice(0, -1);
@@ -82,6 +82,7 @@ export function hashContentBody(body: string): string {
  * Checks if an item is a duplicate in the database by URL hash or content hash.
  */
 export async function checkItemDuplicate(
+  tenantId: string,
   themePageId: string,
   url?: string,
   body?: string
@@ -93,6 +94,7 @@ export async function checkItemDuplicate(
     const existingByUrl = await db.query.sourceItems.findFirst({
       where: and(
         eq(sourceItems.themePageId, themePageId),
+        eq(sourceItems.tenantId, tenantId),
         eq(sourceItems.canonicalUrlHash, urlHash)
       ),
     });
@@ -105,6 +107,7 @@ export async function checkItemDuplicate(
     const existingByContent = await db.query.sourceItems.findFirst({
       where: and(
         eq(sourceItems.themePageId, themePageId),
+        eq(sourceItems.tenantId, tenantId),
         eq(sourceItems.contentHash, bodyHash)
       ),
     });

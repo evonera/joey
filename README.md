@@ -17,7 +17,7 @@ Joey is a multi-tenant, autonomous social media management platform built on Nex
 ## Product documentation
 
 - [WebMCP tools](docs/webmcp.md): page-scoped tools agents can use and their human-approval boundaries.
-- [Theme Studio product contract](docs/theme-studio.md): planned multimodal theme-page automation built on Joey's existing flow platform.
+- [Theme Studio implementation guide](docs/theme-studio.md): the current static-card editorial pipeline, its Eve/Zernio boundaries, safeguards, and remaining roadmap.
 
 ## Tech Stack
 - **Framework**: Next.js 16 (App Router)

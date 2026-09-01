@@ -14,7 +14,13 @@ export const themeStudioRunNode = defineNode({
     ctx.signal?.throwIfAborted();
     await ctx.heartbeat?.();
     const { runEditorialPipeline } = await import("@/lib/theme-studio/pipeline/orchestrator");
-    const report = await runEditorialPipeline(config.themePageId);
+    const report = await runEditorialPipeline(
+      ctx.tenantId,
+      config.themePageId,
+      ctx.runId,
+      ctx.signal,
+      ctx.heartbeat,
+    );
     await ctx.heartbeat?.();
     return { output: report };
   },

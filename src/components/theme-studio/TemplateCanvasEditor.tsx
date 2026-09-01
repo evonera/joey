@@ -356,7 +356,7 @@ export function TemplateCanvasEditor({
         {/* Right / Live Artboard Preview (7 cols) */}
         <div className="lg:col-span-7 flex flex-col items-center justify-center p-8 bg-muted/30 border rounded-2xl">
           <div className="text-xs font-semibold text-muted-foreground mb-4 uppercase tracking-wider flex items-center gap-1.5">
-            <IconEye className="w-4 h-4" /> Live Render Preview
+            <IconEye className="w-4 h-4" /> Layout Preview
           </div>
 
           <div

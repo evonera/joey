@@ -3,17 +3,6 @@ import { contentPackages, themeSlots, themeContentFormats } from "@/lib/db/schem
 import { eq, and, desc } from "drizzle-orm";
 import { calculateQualityScore } from "./quality-scorer";
 
-const MIN_SAMPLES_PER_FORMAT = 3;
-const ANALYTICS_FIELDS = ["reach", "likes", "comments", "shares", "saves", "unfollows"] as const;
-
-export function hasUsableAnalyticsSample(value: unknown): value is Record<string, number> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const metrics = value as Record<string, unknown>;
-  return ANALYTICS_FIELDS.some((field) => (
-    typeof metrics[field] === "number" && Number.isFinite(metrics[field]) && metrics[field] >= 0
-  ));
-}
-
 export interface SlotOptimizationResult {
   themePageId: string;
   evaluatedPackagesCount: number;
@@ -57,12 +46,9 @@ export async function optimizeThemeSlotMix(
   // Calculate average quality score by format
   const formatScores: Record<string, { totalScore: number; count: number }> = {};
 
-  let evaluatedPackagesCount = 0;
   for (const pkg of published) {
-    if (!hasUsableAnalyticsSample(pkg.metrics)) continue;
-    const metrics = pkg.metrics;
+    const metrics = pkg.metrics && typeof pkg.metrics === "object" ? pkg.metrics : {};
     const { score } = calculateQualityScore(metrics);
-    evaluatedPackagesCount += 1;
 
     if (!formatScores[pkg.formatId]) {
       formatScores[pkg.formatId] = { totalScore: 0, count: 0 };
@@ -79,22 +65,11 @@ export async function optimizeThemeSlotMix(
     };
   }
 
-  const qualifiedFormatIds = new Set(
-    Object.entries(averageFormatScores)
-      .filter(([, score]) => score.sampleCount >= MIN_SAMPLES_PER_FORMAT)
-      .map(([formatId]) => formatId),
-  );
-  const hasComparison = qualifiedFormatIds.size >= 2;
-
   // Sort slots by format average score descending (higher score = higher priority = lower index)
   const rankedSlots = [...slots].sort((a, b) => {
-    if (!hasComparison) return a.priority - b.priority;
-    const scoreA = qualifiedFormatIds.has(a.formatId) ? averageFormatScores[a.formatId]?.averageScore : undefined;
-    const scoreB = qualifiedFormatIds.has(b.formatId) ? averageFormatScores[b.formatId]?.averageScore : undefined;
-    if (scoreA === undefined && scoreB === undefined) return a.priority - b.priority;
-    if (scoreA === undefined) return 1;
-    if (scoreB === undefined) return -1;
-    return scoreB - scoreA || a.priority - b.priority;
+    const scoreA = averageFormatScores[a.formatId]?.averageScore || 0;
+    const scoreB = averageFormatScores[b.formatId]?.averageScore || 0;
+    return scoreB - scoreA;
   });
 
   const adjustments: SlotOptimizationResult["adjustments"] = [];
@@ -113,7 +88,7 @@ export async function optimizeThemeSlotMix(
       score,
     });
 
-    if (options?.applyChanges && hasComparison && slot.priority !== i) {
+    if (options?.applyChanges && slot.priority !== i) {
       await db
         .update(themeSlots)
         .set({ priority: i, updatedAt: new Date() })
@@ -123,9 +98,9 @@ export async function optimizeThemeSlotMix(
 
   return {
     themePageId,
-    evaluatedPackagesCount,
+    evaluatedPackagesCount: published.length,
     formatScores: averageFormatScores,
     adjustments,
-    applied: Boolean(options?.applyChanges && hasComparison),
+    applied: options?.applyChanges ?? false,
   };
 }

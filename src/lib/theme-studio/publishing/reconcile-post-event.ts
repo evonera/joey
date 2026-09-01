@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { contentPackages } from "@/lib/db/schema";
@@ -57,46 +57,9 @@ export async function reconcileThemePackagePostEvent(
     ?? text(failedTarget?.error)
     ?? (failed ? `Zernio reported ${payload.event}` : undefined);
 
-  if (published) {
-    await db.update(contentPackages).set({
-      status: "published",
-      publishedAt: validDate(post.publishedAt),
-      error: null,
-      ...(platformPostId ? { publishedPostId: platformPostId } : {}),
-      metrics: {
-        ...(pkg.metrics && typeof pkg.metrics === "object" ? pkg.metrics as RecordValue : {}),
-        ...(zernioPostId ? { zernioPostId } : {}),
-        ...(publishedUrl ? { publishedUrl } : {}),
-      },
-      updatedAt: new Date(),
-    }).where(and(
-      eq(contentPackages.id, packageId),
-      eq(contentPackages.tenantId, tenantId),
-    ));
-    return;
-  }
-
-  if (failed) {
-    // Atomically guard against regressing published status under concurrent webhook execution
-    await db.update(contentPackages).set({
-      status: "failed",
-      error,
-      ...(platformPostId ? { publishedPostId: platformPostId } : {}),
-      metrics: {
-        ...(pkg.metrics && typeof pkg.metrics === "object" ? pkg.metrics as RecordValue : {}),
-        ...(zernioPostId ? { zernioPostId } : {}),
-        ...(publishedUrl ? { publishedUrl } : {}),
-      },
-      updatedAt: new Date(),
-    }).where(and(
-      eq(contentPackages.id, packageId),
-      eq(contentPackages.tenantId, tenantId),
-      ne(contentPackages.status, "published"),
-    ));
-    return;
-  }
-
   await db.update(contentPackages).set({
+    ...(published ? { status: "published", publishedAt: validDate(post.publishedAt) } : {}),
+    ...(failed ? { status: "failed", error } : {}),
     ...(platformPostId ? { publishedPostId: platformPostId } : {}),
     metrics: {
       ...(pkg.metrics && typeof pkg.metrics === "object" ? pkg.metrics as RecordValue : {}),
@@ -104,8 +67,5 @@ export async function reconcileThemePackagePostEvent(
       ...(publishedUrl ? { publishedUrl } : {}),
     },
     updatedAt: new Date(),
-  }).where(and(
-    eq(contentPackages.id, packageId),
-    eq(contentPackages.tenantId, tenantId),
-  ));
+  }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
 }

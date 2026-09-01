@@ -7,7 +7,6 @@ import {
   IconSparkles, 
   IconPlayerPlay, 
   IconPlayerPause, 
-  IconRefresh, 
   IconRss, 
   IconCalendar, 
   IconPalette, 
@@ -19,6 +18,11 @@ import {
 } from "@tabler/icons-react";
 import { activateThemePage, pauseThemePage } from "@/app/actions/theme-pages";
 import { toast } from "sonner";
+import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
+import {
+  createThemeStudioWebMcpTools,
+  type ThemeStudioWebMcpState,
+} from "@/lib/theme-studio/webmcp/theme-studio-tools";
 
 interface ThemePageHeaderProps {
   page: {
@@ -29,13 +33,37 @@ interface ThemePageHeaderProps {
     recipeRevision: number;
     lastCompiledAt?: Date | string | null;
   };
-  webMcpState?: Record<string, unknown>;
+  webMcpState?: ThemeStudioWebMcpState;
 }
 
-export function ThemePageHeader({ page }: ThemePageHeaderProps) {
+export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
   const pathname = usePathname();
   const [status, setStatus] = React.useState(page.status);
   const [loading, setLoading] = React.useState(false);
+  const resolvedWebMcpState = React.useMemo<ThemeStudioWebMcpState>(() => {
+    if (webMcpState) {
+      return { ...webMcpState, page: { ...webMcpState.page, status } };
+    }
+    return {
+      page: {
+        id: page.id,
+        name: page.name,
+        niche: page.niche ?? null,
+        audience: null,
+        status,
+        rightsPolicy: "strict",
+        connectedAccountCount: 0,
+      },
+      sources: [],
+      slots: [],
+      packages: [],
+    };
+  }, [page.id, page.name, page.niche, status, webMcpState]);
+  const webMcpTools = React.useMemo(
+    () => createThemeStudioWebMcpTools(() => resolvedWebMcpState),
+    [resolvedWebMcpState],
+  );
+  const webMcpAvailable = useWebMcpTools(webMcpTools);
 
   const tabs = [
     { label: "Overview", href: `/theme-studio/${page.id}`, icon: IconLayoutDashboard },
@@ -91,6 +119,11 @@ export function ThemePageHeader({ page }: ThemePageHeaderProps) {
                   >
                     {status}
                   </span>
+                  {webMcpAvailable ? (
+                    <span className="rounded-full border border-indigo-300 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:border-indigo-800 dark:text-indigo-300">
+                      WebMCP ready
+                    </span>
+                  ) : null}
                 </div>
                 {page.niche && (
                   <p className="text-sm text-muted-foreground mt-0.5">
@@ -103,6 +136,7 @@ export function ThemePageHeader({ page }: ThemePageHeaderProps) {
 
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={handleToggleStatus}
               disabled={loading}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm ${
@@ -135,6 +169,7 @@ export function ThemePageHeader({ page }: ThemePageHeaderProps) {
               <Link
                 key={tab.href}
                 href={tab.href}
+                aria-current={isActive ? "page" : undefined}
                 className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   isActive
                     ? "border-primary text-primary font-semibold"

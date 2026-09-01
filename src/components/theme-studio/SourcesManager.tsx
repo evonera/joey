@@ -7,7 +7,6 @@ import {
   IconRss, 
   IconWorld, 
   IconBrandReddit, 
-  IconApi, 
   IconShieldCheck, 
   IconAlertTriangle, 
   IconClock,
@@ -41,9 +40,9 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
   const [isAdding, setIsAdding] = React.useState(false);
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
-  const [sourceType, setSourceType] = React.useState<"rss" | "http" | "reddit" | "api">("rss");
+  const [sourceType, setSourceType] = React.useState<"rss" | "http" | "reddit">("rss");
   const [freshnessHours, setFreshnessHours] = React.useState(24);
-  const [rightsCategory, setRightsCategory] = React.useState("cc_by");
+  const [rightsCategory, setRightsCategory] = React.useState("unknown");
   const [loading, setLoading] = React.useState(false);
 
   async function handleAddSource(e: React.FormEvent) {
@@ -103,7 +102,6 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
   function renderSourceIcon(type: string) {
     if (type === "reddit") return <IconBrandReddit className="w-4 h-4 text-orange-500" />;
     if (type === "http") return <IconWorld className="w-4 h-4 text-blue-500" />;
-    if (type === "api") return <IconApi className="w-4 h-4 text-indigo-500" />;
     return <IconRss className="w-4 h-4 text-amber-500" />;
   }
 
@@ -159,13 +157,12 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Source Type</label>
               <select
                 value={sourceType}
-                onChange={(e) => setSourceType(e.target.value as any)}
+                onChange={(e) => setSourceType(e.target.value as "rss" | "http" | "reddit")}
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
                 <option value="rss">RSS / Atom XML Feed</option>
                 <option value="reddit">Reddit Subreddit (e.g. r/nba)</option>
                 <option value="http">HTTP Web / REST Endpoint</option>
-                <option value="api">API Ingestion</option>
               </select>
             </div>
             <div className="md:col-span-2">
@@ -207,7 +204,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
                 <option value="public_domain">Public Domain / Press Release</option>
                 <option value="owned">Owned / Original Material</option>
                 <option value="commercial_license">Commercial License</option>
-                <option value="unknown">Unknown / Strict Fair Use</option>
+                <option value="unknown">Unknown / Requires Review</option>
               </select>
             </div>
           </div>

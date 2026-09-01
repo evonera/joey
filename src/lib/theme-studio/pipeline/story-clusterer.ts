@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { sourceItems, storyClusters, themePages } from "@/lib/db/schema";
-import { eq, and, desc, gte, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, desc, gte, inArray } from "drizzle-orm";
 
 export interface ClusterCandidate {
   title: string;
@@ -40,13 +40,13 @@ export function calculateTopicOverlap(a: string, b: string): number {
 /**
  * Clusters raw source items for a theme page into story topics.
  */
-export async function clusterSourceItems(themePageId: string): Promise<{
+export async function clusterSourceItems(tenantId: string, themePageId: string, signal?: AbortSignal): Promise<{
   themePageId: string;
   clusteredCount: number;
   clustersCreated: number;
 }> {
   const page = await db.query.themePages.findFirst({
-    where: eq(themePages.id, themePageId),
+    where: and(eq(themePages.id, themePageId), eq(themePages.tenantId, tenantId)),
   });
   if (!page) throw new Error("Theme page not found");
 
@@ -55,8 +55,8 @@ export async function clusterSourceItems(themePageId: string): Promise<{
   const rawItems = await db.query.sourceItems.findMany({
     where: and(
       eq(sourceItems.themePageId, themePageId),
+      eq(sourceItems.tenantId, tenantId),
       eq(sourceItems.status, "raw"),
-      isNotNull(sourceItems.publishedAt),
       gte(sourceItems.publishedAt, cutoff)
     ),
     orderBy: [desc(sourceItems.publishedAt)],
@@ -71,6 +71,7 @@ export async function clusterSourceItems(themePageId: string): Promise<{
   const assignedItemIds = new Set<string>();
 
   for (const item of rawItems) {
+    signal?.throwIfAborted();
     if (assignedItemIds.has(item.id)) continue;
 
     const clusterMembers = [item];
@@ -99,12 +100,14 @@ export async function clusterSourceItems(themePageId: string): Promise<{
       entity: primary.title?.split(" ")[0] || undefined,
     }));
 
+    const newestTimestamp = Math.max(...clusterMembers.map((member) => member.publishedAt?.getTime() ?? 0));
+    const ageHours = Math.max(0, (Date.now() - newestTimestamp) / (60 * 60 * 1000));
     clusters.push({
       title: primary.title || "Trending Topic",
       summary: primary.body?.slice(0, 300) || primary.title || "",
       memberItemIds: memberIds,
       facts,
-      freshnessScore: 9.5,
+      freshnessScore: Math.max(0, Math.round((10 - ageHours / 4) * 100) / 100),
     });
   }
 
@@ -124,7 +127,7 @@ export async function clusterSourceItems(themePageId: string): Promise<{
     await db
       .update(sourceItems)
       .set({ status: "clustered" })
-      .where(inArray(sourceItems.id, c.memberItemIds));
+      .where(and(eq(sourceItems.tenantId, tenantId), inArray(sourceItems.id, c.memberItemIds)));
 
     clustersCreated++;
   }

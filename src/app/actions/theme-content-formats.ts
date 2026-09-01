@@ -32,6 +32,8 @@ export interface UpdateContentFormatInput {
   defaultPropsSchema?: Record<string, unknown>;
 }
 
+const SUPPORTED_THEME_PLATFORMS = new Set(["instagram", "tiktok", "x"]);
+
 const DEFAULT_FORMATS: Omit<CreateContentFormatInput, 'slug'>[] = [
   {
     name: "Instagram Square Card",
@@ -163,6 +165,7 @@ export async function createContentFormat(data: CreateContentFormatInput) {
     if (!data.name || !data.name.trim()) {
       return { error: "Format name is required" };
     }
+    if (!SUPPORTED_THEME_PLATFORMS.has(data.platform)) return { error: "Theme Studio currently supports Instagram, TikTok, and X formats" };
 
     const existing = await db.query.themeContentFormats.findFirst({
       where: and(eq(themeContentFormats.tenantId, tenantId), eq(themeContentFormats.slug, data.slug.trim())),
@@ -197,6 +200,7 @@ export async function createContentFormat(data: CreateContentFormatInput) {
 export async function updateContentFormat(id: string, data: UpdateContentFormatInput) {
   try {
     const tenantId = await getActiveTenantId();
+    if (data.platform !== undefined && !SUPPORTED_THEME_PLATFORMS.has(data.platform)) return { error: "Theme Studio currently supports Instagram, TikTok, and X formats" };
 
     const [updated] = await db.update(themeContentFormats)
       .set({

@@ -1,6 +1,20 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as React from "react";
 import { render, screen } from "@testing-library/react";
+
+vi.mock("@/app/actions/theme-pages", () => ({
+  activateThemePage: vi.fn(),
+  pauseThemePage: vi.fn(),
+}));
+vi.mock("@/app/actions/theme-slots", () => ({
+  createThemeSlot: vi.fn(), deleteThemeSlot: vi.fn(), reorderThemeSlots: vi.fn(),
+}));
+vi.mock("@/app/actions/theme-sources", () => ({
+  createThemeSource: vi.fn(), deleteThemeSource: vi.fn(), toggleThemeSource: vi.fn(),
+}));
+vi.mock("@/app/actions/dm-rules", () => ({
+  createDmRule: vi.fn(), deleteDmRule: vi.fn(), toggleDmRule: vi.fn(),
+}));
 import { ThemePageHeader } from "@/components/theme-studio/ThemePageHeader";
 import { DailyMixScheduler } from "@/components/theme-studio/DailyMixScheduler";
 import { SourcesManager } from "@/components/theme-studio/SourcesManager";

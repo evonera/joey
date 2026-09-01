@@ -14,6 +14,15 @@ import {
   IconLoader2 
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { getConnectedAccounts } from "@/app/actions/zernio";
+import Link from "next/link";
+
+interface ConnectedAccount {
+  id: string;
+  platform: string;
+  accountName: string | null;
+  isActive: boolean | null;
+}
 
 export default function ThemePageSettingsRoute() {
   const params = useParams<{ id: string }>();
@@ -27,11 +36,16 @@ export default function ThemePageSettingsRoute() {
   const [audience, setAudience] = React.useState("");
   const [voice, setVoice] = React.useState("");
   const [rightsPolicy, setRightsPolicy] = React.useState("strict");
+  const [accounts, setAccounts] = React.useState<ConnectedAccount[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     async function load() {
       if (!params.id) return;
-      const res = await getThemePageById(params.id);
+      const [res, accountResult] = await Promise.all([
+        getThemePageById(params.id),
+        getConnectedAccounts(),
+      ]);
       if (res.page) {
         setPage(res.page);
         setName(res.page.name || "");
@@ -39,7 +53,13 @@ export default function ThemePageSettingsRoute() {
         setAudience(res.page.audience || "");
         setVoice(res.page.voice || "");
         setRightsPolicy(res.page.defaultRightsPolicy || "strict");
+        setSelectedAccountIds(
+          Array.isArray(res.page.connectedAccounts)
+            ? res.page.connectedAccounts.filter((id): id is string => typeof id === "string")
+            : [],
+        );
       }
+      setAccounts(accountResult.accounts || []);
       setLoading(false);
     }
     load();
@@ -57,6 +77,7 @@ export default function ThemePageSettingsRoute() {
         audience: audience.trim() || undefined,
         voice: voice.trim() || undefined,
         defaultRightsPolicy: rightsPolicy,
+        connectedAccounts: selectedAccountIds,
       });
 
       if (res.error) throw new Error(res.error);
@@ -101,6 +122,48 @@ export default function ThemePageSettingsRoute() {
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
+        <div className="p-6 border rounded-2xl bg-card space-y-4 shadow-sm">
+          <div>
+            <h3 className="text-sm font-semibold">Publishing Accounts</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Theme Studio publishes only to the accounts selected here, through your tenant&apos;s Zernio connection.
+            </p>
+          </div>
+
+          {accounts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No social accounts are connected. <Link href="/accounts" className="text-primary underline underline-offset-4">Connect an account</Link> before publishing.
+            </p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {accounts.map((account) => {
+                const checked = selectedAccountIds.includes(account.id);
+                return (
+                  <label
+                    key={account.id}
+                    className="flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={account.isActive === false}
+                      onChange={(event) => {
+                        setSelectedAccountIds((current) => event.target.checked
+                          ? [...new Set([...current, account.id])]
+                          : current.filter((id) => id !== account.id));
+                      }}
+                    />
+                    <span>
+                      <span className="block font-medium">{account.accountName || "Unnamed account"}</span>
+                      <span className="block text-xs capitalize text-muted-foreground">{account.platform}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="p-6 border rounded-2xl bg-card space-y-4 shadow-sm">
           <h3 className="text-sm font-semibold">General Information</h3>
 
