@@ -38,7 +38,8 @@ export class XProvider implements IPlatformProvider {
   async createMediaContainer(
     account: PlatformAccountCredentials,
     mediaUrls: string[],
-    mediaType: string
+    mediaType: string,
+    caption?: string
   ): Promise<ContainerCreationResult> {
     if (!account.accessToken) {
       return { containerId: "", status: "ERROR", error: "Missing X account credentials or access token" };

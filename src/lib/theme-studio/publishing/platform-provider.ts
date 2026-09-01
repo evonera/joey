@@ -38,7 +38,7 @@ export interface IPlatformProvider {
   readonly platform: string;
   getLimits(): ContentLimits;
   validateContent(caption: string, mediaUrls: string[], mediaType: string): { valid: boolean; errors: string[] };
-  createMediaContainer(account: PlatformAccountCredentials, mediaUrls: string[], mediaType: string): Promise<ContainerCreationResult>;
+  createMediaContainer(account: PlatformAccountCredentials, mediaUrls: string[], mediaType: string, caption?: string): Promise<ContainerCreationResult>;
   pollContainerStatus(account: PlatformAccountCredentials, containerId: string): Promise<ContainerStatusResult>;
   finalizePublish(account: PlatformAccountCredentials, containerId: string, caption: string): Promise<PublishFinalizeResult>;
 }

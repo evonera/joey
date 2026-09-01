@@ -38,7 +38,8 @@ export class TikTokProvider implements IPlatformProvider {
   async createMediaContainer(
     account: PlatformAccountCredentials,
     mediaUrls: string[],
-    mediaType: string
+    mediaType: string,
+    caption?: string
   ): Promise<ContainerCreationResult> {
     if (!account.accessToken) {
       return { containerId: "", status: "ERROR", error: "Missing TikTok account credentials or access token" };
@@ -58,7 +59,7 @@ export class TikTokProvider implements IPlatformProvider {
         },
         body: JSON.stringify({
           post_info: {
-            title: "Theme Studio Video",
+            title: caption?.slice(0, 150) || "Theme Studio Video",
             privacy_level: "PUBLIC_TO_EVERYONE",
             disable_duet: false,
             disable_stitch: false,

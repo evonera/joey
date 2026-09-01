@@ -121,7 +121,8 @@ export async function publishContentPackage(
     const container = await provider.createMediaContainer(
       authAccount,
       variant.mediaUrls,
-      variant.mediaType
+      variant.mediaType,
+      variant.adaptedCaption
     );
     if (container.status === "ERROR") {
       throw new Error(container.error || "Failed to create media container");

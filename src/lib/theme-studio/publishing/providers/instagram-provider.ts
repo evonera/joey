@@ -42,7 +42,8 @@ export class InstagramProvider implements IPlatformProvider {
   async createMediaContainer(
     account: PlatformAccountCredentials,
     mediaUrls: string[],
-    mediaType: string
+    mediaType: string,
+    caption?: string
   ): Promise<ContainerCreationResult> {
     if (!account.accessToken || !account.accountId) {
       return { containerId: "", status: "ERROR", error: "Missing Instagram account credentials or access token" };
@@ -54,10 +55,64 @@ export class InstagramProvider implements IPlatformProvider {
     }
 
     try {
-      const isVideo = mediaType === "video" || mediaUrls[0]?.endsWith(".mp4");
       const endpoint = `https://graph.facebook.com/v20.0/${account.accountId}/media`;
+
+      // Handle multi-item Carousel
+      if (mediaType === "carousel" && mediaUrls.length > 1) {
+        const itemContainerIds: string[] = [];
+        for (const itemUrl of mediaUrls) {
+          const isItemVideo = itemUrl.endsWith(".mp4");
+          const itemRes = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              access_token: account.accessToken,
+              is_carousel_item: true,
+              ...(isItemVideo ? { media_type: "VIDEO", video_url: itemUrl } : { image_url: itemUrl }),
+            }),
+          });
+          const itemData = await itemRes.json();
+          if (!itemRes.ok || !itemData.id) {
+            return {
+              containerId: "",
+              status: "ERROR",
+              error: itemData.error?.message || "Failed to create Instagram carousel item container",
+            };
+          }
+          itemContainerIds.push(itemData.id);
+        }
+
+        // Create the parent Carousel container with caption and child container IDs
+        const carouselRes = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            access_token: account.accessToken,
+            media_type: "CAROUSEL",
+            children: itemContainerIds.join(","),
+            ...(caption ? { caption } : {}),
+          }),
+        });
+        const carouselData = await carouselRes.json();
+        if (!carouselRes.ok || !carouselData.id) {
+          return {
+            containerId: "",
+            status: "ERROR",
+            error: carouselData.error?.message || "Failed to create Instagram carousel parent container",
+          };
+        }
+
+        return {
+          containerId: carouselData.id,
+          status: "READY",
+        };
+      }
+
+      // Handle standalone image or single video (Reels)
+      const isVideo = mediaType === "video" || mediaUrls[0]?.endsWith(".mp4");
       const body: Record<string, any> = {
         access_token: account.accessToken,
+        ...(caption ? { caption } : {}),
         ...(isVideo ? { media_type: "REELS", video_url: mediaUrls[0] } : { image_url: mediaUrls[0] }),
       };
 
