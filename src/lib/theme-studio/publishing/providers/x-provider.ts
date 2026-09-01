@@ -46,13 +46,59 @@ export class XProvider implements IPlatformProvider {
     }
 
     if (account.accessToken.startsWith("test_") || account.accessToken.startsWith("mock_")) {
-      const containerId = `x_media_${crypto.randomUUID().slice(0, 12)}`;
+      const containerId = `mock_media_${crypto.randomUUID().slice(0, 12)}`;
       return { containerId, status: "READY" };
     }
 
-    // Media upload to Twitter v1.1 upload endpoint
-    const containerId = `x_media_${crypto.randomUUID().slice(0, 12)}`;
-    return { containerId, status: "READY" };
+    if (mediaUrls.length === 0) {
+      return { containerId: "", status: "READY" };
+    }
+
+    try {
+      // Ingest remote media URL and upload to Twitter v1.1 media upload API
+      const mediaRes = await fetch(mediaUrls[0]);
+      if (!mediaRes.ok) {
+        return {
+          containerId: "",
+          status: "ERROR",
+          error: `Failed to fetch media asset from URL: ${mediaRes.statusText}`,
+        };
+      }
+
+      const mediaBuffer = await mediaRes.arrayBuffer();
+      const base64Data = Buffer.from(mediaBuffer).toString("base64");
+
+      const uploadRes = await fetch("https://upload.twitter.com/1.1/media/upload.json", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${account.accessToken}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          media_data: base64Data,
+        }).toString(),
+      });
+
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok || !uploadData.media_id_string) {
+        return {
+          containerId: "",
+          status: "ERROR",
+          error: uploadData.errors?.[0]?.message || uploadData.error || "Failed to upload media to X",
+        };
+      }
+
+      return {
+        containerId: uploadData.media_id_string,
+        status: "READY",
+      };
+    } catch (err: any) {
+      return {
+        containerId: "",
+        status: "ERROR",
+        error: err.message || "Failed to upload media to X",
+      };
+    }
   }
 
   async pollContainerStatus(
@@ -91,7 +137,7 @@ export class XProvider implements IPlatformProvider {
     try {
       const tweetPayload: Record<string, any> = { text: caption };
       if (containerId && !containerId.startsWith("mock_")) {
-        tweetPayload.media = { media_ids: [containerId.replace(/^x_media_/, "")] };
+        tweetPayload.media = { media_ids: [containerId] };
       }
 
       const res = await fetch("https://api.twitter.com/2/tweets", {

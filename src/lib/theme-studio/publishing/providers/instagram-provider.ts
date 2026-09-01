@@ -91,11 +91,11 @@ export class InstagramProvider implements IPlatformProvider {
             await new Promise((resolve) => setTimeout(resolve, 500 * attempts));
             childStatus = await this.pollContainerStatus(account, childId);
           }
-          if (childStatus.status === "ERROR") {
+          if (childStatus.status !== "READY") {
             return {
               containerId: "",
               status: "ERROR",
-              error: childStatus.errorMessage || `Instagram carousel child item ${childId} failed processing`,
+              error: childStatus.errorMessage || `Instagram carousel child item ${childId} did not finish processing`,
             };
           }
         }
