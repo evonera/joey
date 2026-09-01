@@ -51,12 +51,14 @@ export function adaptPackageForPlatform(
     const topHashtags = rawHashtags.slice(0, 5).join(" ");
     const adaptedCaption = `${pkg.title}\n\nComment below to get the full guide.\n\n${topHashtags}`;
 
+    const isVideoAsset = mediaType === "video" || mediaUrls.some((u) => u.endsWith(".mp4") || u.startsWith("remotion://"));
+
     return {
       platform: "tiktok",
       adaptedCaption,
       adaptedHashtags: rawHashtags.slice(0, 5),
       mediaUrls,
-      mediaType: "video",
+      mediaType: isVideoAsset ? "video" : mediaType,
     };
   }
 

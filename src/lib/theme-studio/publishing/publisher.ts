@@ -91,10 +91,23 @@ export async function publishContentPackage(
       throw new Error(container.error || "Failed to create media container");
     }
 
-    // Step 2: Poll Container Status
-    const polled = await provider.pollContainerStatus(authAccount, container.containerId);
+    // Step 2: Poll Container Status until READY or ERROR
+    let polled = await provider.pollContainerStatus(authAccount, container.containerId);
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (polled.status === "IN_PROGRESS" && attempts < maxAttempts) {
+      attempts++;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      polled = await provider.pollContainerStatus(authAccount, container.containerId);
+    }
+
     if (polled.status === "ERROR") {
       throw new Error(polled.errorMessage || "Media processing failed on platform");
+    }
+
+    if (polled.status !== "READY") {
+      throw new Error(`Media container processing timed out after ${maxAttempts} polling attempts`);
     }
 
     // Step 3: Finalize Publish

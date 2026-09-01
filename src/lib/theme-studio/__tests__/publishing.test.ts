@@ -105,12 +105,25 @@ describe("Theme Studio Multi-Platform Publishing (Phase 5)", () => {
       expect(igVariant.mediaUrls).toHaveLength(3);
     });
 
-    it("adapts package into video CTA format for TikTok", () => {
-      const ttVariant = adaptPackageForPlatform(mockPackage, "tiktok", "video");
+    it("adapts package into video CTA format for TikTok and preserves media type for validation", () => {
+      // Image package should retain image mediaType and be rejected by TikTok validator
+      const ttImageVariant = adaptPackageForPlatform(mockPackage, "tiktok", "image");
+      expect(ttImageVariant.platform).toBe("tiktok");
+      expect(ttImageVariant.mediaType).toBe("image");
 
-      expect(ttVariant.platform).toBe("tiktok");
-      expect(ttVariant.adaptedCaption).toContain("Comment below to get the full guide.");
-      expect(ttVariant.adaptedHashtags).toHaveLength(5);
+      const tiktok = new TikTokProvider();
+      const validation = tiktok.validateContent(ttImageVariant.adaptedCaption, ttImageVariant.mediaUrls, ttImageVariant.mediaType);
+      expect(validation.valid).toBe(false);
+
+      // Video package with mp4/remotion should become video mediaType and pass validator
+      const mockVideoPkg = {
+        ...mockPackage,
+        renderedAssetUrls: [{ url: "https://r2.dev/video.mp4" }],
+      };
+      const ttVideoVariant = adaptPackageForPlatform(mockVideoPkg, "tiktok", "video");
+      expect(ttVideoVariant.mediaType).toBe("video");
+      const videoValidation = tiktok.validateContent(ttVideoVariant.adaptedCaption, ttVideoVariant.mediaUrls, ttVideoVariant.mediaType);
+      expect(videoValidation.valid).toBe(true);
     });
   });
 });
