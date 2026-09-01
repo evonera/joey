@@ -20,15 +20,15 @@ export interface PipelineExecutionReport {
   timestamp: string;
 }
 
-const VIDEO_RENDERER_NOT_CONFIGURED = "Video preview is available, but an MP4 render worker has not been configured";
-
-export function shouldRetryFailedRender(renderedAssetUrls: unknown, error: string | null): boolean {
+export function shouldRetryFailedRender(renderedAssetUrls: unknown, metrics: unknown): boolean {
   const assets = Array.isArray(renderedAssetUrls) ? renderedAssetUrls : [];
   const hasPublicAsset = assets.some((asset) => (
     Boolean(asset) && typeof asset === "object" && "url" in asset
     && typeof asset.url === "string" && asset.url.startsWith("https://")
   ));
-  return !hasPublicAsset && error !== VIDEO_RENDERER_NOT_CONFIGURED;
+  const failurePhase = metrics && typeof metrics === "object" && !Array.isArray(metrics)
+    && "failurePhase" in metrics ? metrics.failurePhase : undefined;
+  return !hasPublicAsset && failurePhase === "render";
 }
 
 /**
@@ -69,11 +69,11 @@ export async function runEditorialPipeline(
       eq(contentPackages.themePageId, themePageId),
       eq(contentPackages.status, "failed"),
     ),
-    columns: { id: true, renderedAssetUrls: true, error: true },
+    columns: { id: true, renderedAssetUrls: true, metrics: true },
     limit: 50,
   });
   const retryPackageIds = failedPackages
-    .filter((pkg) => shouldRetryFailedRender(pkg.renderedAssetUrls, pkg.error))
+    .filter((pkg) => shouldRetryFailedRender(pkg.renderedAssetUrls, pkg.metrics))
     .map((pkg) => pkg.id);
   const packageIdsToRender = [...new Set([...retryPackageIds, ...packageResult.packageIds])];
   let packagesRendered = 0;

@@ -111,6 +111,9 @@ export async function renderPackageMedia(
   const renderedBody = applyTemplate(templateSpec.bodyTemplate, pkg.caption || "", templateTokens);
 
   const renderedUrls: Array<{ url: string; type: string; slideIndex?: number }> = [];
+  const priorMetrics = pkg.metrics && typeof pkg.metrics === "object" && !Array.isArray(pkg.metrics)
+    ? pkg.metrics as Record<string, unknown>
+    : {};
 
   async function storePng(svg: string, key: string, filename: string): Promise<string> {
     signal?.throwIfAborted();
@@ -170,6 +173,7 @@ export async function renderPackageMedia(
       await db.update(contentPackages).set({
         status: "failed",
         error: message,
+        metrics: { ...priorMetrics, failurePhase: "render_unsupported" },
         updatedAt: new Date(),
       }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
       return {
@@ -204,6 +208,7 @@ export async function renderPackageMedia(
         renderedAssetUrls: renderedUrls,
         status: "pending_review",
         error: null,
+        metrics: { ...priorMetrics, failurePhase: null },
         updatedAt: new Date(),
       })
       .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
@@ -220,6 +225,7 @@ export async function renderPackageMedia(
     await db.update(contentPackages).set({
       status: "failed",
       error: message,
+      metrics: { ...priorMetrics, failurePhase: "render" },
       updatedAt: new Date(),
     }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
     return {

@@ -6,9 +6,10 @@ import { shouldRetryFailedRender } from "@/lib/theme-studio/pipeline/orchestrato
 describe("Theme Studio Media Renderers (Phase 4)", () => {
   describe("Render recovery", () => {
     it("retries transient unrendered packages without retrying completed or unsupported video renders", () => {
-      expect(shouldRetryFailedRender([], "R2 temporarily unavailable")).toBe(true);
-      expect(shouldRetryFailedRender([{ url: "https://cdn.example.com/card.png" }], "old error")).toBe(false);
-      expect(shouldRetryFailedRender([], "Video preview is available, but an MP4 render worker has not been configured")).toBe(false);
+      expect(shouldRetryFailedRender([], { failurePhase: "render" })).toBe(true);
+      expect(shouldRetryFailedRender([{ url: "https://cdn.example.com/card.png" }], { failurePhase: "render" })).toBe(false);
+      expect(shouldRetryFailedRender([], { failurePhase: "render_unsupported" })).toBe(false);
+      expect(shouldRetryFailedRender([], { failurePhase: "publish" })).toBe(false);
     });
   });
 
