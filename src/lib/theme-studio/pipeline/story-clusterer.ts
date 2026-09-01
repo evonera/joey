@@ -56,7 +56,7 @@ export async function clusterSourceItems(themePageId: string): Promise<{
     where: and(
       eq(sourceItems.themePageId, themePageId),
       eq(sourceItems.status, "raw"),
-      gte(sourceItems.createdAt, cutoff)
+      gte(sourceItems.publishedAt, cutoff)
     ),
     orderBy: [desc(sourceItems.publishedAt)],
     limit: 50,

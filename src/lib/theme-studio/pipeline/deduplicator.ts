@@ -24,6 +24,8 @@ const TRACKING_PARAMS = new Set([
 export function normalizeCanonicalUrl(rawUrl: string): string {
   try {
     const parsed = new URL(rawUrl.trim());
+    parsed.protocol = parsed.protocol.toLowerCase();
+    parsed.hostname = parsed.hostname.toLowerCase();
     parsed.hash = ""; // remove anchor
 
     // Remove tracking query parameters
@@ -36,13 +38,13 @@ export function normalizeCanonicalUrl(rawUrl: string): string {
     cleanedParams.sort();
     parsed.search = cleanedParams.toString();
 
-    let clean = parsed.toString().toLowerCase();
+    let clean = parsed.toString();
     if (clean.endsWith("/") && parsed.pathname !== "/") {
       clean = clean.slice(0, -1);
     }
     return clean;
   } catch {
-    return rawUrl.trim().toLowerCase().replace(/\/+$/, "");
+    return rawUrl.trim().replace(/\/+$/, "");
   }
 }
 

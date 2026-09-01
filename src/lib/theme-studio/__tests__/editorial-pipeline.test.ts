@@ -24,6 +24,17 @@ describe("Theme Studio Editorial Pipeline", () => {
       expect(hash2).toBe(hash3);
     });
 
+    it("preserves case on path and query parameters to avoid colliding distinct resources", () => {
+      const urlA = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+      const urlB = "https://www.youtube.com/watch?v=dqw4w9wgxcq";
+
+      const normA = normalizeCanonicalUrl(urlA);
+      const normB = normalizeCanonicalUrl(urlB);
+
+      expect(normA).not.toBe(normB);
+      expect(normA).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    });
+
     it("normalizes text bodies with different formatting and whitespace into identical content hashes", () => {
       const body1 = "<p>LeBron James scored <strong>30 points</strong> in a dominant win over the Nuggets.</p>";
       const body2 = "lebron james scored 30 points in a dominant win over the nuggets.\n\n";

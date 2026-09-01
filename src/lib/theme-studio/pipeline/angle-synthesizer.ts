@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { contentPackages, storyClusters, themeSlots, themePages } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { contentPackages, storyClusters, themeSlots, themePages, sourceItems } from "@/lib/db/schema";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { verifyRightsAndProvenance } from "./fact-rights-verifier";
 
 export interface PackageGenerationResult {
@@ -40,11 +40,24 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
     const slot = slots[i];
     const cluster = openClusters[i % openClusters.length]; // cycle if fewer clusters than slots
 
+    const memberIds = Array.isArray(cluster.memberItemIds) ? (cluster.memberItemIds as string[]) : [];
+    let memberItems: any[] = [];
+    if (memberIds.length > 0) {
+      memberItems = await db.query.sourceItems.findMany({
+        where: inArray(sourceItems.id, memberIds),
+      });
+    }
+
+    const memberRights = memberItems.map((m) => m.rightsCategory || "unknown");
+    const dominantRights = memberRights.length > 0 ? memberRights[0] : "unknown";
+    const hasSourceUrl = memberItems.length > 0 && memberItems.every((m) => Boolean(m.url && m.url.trim()));
+    const hasTimestamp = memberItems.length > 0 && memberItems.every((m) => Boolean(m.publishedAt));
+
     const verification = verifyRightsAndProvenance({
-      rightsCategory: "cc_by",
+      rightsCategory: dominantRights,
       policy: (page.defaultRightsPolicy as any) || "strict",
-      hasSourceUrl: true,
-      hasTimestamp: true,
+      hasSourceUrl,
+      hasTimestamp,
     });
 
     if (!verification.isCompliant) {
@@ -74,9 +87,12 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
       renderedAssetUrls: [],
       provenance: {
         clusterId: cluster.id,
-        sourcesCount: Array.isArray(cluster.memberItemIds) ? cluster.memberItemIds.length : 1,
+        sourcesCount: memberItems.length || 1,
         factsCount: Array.isArray(cluster.facts) ? cluster.facts.length : 0,
         policy: page.defaultRightsPolicy,
+        rightsVerified: dominantRights,
+        isCompliant: verification.isCompliant,
+        attributionText: verification.attributionText || null,
         generatedAt: new Date().toISOString(),
       },
       status: "pending_review",
