@@ -147,4 +147,23 @@ describe("engagement WebMCP tools", () => {
     expect(sent.isError).toBe(true);
     expect(sent.data.error).toContain("sent");
   });
+
+  it("rejects staging while the selected draft is open for human editing", async () => {
+    const state = stateFixture();
+    const stageReplyEdit = vi.fn();
+    const tools = createEngagementWebMcpTools({
+      getState: () => state,
+      selectConversation: vi.fn(async () => undefined),
+      canStageReplyEdit: () => false,
+      stageReplyEdit,
+    });
+
+    const response = await call(tools, "joey_stage_reply_edit", {
+      replyDraftId: "draft-1",
+      content: "Agent replacement",
+    });
+    expect(response.isError).toBe(true);
+    expect(response.data.error).toContain("human editing");
+    expect(stageReplyEdit).not.toHaveBeenCalled();
+  });
 });

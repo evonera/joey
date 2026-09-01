@@ -44,39 +44,39 @@ export function ReplyCard({
   onActionComplete,
   stagedContent,
   onDiscardStagedEdit,
-  onStagedEditSaved,
+  onEditSaved,
+  onEditingChange,
 }: {
   item: any;
   onActionComplete: () => void;
   stagedContent?: string;
   onDiscardStagedEdit?: () => void;
-  onStagedEditSaved?: (expectedStagedContent: string) => boolean;
+  onEditSaved?: (persistedContent: string, expectedStagedContent?: string) => boolean;
+  onEditingChange?: (replyDraftId: string, isEditing: boolean) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftContent, setDraftContent] = useState(item.replyDraft?.content || "");
   const [isRejecting, setIsRejecting] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
-  const locallySavedDraft = useRef<{ id: string; content: string } | null>(null);
+  const hasHumanEdits = useRef(false);
 
   useEffect(() => {
-    const replyDraftId = item.replyDraft?.id;
     const serverContent = item.replyDraft?.content ?? "";
     if (stagedContent !== undefined) {
-      locallySavedDraft.current = null;
-      setDraftContent(stagedContent);
+      if (!hasHumanEdits.current) setDraftContent(stagedContent);
       setIsEditing(true);
       return;
     }
-    const savedDraft = locallySavedDraft.current;
-    if (savedDraft && savedDraft.id === replyDraftId) {
-      if (savedDraft.content !== serverContent) return;
-      locallySavedDraft.current = null;
-    } else {
-      locallySavedDraft.current = null;
-    }
-    setDraftContent(serverContent);
+    if (!hasHumanEdits.current) setDraftContent(serverContent);
   }, [item.replyDraft?.content, item.replyDraft?.id, stagedContent]);
+
+  useEffect(() => {
+    const replyDraftId = item.replyDraft?.id;
+    if (!replyDraftId) return;
+    onEditingChange?.(replyDraftId, isEditing);
+    return () => onEditingChange?.(replyDraftId, false);
+  }, [isEditing, item.replyDraft?.id, onEditingChange]);
 
   const pendingReply = item.replyDraft && ["pending_review", "failed"].includes(item.replyDraft.status);
   const sendFailed = item.replyDraft?.status === "failed";
@@ -136,17 +136,16 @@ export function ReplyCard({
       return;
     }
     const persistedContent = draftContent.trim();
-    locallySavedDraft.current = { id: item.replyDraft.id, content: persistedContent };
+    hasHumanEdits.current = false;
     setDraftContent(persistedContent);
-    const stagedSnapshotCleared = stagedSnapshot === undefined
-      ? true
-      : onStagedEditSaved?.(stagedSnapshot) ?? true;
+    const stagedSnapshotCleared = onEditSaved?.(persistedContent, stagedSnapshot) ?? true;
     setIsEditing(!stagedSnapshotCleared);
     onActionComplete();
   };
 
   const handleCancelEdit = () => {
     if (stagedContent !== undefined) onDiscardStagedEdit?.();
+    hasHumanEdits.current = false;
     setDraftContent(item.replyDraft?.content ?? "");
     setIsEditing(false);
   };
@@ -203,7 +202,10 @@ export function ReplyCard({
               {stagedContent !== undefined ? <div role="status" className="flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-2 text-xs text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200">WebMCP staged this edit. Review it before saving.</div> : null}
               <Textarea
                 value={draftContent}
-                onChange={(e) => setDraftContent(e.target.value)}
+                onChange={(e) => {
+                  hasHumanEdits.current = true;
+                  setDraftContent(e.target.value);
+                }}
                 className="min-h-[80px] text-sm"
                 disabled={loading}
               />
@@ -245,7 +247,10 @@ export function ReplyCard({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  hasHumanEdits.current = false;
+                  setIsEditing(true);
+                }}
                 disabled={loading}
               >
                 Edit

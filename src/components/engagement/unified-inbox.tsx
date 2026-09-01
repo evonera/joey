@@ -51,6 +51,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   const activitiesRef = useRef(activityPages);
   const selectedItemRef = useRef<EngagementWebMcpItem>(null);
   const stagedReplyEditsRef = useRef(stagedReplyEdits);
+  const editingReplyDraftIds = useRef(new Set<string>());
 
   const load = useCallback(async (options?: { append?: boolean; cursor?: string | null; selected?: string; activityCursor?: string | null; prependActivities?: boolean }) => {
     const requestId = ++loadRequestId.current;
@@ -113,6 +114,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   }, [load]);
 
   const stageReplyEdit = useCallback((replyDraftId: string, content: string) => {
+    editingReplyDraftIds.current.add(replyDraftId);
     setStagedReplyEdits((current) => {
       const next = { ...current, [replyDraftId]: content };
       stagedReplyEditsRef.current = next;
@@ -133,6 +135,34 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
     return true;
   }, []);
 
+  const reconcileSavedReplyEdit = useCallback((replyDraftId: string, persistedContent: string, expectedStagedContent?: string): boolean => {
+    const selectedItem = selectedItemRef.current;
+    if (selectedItem?.replyDraft?.id === replyDraftId) {
+      selectedItemRef.current = {
+        ...selectedItem,
+        replyDraft: { ...selectedItem.replyDraft, content: persistedContent },
+      };
+    }
+    setResult((current) => {
+      if (!current || !("selectedEngagementItem" in current)) return current;
+      const item = current.selectedEngagementItem;
+      if (!item?.replyDraft || item.replyDraft.id !== replyDraftId) return current;
+      const selectedEngagementItem = {
+        ...item,
+        replyDraft: { ...item.replyDraft, content: persistedContent },
+      };
+      return { ...current, selectedEngagementItem };
+    });
+    return expectedStagedContent === undefined
+      ? true
+      : clearStagedReplyEdit(replyDraftId, expectedStagedContent);
+  }, [clearStagedReplyEdit]);
+
+  const setReplyEditing = useCallback((replyDraftId: string, isEditing: boolean) => {
+    if (isEditing) editingReplyDraftIds.current.add(replyDraftId);
+    else editingReplyDraftIds.current.delete(replyDraftId);
+  }, []);
+
   const engagementWebMcpTools = useMemo(() => createEngagementWebMcpTools({
     getState: () => ({
       conversations: pagesRef.current,
@@ -142,6 +172,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
       stagedReplyEdits: stagedReplyEditsRef.current,
     }),
     selectConversation: selectConversationForAgent,
+    canStageReplyEdit: (replyDraftId) => !editingReplyDraftIds.current.has(replyDraftId),
     stageReplyEdit,
   }), [selectConversationForAgent, stageReplyEdit]);
   const webMcpAvailable = useWebMcpTools(engagementWebMcpTools);
@@ -211,7 +242,8 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
               item={selectedItem}
               stagedContent={selectedItem.replyDraft ? stagedReplyEdits[selectedItem.replyDraft.id] : undefined}
               onDiscardStagedEdit={selectedItem.replyDraft ? () => clearStagedReplyEdit(selectedItem.replyDraft!.id) : undefined}
-              onStagedEditSaved={selectedItem.replyDraft ? (savedContent) => clearStagedReplyEdit(selectedItem.replyDraft!.id, savedContent) : undefined}
+              onEditSaved={selectedItem.replyDraft ? (persistedContent, expectedStagedContent) => reconcileSavedReplyEdit(selectedItem.replyDraft!.id, persistedContent, expectedStagedContent) : undefined}
+              onEditingChange={setReplyEditing}
               onActionComplete={() => void load({ selected: selected.id })}
             /></div> : null}
           </div>}

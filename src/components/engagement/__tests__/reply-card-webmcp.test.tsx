@@ -60,14 +60,14 @@ describe("ReplyCard WebMCP staging", () => {
     render(<ReplyCard
       item={item}
       stagedContent="Reviewed reply"
-      onStagedEditSaved={onSaved}
+      onEditSaved={onSaved}
       onActionComplete={onComplete}
     />);
 
     expect(updateReplyDraft).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(updateReplyDraft).toHaveBeenCalledWith("draft-1", "Reviewed reply");
-    expect(onSaved).toHaveBeenCalledWith("Reviewed reply");
+    expect(onSaved).toHaveBeenCalledWith("Reviewed reply", "Reviewed reply");
     expect(onComplete).toHaveBeenCalledOnce();
   });
 
@@ -76,12 +76,12 @@ describe("ReplyCard WebMCP staging", () => {
     render(<ReplyCard
       item={item}
       stagedContent="Older staged reply"
-      onStagedEditSaved={onSaved}
+      onEditSaved={onSaved}
       onActionComplete={vi.fn()}
     />);
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(onSaved).toHaveBeenCalledWith("Older staged reply");
+    expect(onSaved).toHaveBeenCalledWith("Older staged reply", "Older staged reply");
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
@@ -90,7 +90,7 @@ describe("ReplyCard WebMCP staging", () => {
     render(<ReplyCard
       item={item}
       stagedContent="Agent-staged reply"
-      onStagedEditSaved={onSaved}
+      onEditSaved={onSaved}
       onActionComplete={vi.fn()}
     />);
 
@@ -99,7 +99,7 @@ describe("ReplyCard WebMCP staging", () => {
     await userEvent.type(editor, "Human-reviewed reply");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(updateReplyDraft).toHaveBeenLastCalledWith("draft-1", "Human-reviewed reply");
-    expect(onSaved).toHaveBeenCalledWith("Agent-staged reply");
+    expect(onSaved).toHaveBeenCalledWith("Human-reviewed reply", "Agent-staged reply");
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByText("Human-reviewed reply")).toBeInTheDocument();
     expect(screen.queryByText("Original reply")).not.toBeInTheDocument();
@@ -112,7 +112,7 @@ describe("ReplyCard WebMCP staging", () => {
     render(<ReplyCard
       item={item}
       stagedContent="Reviewed reply"
-      onStagedEditSaved={onSaved}
+      onEditSaved={onSaved}
       onActionComplete={vi.fn()}
     />);
 
@@ -123,6 +123,46 @@ describe("ReplyCard WebMCP staging", () => {
 
     resolveSave({ success: true });
     await screen.findByRole("button", { name: "Approve & Send" });
-    expect(onSaved).toHaveBeenCalledWith("Reviewed reply");
+    expect(onSaved).toHaveBeenCalledWith("Reviewed reply", "Reviewed reply");
+  });
+
+  it("does not replace active human input with a newer staged prop", async () => {
+    const { rerender } = render(<ReplyCard
+      item={item}
+      stagedContent="First agent proposal"
+      onActionComplete={vi.fn()}
+    />);
+    const editor = screen.getByRole("textbox");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "Human work in progress");
+
+    rerender(<ReplyCard
+      item={item}
+      stagedContent="Second agent proposal"
+      onActionComplete={vi.fn()}
+    />);
+    expect(screen.getByRole("textbox")).toHaveValue("Human work in progress");
+  });
+
+  it("accepts later authoritative server content after optimistic reconciliation", async () => {
+    const onSaved = vi.fn(() => true);
+    const { rerender } = render(<ReplyCard
+      item={item}
+      stagedContent="Agent proposal"
+      onEditSaved={onSaved}
+      onActionComplete={vi.fn()}
+    />);
+    const editor = screen.getByRole("textbox");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "Human-approved revision");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const reconciledItem = { ...item, replyDraft: { ...item.replyDraft, content: "Human-approved revision" } };
+    rerender(<ReplyCard item={reconciledItem} onEditSaved={onSaved} onActionComplete={vi.fn()} />);
+    expect(screen.getByText("Human-approved revision")).toBeInTheDocument();
+
+    const serverUpdatedItem = { ...item, replyDraft: { ...item.replyDraft, content: "Later server revision" } };
+    rerender(<ReplyCard item={serverUpdatedItem} onEditSaved={onSaved} onActionComplete={vi.fn()} />);
+    expect(screen.getByText("Later server revision")).toBeInTheDocument();
   });
 });

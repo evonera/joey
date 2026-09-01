@@ -64,6 +64,7 @@ export type EngagementWebMcpState = {
 export type EngagementWebMcpController = {
   getState: () => EngagementWebMcpState;
   selectConversation: (conversationId: string) => Promise<void>;
+  canStageReplyEdit?: (replyDraftId: string) => boolean;
   stageReplyEdit: (replyDraftId: string, content: string) => void;
 };
 
@@ -181,6 +182,9 @@ export function createEngagementWebMcpTools(controller: EngagementWebMcpControll
       }
       if (!["pending_review", "failed"].includes(selectedDraft.status)) {
         throw new Error(`Reply draft cannot be edited while its status is "${selectedDraft.status}"`);
+      }
+      if (controller.canStageReplyEdit?.(replyDraftId) === false) {
+        throw new Error("Reply draft is currently open for human editing");
       }
       controller.stageReplyEdit(replyDraftId, content);
       return {
