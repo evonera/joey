@@ -74,7 +74,9 @@ function isPrivateIp(ip: string): boolean {
     return false;
   }
   // IPv6 checks
-  const normalized = ip.toLowerCase();
+  // URL.hostname retains brackets around IPv6 literals in Node, while DNS
+  // lookup results do not. Normalize both representations before range checks.
+  const normalized = ip.toLowerCase().replace(/^\[|\]$/g, "");
   if (normalized === "::1" || normalized === "::") return true;
   if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // ULA
   if (normalized.startsWith("fe80")) return true; // link-local
