@@ -7,6 +7,7 @@ import { executePublishDraft, getZernioClientForTenant } from "@/lib/publisher-c
 import { syncTenantMemories } from "@/lib/ingest-memories";
 import { assertBudget } from "@/lib/usage";
 import { recoverStaleEngagementSends } from "@/lib/engagement-delivery";
+import { processThemeStudioDmRetries } from "@/lib/engagement-inbox";
 // Aliases: toZonedTime() = UTC -> local wall-clock; fromZonedTime() = local -> UTC.
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
@@ -69,7 +70,17 @@ export default defineSchedule({
 
     // Release reply-send leases abandoned by crashed workers or transient
     // database failures before admitting more engagement work.
-    await recoverStaleEngagementSends();
+    try {
+      await recoverStaleEngagementSends();
+    } catch (err) {
+      console.error("[poll] Failed to recover stale engagement sends:", err);
+    }
+
+    try {
+      await processThemeStudioDmRetries();
+    } catch (err) {
+      console.error("[poll] Failed to process Theme Studio DM retries:", err);
+    }
 
     // --- 0. Sync Memories for Active Tenants ---
     const activeTenants = await db.select({ id: agentConfigs.tenantId })

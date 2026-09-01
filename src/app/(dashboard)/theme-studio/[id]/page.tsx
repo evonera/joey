@@ -12,6 +12,7 @@ import {
   IconCheck,
   IconClock
 } from "@tabler/icons-react";
+import { ThemePackageQueue } from "@/components/theme-studio/ThemePackageQueue";
 
 export default async function ThemePageOverview({
   params,
@@ -125,30 +126,7 @@ export default async function ThemePageOverview({
               </Link>
             </div>
 
-            {(!recentPackages || recentPackages.length === 0) ? (
-              <div className="p-6 text-center border border-dashed rounded-xl text-xs text-muted-foreground">
-                No packages generated yet. Run a simulation or activate the recipe.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {recentPackages.map((pkg) => (
-                  <div
-                    key={pkg.id}
-                    className="p-3 border rounded-xl flex items-center justify-between bg-muted/20 text-xs"
-                  >
-                    <div className="truncate max-w-md">
-                      <p className="font-semibold truncate">{pkg.title}</p>
-                      <p className="text-[11px] text-muted-foreground capitalize">
-                        Status: {pkg.status.replace("_", " ")}
-                      </p>
-                    </div>
-                    <span className="text-[11px] text-muted-foreground shrink-0">
-                      {new Date(pkg.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <ThemePackageQueue packages={recentPackages || []} />
           </div>
         </div>
 

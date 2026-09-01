@@ -1,84 +1,71 @@
-# Theme Studio product contract
+# Theme Studio
 
-Theme Studio turns Joey's lower-level automation primitives into a first-class system for operating niche social pages. A creator defines a reusable content recipe; Joey discovers source material, selects a daily content mix, creates branded media, pauses for review, publishes through connected accounts, and learns from performance.
+Theme Studio is Joey's product-level workspace for operating niche social pages. A Theme Page combines trusted sources, a daily content mix, brand settings, provenance rules, human review, and connected social accounts.
 
-Theme Studio is not implemented yet. Joey already supplies the flow executor, schedules, data and AI nodes, approvals, drafts, brand kit, asset storage, calendar, publishing, engagement inbox, and analytics that it will reuse.
+This document describes the implementation in this repository. It deliberately distinguishes shipped behavior from preview-only and future work.
 
-## Product model
+## Runtime architecture
 
-A theme page owns:
+Theme Studio does not run a second scheduler or bypass Joey's safety model.
 
-1. A niche, audience, voice, connected publishing accounts, and brand kit.
-2. Trusted sources, freshness windows, geography/language filters, and rights rules.
-3. A daily content mix expressed as slots, such as two news cards, one carousel, and one short video.
-4. Visual templates for cards, carousels, covers, captions, and vertical video scenes.
-5. Fact-checking, citation, attribution, semantic-similarity, and approval policies.
-6. A timezone-aware schedule and per-platform publication settings.
-7. Performance goals and feedback rules that can adjust ranking and experiments, but cannot silently weaken safety or approval policy.
+1. Activating a Theme Page compiles a two-node Joey flow: `trigger.schedule -> action.theme_studio_run`.
+2. Joey's existing flow scheduler and executor own admission, run leases, heartbeats, abort propagation, checkpoints, stale-run recovery, and restart behavior.
+3. The Theme Studio node runs tenant-scoped ingestion, deduplication, clustering, rights/provenance checks, editorial synthesis, package allocation, and media rendering.
+4. Generated packages enter a human review queue. Approval and publishing are separate authenticated actions.
+5. Publishing uses the tenant's existing `@zernio/node` client and selected Joey social-account record. Zernio owns platform APIs, scheduling, platform status, and webhook delivery.
+6. Zernio post webhooks reconcile the package's remote status and platform-native post ID. Comment webhooks enter Joey's engagement inbox and may invoke an enabled Theme Studio keyword private-reply rule.
 
-For a basketball page, the execution is:
+Eve remains Joey's agent/session runtime. Theme Studio's recurring production work belongs in the app-managed flow engine because it already provides the database fences and deterministic recovery this workflow needs. Do not add a parallel Eve schedule for the same Theme Page.
 
-`trusted sources -> normalize -> cluster stories -> verify facts -> rank angles -> fill daily slots -> generate copy and media -> rights/provenance gate -> human approval -> schedule/publish -> ingest performance`
+## Implemented now
 
-## Full-multimodal launch contract
+- Tenant-owned Theme Pages, sources, content formats, slots, visual templates, source items, story clusters, content packages, and DM rules.
+- Guided page creation, source management, daily-mix editing, a constrained visual-template editor, account selection, and a clearly labeled mock day preview.
+- RSS, public JSON HTTP, and Reddit ingestion through Joey's bounded, redirect-safe, DNS-pinned outbound request helper.
+- Canonical URL/content hashing, freshness filtering, and keyword-overlap story clustering.
+- Strict/moderate/permissive rights gates. Rights values are user declarations, not licenses inferred by Joey.
+- Source-backed structured copy generation through Joey's tenant-scoped OpenAI integration, budget checks, structured output, and abort signal.
+- Deterministic branded cards and carousels rendered to real PNG assets. Uploads use run-owned durable R2 cleanup reservations and asset-library registration.
+- A page-scoped human package queue. Agents cannot approve or publish through WebMCP.
+- Idempotent Zernio publishing, stale-attempt recovery, selected-account fencing, and post-webhook reconciliation.
+- Instagram/Facebook keyword-triggered private replies through Zernio after an idempotently ingested comment is associated with a published Theme Studio package. Per-comment delivery claims, attempt fencing, bounded retry backoff, stable request IDs, and the existing one-minute worker provide autonomous recovery without relying on webhook redelivery.
+- Two page-scoped, read-only WebMCP tools: inspect the visible Theme Page and check configuration readiness.
 
-The first public release supports static cards, multi-slide carousels, and vertical short videos for Instagram and TikTok. Full multimodal describes the supported output surface, not permission to publish without review: human approval remains the default for every generated package.
+## Safety contract
 
-- **Cards:** deterministic layout from a versioned visual template, structured facts, approved asset references, and platform-specific caption.
-- **Carousels:** ordered slides with a cover, story progression, source footer where appropriate, and a final call to action.
-- **Short videos:** a scene plan, narration/captions, licensed or generated visuals, audio-rights metadata, a rendered preview, and an editable platform caption.
-- **Platform variants:** one content package may produce separate Instagram and TikTok variants without losing their shared provenance.
+“Remix” means deriving a new angle, structure, hook, and presentation from sourced facts. It does not mean copying another creator's media or distinctive expression.
 
-## Architecture
+- Unknown rights are blocked by strict and moderate policies.
+- Required source URLs are appended outside the model output and retained in package provenance.
+- Feed text is treated as untrusted data in LLM and WebMCP boundaries.
+- The preview-day screen uses mock content only and does not claim factual or license verification.
+- A package needs rendered HTTPS media before approval.
+- Publishing requires a selected active account and an approved package.
+- Stable package IDs are sent as Zernio idempotency keys. Zernio duplicate responses are reconciled rather than treated as new posts.
+- WebMCP may inspect readiness, but cannot activate a page, weaken a policy, approve a package, publish, or send a DM.
 
-The theme recipe is the product-level source of truth. It must not be stored only as an opaque flow graph. A versioned compiler turns a recipe and its content slots into an executable Joey flow, while the existing executor retains responsibility for leases, checkpoints, abort propagation, approvals, retries, and restart-from-failed behavior.
+## Current limitations
 
-Core records:
+These items are not production-complete and must not be represented as shipped:
 
-- `theme_pages`: tenant-owned page identity, niche, audience, timezone, status, brand-kit reference, and recipe revision.
-- `theme_sources`: source type and location, trust score, freshness and language rules, and default rights policy.
-- `theme_slots`: ordered daily quotas for card, carousel, or short-video packages and their platform targets.
-- `theme_visual_templates`: versioned layout and scene specifications with safe editable fields.
-- `source_items`: normalized source snapshots, canonical URL, publication time, content hash, and retrieval metadata.
-- `story_clusters`: semantically equivalent source items and the chosen primary angle.
-- `content_packages`: the editorial unit joining claims, caption variants, media variants, approval state, schedule, and publishing state.
-- `content_provenance`: claim/asset-level source, author, license, attribution, transformation, and verification state.
+- **Vertical video:** the scene/timing preview works, but there is no MP4 render worker. New executable video slots are rejected and existing video recipes fail activation. There is no Remotion dependency or render service in this repository.
+- **Advanced visual editing:** the editor is a constrained form, not Fabric.js. Rendering applies safe template tokens, colors, type sizes, font family, and watermark; it is not a freeform canvas.
+- **Independent fact checking:** Joey retains source claims and provenance, but does not independently verify every claim against authoritative sources. Human review remains mandatory.
+- **Semantic clustering:** vector columns exist, but current clustering uses deterministic term overlap. Embedding generation and pgvector nearest-neighbor clustering are future work.
+- **Learning loop:** the quality scorer and optimizer exist, but package analytics ingestion and scheduled, explainable optimization are not connected yet. Empty metrics never change priorities.
+- **Scheduling depth:** the compiled recipe runs daily. Per-slot times, timezone rules, and sub-daily source polling are not implemented.
+- **TikTok production compliance:** editable MP4 previews, consent/disclosure controls, audit-mode restrictions, and status UX must be finished before enabling TikTok publishing.
+- **Asset-rights depth:** generated card backgrounds contain no third-party media. Licensed image/video ingestion, per-asset license records, perceptual similarity, and visible attribution rules remain future work.
 
-All records are tenant-scoped. Recipe revisions and renderer versions are captured on each package so a retry or audit reproduces the same inputs rather than silently adopting current settings.
+## Next delivery order
 
-## Safety and rights
+1. Build a real MP4 render worker and store immutable renderer/version inputs on each package.
+2. Add package-level Zernio analytics synchronization, minimum sample thresholds, and human-reviewed optimizer recommendations.
+3. Add per-claim verification state and corroboration requirements using authoritative sources.
+4. Add timezone-aware daily batches and per-slot scheduling without creating a second scheduler.
+5. Add TikTok consent, disclosure, preview, audit-status, and publish-status UX.
+6. Add browser end-to-end tests covering create -> activate -> stage -> approve -> Zernio sandbox -> webhook reconcile.
 
-“Remix” means learning from topics, structures, formats, and hooks. It does not mean downloading and reposting somebody else's media.
+## Acceptance boundary
 
-- Every factual claim retains its source URL and verification result.
-- Every media input has a rights category: `owned`, `generated`, `public_domain`, `cc_by`, `cc_by_sa`, or `commercial_license`.
-- Unknown rights, non-commercial licenses, and no-derivatives licenses are blocked from commercial remix by default.
-- Required attribution is rendered into package metadata and, when the license or format requires it, the visible creative or caption.
-- Near-duplicate text and perceptual-media similarity checks prevent accidental copying and repeated posts.
-- Generated packages always have an editable preview. Platform disclosures, commercial-content settings, consent, and publication status are recorded with the platform variant.
-
-## Human and agent boundaries
-
-Agents may inspect a theme page, propose source or recipe changes, stage content-slot edits, generate previews, explain provenance, and prepare approval batches. Creating or rotating credentials, activating a recipe, weakening rights or fact-check rules, approving a package, and publishing remain authenticated human actions.
-
-Future WebMCP tools follow the existing staged pattern:
-
-- Read-only: list theme pages, inspect a recipe, inspect a content package, explain provenance, and validate a recipe.
-- Reversible staging: stage recipe edits, source changes, content-slot changes, and copy/media regeneration requests.
-- Not exposed as page tools: activate, approve, publish, rotate credentials, or bypass a policy.
-
-## Delivery sequence
-
-1. **Domain foundation:** schema, tenant-scoped CRUD, recipe revisions, provenance and rights policies, and recipe validation/compiler contracts.
-2. **Studio experience:** guided page setup, source manager, daily-mix builder, platform/account selection, approval policy, and recipe preview.
-3. **Editorial pipeline:** normalized ingestion, canonical URL and semantic clustering, multi-source verification, angle ranking, slot filling, and checkpointed package creation.
-4. **Media renderers:** deterministic card/carousel layouts and a scene-based vertical-video renderer with previews, captions, and durable asset registration.
-5. **Publishing compliance:** Instagram and TikTok variants, explicit consent and commercial-content controls, idempotent submission, status reconciliation, and failure recovery.
-6. **Learning loop and WebMCP:** package-level analytics, controlled experiments, explainable ranking feedback, staged agent tools, evals, and end-to-end browser tests.
-
-Each step ships as a separate PR. A later step may depend on earlier contracts, but it must not relax tenant fencing, approval, provenance, idempotency, or replay guarantees to do so.
-
-## Acceptance scenario
-
-A user can create an “NBA Daily” page, select trusted league/team/news sources, choose a daily mix of two cards, one carousel, and one short video, apply a brand kit, connect Instagram and TikTok, and set a review deadline. On schedule Joey groups duplicate reports, verifies material claims from the configured sources, proposes four distinct packages with complete provenance, renders editable previews, and places them in one approval queue. Only approved variants publish; Joey records remote status and later uses their performance as an explainable ranking signal for future candidates.
-
+The current release is suitable for source-backed static cards and carousels that are reviewed by a person and published through an existing Zernio account. It is not yet a full-multimodal, autonomous theme-page operator. The limitations above are release blockers for making that broader claim.

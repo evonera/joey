@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   engagementActivities,
@@ -6,11 +6,19 @@ import {
   engagementItems,
   engagementSyncCursors,
   socialAccounts,
+  contentPackages,
 } from "@/lib/db/schema";
 import type { ZernioWebhookPayload } from "@/lib/webhooks";
 import { getZernioClientForTenant } from "@/lib/publisher-core";
+import { handleCommentWebhook } from "@/lib/theme-studio/dm-automation/comment-webhook-handler";
 
 type JsonRecord = Record<string, unknown>;
+const DM_DISPATCH_LEASE_MS = 2 * 60_000;
+const DM_DISPATCH_MAX_ATTEMPTS = 8;
+
+export function themeStudioDmRetryDelayMs(attempt: number): number {
+  return Math.min(60 * 60_000, 30_000 * (2 ** Math.min(Math.max(1, attempt), 7)));
+}
 
 function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -143,6 +151,169 @@ async function insertActivity(input: ActivityInput) {
   return activity;
 }
 
+async function claimThemeStudioDm(itemId: string, tenantId: string) {
+  const now = new Date();
+  const [claim] = await db.update(engagementItems).set({
+    dmDispatchStatus: "sending",
+    dmDispatchAttempts: sql`${engagementItems.dmDispatchAttempts} + 1`,
+    dmDispatchLeaseExpiresAt: new Date(now.getTime() + DM_DISPATCH_LEASE_MS),
+    dmDispatchError: null,
+  }).where(and(
+    eq(engagementItems.id, itemId),
+    eq(engagementItems.tenantId, tenantId),
+    lt(engagementItems.dmDispatchAttempts, DM_DISPATCH_MAX_ATTEMPTS),
+    or(
+      isNull(engagementItems.dmDispatchStatus),
+      and(
+        eq(engagementItems.dmDispatchStatus, "failed"),
+        or(
+          isNull(engagementItems.dmDispatchLeaseExpiresAt),
+          lt(engagementItems.dmDispatchLeaseExpiresAt, now),
+        ),
+      ),
+      and(
+        eq(engagementItems.dmDispatchStatus, "sending"),
+        or(
+          isNull(engagementItems.dmDispatchLeaseExpiresAt),
+          lt(engagementItems.dmDispatchLeaseExpiresAt, now),
+        ),
+      ),
+    ),
+  )).returning({ attempts: engagementItems.dmDispatchAttempts });
+  return claim?.attempts ?? null;
+}
+
+async function finishThemeStudioDm(
+  itemId: string,
+  tenantId: string,
+  attempt: number,
+  result: Awaited<ReturnType<typeof handleCommentWebhook>>,
+) {
+  const status = result.success
+    ? (result.matched ? "sent" : "skipped")
+    : (result.retryable === false || attempt >= DM_DISPATCH_MAX_ATTEMPTS ? "skipped" : "failed");
+  await db.update(engagementItems).set({
+    dmDispatchStatus: status,
+    dmDispatchLeaseExpiresAt: status === "failed"
+      ? new Date(Date.now() + themeStudioDmRetryDelayMs(attempt))
+      : null,
+    dmDispatchError: result.success ? null : (result.error || "Private reply failed").slice(0, 1_000),
+    dmDispatchMessageId: result.providerMessageId || null,
+  }).where(and(
+    eq(engagementItems.id, itemId),
+    eq(engagementItems.tenantId, tenantId),
+    eq(engagementItems.dmDispatchStatus, "sending"),
+    eq(engagementItems.dmDispatchAttempts, attempt),
+  ));
+}
+
+async function dispatchThemeStudioDm(item: typeof engagementItems.$inferSelect): Promise<boolean> {
+  if (!item.platformPostId || !item.platformCommentId || !item.socialAccountId) return false;
+  const [socialAccount, pkg] = await Promise.all([
+    db.query.socialAccounts.findFirst({
+      where: and(
+        eq(socialAccounts.id, item.socialAccountId),
+        eq(socialAccounts.tenantId, item.tenantId),
+      ),
+      columns: { platformAccountId: true },
+    }),
+    db.query.contentPackages.findFirst({
+      where: and(
+        eq(contentPackages.tenantId, item.tenantId),
+        eq(contentPackages.publishedPostId, item.platformPostId),
+      ),
+      columns: { themePageId: true },
+    }),
+  ]);
+  if (!socialAccount?.platformAccountId || !pkg) return false;
+
+  const attempt = await claimThemeStudioDm(item.id, item.tenantId);
+  if (attempt === null) return false;
+  const raw = record(item.metadata);
+  const comment = record(raw.comment);
+  const author = record(comment.author);
+  let result: Awaited<ReturnType<typeof handleCommentWebhook>>;
+  try {
+    result = await handleCommentWebhook({
+      tenantId: item.tenantId,
+      themePageId: pkg.themePageId,
+      accountId: socialAccount.platformAccountId,
+      platform: item.platform,
+      postId: item.platformPostId,
+      commentId: item.platformCommentId,
+      authorUsername: text(author.username) ?? item.commenterHandle ?? item.commenterName ?? "there",
+      authorId: text(author.id) ?? "unknown",
+      commentText: text(comment.text) ?? item.text,
+    });
+  } catch (error) {
+    result = {
+      matched: true,
+      success: false,
+      retryable: true,
+      error: error instanceof Error ? error.message : "Private reply dispatch failed",
+    };
+  }
+  await finishThemeStudioDm(item.id, item.tenantId, attempt, result);
+  if (result.matched && !result.success) {
+    console.error("Theme Studio private reply failed", result.error);
+  }
+  return result.success;
+}
+
+/**
+ * Consumes due private-reply work independently of webhook redelivery. Claims
+ * are tenant-scoped and attempt-fenced, so overlapping minute ticks are safe.
+ */
+export async function processThemeStudioDmRetries(limit = 25): Promise<{ processed: number }> {
+  try {
+    const now = new Date();
+
+    // Transition abandoned sending leases that reached maximum attempts to terminal failed state
+    await db.update(engagementItems).set({
+      dmDispatchStatus: "failed",
+      dmDispatchLeaseExpiresAt: null,
+      dmDispatchError: "Private reply exceeded maximum retry attempts",
+    }).where(and(
+      eq(engagementItems.dmDispatchStatus, "sending"),
+      gte(engagementItems.dmDispatchAttempts, DM_DISPATCH_MAX_ATTEMPTS),
+      or(
+        isNull(engagementItems.dmDispatchLeaseExpiresAt),
+        lt(engagementItems.dmDispatchLeaseExpiresAt, now),
+      ),
+    ));
+
+    const candidates = await db.query.engagementItems.findMany({
+      where: and(
+        lt(engagementItems.dmDispatchAttempts, DM_DISPATCH_MAX_ATTEMPTS),
+        or(
+          and(
+            eq(engagementItems.dmDispatchStatus, "failed"),
+            or(
+              isNull(engagementItems.dmDispatchLeaseExpiresAt),
+              lt(engagementItems.dmDispatchLeaseExpiresAt, now),
+            ),
+          ),
+          and(
+            eq(engagementItems.dmDispatchStatus, "sending"),
+            or(
+              isNull(engagementItems.dmDispatchLeaseExpiresAt),
+              lt(engagementItems.dmDispatchLeaseExpiresAt, now),
+            ),
+          ),
+        ),
+      ),
+      limit: Math.min(Math.max(limit, 1), 100),
+    });
+    const outcomes = await Promise.allSettled(candidates.map(dispatchThemeStudioDm));
+    return {
+      processed: outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value).length,
+    };
+  } catch (err) {
+    console.error("Theme Studio private reply retry processing failed:", err);
+    return { processed: 0 };
+  }
+}
+
 async function ingestComment(payload: ZernioWebhookPayload, tenantId: string) {
   const raw = payload as JsonRecord;
   const comment = record(raw.comment);
@@ -186,13 +357,22 @@ async function ingestComment(payload: ZernioWebhookPayload, tenantId: string) {
     occurredAt,
     metadata: raw,
   });
-  if (!activity || isMention || isOwnAccount) return activity;
+  if (isMention || isOwnAccount) return activity;
 
-  const [item] = await db.insert(engagementItems).values({
+  const persistedActivity = activity ?? await db.query.engagementActivities.findFirst({
+    where: and(
+      eq(engagementActivities.tenantId, tenantId),
+      eq(engagementActivities.conversationId, conversation.id),
+      eq(engagementActivities.externalActivityId, externalActivityId),
+    ),
+  });
+  if (!persistedActivity) return undefined;
+
+  const [insertedItem] = await db.insert(engagementItems).values({
     tenantId,
     socialAccountId: socialAccount?.id,
     conversationId: conversation.id,
-    activityId: activity.id,
+    activityId: persistedActivity.id,
     platform,
     platformPostId: text(comment.postId) ?? text(comment.platformPostId),
     platformCommentId: externalActivityId,
@@ -207,6 +387,17 @@ async function ingestComment(payload: ZernioWebhookPayload, tenantId: string) {
   }).onConflictDoNothing({
     target: [engagementItems.tenantId, engagementItems.platform, engagementItems.platformCommentId],
   }).returning();
+
+  const item = insertedItem ?? await db.query.engagementItems.findFirst({
+    where: and(
+      eq(engagementItems.tenantId, tenantId),
+      eq(engagementItems.platform, platform),
+      eq(engagementItems.platformCommentId, externalActivityId),
+    ),
+  });
+  if (!item) return undefined;
+
+  await dispatchThemeStudioDm(item);
   return item;
 }
 
