@@ -38,7 +38,11 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
 
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i];
-    const cluster = openClusters[i % openClusters.length]; // cycle if fewer clusters than slots
+    if (i >= openClusters.length) {
+      skippedSlotsCount++;
+      continue;
+    }
+    const cluster = openClusters[i];
 
     const memberIds = Array.isArray(cluster.memberItemIds) ? (cluster.memberItemIds as string[]) : [];
     let memberItems: any[] = [];

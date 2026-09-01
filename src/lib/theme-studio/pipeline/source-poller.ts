@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { sourceItems, themeSources } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -113,10 +114,16 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
           const parsedHttpDate = rawDate ? new Date(rawDate) : null;
           const publishedAt = parsedHttpDate && !isNaN(parsedHttpDate.getTime()) ? parsedHttpDate : undefined;
 
+          const itemUrl = row.url || row.link || (
+            row.id
+              ? `${source.url}#item-${row.id}`
+              : `${source.url}#item-${createHash("sha256").update(row.title + (row.description || row.body || row.summary || "")).digest("hex").slice(0, 16)}`
+          );
+
           items.push({
             title: row.title,
             body: row.description || row.body || row.summary || row.title,
-            url: row.url || row.link || source.url,
+            url: itemUrl,
             publishedAt,
             rightsCategory: source.rightsCategory,
           });
