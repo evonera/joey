@@ -11,7 +11,8 @@ import {
   IconCheck, 
   IconClock, 
   IconLoader2,
-  IconShieldCheck
+  IconShieldCheck,
+  IconAlertTriangle
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 
@@ -146,20 +147,36 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 p-4 rounded-xl text-xs">
-            <div className="flex items-center gap-2">
-              <IconCheck className="w-4 h-4 shrink-0 font-bold" />
-              <span>
-                Simulated <strong>{simulatedPackages.length} packages</strong> across {sources.length} active feeds. All rights verified.
-              </span>
-            </div>
-            <button
-              onClick={handleSimulate}
-              className="underline hover:no-underline font-semibold"
-            >
-              Re-run
-            </button>
-          </div>
+          {(() => {
+            const allCompliant = simulatedPackages.every((p) => p.provenance.isCompliant);
+            return (
+              <div
+                className={`flex items-center justify-between p-4 rounded-xl text-xs border ${
+                  allCompliant
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                    : "bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-300"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {allCompliant ? (
+                    <IconCheck className="w-4 h-4 shrink-0 font-bold" />
+                  ) : (
+                    <IconAlertTriangle className="w-4 h-4 shrink-0 font-bold" />
+                  )}
+                  <span>
+                    Simulated <strong>{simulatedPackages.length} packages</strong> across {sources.length} active feeds.{" "}
+                    {allCompliant ? "All rights verified." : "Some packages require license/rights review."}
+                  </span>
+                </div>
+                <button
+                  onClick={handleSimulate}
+                  className="underline hover:no-underline font-semibold"
+                >
+                  Re-run
+                </button>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {simulatedPackages.map((pkg, idx) => (
@@ -172,9 +189,15 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary">
                       Slot #{idx + 1} · {pkg.slotLabel}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                      <IconShieldCheck className="w-3.5 h-3.5" /> Rights Verified
-                    </span>
+                    {pkg.provenance.isCompliant ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                        <IconShieldCheck className="w-3.5 h-3.5" /> Rights Verified ({pkg.provenance.rightsVerified.toUpperCase()})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                        <IconAlertTriangle className="w-3.5 h-3.5" /> Rights Review Needed ({pkg.provenance.rightsVerified.toUpperCase()})
+                      </span>
+                    )}
                   </div>
 
                   <h3 className="font-bold text-base leading-snug">{pkg.title}</h3>
@@ -195,8 +218,10 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
                 </div>
 
                 <div className="pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Sources: {pkg.provenance.sourcesUsed.join(", ")}</span>
-                  <span className="font-semibold text-primary">Ready for Approval</span>
+                  <span>Sources: {pkg.provenance.sourcesUsed.length > 0 ? pkg.provenance.sourcesUsed.join(", ") : "None assigned"}</span>
+                  <span className={`font-semibold ${pkg.provenance.isCompliant ? "text-primary" : "text-amber-600 dark:text-amber-400"}`}>
+                    {pkg.provenance.isCompliant ? "Ready for Approval" : "Needs Rights Review"}
+                  </span>
                 </div>
               </div>
             ))}

@@ -128,12 +128,24 @@ describe("Theme Studio UI Components", () => {
       {
         id: "slot_1",
         label: "Morning Card",
-        format: { id: "fmt_1", name: "Square Card", mediaType: "image", aspectRatio: "1:1" },
+        format: {
+          id: "fmt_1",
+          slug: "instagram-card-1080",
+          platform: "instagram",
+          name: "Square Card",
+          mediaType: "image",
+          aspectRatio: "1:1",
+        },
       },
     ];
 
     const mockSources = [
-      { id: "src_1", name: "Open Source AI Feed", rightsCategory: "cc_by" },
+      {
+        id: "src_1",
+        name: "Open Source AI Feed",
+        sourceType: "rss",
+        rightsCategory: "cc_by",
+      },
     ];
 
     render(
@@ -141,7 +153,6 @@ describe("Theme Studio UI Components", () => {
         themePage={mockThemePage}
         slots={mockSlots}
         sources={mockSources}
-        templates={[]}
       />
     );
 

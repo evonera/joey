@@ -41,7 +41,7 @@ export default async function ThemePageTemplateEditorRoute({
   if (
     templateRes.error ||
     !templateRes.template ||
-    (templateRes.template.themePageId && templateRes.template.themePageId !== id)
+    templateRes.template.themePageId !== id
   ) {
     notFound();
   }

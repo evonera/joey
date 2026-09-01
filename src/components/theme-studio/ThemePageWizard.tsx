@@ -14,7 +14,7 @@ import {
   IconPalette, 
   IconLoader2 
 } from "@tabler/icons-react";
-import { createThemePage } from "@/app/actions/theme-pages";
+import { createThemePage, deleteThemePage } from "@/app/actions/theme-pages";
 import { createThemeSource } from "@/app/actions/theme-sources";
 import { createThemeSlot } from "@/app/actions/theme-slots";
 import { createThemeTemplate } from "@/app/actions/theme-templates";
@@ -78,13 +78,14 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
     }
 
     setLoading(true);
+    let createdPageId: string | null = null;
     try {
       // 1. Create Theme Page
       const pageRes = await createThemePage({
         name: name.trim(),
-        niche: niche.trim() || undefined,
-        audience: audience.trim() || undefined,
-        voice: voice.trim() || undefined,
+        niche: niche.trim(),
+        voice: `Insightful, data-backed analysis tailored for ${niche}.`,
+        audience: "Niche community professionals and enthusiasts.",
         brandKit: {
           primaryColor,
           accentColor,
@@ -97,6 +98,7 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
       }
 
       const pageId = pageRes.page.id;
+      createdPageId = pageId;
 
       // 2. Add Sources
       for (const src of sources) {
@@ -172,6 +174,13 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
       toast.success("Theme page created successfully!");
       router.push(`/theme-studio/${pageId}`);
     } catch (err: any) {
+      if (createdPageId) {
+        try {
+          await deleteThemePage(createdPageId);
+        } catch {
+          // best-effort cleanup
+        }
+      }
       toast.error(err.message || "Failed to create theme page");
     } finally {
       setLoading(false);
