@@ -82,23 +82,53 @@ export class InstagramProvider implements IPlatformProvider {
           itemContainerIds.push(itemData.id);
         }
 
+        // Wait for all child item containers to finish processing before creating the parent Carousel container
+        for (const childId of itemContainerIds) {
+          let childStatus = await this.pollContainerStatus(account, childId);
+          let attempts = 0;
+          while (childStatus.status === "IN_PROGRESS" && attempts < 15) {
+            attempts++;
+            await new Promise((resolve) => setTimeout(resolve, 500 * attempts));
+            childStatus = await this.pollContainerStatus(account, childId);
+          }
+          if (childStatus.status === "ERROR") {
+            return {
+              containerId: "",
+              status: "ERROR",
+              error: childStatus.errorMessage || `Instagram carousel child item ${childId} failed processing`,
+            };
+          }
+        }
+
         // Create the parent Carousel container with caption and child container IDs
-        const carouselRes = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            access_token: account.accessToken,
-            media_type: "CAROUSEL",
-            children: itemContainerIds.join(","),
-            ...(caption ? { caption } : {}),
-          }),
-        });
-        const carouselData = await carouselRes.json();
-        if (!carouselRes.ok || !carouselData.id) {
+        let parentAttempts = 0;
+        let carouselData: any = null;
+        while (parentAttempts < 5) {
+          parentAttempts++;
+          const carouselRes = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              access_token: account.accessToken,
+              media_type: "CAROUSEL",
+              children: itemContainerIds.join(","),
+              ...(caption ? { caption } : {}),
+            }),
+          });
+          carouselData = await carouselRes.json();
+          if (carouselRes.ok && carouselData.id) {
+            break;
+          }
+          if (parentAttempts < 5) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+
+        if (!carouselData || !carouselData.id) {
           return {
             containerId: "",
             status: "ERROR",
-            error: carouselData.error?.message || "Failed to create Instagram carousel parent container",
+            error: carouselData?.error?.message || "Failed to create Instagram carousel parent container",
           };
         }
 
