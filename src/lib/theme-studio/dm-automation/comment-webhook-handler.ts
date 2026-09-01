@@ -2,6 +2,9 @@ import { db } from "@/lib/db";
 import { dmAutomationRules } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getZernioClientForTenant } from "@/lib/publisher-core";
+import { createHash } from "node:crypto";
+
+class PermanentDmDispatchError extends Error {}
 
 export interface CommentWebhookEvent {
   tenantId: string;
@@ -22,6 +25,8 @@ export interface DmDispatchResult {
   dispatchedMessage?: string;
   destinationLink?: string;
   success: boolean;
+  retryable?: boolean;
+  providerMessageId?: string;
   error?: string;
 }
 
@@ -60,10 +65,15 @@ export async function handleCommentWebhook(event: CommentWebhookEvent): Promise<
       const currentStats = (rule.stats as any) || { triggered: 0, dmsSent: 0, clicks: 0 };
       try {
         if (event.platform !== "instagram" && event.platform !== "facebook") {
-          throw new Error("Private comment replies are supported only for Instagram and Facebook");
+          throw new PermanentDmDispatchError("Private comment replies are supported only for Instagram and Facebook");
         }
         const { zernio } = await getZernioClientForTenant(tenantId);
         const response = await zernio.comments.sendPrivateReplyToComment({
+          headers: {
+            "x-request-id": createHash("sha256")
+              .update(`${tenantId}:${rule.id}:${event.commentId}`)
+              .digest("hex"),
+          },
           path: { postId: event.postId, commentId: event.commentId },
           body: {
             accountId: event.accountId,
@@ -73,6 +83,12 @@ export async function handleCommentWebhook(event: CommentWebhookEvent): Promise<
               : {}),
           },
         });
+        const responseCode = response.error && typeof response.error === "object" && "code" in response.error
+          ? response.error.code
+          : undefined;
+        if (responseCode === "PLATFORM_LIMITATION") {
+          throw new PermanentDmDispatchError("The platform does not allow a private reply for this comment");
+        }
         if (response.error || !response.data?.messageId) {
           throw new Error("Zernio did not confirm the private reply");
         }
@@ -93,6 +109,8 @@ export async function handleCommentWebhook(event: CommentWebhookEvent): Promise<
           dispatchedMessage: message,
           destinationLink: rule.responseLink || undefined,
           success: true,
+          retryable: false,
+          providerMessageId: response.data.messageId,
         };
       } catch (error) {
         await db.update(dmAutomationRules).set({
@@ -108,6 +126,7 @@ export async function handleCommentWebhook(event: CommentWebhookEvent): Promise<
           ruleId: rule.id,
           triggerKeyword: rule.triggerValue,
           success: false,
+          retryable: !(error instanceof PermanentDmDispatchError),
           error: error instanceof Error ? error.message : "Private reply failed",
         };
       }

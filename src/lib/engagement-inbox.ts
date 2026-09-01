@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   engagementActivities,
@@ -13,6 +13,11 @@ import { getZernioClientForTenant } from "@/lib/publisher-core";
 import { handleCommentWebhook } from "@/lib/theme-studio/dm-automation/comment-webhook-handler";
 
 type JsonRecord = Record<string, unknown>;
+const DM_DISPATCH_LEASE_MS = 2 * 60_000;
+
+export function themeStudioDmRetryDelayMs(attempt: number): number {
+  return Math.min(60 * 60_000, 30_000 * (2 ** Math.min(Math.max(1, attempt), 7)));
+}
 
 function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -145,6 +150,61 @@ async function insertActivity(input: ActivityInput) {
   return activity;
 }
 
+async function claimThemeStudioDm(itemId: string, tenantId: string) {
+  const now = new Date();
+  const [claim] = await db.update(engagementItems).set({
+    dmDispatchStatus: "sending",
+    dmDispatchAttempts: sql`${engagementItems.dmDispatchAttempts} + 1`,
+    dmDispatchLeaseExpiresAt: new Date(now.getTime() + DM_DISPATCH_LEASE_MS),
+    dmDispatchError: null,
+  }).where(and(
+    eq(engagementItems.id, itemId),
+    eq(engagementItems.tenantId, tenantId),
+    or(
+      isNull(engagementItems.dmDispatchStatus),
+      and(
+        eq(engagementItems.dmDispatchStatus, "failed"),
+        or(
+          isNull(engagementItems.dmDispatchLeaseExpiresAt),
+          lt(engagementItems.dmDispatchLeaseExpiresAt, now),
+        ),
+      ),
+      and(
+        eq(engagementItems.dmDispatchStatus, "sending"),
+        or(
+          isNull(engagementItems.dmDispatchLeaseExpiresAt),
+          lt(engagementItems.dmDispatchLeaseExpiresAt, now),
+        ),
+      ),
+    ),
+  )).returning({ attempts: engagementItems.dmDispatchAttempts });
+  return claim?.attempts ?? null;
+}
+
+async function finishThemeStudioDm(
+  itemId: string,
+  tenantId: string,
+  attempt: number,
+  result: Awaited<ReturnType<typeof handleCommentWebhook>>,
+) {
+  const status = result.success
+    ? (result.matched ? "sent" : "skipped")
+    : (result.retryable === false ? "skipped" : "failed");
+  await db.update(engagementItems).set({
+    dmDispatchStatus: status,
+    dmDispatchLeaseExpiresAt: status === "failed"
+      ? new Date(Date.now() + themeStudioDmRetryDelayMs(attempt))
+      : null,
+    dmDispatchError: result.success ? null : (result.error || "Private reply failed").slice(0, 1_000),
+    dmDispatchMessageId: result.providerMessageId || null,
+  }).where(and(
+    eq(engagementItems.id, itemId),
+    eq(engagementItems.tenantId, tenantId),
+    eq(engagementItems.dmDispatchStatus, "sending"),
+    eq(engagementItems.dmDispatchAttempts, attempt),
+  ));
+}
+
 async function ingestComment(payload: ZernioWebhookPayload, tenantId: string) {
   const raw = payload as JsonRecord;
   const comment = record(raw.comment);
@@ -188,13 +248,22 @@ async function ingestComment(payload: ZernioWebhookPayload, tenantId: string) {
     occurredAt,
     metadata: raw,
   });
-  if (!activity || isMention || isOwnAccount) return activity;
+  if (isMention || isOwnAccount) return activity;
 
-  const [item] = await db.insert(engagementItems).values({
+  const persistedActivity = activity ?? await db.query.engagementActivities.findFirst({
+    where: and(
+      eq(engagementActivities.tenantId, tenantId),
+      eq(engagementActivities.conversationId, conversation.id),
+      eq(engagementActivities.externalActivityId, externalActivityId),
+    ),
+  });
+  if (!persistedActivity) return undefined;
+
+  const [insertedItem] = await db.insert(engagementItems).values({
     tenantId,
     socialAccountId: socialAccount?.id,
     conversationId: conversation.id,
-    activityId: activity.id,
+    activityId: persistedActivity.id,
     platform,
     platformPostId: text(comment.postId) ?? text(comment.platformPostId),
     platformCommentId: externalActivityId,
@@ -210,8 +279,17 @@ async function ingestComment(payload: ZernioWebhookPayload, tenantId: string) {
     target: [engagementItems.tenantId, engagementItems.platform, engagementItems.platformCommentId],
   }).returning();
 
+  const item = insertedItem ?? await db.query.engagementItems.findFirst({
+    where: and(
+      eq(engagementItems.tenantId, tenantId),
+      eq(engagementItems.platform, platform),
+      eq(engagementItems.platformCommentId, externalActivityId),
+    ),
+  });
+  if (!item) return undefined;
+
   const platformPostId = text(comment.postId) ?? text(comment.platformPostId);
-  if (item && platformPostId && socialAccount?.platformAccountId) {
+  if (platformPostId && socialAccount?.platformAccountId) {
     const pkg = await db.query.contentPackages.findFirst({
       where: and(
         eq(contentPackages.tenantId, tenantId),
@@ -219,18 +297,30 @@ async function ingestComment(payload: ZernioWebhookPayload, tenantId: string) {
       ),
       columns: { themePageId: true },
     });
-    if (pkg) {
-      const dmResult = await handleCommentWebhook({
-        tenantId,
-        themePageId: pkg.themePageId,
-        accountId: socialAccount.platformAccountId,
-        platform,
-        postId: platformPostId,
-        commentId: externalActivityId,
-        authorUsername: text(author.username) ?? text(author.name) ?? "there",
-        authorId: text(author.id) ?? "unknown",
-        commentText: text(comment.text) ?? "",
-      });
+    const dmAttempt = pkg ? await claimThemeStudioDm(item.id, tenantId) : null;
+    if (pkg && dmAttempt !== null) {
+      let dmResult: Awaited<ReturnType<typeof handleCommentWebhook>>;
+      try {
+        dmResult = await handleCommentWebhook({
+          tenantId,
+          themePageId: pkg.themePageId,
+          accountId: socialAccount.platformAccountId,
+          platform,
+          postId: platformPostId,
+          commentId: externalActivityId,
+          authorUsername: text(author.username) ?? text(author.name) ?? "there",
+          authorId: text(author.id) ?? "unknown",
+          commentText: text(comment.text) ?? "",
+        });
+      } catch (error) {
+        dmResult = {
+          matched: true,
+          success: false,
+          retryable: true,
+          error: error instanceof Error ? error.message : "Private reply dispatch failed",
+        };
+      }
+      await finishThemeStudioDm(item.id, tenantId, dmAttempt, dmResult);
       if (dmResult.matched && !dmResult.success) {
         console.error("Theme Studio private reply failed", dmResult.error);
       }

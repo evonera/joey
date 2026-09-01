@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { calculateQualityScore } from "@/lib/theme-studio/learning/quality-scorer";
+import { hasUsableAnalyticsSample } from "@/lib/theme-studio/learning/recipe-optimizer";
 import { createThemeStudioWebMcpTools } from "@/lib/theme-studio/webmcp/theme-studio-tools";
 
 describe("Theme Studio Learning Loop, DM Automation & WebMCP (Phase 6)", () => {
@@ -39,6 +40,13 @@ describe("Theme Studio Learning Loop, DM Automation & WebMCP (Phase 6)", () => {
       });
 
       expect(postWithChurn.signals.unfollowPenalty).toBe(100);
+    });
+
+    it("excludes publishing metadata and accepts real zero-valued analytics", () => {
+      expect(hasUsableAnalyticsSample({})).toBe(false);
+      expect(hasUsableAnalyticsSample({ zernioPostId: "post-1", publishAccountId: "account-1" })).toBe(false);
+      expect(hasUsableAnalyticsSample({ reach: 0, likes: 0 })).toBe(true);
+      expect(hasUsableAnalyticsSample({ reach: Number.NaN })).toBe(false);
     });
   });
 
