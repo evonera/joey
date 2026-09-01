@@ -80,6 +80,12 @@ describe("WebMCP flow graph operations", () => {
       fromNodeId: "notify-a",
       toNodeId: "split",
     })).toThrow("create a cycle");
+
+    const trigger = addFlowGraphNode(withBoth, { type: "trigger.manual" }, "trigger").graph;
+    expect(() => connectFlowGraphNodes(trigger, {
+      fromNodeId: "notify-a",
+      toNodeId: "trigger",
+    })).toThrow("A trigger cannot receive connections");
   });
 
   it("serializes every named React Flow handle, including A/B branches", () => {
@@ -188,6 +194,7 @@ describe("WebMCP flow tools", () => {
         method: "GET",
         url: "https://example.com",
         headersJson: '{"Authorization":"Bearer private"}',
+        bodyJson: '{"password":"private"}',
         timeoutMs: 30_000,
         maxResponseBytes: 1024,
       },
@@ -195,7 +202,26 @@ describe("WebMCP flow tools", () => {
     const inspected = await call(tools, "joey_inspect_staged_flow", {});
     const nodes = inspected.data.nodes as Array<{ config: Record<string, unknown> }>;
     expect(nodes[0].config.headersJson).toBe("[redacted]");
+    expect(nodes[0].config.bodyJson).toBe("[redacted]");
     expect(inspected.content[0].text).not.toContain("Bearer private");
+  });
+
+  it("redacts credential-like URL query values during inspection", async () => {
+    const { tools } = harness();
+    await call(tools, "joey_add_flow_node", {
+      type: "data.http",
+      config: {
+        method: "GET",
+        url: "https://example.com/posts?api_key=private&limit=5",
+        timeoutMs: 30_000,
+        maxResponseBytes: 1024,
+      },
+    });
+    const inspected = await call(tools, "joey_inspect_staged_flow", {});
+    const nodes = inspected.data.nodes as Array<{ config: Record<string, unknown> }>;
+    expect(nodes[0].config.url).toContain("api_key=%5Bredacted%5D");
+    expect(nodes[0].config.url).toContain("limit=5");
+    expect(inspected.content[0].text).not.toContain("api_key=private");
   });
 
   it("does not mistake ordinary token-count settings for credentials", async () => {

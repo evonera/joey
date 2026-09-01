@@ -346,6 +346,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
     for (const entry of catalog()) (groups[entry.category] ??= []).push(entry);
     return groups;
   }, []);
+  const activationBlockedByAgentChanges = flow.status !== "active" && agentChangeCount > 0;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
@@ -396,8 +397,8 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
             <Button
               size="sm"
               variant={flow.status === "active" ? "secondary" : "default"}
-              disabled={busy || agentChangeCount > 0}
-              title={agentChangeCount > 0 ? "Save the staged agent changes before changing activation" : undefined}
+              disabled={busy || activationBlockedByAgentChanges}
+              title={activationBlockedByAgentChanges ? "Save the staged agent changes before activation" : undefined}
               onClick={handleToggleActive}
             >
               {flow.status === "active" ? <><Pause className="mr-1 h-3.5 w-3.5"/>Pause</> : <><Rocket className="mr-1 h-3.5 w-3.5"/>Activate</>}

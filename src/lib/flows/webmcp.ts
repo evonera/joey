@@ -186,6 +186,7 @@ export function connectFlowGraphNodes(
   if (!source) throw new Error(`Source node "${input.fromNodeId}" does not exist`);
   if (!target) throw new Error(`Target node "${input.toNodeId}" does not exist`);
   if (source.id === target.id) throw new Error("A node cannot connect to itself");
+  if (getNodeMeta(target.type)?.isTrigger) throw new Error("A trigger cannot receive connections");
   if (hasPath(graph, target.id, source.id)) throw new Error("This connection would create a cycle");
 
   const outputs = getNodeMeta(source.type)?.outputs ?? [];
@@ -231,13 +232,29 @@ function isSensitiveConfigKey(key: string): boolean {
     || normalized.includes("credential")
     || normalized.includes("password")
     || normalized.includes("secret")
-    || normalized === "headersjson";
+    || normalized === "headersjson"
+    || normalized === "bodyjson";
+}
+
+function safeUrlForAgent(value: string): string {
+  try {
+    const parsed = new URL(value);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (isSensitiveConfigKey(key)) parsed.searchParams.set(key, "[redacted]");
+    }
+    return parsed.toString();
+  } catch {
+    return value;
+  }
 }
 
 function safeConfigForAgent(value: unknown, key = "", depth = 0): unknown {
   if (isSensitiveConfigKey(key)) return "[redacted]";
   if (depth >= 8) return "[truncated]";
-  if (typeof value === "string") return value.length > 2_000 ? `${value.slice(0, 2_000)}…[truncated]` : value;
+  if (typeof value === "string") {
+    const safeValue = key.toLowerCase() === "url" ? safeUrlForAgent(value) : value;
+    return safeValue.length > 2_000 ? `${safeValue.slice(0, 2_000)}…[truncated]` : safeValue;
+  }
   if (Array.isArray(value)) return value.slice(0, 100).map((entry) => safeConfigForAgent(entry, "", depth + 1));
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [
