@@ -71,6 +71,11 @@ export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: R
       icon: IconGitBranch,
     },
     {
+      title: "Theme Studio",
+      url: "/theme-studio",
+      icon: IconBulb,
+    },
+    {
       title: "Assets",
       url: "/assets",
       icon: IconPhoto,

@@ -28,6 +28,7 @@ export async function proxy(request: NextRequest) {
 		request.nextUrl.pathname.startsWith('/flows') ||
 		request.nextUrl.pathname.startsWith('/engagement') ||
 		request.nextUrl.pathname.startsWith('/notifications') ||
+		request.nextUrl.pathname.startsWith('/theme-studio') ||
 		request.nextUrl.pathname.startsWith('/operations');
 
 	if (!session) {
