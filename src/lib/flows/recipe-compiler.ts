@@ -1,8 +1,8 @@
 import type { FlowGraphDoc, FlowGraphNode, FlowGraphEdge } from "./types";
 import { validateGraph } from "./validation";
 import { db } from "@/lib/db";
-import { flows, themePages, themeSources, themeSlots, themeContentFormats } from "@/lib/db/schema";
-import { eq, and, like } from "drizzle-orm";
+import { flows, socialAccounts, themePages, themeSources, themeSlots, themeContentFormats } from "@/lib/db/schema";
+import { eq, and, inArray, like } from "drizzle-orm";
 
 export interface CompileThemeRecipeInput {
   page: {
@@ -12,6 +12,7 @@ export interface CompileThemeRecipeInput {
     audience?: string | null;
     voice?: string | null;
     defaultRightsPolicy?: string | null;
+    connectedPlatforms: string[];
   };
   sources: Array<{
     id: string;
@@ -43,12 +44,20 @@ export function compileThemeRecipe(input: CompileThemeRecipeInput): {
   const flowName = `[Theme] ${page.name}`;
   const activeSources = sources.filter((s) => s.isActive);
   const activeSlots = slots.filter((s) => s.format);
+  const connectedPlatforms = new Set(page.connectedPlatforms.map((platform) => platform === "twitter" ? "x" : platform));
+  const missingPlatforms = Array.from(new Set(
+    activeSlots
+      .map((slot) => slot.format?.platform)
+      .filter((platform): platform is string => Boolean(platform))
+      .filter((platform) => !connectedPlatforms.has(platform === "twitter" ? "x" : platform)),
+  ));
   const validationIssues = [
     ...(activeSources.length === 0 ? ["Add at least one active Theme Studio source."] : []),
     ...(activeSlots.length === 0 ? ["Add at least one active Theme Studio content slot."] : []),
     ...(activeSlots.some((slot) => slot.format?.mediaType === "video")
       ? ["Remove video slots until a production MP4 renderer is configured."]
       : []),
+    ...missingPlatforms.map((platform) => `Select an active ${platform} publishing account.`),
   ];
   const graph: FlowGraphDoc = {
     nodes: [
@@ -101,6 +110,19 @@ export async function syncThemePageFlow(tenantId: string, themePageId: string) {
     where: eq(themeContentFormats.tenantId, tenantId),
   });
   const formatMap = new Map(formats.map((f) => [f.id, f]));
+  const selectedAccountIds = Array.isArray(page.connectedAccounts)
+    ? page.connectedAccounts.filter((id): id is string => typeof id === "string")
+    : [];
+  const selectedAccounts = selectedAccountIds.length > 0
+    ? await db.query.socialAccounts.findMany({
+        where: and(
+          eq(socialAccounts.tenantId, tenantId),
+          eq(socialAccounts.isActive, true),
+          inArray(socialAccounts.id, selectedAccountIds),
+        ),
+        columns: { platform: true },
+      })
+    : [];
 
   const slotsWithFormats = slots.map((s) => ({
     ...s,
@@ -108,7 +130,7 @@ export async function syncThemePageFlow(tenantId: string, themePageId: string) {
   }));
 
   const compiled = compileThemeRecipe({
-    page,
+    page: { ...page, connectedPlatforms: selectedAccounts.map((account) => account.platform) },
     sources,
     slots: slotsWithFormats,
   });

@@ -29,9 +29,10 @@ export default async function ThemePageLayout({
             audience: res.page.audience,
             status: res.page.status,
             rightsPolicy: res.page.defaultRightsPolicy,
-            connectedAccountCount: Array.isArray(res.page.connectedAccounts)
-              ? res.page.connectedAccounts.length
-              : 0,
+            connectedAccountCount: res.publishingAccounts?.length ?? 0,
+            connectedPlatforms: (res.publishingAccounts || []).map((account) => (
+              account.platform === "twitter" ? "x" : account.platform
+            )),
           },
           sources: (res.sources || []).map((source) => ({
             id: source.id,
@@ -45,6 +46,7 @@ export default async function ThemePageLayout({
             label: slot.label,
             cadence: slot.cadence,
             isActive: slot.isActive,
+            platform: res.formats?.find((format) => format.id === slot.formatId)?.platform,
           })),
           packages: (res.recentPackages || []).map((pkg) => ({
             id: pkg.id,

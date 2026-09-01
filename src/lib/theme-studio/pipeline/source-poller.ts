@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { sourceItems, themeSources } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -23,9 +24,24 @@ function publicReferenceUrl(value: unknown): string | undefined {
   }
 }
 
-function parsedDate(value: unknown): Date {
-  const result = typeof value === "string" || typeof value === "number" ? new Date(value) : new Date();
-  return Number.isNaN(result.getTime()) ? new Date() : result;
+function parsedDate(value: unknown): Date | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const result = new Date(value);
+  return Number.isNaN(result.getTime()) ? undefined : result;
+}
+
+export function fallbackItemUrl(sourceUrl: string, row: Record<string, unknown>, title: string, body: string): string | undefined {
+  const identityKey = row.id !== undefined && row.id !== null
+    ? ["item_id", String(row.id)] as const
+    : ["item_hash", createHash("sha256").update(`${title}\n${body}`).digest("hex").slice(0, 16)] as const;
+  try {
+    const parsed = new URL(sourceUrl);
+    parsed.hash = "";
+    parsed.searchParams.set(identityKey[0], identityKey[1]);
+    return publicReferenceUrl(parsed.toString());
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -50,14 +66,14 @@ export function parseRssXml(xml: string, defaultRights: string = "unknown"): Nor
     const title = titleMatch ? titleMatch[1].trim() : "Untitled";
     const url = publicReferenceUrl(linkMatch ? (linkMatch[1] || "").trim() : "");
     const body = descMatch ? descMatch[1].replace(/<[^>]*>/g, " ").trim() : title;
-    const publishedAt = dateMatch ? new Date(dateMatch[1].trim()) : new Date();
+    const publishedAt = parsedDate(dateMatch?.[1]?.trim());
 
     if (title && url) {
       items.push({
         title: title.slice(0, 500),
         body: body.slice(0, 20_000),
         url,
-        publishedAt: isNaN(publishedAt.getTime()) ? new Date() : publishedAt,
+        publishedAt,
         rightsCategory: defaultRights,
       });
     }
@@ -116,7 +132,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
             title: String(post.title || "").slice(0, 500),
             body: String(post.selftext || post.title || "").slice(0, 20_000),
             url: `https://reddit.com${post.permalink || ""}`,
-            publishedAt: parsedDate(Number(post.created_utc) * 1000),
+            publishedAt: typeof post.created_utc === "number" ? parsedDate(post.created_utc * 1000) : undefined,
             rightsCategory: source.rightsCategory,
             metadata: { score: post.score, author: post.author, numComments: post.num_comments },
           });
@@ -137,13 +153,15 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
         const row = candidate && typeof candidate === "object" && !Array.isArray(candidate)
           ? candidate as Record<string, unknown>
           : {};
-        const itemUrl = publicReferenceUrl(row.url ?? row.link ?? source.url);
-        if (typeof row.title === "string" && row.title.trim() && itemUrl) {
+        const title = typeof row.title === "string" ? row.title.trim() : "";
+        const body = String(row.description || row.body || row.summary || title);
+        const itemUrl = publicReferenceUrl(row.url ?? row.link) ?? fallbackItemUrl(source.url, row, title, body);
+        if (title && itemUrl) {
           items.push({
-            title: row.title.slice(0, 500),
-            body: String(row.description || row.body || row.summary || row.title).slice(0, 20_000),
+            title: title.slice(0, 500),
+            body: body.slice(0, 20_000),
             url: itemUrl,
-            publishedAt: parsedDate(row.publishedAt),
+            publishedAt: parsedDate(row.publishedAt ?? row.published_at ?? row.date),
             rightsCategory: source.rightsCategory,
           });
         }
@@ -178,7 +196,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
       url: item.url,
       canonicalUrlHash: urlHash,
       contentHash: bodyHash,
-      publishedAt: item.publishedAt || new Date(),
+      publishedAt: item.publishedAt || null,
       rightsCategory: item.rightsCategory || source.rightsCategory || "unknown",
       metadata: item.metadata || {},
       status: "raw",

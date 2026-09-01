@@ -2,7 +2,7 @@
 
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { themePages, themeSources, themeSlots, themeVisualTemplates, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
+import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
 import { eq, and, desc, like, inArray } from "drizzle-orm";
 import { syncThemePageFlow } from "@/lib/flows/recipe-compiler";
 
@@ -101,18 +101,38 @@ export async function getThemePageById(id: string) {
       where: and(eq(themeVisualTemplates.themePageId, id), eq(themeVisualTemplates.tenantId, tenantId)),
     });
 
+    const formats = await db.query.themeContentFormats.findMany({
+      where: eq(themeContentFormats.tenantId, tenantId),
+      columns: { id: true, platform: true },
+    });
+
     const recentPackages = await db.query.contentPackages.findMany({
       where: and(eq(contentPackages.themePageId, id), eq(contentPackages.tenantId, tenantId)),
       orderBy: [desc(contentPackages.createdAt)],
       limit: 10,
     });
+    const selectedAccountIds = Array.isArray(page.connectedAccounts)
+      ? page.connectedAccounts.filter((accountId): accountId is string => typeof accountId === "string")
+      : [];
+    const publishingAccounts = selectedAccountIds.length > 0
+      ? await db.query.socialAccounts.findMany({
+          where: and(
+            eq(socialAccounts.tenantId, tenantId),
+            eq(socialAccounts.isActive, true),
+            inArray(socialAccounts.id, selectedAccountIds),
+          ),
+          columns: { id: true, platform: true },
+        })
+      : [];
 
     return {
       page,
       sources,
       slots,
       templates,
+      formats,
       recentPackages,
+      publishingAccounts,
     };
   } catch (error: any) {
     console.error("Failed to fetch theme page details:", error);

@@ -40,17 +40,76 @@ function safeColor(value: string | undefined, fallback: string): string {
     : fallback;
 }
 
+function splitGraphemes(text: string): string[] {
+  if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(segmenter.segment(text), ({ segment }) => segment);
+  }
+  return Array.from(text);
+}
+
+function graphemeWidth(grapheme: string): number {
+  const code = grapheme.codePointAt(0) || 0;
+  return (
+    (code >= 0x1100 && code <= 0x11ff) ||
+    (code >= 0x2e80 && code <= 0xa4cf) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe10 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xffe6) ||
+    (code >= 0x1f000 && code <= 0x1ffff) ||
+    (code >= 0x2600 && code <= 0x27ff)
+  ) ? 2 : 1;
+}
+
+function visualWidth(text: string): number {
+  return splitGraphemes(text).reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
+}
+
+function takeVisualWidth(graphemes: string[], maxWidth: number): { head: string[]; tail: string[] } {
+  let width = 0;
+  let index = 0;
+  while (index < graphemes.length) {
+    const nextWidth = graphemeWidth(graphemes[index]);
+    if (index > 0 && width + nextWidth > maxWidth) break;
+    width += nextWidth;
+    index++;
+  }
+  return { head: graphemes.slice(0, index), tail: graphemes.slice(index) };
+}
+
+function clampVisualWidth(text: string, maxWidth: number): string {
+  if (visualWidth(text) <= maxWidth) return text;
+  const ellipsis = "...";
+  const { head } = takeVisualWidth(splitGraphemes(text), Math.max(1, maxWidth - visualWidth(ellipsis)));
+  return `${head.join("")}${ellipsis}`;
+}
+
 /**
- * Wraps text into lines with a maximum character count.
+ * Wraps text by approximate visual width without splitting grapheme clusters.
  */
 function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let currentLine = "";
 
-  for (const word of words) {
-    if ((currentLine + " " + word).trim().length <= maxCharsPerLine) {
-      currentLine = (currentLine + " " + word).trim();
+  for (const rawWord of words) {
+    if (!rawWord) continue;
+    let graphemes = splitGraphemes(rawWord);
+    while (visualWidth(graphemes.join("")) > maxCharsPerLine) {
+      if (currentLine) {
+        lines.push(currentLine);
+        currentLine = "";
+      }
+      const { head, tail } = takeVisualWidth(graphemes, maxCharsPerLine);
+      lines.push(head.join(""));
+      graphemes = tail;
+    }
+    const word = graphemes.join("");
+    if (!word) continue;
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    if (visualWidth(candidate) <= maxCharsPerLine) {
+      currentLine = candidate;
     } else {
       if (currentLine) lines.push(currentLine);
       currentLine = word;
@@ -64,7 +123,7 @@ function boundedLines(text: string, maxCharsPerLine: number, maxLines: number): 
   const lines = wrapText(text, maxCharsPerLine);
   if (lines.length <= maxLines) return lines;
   const bounded = lines.slice(0, maxLines);
-  bounded[maxLines - 1] = `${bounded[maxLines - 1].replace(/[.…]+$/, "")}…`;
+  bounded[maxLines - 1] = clampVisualWidth(bounded[maxLines - 1].replace(/[.…]+$/, ""), maxCharsPerLine - 3) + "...";
   return bounded;
 }
 
@@ -96,6 +155,10 @@ export function renderCardSvg(options: CardRenderOptions): string {
 
   const titleLines = boundedLines(title, 24, aspectRatio === "16:9" ? 3 : 6);
   const bodyLines = wrapText(body, 36).slice(0, 4);
+  const clampedTag = clampVisualWidth(tag.toUpperCase(), 20);
+  const tagBadgeWidth = Math.min(visualWidth(clampedTag) * 14 + 32, 320);
+  const clampedSourceName = sourceName ? clampVisualWidth(sourceName, 30) : undefined;
+  const clampedWatermark = clampVisualWidth(watermark, 32);
 
   const titleStartY = height * 0.38;
   const titleLineHeight = titleFontSize * 1.25;
@@ -123,13 +186,13 @@ export function renderCardSvg(options: CardRenderOptions): string {
 
   <!-- Top Header Tag -->
   <g transform="translate(80, 80)">
-    <rect x="0" y="0" width="${tag.length * 14 + 32}" height="42" rx="21" fill="${escapeXml(accentColor)}" fill-opacity="0.18" stroke="${escapeXml(accentColor)}" stroke-opacity="0.4" stroke-width="2" />
-    <text x="16" y="27" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="16" font-weight="800" letter-spacing="1.5">${escapeXml(tag.toUpperCase())}</text>
+    <rect x="0" y="0" width="${tagBadgeWidth}" height="42" rx="21" fill="${escapeXml(accentColor)}" fill-opacity="0.18" stroke="${escapeXml(accentColor)}" stroke-opacity="0.4" stroke-width="2" />
+    <text x="16" y="27" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="16" font-weight="800" letter-spacing="1.5">${escapeXml(clampedTag)}</text>
   </g>
 
   ${
-    sourceName
-      ? `<text x="${width - 80}" y="108" text-anchor="end" fill="${escapeXml(textColor)}" fill-opacity="0.65" font-family="${escapeXml(fontFamily)}" font-size="20" font-weight="600">${escapeXml(sourceName)}</text>`
+    clampedSourceName
+      ? `<text x="${width - 80}" y="108" text-anchor="end" fill="${escapeXml(textColor)}" fill-opacity="0.65" font-family="${escapeXml(fontFamily)}" font-size="20" font-weight="600">${escapeXml(clampedSourceName)}</text>`
       : ""
   }
 
@@ -170,7 +233,7 @@ export function renderCardSvg(options: CardRenderOptions): string {
   ${brandKit.showWatermark === false ? "" : `<!-- Footer Watermark -->
   <g transform="translate(80, ${height - 90})">
     <line x1="0" y1="0" x2="${width - 160}" y2="0" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1.5" />
-    <text x="0" y="45" fill="${escapeXml(textColor)}" fill-opacity="0.75" font-family="${escapeXml(fontFamily)}" font-size="22" font-weight="700">${escapeXml(watermark)}</text>
+    <text x="0" y="45" fill="${escapeXml(textColor)}" fill-opacity="0.75" font-family="${escapeXml(fontFamily)}" font-size="22" font-weight="700">${escapeXml(clampedWatermark)}</text>
     <text x="${width - 160}" y="45" text-anchor="end" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="18" font-weight="600">Joey.ai Theme Studio</text>
   </g>`}
 </svg>`;

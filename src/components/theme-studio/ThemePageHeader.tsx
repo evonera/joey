@@ -53,6 +53,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
         status,
         rightsPolicy: "strict",
         connectedAccountCount: 0,
+        connectedPlatforms: [],
       },
       sources: [],
       slots: [],

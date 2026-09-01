@@ -13,6 +13,7 @@ export interface ThemeStudioWebMcpState {
     status: string;
     rightsPolicy: string;
     connectedAccountCount: number;
+    connectedPlatforms: string[];
   };
   sources: Array<{
     id: string;
@@ -21,7 +22,7 @@ export interface ThemeStudioWebMcpState {
     rightsCategory: string;
     isActive: boolean;
   }>;
-  slots: Array<{ id: string; label: string | null; cadence: string; isActive: boolean }>;
+  slots: Array<{ id: string; label: string | null; cadence: string; isActive: boolean; platform?: string }>;
   packages: Array<{ id: string; title: string; status: string }>;
 }
 
@@ -53,10 +54,18 @@ export function createThemeStudioWebMcpTools(
         const state = getState();
         const activeSources = state.sources.filter((source) => source.isActive);
         const unresolvedRights = activeSources.filter((source) => source.rightsCategory === "unknown");
+        const connectedPlatforms = new Set(state.page.connectedPlatforms);
+        const missingPlatforms = Array.from(new Set(
+          state.slots
+            .filter((slot) => slot.isActive && slot.platform)
+            .map((slot) => slot.platform!)
+            .filter((platform) => !connectedPlatforms.has(platform)),
+        ));
         const issues = [
           ...(activeSources.length === 0 ? ["Add at least one active source"] : []),
           ...(state.slots.some((slot) => slot.isActive) ? [] : ["Add at least one active content slot"]),
           ...(state.page.connectedAccountCount > 0 ? [] : ["Select at least one connected publishing account"]),
+          ...missingPlatforms.map((platform) => `Select an active ${platform} publishing account`),
           ...(state.page.rightsPolicy === "strict" && unresolvedRights.length > 0
             ? [`Review rights for ${unresolvedRights.length} active source(s)`]
             : []),

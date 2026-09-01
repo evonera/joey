@@ -67,74 +67,75 @@ export async function clusterSourceItems(tenantId: string, themePageId: string, 
     return { themePageId, clusteredCount: 0, clustersCreated: 0 };
   }
 
-  const clusters: ClusterCandidate[] = [];
-  const assignedItemIds = new Set<string>();
-
-  for (const item of rawItems) {
-    signal?.throwIfAborted();
-    if (assignedItemIds.has(item.id)) continue;
-
-    const clusterMembers = [item];
-    assignedItemIds.add(item.id);
-
-    for (const candidate of rawItems) {
-      if (assignedItemIds.has(candidate.id)) continue;
-
-      const overlap = calculateTopicOverlap(
-        `${item.title} ${item.body || ""}`,
-        `${candidate.title} ${candidate.body || ""}`
-      );
-
-      if (overlap >= 0.25) {
-        clusterMembers.push(candidate);
-        assignedItemIds.add(candidate.id);
-      }
+  return db.transaction(async (tx) => {
+    const claimedItems = await tx.update(sourceItems)
+      .set({ status: "clustered" })
+      .where(and(
+        eq(sourceItems.tenantId, tenantId),
+        eq(sourceItems.themePageId, themePageId),
+        eq(sourceItems.status, "raw"),
+        inArray(sourceItems.id, rawItems.map((item) => item.id)),
+      ))
+      .returning();
+    claimedItems.sort((left, right) => (right.publishedAt?.getTime() ?? 0) - (left.publishedAt?.getTime() ?? 0));
+    if (claimedItems.length === 0) {
+      return { themePageId, clusteredCount: 0, clustersCreated: 0 };
     }
 
-    const memberIds = clusterMembers.map((m) => m.id);
-    const primary = clusterMembers[0];
+    const clusters: ClusterCandidate[] = [];
+    const assignedItemIds = new Set<string>();
+    for (const item of claimedItems) {
+      signal?.throwIfAborted();
+      if (assignedItemIds.has(item.id)) continue;
 
-    const facts = clusterMembers.map((m) => ({
-      claim: m.title || "Key finding",
-      sourceUrl: m.url || undefined,
-      entity: primary.title?.split(" ")[0] || undefined,
-    }));
+      const clusterMembers = [item];
+      assignedItemIds.add(item.id);
+      for (const candidate of claimedItems) {
+        if (assignedItemIds.has(candidate.id)) continue;
+        const overlap = calculateTopicOverlap(
+          `${item.title} ${item.body || ""}`,
+          `${candidate.title} ${candidate.body || ""}`,
+        );
+        if (overlap >= 0.25) {
+          clusterMembers.push(candidate);
+          assignedItemIds.add(candidate.id);
+        }
+      }
 
-    const newestTimestamp = Math.max(...clusterMembers.map((member) => member.publishedAt?.getTime() ?? 0));
-    const ageHours = Math.max(0, (Date.now() - newestTimestamp) / (60 * 60 * 1000));
-    clusters.push({
-      title: primary.title || "Trending Topic",
-      summary: primary.body?.slice(0, 300) || primary.title || "",
-      memberItemIds: memberIds,
-      facts,
-      freshnessScore: Math.max(0, Math.round((10 - ageHours / 4) * 100) / 100),
-    });
-  }
+      const primary = clusterMembers[0];
+      const newestTimestamp = Math.max(...clusterMembers.map((member) => member.publishedAt?.getTime() ?? 0));
+      const ageHours = Math.max(0, (Date.now() - newestTimestamp) / (60 * 60 * 1000));
+      clusters.push({
+        title: primary.title || "Trending Topic",
+        summary: primary.body?.slice(0, 300) || primary.title || "",
+        memberItemIds: clusterMembers.map((member) => member.id),
+        facts: clusterMembers.map((member) => ({
+          claim: member.title || "Key finding",
+          sourceUrl: member.url || undefined,
+          entity: primary.title?.split(" ")[0] || undefined,
+        })),
+        freshnessScore: Math.max(0, Math.round((10 - ageHours / 4) * 100) / 100),
+      });
+    }
 
-  let clustersCreated = 0;
-  for (const c of clusters) {
-    await db.insert(storyClusters).values({
-      tenantId: page.tenantId,
+    for (const cluster of clusters) {
+      signal?.throwIfAborted();
+      await tx.insert(storyClusters).values({
+        tenantId: page.tenantId,
+        themePageId,
+        title: cluster.title,
+        summary: cluster.summary,
+        facts: cluster.facts,
+        memberItemIds: cluster.memberItemIds,
+        freshnessScore: cluster.freshnessScore.toString(),
+        status: "open",
+      });
+    }
+
+    return {
       themePageId,
-      title: c.title,
-      summary: c.summary,
-      facts: c.facts,
-      memberItemIds: c.memberItemIds,
-      freshnessScore: c.freshnessScore.toString(),
-      status: "open",
-    });
-
-    await db
-      .update(sourceItems)
-      .set({ status: "clustered" })
-      .where(and(eq(sourceItems.tenantId, tenantId), inArray(sourceItems.id, c.memberItemIds)));
-
-    clustersCreated++;
-  }
-
-  return {
-    themePageId,
-    clusteredCount: rawItems.length,
-    clustersCreated,
-  };
+      clusteredCount: claimedItems.length,
+      clustersCreated: clusters.length,
+    };
+  });
 }

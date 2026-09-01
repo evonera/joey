@@ -10,6 +10,7 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
     audience: "Die-hard basketball fans looking for fast, statistical analysis",
     voice: "High energy, data-driven, analytical yet fun",
     defaultRightsPolicy: "strict",
+    connectedPlatforms: ["instagram"],
   };
 
   const mockSources = [
@@ -142,5 +143,16 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
     });
     expect(result.isValid).toBe(false);
     expect(result.validationIssues).toContain("Remove video slots until a production MP4 renderer is configured.");
+  });
+
+  it("refuses activation when an active slot has no matching publishing account", () => {
+    const result = compileThemeRecipe({
+      page: { ...mockPage, connectedPlatforms: ["x"] },
+      sources: mockSources,
+      slots: mockSlots,
+    });
+
+    expect(result.isValid).toBe(false);
+    expect(result.validationIssues).toContain("Select an active instagram publishing account.");
   });
 });

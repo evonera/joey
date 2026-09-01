@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { contentPackages, sourceItems, storyClusters, themeSlots, themePages } from "@/lib/db/schema";
+import { contentPackages, sourceItems, storyClusters, themeSlots, themePages, themeSources } from "@/lib/db/schema";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { verifyRightsAndProvenance } from "./fact-rights-verifier";
 import { runLlm } from "@/lib/llm";
@@ -133,7 +133,11 @@ export async function synthesizeAndAllocatePackages(
     signal?.throwIfAborted();
     await heartbeat?.();
     const slot = slots[i];
-    const cluster = openClusters[i % openClusters.length]; // cycle if fewer clusters than slots
+    if (i >= openClusters.length) {
+      skippedSlotsCount++;
+      continue;
+    }
+    const cluster = openClusters[i];
 
     const memberIds = Array.isArray(cluster.memberItemIds)
       ? cluster.memberItemIds.filter((id): id is string => typeof id === "string")
@@ -147,22 +151,46 @@ export async function synthesizeAndAllocatePackages(
           ),
         })
       : [];
-    const verifications = members.map((member) => ({
-      member,
-      result: verifyRightsAndProvenance({
+    if (members.length === 0) {
+      skippedSlotsCount++;
+      continue;
+    }
+    const sourceIds = Array.from(new Set(members.map((member) => member.sourceId).filter(Boolean))) as string[];
+    const parentSources = sourceIds.length > 0
+      ? await db.query.themeSources.findMany({
+          where: and(
+            eq(themeSources.tenantId, tenantId),
+            eq(themeSources.themePageId, themePageId),
+            inArray(themeSources.id, sourceIds),
+          ),
+        })
+      : [];
+    const sourceNames = new Map(parentSources.map((source) => [source.id, source.name]));
+    const verifications = members.map((member) => {
+      let sourceName = member.sourceId ? sourceNames.get(member.sourceId) : undefined;
+      if (!sourceName && member.url) {
+        try { sourceName = new URL(member.url).hostname.replace(/^www\./, ""); } catch {}
+      }
+      return {
+        member,
+        result: verifyRightsAndProvenance({
         rightsCategory: member.rightsCategory,
         policy: (page.defaultRightsPolicy as "strict" | "moderate" | "permissive") || "strict",
         hasSourceUrl: Boolean(member.url),
         hasTimestamp: Boolean(member.publishedAt),
+        sourceName,
+        sourceUrl: member.url || undefined,
       }),
-    }));
+      };
+    });
     const verification = {
       isCompliant: verifications.length > 0 && verifications.every(({ result }) => result.isCompliant),
       attributionText: verifications
         .filter(({ result }) => result.attributionRequired)
-        .map(({ member }) => member.url)
-        .filter((url): url is string => Boolean(url))
-        .join(", "),
+        .map(({ result }) => result.attributionText)
+        .filter((text): text is string => Boolean(text))
+        .filter((text, index, all) => all.indexOf(text) === index)
+        .join("\n"),
     };
 
     if (!verification.isCompliant) {
@@ -201,40 +229,50 @@ export async function synthesizeAndAllocatePackages(
     const hashtagBlock = hashtags.length > 0 ? `\n\n${hashtags.join(" ")}` : "";
     const caption = `${copy.caption}${attribution}${hashtagBlock}`;
 
-    const [pkg] = await db.insert(contentPackages).values({
-      tenantId: page.tenantId,
-      themePageId,
-      slotId: slot.id,
-      clusterId: cluster.id,
-      formatId: slot.formatId,
-      templateId: slot.overrideTemplateId || null,
-      title,
-      caption,
-      hashtags,
-      renderedAssetUrls: [],
-      provenance: {
+    const pkg = await db.transaction(async (tx) => {
+      const [claimedCluster] = await tx.update(storyClusters)
+        .set({ status: "allocated", updatedAt: new Date() })
+        .where(and(
+          eq(storyClusters.id, cluster.id),
+          eq(storyClusters.tenantId, tenantId),
+          eq(storyClusters.themePageId, themePageId),
+          eq(storyClusters.status, "open"),
+        ))
+        .returning({ id: storyClusters.id });
+      if (!claimedCluster) return null;
+
+      const [inserted] = await tx.insert(contentPackages).values({
+        tenantId: page.tenantId,
+        themePageId,
+        slotId: slot.id,
         clusterId: cluster.id,
-        sourcesCount: members.length,
-        sources: members.map((member) => ({
-          sourceItemId: member.id,
-          url: member.url,
-          publishedAt: member.publishedAt?.toISOString() ?? null,
-          rightsCategory: member.rightsCategory,
-        })),
-        factsCount: Array.isArray(cluster.facts) ? cluster.facts.length : 0,
-        policy: page.defaultRightsPolicy,
-        generatedAt: new Date().toISOString(),
-        flowRunId,
-      },
-      status: "pending_review",
-    }).returning();
+        formatId: slot.formatId,
+        templateId: slot.overrideTemplateId || null,
+        title,
+        caption,
+        hashtags,
+        renderedAssetUrls: [],
+        provenance: {
+          clusterId: cluster.id,
+          sourcesCount: members.length,
+          sources: members.map((member) => ({
+            sourceItemId: member.id,
+            url: member.url,
+            publishedAt: member.publishedAt?.toISOString() ?? null,
+            rightsCategory: member.rightsCategory,
+          })),
+          factsCount: Array.isArray(cluster.facts) ? cluster.facts.length : 0,
+          policy: page.defaultRightsPolicy,
+          generatedAt: new Date().toISOString(),
+          flowRunId,
+        },
+        status: "pending_review",
+      }).returning();
+      return inserted;
+    });
 
-    packageIds.push(pkg.id);
-
-    await db
-      .update(storyClusters)
-      .set({ status: "allocated", updatedAt: new Date() })
-      .where(and(eq(storyClusters.id, cluster.id), eq(storyClusters.tenantId, tenantId)));
+    if (pkg) packageIds.push(pkg.id);
+    else skippedSlotsCount++;
   }
 
   return {
