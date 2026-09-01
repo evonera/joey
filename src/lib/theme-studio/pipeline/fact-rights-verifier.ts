@@ -3,6 +3,8 @@ export interface VerificationPolicyCheck {
   policy: "strict" | "moderate" | "permissive";
   hasSourceUrl: boolean;
   hasTimestamp: boolean;
+  sourceName?: string;
+  sourceUrl?: string;
 }
 
 export interface VerificationResult {
@@ -35,7 +37,7 @@ const MODERATE_ALLOWED_RIGHTS = new Set([
  * Validates a story against the page's rights policy and factual provenance rules.
  */
 export function verifyRightsAndProvenance(check: VerificationPolicyCheck): VerificationResult {
-  const { rightsCategory, policy, hasSourceUrl, hasTimestamp } = check;
+  const { rightsCategory, policy, hasSourceUrl, hasTimestamp, sourceName, sourceUrl } = check;
   const violations: string[] = [];
 
   let rightsPassed = false;
@@ -70,13 +72,14 @@ export function verifyRightsAndProvenance(check: VerificationPolicyCheck): Verif
   }
 
   const isCompliant = rightsPassed && provenancePassed;
+  const sourceIdentity = sourceName || sourceUrl || "Verified feed";
 
   return {
     isCompliant,
     rightsPassed,
     provenancePassed,
     attributionRequired,
-    attributionText: attributionRequired ? `Source: Verified via ${rightsCategory}` : undefined,
+    attributionText: attributionRequired ? `Source: ${sourceIdentity} (${rightsCategory.toUpperCase()})` : undefined,
     violations,
   };
 }

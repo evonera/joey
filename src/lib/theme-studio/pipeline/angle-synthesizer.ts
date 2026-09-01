@@ -60,6 +60,8 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
         policy: (page.defaultRightsPolicy as any) || "strict",
         hasSourceUrl: Boolean(m.url && m.url.trim()),
         hasTimestamp: Boolean(m.publishedAt),
+        sourceName: m.title ? (m.title.length > 50 ? `${m.title.slice(0, 47)}...` : m.title) : undefined,
+        sourceUrl: m.url || undefined,
       })
     );
 
