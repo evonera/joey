@@ -130,11 +130,12 @@ export async function publishContentPackage(
     // Step 2: Poll Container Status until READY or ERROR
     let polled = await provider.pollContainerStatus(authAccount, container.containerId);
     let attempts = 0;
-    const maxAttempts = 10;
+    const maxAttempts = 20;
 
     while (polled.status === "IN_PROGRESS" && attempts < maxAttempts) {
       attempts++;
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      const delayMs = Math.min(500 * attempts, 2000);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
       polled = await provider.pollContainerStatus(authAccount, container.containerId);
     }
 

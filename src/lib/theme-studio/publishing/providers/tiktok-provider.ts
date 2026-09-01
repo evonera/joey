@@ -143,10 +143,13 @@ export class TikTokProvider implements IPlatformProvider {
       return { success: false, error: "Missing TikTok credentials" };
     }
 
-    const publishedPostId = `tt_video_${containerId || crypto.randomUUID().slice(0, 14)}`;
+    const publishedPostId = containerId.startsWith("tt_cnt_") || account.accessToken.startsWith("test_")
+      ? `tt_video_${containerId}`
+      : containerId;
+
     return {
       publishedPostId,
-      publishedUrl: `https://tiktok.com/@user/video/${publishedPostId}`,
+      publishedUrl: `https://www.tiktok.com/@user/video/${publishedPostId}`,
       success: true,
     };
   }

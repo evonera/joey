@@ -88,13 +88,18 @@ export class XProvider implements IPlatformProvider {
     }
 
     try {
+      const tweetPayload: Record<string, any> = { text: caption };
+      if (containerId && !containerId.startsWith("mock_")) {
+        tweetPayload.media = { media_ids: [containerId.replace(/^x_media_/, "")] };
+      }
+
       const res = await fetch("https://api.twitter.com/2/tweets", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${account.accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text: caption }),
+        body: JSON.stringify(tweetPayload),
       });
 
       const data = await res.json();
