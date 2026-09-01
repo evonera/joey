@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getUnifiedInbox, markConversationRead, syncUnifiedInbox, type UnifiedInboxActivity, type UnifiedInboxConversation } from "@/app/actions/engagement";
 import { ReplyCard } from "@/components/engagement/reply-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { IconArrowLeft, IconChevronDown, IconInbox, IconMessageCircle, IconRefresh, IconSearch, IconStar } from "@tabler/icons-react";
+import { createEngagementWebMcpTools, type EngagementWebMcpItem } from "@/lib/engagement-webmcp";
+import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
+import { IconArrowLeft, IconChevronDown, IconInbox, IconMessageCircle, IconRefresh, IconSearch, IconSparkles, IconStar } from "@tabler/icons-react";
 
 type InboxResult = Awaited<ReturnType<typeof getUnifiedInbox>>;
 
@@ -41,24 +43,66 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [pages, setPages] = useState<UnifiedInboxConversation[]>(initialConversations);
   const [activityPages, setActivityPages] = useState<UnifiedInboxActivity[]>(initialActivities);
+  const [stagedReplyEdits, setStagedReplyEdits] = useState<Record<string, string>>({});
   const lastLoadedFilterKey = useRef<string | null>(initialResult ? "all||active" : null);
   const loadRequestId = useRef(0);
+  const pagesRef = useRef(pages);
+  const selectedRef = useRef<UnifiedInboxConversation | null>(null);
+  const selectedConversationIdRef = useRef<string | undefined>(initialSelectedId);
+  const activitiesRef = useRef(activityPages);
+  const selectedItemRef = useRef<EngagementWebMcpItem>(null);
+  const stagedReplyEditsRef = useRef(stagedReplyEdits);
+  const editingReplyDraftIds = useRef(new Set<string>());
 
   const load = useCallback(async (options?: { append?: boolean; cursor?: string | null; selected?: string; activityCursor?: string | null; prependActivities?: boolean }) => {
     const requestId = ++loadRequestId.current;
+    const requestedSelectedId = options?.selected ?? selectedConversationIdRef.current ?? selectedId;
     setLoading(true);
-    const response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: options?.selected ?? selectedId });
-    if (requestId !== loadRequestId.current) return;
+    let response: InboxResult;
+    try {
+      response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: requestedSelectedId });
+    } catch (error) {
+      if (requestId === loadRequestId.current) setLoading(false);
+      throw error;
+    }
+    const responseEstablishesRequestedSelection = Boolean(
+      options?.selected
+      && requestedSelectedId
+      && selectedConversationIdRef.current === requestedSelectedId
+      && "selectedConversation" in response
+      && response.selectedConversation?.id === requestedSelectedId,
+    );
+    if (requestId !== loadRequestId.current) {
+      if (!responseEstablishesRequestedSelection) return false;
+      if (selectedRef.current?.id === requestedSelectedId) return true;
+    }
+    if (requestedSelectedId && selectedConversationIdRef.current && requestedSelectedId !== selectedConversationIdRef.current) {
+      setLoading(false);
+      return false;
+    }
+    if (requestedSelectedId && (!("selectedConversation" in response) || response.selectedConversation?.id !== requestedSelectedId)) {
+      setLoading(false);
+      return false;
+    }
     setResult(response);
     if ("conversations" in response) {
       const conversations = response.conversations ?? [];
+      const responseActivities = response.activities ?? [];
+      selectedRef.current = response.selectedConversation ?? null;
+      selectedItemRef.current = response.selectedEngagementItem ?? null;
+      activitiesRef.current = options?.prependActivities
+        ? [...responseActivities, ...activitiesRef.current]
+        : responseActivities;
       if (options?.append) setPages((current) => [...current, ...conversations]);
       else if (!options?.selected) setPages(conversations);
-      if (!selectedId && response.selectedConversation?.id) setSelectedId(response.selectedConversation.id);
-      const responseActivities = response.activities ?? [];
+      if (!selectedConversationIdRef.current && response.selectedConversation?.id) {
+        selectedConversationIdRef.current = response.selectedConversation.id;
+        setSelectedId(response.selectedConversation.id);
+      }
       setActivityPages((current) => options?.prependActivities ? [...responseActivities, ...current] : responseActivities);
     }
     setLoading(false);
+    return true;
   }, [kind, search, selectedId, status]);
 
   useEffect(() => {
@@ -73,12 +117,125 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   const nextCursor = result && "nextCursor" in result ? result.nextCursor : null;
   const olderActivityCursor = result && "olderActivityCursor" in result ? result.olderActivityCursor : null;
   const error = result && "error" in result ? result.error : null;
+  pagesRef.current = pages;
+  selectedRef.current = selected ?? null;
+  activitiesRef.current = activityPages;
+  selectedItemRef.current = selectedItem ?? null;
+  stagedReplyEditsRef.current = stagedReplyEdits;
+
+  const selectConversationForAgent = useCallback(async (conversationId: string) => {
+    const previousSelectedId = selectedConversationIdRef.current;
+    selectedConversationIdRef.current = conversationId;
+    let loaded: boolean;
+    try {
+      loaded = await load({ selected: conversationId });
+    } catch (error) {
+      if (selectedConversationIdRef.current === conversationId) {
+        selectedConversationIdRef.current = previousSelectedId;
+      }
+      throw error;
+    }
+    if (!loaded) {
+      if (selectedConversationIdRef.current === conversationId) {
+        selectedConversationIdRef.current = previousSelectedId;
+      }
+      throw new Error(`Conversation "${conversationId}" could not be established as the visible selection`);
+    }
+    setSelectedId(conversationId);
+    setMobileDetailOpen(true);
+  }, [load]);
+
+  const stageReplyEdit = useCallback((replyDraftId: string, content: string) => {
+    editingReplyDraftIds.current.add(replyDraftId);
+    setStagedReplyEdits((current) => {
+      const next = { ...current, [replyDraftId]: content };
+      stagedReplyEditsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const clearStagedReplyEdit = useCallback((replyDraftId: string, expectedContent?: string): boolean => {
+    if (expectedContent !== undefined && stagedReplyEditsRef.current[replyDraftId] !== expectedContent) {
+      return false;
+    }
+    setStagedReplyEdits((current) => {
+      const next = { ...current };
+      delete next[replyDraftId];
+      stagedReplyEditsRef.current = next;
+      return next;
+    });
+    return true;
+  }, []);
+
+  const reconcileSavedReplyEdit = useCallback((replyDraftId: string, persistedContent: string, expectedStagedContent?: string): boolean => {
+    const selectedItem = selectedItemRef.current;
+    if (selectedItem?.replyDraft?.id === replyDraftId) {
+      selectedItemRef.current = {
+        ...selectedItem,
+        replyDraft: { ...selectedItem.replyDraft, content: persistedContent },
+      };
+    }
+    setResult((current) => {
+      if (!current || !("selectedEngagementItem" in current)) return current;
+      const item = current.selectedEngagementItem;
+      if (!item?.replyDraft || item.replyDraft.id !== replyDraftId) return current;
+      const selectedEngagementItem = {
+        ...item,
+        replyDraft: { ...item.replyDraft, content: persistedContent },
+      };
+      return { ...current, selectedEngagementItem };
+    });
+    return expectedStagedContent === undefined
+      ? true
+      : clearStagedReplyEdit(replyDraftId, expectedStagedContent);
+  }, [clearStagedReplyEdit]);
+
+  const setReplyEditing = useCallback((replyDraftId: string, isEditing: boolean) => {
+    if (isEditing) editingReplyDraftIds.current.add(replyDraftId);
+    else editingReplyDraftIds.current.delete(replyDraftId);
+  }, []);
+
+  const engagementWebMcpTools = useMemo(() => createEngagementWebMcpTools({
+    getState: () => ({
+      conversations: pagesRef.current,
+      selectedConversation: selectedRef.current,
+      activities: activitiesRef.current,
+      selectedItem: selectedItemRef.current,
+      stagedReplyEdits: stagedReplyEditsRef.current,
+    }),
+    selectConversation: selectConversationForAgent,
+    canStageReplyEdit: (replyDraftId) => !editingReplyDraftIds.current.has(replyDraftId),
+    stageReplyEdit,
+  }), [selectConversationForAgent, stageReplyEdit]);
+  const webMcpAvailable = useWebMcpTools(engagementWebMcpTools);
+  const stagedReplyCount = Object.keys(stagedReplyEdits).length;
 
   const selectConversation = async (conversation: UnifiedInboxConversation) => {
     const isAlreadySelected = selectedId === conversation.id;
+    const previousSelectedId = selectedConversationIdRef.current;
+    selectedConversationIdRef.current = conversation.id;
     setSelectedId(conversation.id);
     setMobileDetailOpen(true);
-    if (!isAlreadySelected) await load({ selected: conversation.id });
+    if (!isAlreadySelected) {
+      let loaded = false;
+      try {
+        loaded = await load({ selected: conversation.id });
+      } catch (error) {
+        if (selectedConversationIdRef.current === conversation.id) {
+          selectedConversationIdRef.current = previousSelectedId;
+          setSelectedId(previousSelectedId);
+        }
+        window.alert(error instanceof Error ? error.message : "Failed to load conversation");
+        return;
+      }
+      if (!loaded) {
+        if (selectedConversationIdRef.current === conversation.id) {
+          selectedConversationIdRef.current = previousSelectedId;
+          setSelectedId(previousSelectedId);
+        }
+        return;
+      }
+    }
     if (conversation.unreadCount > 0) {
       const read = await markConversationRead(conversation.id);
       if (read.success) setPages((current) => current.map((row) => row.id === conversation.id ? { ...row, unreadCount: 0 } : row));
@@ -96,9 +253,11 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   return (
     <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-2xl font-semibold tracking-tight">Engagement</h1><p className="text-sm text-muted-foreground">Comments, direct messages, mentions, reactions, and reviews in one queue.</p></div>
+        <div><div className="flex items-center gap-2"><h1 className="text-2xl font-semibold tracking-tight">Engagement</h1>{webMcpAvailable ? <Badge variant="outline" className="gap-1 border-indigo-300 text-indigo-700 dark:border-indigo-800 dark:text-indigo-300"><IconSparkles className="size-3" />WebMCP ready</Badge> : null}</div><p className="text-sm text-muted-foreground">Comments, direct messages, mentions, reactions, and reviews in one queue.</p></div>
         <Button variant="outline" onClick={sync} disabled={syncing}><IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "Syncing…" : "Sync Zernio"}</Button>
       </div>
+
+      {stagedReplyCount > 0 ? <div role="status" data-testid="engagement-webmcp-staged-banner" className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-950 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"><IconSparkles className="size-3.5" /><span className="font-medium">WebMCP staged {stagedReplyCount} {stagedReplyCount === 1 ? "reply edit" : "reply edits"}.</span><span className="text-indigo-700 dark:text-indigo-300">Open each draft and click Save. Approval and sending remain separate.</span></div> : null}
 
       <div className="grid min-h-0 flex-1 overflow-hidden rounded-xl border bg-background lg:grid-cols-[22rem_minmax(0,1fr)]">
         <aside className={`${mobileDetailOpen ? "hidden" : "flex"} min-h-[34rem] flex-col border-b lg:flex lg:border-b-0 lg:border-r`}>
@@ -132,7 +291,15 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
               {olderActivityCursor ? <Button variant="ghost" className="w-full" disabled={loading} onClick={() => void load({ selected: selected.id, activityCursor: olderActivityCursor, prependActivities: true })}><IconChevronDown className="size-4 rotate-180" />Load older activity</Button> : null}
               {activityPages.map((activity) => { const outgoing = activity.direction === "outgoing"; return <div key={activity.id} className={`flex ${outgoing ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${outgoing ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{!outgoing && activity.actorName ? <p className="mb-1 text-xs font-medium opacity-70">{activity.actorName}</p> : null}<p className={activity.isDeleted ? "italic opacity-60" : "whitespace-pre-wrap"}>{activityLabel(activity)}</p><div className="mt-1 flex items-center justify-end gap-2 text-[10px] opacity-60"><span className="capitalize">{activity.type}</span><time dateTime={new Date(activity.occurredAt).toISOString()} suppressHydrationWarning>{new Date(activity.occurredAt).toLocaleString()}</time>{activity.deliveryStatus ? <span className="capitalize">{activity.deliveryStatus}</span> : null}</div></div></div>; })}
             </div>
-            {selectedItem ? <div className="border-t pt-4"><ReplyCard item={selectedItem} onActionComplete={() => void load({ selected: selected.id })} /></div> : null}
+            {selectedItem ? <div className="border-t pt-4"><ReplyCard
+              key={`${selectedItem.id}:${selectedItem.replyDraft?.id ?? "no-draft"}`}
+              item={selectedItem}
+              stagedContent={selectedItem.replyDraft ? stagedReplyEdits[selectedItem.replyDraft.id] : undefined}
+              onDiscardStagedEdit={selectedItem.replyDraft ? () => clearStagedReplyEdit(selectedItem.replyDraft!.id) : undefined}
+              onEditSaved={selectedItem.replyDraft ? (persistedContent, expectedStagedContent) => reconcileSavedReplyEdit(selectedItem.replyDraft!.id, persistedContent, expectedStagedContent) : undefined}
+              onEditingChange={setReplyEditing}
+              onActionComplete={() => void load({ selected: selectedConversationIdRef.current ?? selected.id })}
+            /></div> : null}
           </div>}
         </main>
       </div>
