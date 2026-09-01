@@ -183,4 +183,36 @@ describe("ReplyCard WebMCP staging", () => {
     expect(screen.getByText("Conversation B reply")).toBeInTheDocument();
     expect(screen.queryByText("Unsaved text from conversation A")).not.toBeInTheDocument();
   });
+
+  it("ignores a save completion after the component moves to another draft", async () => {
+    let resolveSave!: (value: { success: true }) => void;
+    updateReplyDraft.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    const onSaved = vi.fn(() => true);
+    const onComplete = vi.fn();
+    const { rerender } = render(<ReplyCard
+      item={item}
+      stagedContent="Draft A proposal"
+      onEditSaved={onSaved}
+      onActionComplete={onComplete}
+    />);
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const conversationBItem = {
+      ...item,
+      id: "item-2",
+      replyDraft: { ...item.replyDraft, id: "draft-2", content: "Conversation B reply" },
+    };
+    rerender(<ReplyCard
+      item={conversationBItem}
+      onEditSaved={onSaved}
+      onActionComplete={onComplete}
+    />);
+    expect(screen.getByText("Conversation B reply")).toBeInTheDocument();
+
+    resolveSave({ success: true });
+    await Promise.resolve();
+    expect(screen.getByText("Conversation B reply")).toBeInTheDocument();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
 });

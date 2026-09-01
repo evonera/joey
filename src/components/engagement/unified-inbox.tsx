@@ -264,12 +264,13 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
               {activityPages.map((activity) => { const outgoing = activity.direction === "outgoing"; return <div key={activity.id} className={`flex ${outgoing ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${outgoing ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{!outgoing && activity.actorName ? <p className="mb-1 text-xs font-medium opacity-70">{activity.actorName}</p> : null}<p className={activity.isDeleted ? "italic opacity-60" : "whitespace-pre-wrap"}>{activityLabel(activity)}</p><div className="mt-1 flex items-center justify-end gap-2 text-[10px] opacity-60"><span className="capitalize">{activity.type}</span><time dateTime={new Date(activity.occurredAt).toISOString()} suppressHydrationWarning>{new Date(activity.occurredAt).toLocaleString()}</time>{activity.deliveryStatus ? <span className="capitalize">{activity.deliveryStatus}</span> : null}</div></div></div>; })}
             </div>
             {selectedItem ? <div className="border-t pt-4"><ReplyCard
+              key={`${selectedItem.id}:${selectedItem.replyDraft?.id ?? "no-draft"}`}
               item={selectedItem}
               stagedContent={selectedItem.replyDraft ? stagedReplyEdits[selectedItem.replyDraft.id] : undefined}
               onDiscardStagedEdit={selectedItem.replyDraft ? () => clearStagedReplyEdit(selectedItem.replyDraft!.id) : undefined}
               onEditSaved={selectedItem.replyDraft ? (persistedContent, expectedStagedContent) => reconcileSavedReplyEdit(selectedItem.replyDraft!.id, persistedContent, expectedStagedContent) : undefined}
               onEditingChange={setReplyEditing}
-              onActionComplete={() => void load({ selected: selected.id })}
+              onActionComplete={() => void load({ selected: selectedConversationIdRef.current ?? selected.id })}
             /></div> : null}
           </div>}
         </main>

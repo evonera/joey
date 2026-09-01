@@ -68,6 +68,7 @@ export function ReplyCard({
     if (activeReplyDraftId.current !== replyDraftId) {
       activeReplyDraftId.current = replyDraftId;
       hasHumanEdits.current = false;
+      setLoading(false);
       setDraftContent(stagedContent ?? serverContent);
       setIsEditing(stagedContent !== undefined);
       return;
@@ -136,9 +137,11 @@ export function ReplyCard({
 
   const handleSaveEdit = async () => {
     if (!item.replyDraft) return;
+    const savingDraftId = item.replyDraft.id;
     const stagedSnapshot = stagedContent;
     setLoading(true);
-    const response = await updateReplyDraft(item.replyDraft.id, draftContent);
+    const response = await updateReplyDraft(savingDraftId, draftContent);
+    if (activeReplyDraftId.current !== savingDraftId) return;
     setLoading(false);
     if (response.error) {
       alert(response.error);
