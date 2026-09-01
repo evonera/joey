@@ -71,6 +71,18 @@ describe("Theme Studio Media Renderers (Phase 4)", () => {
       expect(svg).toContain("https://verylongdomainna");
     });
 
+    it("handles long unbroken emoji and Unicode strings without surrogate pair corruption", () => {
+      const emojiHeadline = "🚀".repeat(35);
+      const svg = renderCardSvg({
+        title: emojiHeadline,
+        aspectRatio: "1:1",
+      });
+
+      expect(svg).toContain("<svg");
+      expect(svg).not.toContain("\uFFFD");
+      expect(svg).toContain("🚀");
+    });
+
     it("renders multi-slide carousel sequence with slide numbering indicators", () => {
       const slides = [
         { title: "Slide 1: Overview", body: "Introduction" },

@@ -41,13 +41,14 @@ function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
     if (!rawWord) continue;
     let remainingWord = rawWord;
 
-    while (remainingWord.length > maxCharsPerLine) {
+    while (Array.from(remainingWord).length > maxCharsPerLine) {
       if (currentLine) {
         lines.push(currentLine);
         currentLine = "";
       }
-      lines.push(remainingWord.slice(0, maxCharsPerLine));
-      remainingWord = remainingWord.slice(maxCharsPerLine);
+      const remainingCharacters = Array.from(remainingWord);
+      lines.push(remainingCharacters.slice(0, maxCharsPerLine).join(""));
+      remainingWord = remainingCharacters.slice(maxCharsPerLine).join("");
     }
 
     if (!remainingWord) continue;
