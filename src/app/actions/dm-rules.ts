@@ -45,6 +45,12 @@ export async function createDmRule(data: CreateDmRuleInput) {
     if (!data.responseTemplate || !data.responseTemplate.trim()) {
       return { error: "Response template is required" };
     }
+    if (data.triggerValue.trim().length > 80) return { error: "Trigger keyword is too long" };
+    if (data.responseTemplate.trim().length > 2000) return { error: "Response message is too long" };
+    if (data.responseLink) {
+      try { if (new URL(data.responseLink).protocol !== "https:") return { error: "Response link must use HTTPS" }; }
+      catch { return { error: "Response link is invalid" }; }
+    }
 
     const page = await db.query.themePages.findFirst({
       where: and(eq(themePages.id, data.themePageId), eq(themePages.tenantId, tenantId)),
@@ -74,6 +80,13 @@ export async function createDmRule(data: CreateDmRuleInput) {
 export async function updateDmRule(id: string, data: UpdateDmRuleInput) {
   try {
     const tenantId = await getActiveTenantId();
+    if (data.triggerType !== undefined && data.triggerType !== "keyword") return { error: "Unsupported DM trigger type" };
+    if (data.triggerValue !== undefined && (!data.triggerValue.trim() || data.triggerValue.trim().length > 80)) return { error: "Trigger keyword must be between 1 and 80 characters" };
+    if (data.responseTemplate !== undefined && (!data.responseTemplate.trim() || data.responseTemplate.trim().length > 2000)) return { error: "Response message must be between 1 and 2000 characters" };
+    if (data.responseLink) {
+      try { if (new URL(data.responseLink).protocol !== "https:") return { error: "Response link must use HTTPS" }; }
+      catch { return { error: "Response link is invalid" }; }
+    }
 
     const [updated] = await db.update(dmAutomationRules)
       .set({
@@ -127,7 +140,7 @@ export async function toggleDmRule(id: string) {
         isActive: !existing.isActive,
         updatedAt: new Date(),
       })
-      .where(eq(dmAutomationRules.id, id))
+      .where(and(eq(dmAutomationRules.id, id), eq(dmAutomationRules.tenantId, tenantId)))
       .returning();
 
     return { rule: updated };

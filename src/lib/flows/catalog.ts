@@ -98,6 +98,7 @@ export const imageGenConfig = z.object({
 export const saveAssetConfig = z.object({ urlField: z.string().optional(), filename: z.string().optional() });
 export const youtubeTranscriptConfig = z.object({ videoUrlField: z.string().optional() });
 export const telegramSendConfig = z.object({ chatId: z.string().min(1), messageTemplate: z.string().min(1).max(4096) });
+export const themeStudioRunConfig = z.object({ themePageId: z.string().min(1) });
 
 export const createDraftConfig = z.object({
   platform: z.enum(["twitter", "linkedin", "facebook"]).default("twitter"),
@@ -196,6 +197,7 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "action.notify", category: "action", label: "Notify me", description: "Sends you an in-app notification (and email if your preferences allow).", inputs: ["data"], outputs: ["data"], configSchema: notifyConfig },
   { type: "action.save_asset", category: "action", label: "Save to Assets", description: "Downloads and registers a public file.", inputs: ["file"], outputs: ["asset"], configSchema: saveAssetConfig },
   { type: "action.telegram_send", category: "action", label: "Send Telegram", description: "Queues an idempotent Telegram message.", inputs: ["data"], outputs: ["message"], configSchema: telegramSendConfig },
+  { type: "action.theme_studio_run", category: "action", label: "Run Theme Studio recipe", description: "Runs a tenant-scoped Theme Studio editorial recipe and stages compliant packages for human review.", inputs: ["data"], outputs: ["report"], configSchema: themeStudioRunConfig },
 ];
 
 const metaByType = new Map(NODE_CATALOG.map((m) => [m.type, m]));

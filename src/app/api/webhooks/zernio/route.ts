@@ -7,6 +7,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { ExecuteOptions } from "@/lib/flows/executor";
 import { executeAdmittedFlowRun } from "@/lib/flows/run-flow-server";
+import { reconcileThemePackagePostEvent } from "@/lib/theme-studio/publishing/reconcile-post-event";
 
 /** Starts every active flow whose trigger.webhook matches the event. */
 async function dispatchFlowWebhooks(
@@ -206,6 +207,7 @@ export async function POST(req: NextRequest) {
           if (ZERNIO_ENGAGEMENT_EVENTS.has(payload.event)) {
             await ingestZernioEngagementEvent(payload, tenantId);
           }
+          await reconcileThemePackagePostEvent(payload, tenantId);
 
           // Fan out to active flows listening for this event
           const { hasFailures, errors } = await dispatchFlowWebhooks(tenantId, payload.event, payload, attemptCreatedAt);

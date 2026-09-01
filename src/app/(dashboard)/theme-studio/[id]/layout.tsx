@@ -19,7 +19,40 @@ export default async function ThemePageLayout({
 
   return (
     <div className="flex flex-col min-h-full">
-      <ThemePageHeader page={res.page} />
+      <ThemePageHeader
+        page={res.page}
+        webMcpState={{
+          page: {
+            id: res.page.id,
+            name: res.page.name,
+            niche: res.page.niche,
+            audience: res.page.audience,
+            status: res.page.status,
+            rightsPolicy: res.page.defaultRightsPolicy,
+            connectedAccountCount: Array.isArray(res.page.connectedAccounts)
+              ? res.page.connectedAccounts.length
+              : 0,
+          },
+          sources: (res.sources || []).map((source) => ({
+            id: source.id,
+            name: source.name,
+            sourceType: source.sourceType,
+            rightsCategory: source.rightsCategory,
+            isActive: source.isActive,
+          })),
+          slots: (res.slots || []).map((slot) => ({
+            id: slot.id,
+            label: slot.label,
+            cadence: slot.cadence,
+            isActive: slot.isActive,
+          })),
+          packages: (res.recentPackages || []).map((pkg) => ({
+            id: pkg.id,
+            title: pkg.title,
+            status: pkg.status,
+          })),
+        }}
+      />
       <div className="p-8 max-w-7xl mx-auto w-full flex-1">{children}</div>
     </div>
   );

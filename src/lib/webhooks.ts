@@ -121,7 +121,12 @@ export async function markWebhookProcessed(eventId: string, error?: string, expe
 
 export async function resolveTenantFromPayload(payload: ZernioWebhookPayload): Promise<string | null> {
   const account = (payload as any).account;
-  const accountId = account?.accountId || account?.id;
+  const postPlatforms = Array.isArray((payload as any).post?.platforms)
+    ? (payload as any).post.platforms
+    : [];
+  const accountId = account?.accountId || account?.id || postPlatforms.find(
+    (platform: unknown) => platform && typeof platform === "object" && "accountId" in platform,
+  )?.accountId;
   if (!accountId) return null;
 
   const socialAccount = await db.query.socialAccounts.findFirst({

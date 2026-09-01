@@ -330,10 +330,20 @@ export const engagementItems = pgTable("engagement_items", {
   text: text("text").notNull(),
   type: varchar("type", { length: 20 }).notNull().default("comment"), // 'comment' | 'mention'
   status: varchar("status", { length: 50 }).default("pending").notNull(), // 'pending', 'replied', 'skipped'
+  dmDispatchStatus: varchar("dm_dispatch_status", { length: 20 }), // 'sending' | 'sent' | 'failed' | 'skipped'
+  dmDispatchAttempts: integer("dm_dispatch_attempts").default(0).notNull(),
+  dmDispatchLeaseExpiresAt: timestamp("dm_dispatch_lease_expires_at"),
+  dmDispatchError: text("dm_dispatch_error"),
+  dmDispatchMessageId: text("dm_dispatch_message_id"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   tenantStatusIdx: index("engagement_items_tenant_status_idx").on(table.tenantId, table.status),
+  dmDispatchIdx: index("engagement_items_dm_dispatch_idx").on(
+    table.tenantId,
+    table.dmDispatchStatus,
+    table.dmDispatchLeaseExpiresAt,
+  ),
   platformCommentIdx: uniqueIndex("engagement_items_tenant_platform_comment_idx").on(
     table.tenantId,
     table.platform,
@@ -762,4 +772,3 @@ export const dmAutomationRules = pgTable("dm_automation_rules", {
 export const fanoutProgressCol = {
   fanoutProgress: jsonb("fanout_progress").default({}).notNull(),
 };
-

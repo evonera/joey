@@ -115,6 +115,12 @@ export default defineSchedule({
     const { recoverStaleWebhookDeliveries } = await import("@/lib/flows/incoming-webhooks");
     await recoverStaleWebhookDeliveries();
 
+    // Private-reply failures use durable database backoff. This processor is
+    // independent of webhook redelivery and uses per-item atomic claims, so
+    // overlapping scheduler invocations cannot send competing replies.
+    const { processThemeStudioDmRetries } = await import("@/lib/engagement-inbox");
+    await processThemeStudioDmRetries();
+
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
     });

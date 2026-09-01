@@ -29,6 +29,7 @@ interface ThemePageHeaderProps {
     recipeRevision: number;
     lastCompiledAt?: Date | string | null;
   };
+  webMcpState?: Record<string, unknown>;
 }
 
 export function ThemePageHeader({ page }: ThemePageHeaderProps) {
