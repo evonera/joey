@@ -50,6 +50,7 @@ export async function getUnifiedInbox(input: {
   kind?: string;
   search?: string;
   cursor?: string;
+  activityCursor?: string;
   selectedConversationId?: string;
   limit?: number;
 } = {}) {
@@ -119,14 +120,25 @@ export async function getUnifiedInbox(input: {
           },
         })
       : undefined;
-    const activities = selected
-      ? await db.query.engagementActivities.findMany({
-          where: and(
+    const activityConditions = selected ? [
             eq(engagementActivities.tenantId, tenantId),
             eq(engagementActivities.conversationId, selected.id),
-          ),
-          orderBy: [asc(engagementActivities.occurredAt), asc(engagementActivities.id)],
-          limit: 100,
+          ] : [];
+    if (selected && input.activityCursor) {
+      const [cursorTime, cursorId] = input.activityCursor.split("|");
+      const cursor = new Date(cursorTime);
+      if (!Number.isNaN(cursor.getTime()) && cursorId) {
+        activityConditions.push(or(
+          lt(engagementActivities.occurredAt, cursor),
+          and(eq(engagementActivities.occurredAt, cursor), lt(engagementActivities.id, cursorId)),
+        )!);
+      }
+    }
+    const activityRows = selected
+      ? await db.query.engagementActivities.findMany({
+          where: and(...activityConditions),
+          orderBy: [desc(engagementActivities.occurredAt), desc(engagementActivities.id)],
+          limit: 101,
           columns: {
             id: true,
             type: true,
@@ -143,6 +155,8 @@ export async function getUnifiedInbox(input: {
           },
         })
       : [];
+    const hasOlderActivities = activityRows.length > 100;
+    const activities = activityRows.slice(0, 100).reverse();
     const selectedItem = selected
       ? await db.query.engagementItems.findFirst({
           where: and(
@@ -166,6 +180,9 @@ export async function getUnifiedInbox(input: {
       conversations,
       selectedConversation: selected ?? null,
       activities,
+      olderActivityCursor: hasOlderActivities && activities[0]
+        ? `${activities[0].occurredAt.toISOString()}|${activities[0].id}`
+        : null,
       selectedEngagementItem: selectedItem ? {
         id: selectedItem.id,
         platform: selectedItem.platform,

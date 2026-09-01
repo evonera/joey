@@ -36,16 +36,19 @@ export function UnifiedInbox() {
   const [status, setStatus] = useState("active");
   const [selectedId, setSelectedId] = useState<string>();
   const [pages, setPages] = useState<UnifiedInboxConversation[]>([]);
+  const [activityPages, setActivityPages] = useState<UnifiedInboxActivity[]>([]);
 
-  const load = useCallback(async (options?: { append?: boolean; cursor?: string | null; selected?: string }) => {
+  const load = useCallback(async (options?: { append?: boolean; cursor?: string | null; selected?: string; activityCursor?: string | null; prependActivities?: boolean }) => {
     setLoading(true);
-    const response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, selectedConversationId: options?.selected ?? selectedId });
+    const response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: options?.selected ?? selectedId });
     setResult(response);
     if ("conversations" in response) {
       const conversations = response.conversations ?? [];
       if (options?.append) setPages((current) => [...current, ...conversations]);
       else if (!options?.selected) setPages(conversations);
       if (!selectedId && response.selectedConversation?.id) setSelectedId(response.selectedConversation.id);
+      const responseActivities = response.activities ?? [];
+      setActivityPages((current) => options?.prependActivities ? [...responseActivities, ...current] : responseActivities);
     }
     setLoading(false);
   }, [kind, search, selectedId, status]);
@@ -53,9 +56,9 @@ export function UnifiedInbox() {
   useEffect(() => { void load(); }, [kind, search, status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = result && "selectedConversation" in result ? result.selectedConversation : null;
-  const activities = result && "activities" in result ? result.activities ?? [] : [];
   const selectedItem = result && "selectedEngagementItem" in result ? result.selectedEngagementItem : null;
   const nextCursor = result && "nextCursor" in result ? result.nextCursor : null;
+  const olderActivityCursor = result && "olderActivityCursor" in result ? result.olderActivityCursor : null;
   const error = result && "error" in result ? result.error : null;
 
   const selectConversation = async (conversation: UnifiedInboxConversation) => {
@@ -109,7 +112,10 @@ export function UnifiedInbox() {
         <main className="min-h-[34rem] min-w-0 overflow-y-auto">
           {!selected ? <div className="flex h-full min-h-[34rem] items-center justify-center p-8 text-center text-sm text-muted-foreground">Select a conversation to see its history.</div> : <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4 md:p-6">
             <header className="flex items-center gap-3 border-b pb-4"><div className="flex size-10 items-center justify-center rounded-full bg-muted text-xs font-semibold">{initials(selected.participantName)}</div><div className="min-w-0"><h2 className="truncate font-semibold">{selected.participantName || selected.participantHandle || "Unknown contact"}</h2><p className="text-xs text-muted-foreground capitalize">{selected.platform} · {selected.kind} · {selected.status}</p></div></header>
-            <div className="space-y-3">{activities.map((activity) => { const outgoing = activity.direction === "outgoing"; return <div key={activity.id} className={`flex ${outgoing ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${outgoing ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{!outgoing && activity.actorName ? <p className="mb-1 text-xs font-medium opacity-70">{activity.actorName}</p> : null}<p className={activity.isDeleted ? "italic opacity-60" : "whitespace-pre-wrap"}>{activityLabel(activity)}</p><div className="mt-1 flex items-center justify-end gap-2 text-[10px] opacity-60"><span className="capitalize">{activity.type}</span><span>{new Date(activity.occurredAt).toLocaleString()}</span>{activity.deliveryStatus ? <span className="capitalize">{activity.deliveryStatus}</span> : null}</div></div></div>; })}</div>
+            <div className="space-y-3">
+              {olderActivityCursor ? <Button variant="ghost" className="w-full" disabled={loading} onClick={() => void load({ selected: selected.id, activityCursor: olderActivityCursor, prependActivities: true })}><IconChevronDown className="size-4 rotate-180" />Load older activity</Button> : null}
+              {activityPages.map((activity) => { const outgoing = activity.direction === "outgoing"; return <div key={activity.id} className={`flex ${outgoing ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${outgoing ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{!outgoing && activity.actorName ? <p className="mb-1 text-xs font-medium opacity-70">{activity.actorName}</p> : null}<p className={activity.isDeleted ? "italic opacity-60" : "whitespace-pre-wrap"}>{activityLabel(activity)}</p><div className="mt-1 flex items-center justify-end gap-2 text-[10px] opacity-60"><span className="capitalize">{activity.type}</span><span>{new Date(activity.occurredAt).toLocaleString()}</span>{activity.deliveryStatus ? <span className="capitalize">{activity.deliveryStatus}</span> : null}</div></div></div>; })}
+            </div>
             {selectedItem ? <div className="border-t pt-4"><ReplyCard item={selectedItem} onActionComplete={() => void load({ selected: selected.id })} /></div> : null}
           </div>}
         </main>
