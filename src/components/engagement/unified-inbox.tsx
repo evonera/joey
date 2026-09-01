@@ -42,10 +42,13 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   const [pages, setPages] = useState<UnifiedInboxConversation[]>(initialConversations);
   const [activityPages, setActivityPages] = useState<UnifiedInboxActivity[]>(initialActivities);
   const lastLoadedFilterKey = useRef<string | null>(initialResult ? "all||active" : null);
+  const loadRequestId = useRef(0);
 
   const load = useCallback(async (options?: { append?: boolean; cursor?: string | null; selected?: string; activityCursor?: string | null; prependActivities?: boolean }) => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     const response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: options?.selected ?? selectedId });
+    if (requestId !== loadRequestId.current) return;
     setResult(response);
     if ("conversations" in response) {
       const conversations = response.conversations ?? [];
