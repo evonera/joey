@@ -567,6 +567,193 @@ export const rateLimitCounters = pgTable("rate_limit_counters", {
   tokenWindowIdx: uniqueIndex("rate_limit_token_window_idx").on(table.tokenId, table.windowStart),
 }));
 
+// ---------------------------------------------------------------------------
+// Theme Studio (Phase TS-1)
+// ---------------------------------------------------------------------------
+
+export const themePages = pgTable("theme_pages", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  niche: text("niche"),
+  audience: text("audience"),
+  voice: text("voice"),
+  brandKit: jsonb("brand_kit"),
+  connectedAccounts: jsonb("connected_accounts").default([]).notNull(),
+  defaultRightsPolicy: varchar("default_rights_policy", { length: 30 }).default("strict").notNull(),
+  status: varchar("status", { length: 20 }).default("draft").notNull(), // 'draft' | 'active' | 'paused'
+  recipeRevision: integer("recipe_revision").default(1).notNull(),
+  lastCompiledAt: timestamp("last_compiled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("theme_pages_tenant_id_idx").on(table.tenantId, table.updatedAt.desc()),
+}));
+
+export const themeSources = pgTable("theme_sources", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  themePageId: text("theme_page_id").notNull().references(() => themePages.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  sourceType: varchar("source_type", { length: 30 }).notNull(), // 'rss' | 'http' | 'reddit' | 'api'
+  url: text("url").notNull(),
+  pollIntervalMinutes: integer("poll_interval_minutes").default(60).notNull(),
+  freshnessWindowHours: integer("freshness_window_hours").default(24).notNull(),
+  geoFilter: text("geo_filter"),
+  langFilter: varchar("lang_filter", { length: 10 }),
+  rightsCategory: varchar("rights_category", { length: 30 }).default("unknown").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  lastPolledAt: timestamp("last_polled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  pageIdx: index("theme_sources_page_id_idx").on(table.themePageId),
+  tenantIdx: index("theme_sources_tenant_id_idx").on(table.tenantId),
+}));
+
+export const themeContentFormats = pgTable("theme_content_formats", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  slug: varchar("slug", { length: 60 }).notNull(),
+  name: varchar("name", { length: 120 }).notNull(),
+  platform: varchar("platform", { length: 30 }).notNull(),
+  mediaType: varchar("media_type", { length: 20 }).notNull(), // 'image' | 'carousel' | 'video'
+  aspectRatio: varchar("aspect_ratio", { length: 10 }),
+  width: integer("width"),
+  height: integer("height"),
+  durationRange: jsonb("duration_range"),
+  renderer: varchar("renderer", { length: 20 }).notNull(), // 'puppeteer' | 'remotion'
+  templateComponentPath: text("template_component_path"),
+  defaultPropsSchema: jsonb("default_props_schema"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantSlugIdx: uniqueIndex("theme_content_formats_tenant_slug_idx").on(table.tenantId, table.slug),
+}));
+
+export const themeSlots = pgTable("theme_slots", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  themePageId: text("theme_page_id").notNull().references(() => themePages.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  formatId: text("format_id").notNull().references(() => themeContentFormats.id, { onDelete: "restrict" }),
+  label: varchar("label", { length: 80 }),
+  cadence: varchar("cadence", { length: 20 }).default("daily").notNull(),
+  daysOfWeek: jsonb("days_of_week"),
+  priority: integer("priority").default(0).notNull(),
+  overrideTemplateId: text("override_template_id"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  pageIdx: index("theme_slots_page_id_idx").on(table.themePageId),
+  tenantIdx: index("theme_slots_tenant_id_idx").on(table.tenantId),
+}));
+
+export const themeVisualTemplates = pgTable("theme_visual_templates", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  themePageId: text("theme_page_id").references(() => themePages.id, { onDelete: "set null" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  formatId: text("format_id").notNull().references(() => themeContentFormats.id, { onDelete: "restrict" }),
+  renderer: varchar("renderer", { length: 20 }).notNull(), // 'puppeteer' | 'remotion'
+  componentSpec: jsonb("component_spec").notNull(),
+  propsSchema: jsonb("props_schema"),
+  previewUrl: text("preview_url"),
+  version: integer("version").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("theme_visual_templates_tenant_id_idx").on(table.tenantId),
+  pageIdx: index("theme_visual_templates_page_id_idx").on(table.themePageId),
+}));
+
+export const sourceItems = pgTable("source_items", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  themePageId: text("theme_page_id").notNull().references(() => themePages.id, { onDelete: "cascade" }),
+  sourceId: text("source_id").notNull().references(() => themeSources.id, { onDelete: "cascade" }),
+  title: text("title"),
+  body: text("body"),
+  url: text("url"),
+  canonicalUrlHash: text("canonical_url_hash"),
+  contentHash: text("content_hash"),
+  publishedAt: timestamp("published_at"),
+  rightsCategory: varchar("rights_category", { length: 30 }).default("unknown").notNull(),
+  metadata: jsonb("metadata"),
+  embedding: vector("embedding", { dimensions: 1536 }),
+  status: varchar("status", { length: 20 }).default("raw").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  pageIdx: index("source_items_page_id_idx").on(table.themePageId, table.createdAt.desc()),
+  tenantIdx: index("source_items_tenant_id_idx").on(table.tenantId),
+  canonicalUrlIdx: uniqueIndex("source_items_canonical_url_idx")
+    .on(table.themePageId, table.canonicalUrlHash)
+    .where(sql`${table.canonicalUrlHash} IS NOT NULL`),
+  contentHashIdx: index("source_items_content_hash_idx")
+    .on(table.themePageId, table.contentHash),
+}));
+
+export const storyClusters = pgTable("story_clusters", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  themePageId: text("theme_page_id").notNull().references(() => themePages.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  summary: text("summary"),
+  facts: jsonb("facts").default([]).notNull(),
+  memberItemIds: jsonb("member_item_ids").default([]).notNull(),
+  embeddingCentroid: vector("embedding_centroid", { dimensions: 1536 }),
+  freshnessScore: numeric("freshness_score", { precision: 5, scale: 2 }),
+  status: varchar("status", { length: 20 }).default("open").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  pageIdx: index("story_clusters_page_id_idx").on(table.themePageId, table.createdAt.desc()),
+  tenantIdx: index("story_clusters_tenant_id_idx").on(table.tenantId),
+}));
+
+export const contentPackages = pgTable("content_packages", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  themePageId: text("theme_page_id").notNull().references(() => themePages.id, { onDelete: "cascade" }),
+  slotId: text("slot_id").references(() => themeSlots.id, { onDelete: "set null" }),
+  clusterId: text("cluster_id").references(() => storyClusters.id, { onDelete: "set null" }),
+  formatId: text("format_id").notNull().references(() => themeContentFormats.id, { onDelete: "restrict" }),
+  templateId: text("template_id").references(() => themeVisualTemplates.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  caption: text("caption"),
+  hashtags: text("hashtags").array().default([]),
+  renderedAssetUrls: jsonb("rendered_asset_urls").default([]).notNull(),
+  provenance: jsonb("provenance").default({}).notNull(),
+  status: varchar("status", { length: 30 }).default("pending_review").notNull(),
+  scheduledFor: timestamp("scheduled_for"),
+  publishedAt: timestamp("published_at"),
+  publishedPostId: text("published_post_id"),
+  metrics: jsonb("metrics").default({}).notNull(),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  pageStatusIdx: index("content_packages_page_status_idx").on(table.themePageId, table.status, table.createdAt.desc()),
+  tenantIdx: index("content_packages_tenant_id_idx").on(table.tenantId),
+}));
+
+export const dmAutomationRules = pgTable("dm_automation_rules", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  themePageId: text("theme_page_id").notNull().references(() => themePages.id, { onDelete: "cascade" }),
+  triggerType: varchar("trigger_type", { length: 20 }).default("keyword").notNull(),
+  triggerValue: text("trigger_value").notNull(),
+  responseTemplate: text("response_template").notNull(),
+  responseLink: text("response_link"),
+  isActive: boolean("is_active").default(true).notNull(),
+  stats: jsonb("stats").default({}).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  pageIdx: index("dm_automation_rules_page_id_idx").on(table.themePageId),
+  tenantIdx: index("dm_automation_rules_tenant_id_idx").on(table.tenantId),
+}));
+
 /**
  * Per-item fan-out checkpoints for flow runs: { "<itemIndex>": { nodeId: output } }.
  * Lets restart-from-failed retry only the failed tail of each item's chain
@@ -575,3 +762,4 @@ export const rateLimitCounters = pgTable("rate_limit_counters", {
 export const fanoutProgressCol = {
   fanoutProgress: jsonb("fanout_progress").default({}).notNull(),
 };
+

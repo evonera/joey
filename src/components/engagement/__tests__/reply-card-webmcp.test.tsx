@@ -144,6 +144,20 @@ describe("ReplyCard WebMCP staging", () => {
     expect(screen.getByRole("textbox")).toHaveValue("Human work in progress");
   });
 
+  it("locks agent restaging only after the human changes the staged text", async () => {
+    const onEditingChange = vi.fn();
+    render(<ReplyCard
+      item={item}
+      stagedContent="First agent proposal"
+      onEditingChange={onEditingChange}
+      onActionComplete={vi.fn()}
+    />);
+
+    expect(onEditingChange).toHaveBeenLastCalledWith("draft-1", false);
+    await userEvent.type(screen.getByRole("textbox"), " Human revision");
+    expect(onEditingChange).toHaveBeenLastCalledWith("draft-1", true);
+  });
+
   it("accepts later authoritative server content after optimistic reconciliation", async () => {
     const onSaved = vi.fn(() => true);
     const { rerender } = render(<ReplyCard

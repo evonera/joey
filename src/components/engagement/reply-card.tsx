@@ -59,7 +59,8 @@ export function ReplyCard({
   const [isRejecting, setIsRejecting] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
-  const hasHumanEdits = useRef(false);
+  const [hasHumanEdits, setHasHumanEdits] = useState(false);
+  const hasHumanEditsRef = useRef(false);
   const activeReplyDraftId = useRef<string | undefined>(item.replyDraft?.id);
 
   useEffect(() => {
@@ -67,26 +68,27 @@ export function ReplyCard({
     const serverContent = item.replyDraft?.content ?? "";
     if (activeReplyDraftId.current !== replyDraftId) {
       activeReplyDraftId.current = replyDraftId;
-      hasHumanEdits.current = false;
+      hasHumanEditsRef.current = false;
+      setHasHumanEdits(false);
       setLoading(false);
       setDraftContent(stagedContent ?? serverContent);
       setIsEditing(stagedContent !== undefined);
       return;
     }
     if (stagedContent !== undefined) {
-      if (!hasHumanEdits.current) setDraftContent(stagedContent);
+      if (!hasHumanEditsRef.current) setDraftContent(stagedContent);
       setIsEditing(true);
       return;
     }
-    if (!hasHumanEdits.current) setDraftContent(serverContent);
+    if (!hasHumanEditsRef.current) setDraftContent(serverContent);
   }, [item.replyDraft?.content, item.replyDraft?.id, stagedContent]);
 
   useEffect(() => {
     const replyDraftId = item.replyDraft?.id;
     if (!replyDraftId) return;
-    onEditingChange?.(replyDraftId, isEditing);
+    onEditingChange?.(replyDraftId, isEditing && hasHumanEdits);
     return () => onEditingChange?.(replyDraftId, false);
-  }, [isEditing, item.replyDraft?.id, onEditingChange]);
+  }, [hasHumanEdits, isEditing, item.replyDraft?.id, onEditingChange]);
 
   const pendingReply = item.replyDraft && ["pending_review", "failed"].includes(item.replyDraft.status);
   const sendFailed = item.replyDraft?.status === "failed";
@@ -148,7 +150,8 @@ export function ReplyCard({
       return;
     }
     const persistedContent = draftContent.trim();
-    hasHumanEdits.current = false;
+    hasHumanEditsRef.current = false;
+    setHasHumanEdits(false);
     setDraftContent(persistedContent);
     const stagedSnapshotCleared = onEditSaved?.(persistedContent, stagedSnapshot) ?? true;
     setIsEditing(!stagedSnapshotCleared);
@@ -157,7 +160,8 @@ export function ReplyCard({
 
   const handleCancelEdit = () => {
     if (stagedContent !== undefined) onDiscardStagedEdit?.();
-    hasHumanEdits.current = false;
+    hasHumanEditsRef.current = false;
+    setHasHumanEdits(false);
     setDraftContent(item.replyDraft?.content ?? "");
     setIsEditing(false);
   };
@@ -215,7 +219,8 @@ export function ReplyCard({
               <Textarea
                 value={draftContent}
                 onChange={(e) => {
-                  hasHumanEdits.current = true;
+                  hasHumanEditsRef.current = true;
+                  setHasHumanEdits(true);
                   setDraftContent(e.target.value);
                 }}
                 className="min-h-[80px] text-sm"
@@ -260,7 +265,8 @@ export function ReplyCard({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  hasHumanEdits.current = false;
+                  hasHumanEditsRef.current = false;
+                  setHasHumanEdits(false);
                   setIsEditing(true);
                 }}
                 disabled={loading}

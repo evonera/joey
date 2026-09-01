@@ -1,0 +1,138 @@
+'use server';
+
+import { getActiveTenantId } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { dmAutomationRules, themePages } from "@/lib/db/schema";
+import { eq, and, desc } from "drizzle-orm";
+
+export interface CreateDmRuleInput {
+  themePageId: string;
+  triggerType?: string;
+  triggerValue: string;
+  responseTemplate: string;
+  responseLink?: string;
+}
+
+export interface UpdateDmRuleInput {
+  triggerType?: string;
+  triggerValue?: string;
+  responseTemplate?: string;
+  responseLink?: string;
+  isActive?: boolean;
+}
+
+export async function getDmRules(themePageId: string) {
+  try {
+    const tenantId = await getActiveTenantId();
+    const rules = await db.query.dmAutomationRules.findMany({
+      where: and(eq(dmAutomationRules.themePageId, themePageId), eq(dmAutomationRules.tenantId, tenantId)),
+      orderBy: [desc(dmAutomationRules.createdAt)],
+    });
+    return { rules };
+  } catch (error: any) {
+    console.error("Failed to fetch DM rules:", error);
+    return { error: "Failed to fetch DM rules" };
+  }
+}
+
+export async function createDmRule(data: CreateDmRuleInput) {
+  try {
+    const tenantId = await getActiveTenantId();
+
+    if (!data.triggerValue || !data.triggerValue.trim()) {
+      return { error: "Trigger keyword is required" };
+    }
+    if (!data.responseTemplate || !data.responseTemplate.trim()) {
+      return { error: "Response template is required" };
+    }
+
+    const page = await db.query.themePages.findFirst({
+      where: and(eq(themePages.id, data.themePageId), eq(themePages.tenantId, tenantId)),
+    });
+    if (!page) {
+      return { error: "Theme page not found" };
+    }
+
+    const [rule] = await db.insert(dmAutomationRules).values({
+      tenantId,
+      themePageId: data.themePageId,
+      triggerType: data.triggerType || 'keyword',
+      triggerValue: data.triggerValue.trim().toUpperCase(),
+      responseTemplate: data.responseTemplate.trim(),
+      responseLink: data.responseLink?.trim() || null,
+      isActive: true,
+      stats: { triggered: 0, dmsSent: 0, clicks: 0 },
+    }).returning();
+
+    return { rule };
+  } catch (error: any) {
+    console.error("Failed to create DM rule:", error);
+    return { error: "Failed to create DM rule" };
+  }
+}
+
+export async function updateDmRule(id: string, data: UpdateDmRuleInput) {
+  try {
+    const tenantId = await getActiveTenantId();
+
+    const [updated] = await db.update(dmAutomationRules)
+      .set({
+        ...(data.triggerType !== undefined ? { triggerType: data.triggerType } : {}),
+        ...(data.triggerValue !== undefined ? { triggerValue: data.triggerValue.trim().toUpperCase() } : {}),
+        ...(data.responseTemplate !== undefined ? { responseTemplate: data.responseTemplate.trim() } : {}),
+        ...(data.responseLink !== undefined ? { responseLink: data.responseLink?.trim() || null } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(dmAutomationRules.id, id), eq(dmAutomationRules.tenantId, tenantId)))
+      .returning();
+
+    if (!updated) {
+      return { error: "DM rule not found" };
+    }
+
+    return { rule: updated };
+  } catch (error: any) {
+    console.error("Failed to update DM rule:", error);
+    return { error: "Failed to update DM rule" };
+  }
+}
+
+export async function deleteDmRule(id: string) {
+  try {
+    const tenantId = await getActiveTenantId();
+    await db.delete(dmAutomationRules)
+      .where(and(eq(dmAutomationRules.id, id), eq(dmAutomationRules.tenantId, tenantId)));
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to delete DM rule:", error);
+    return { error: "Failed to delete DM rule" };
+  }
+}
+
+export async function toggleDmRule(id: string) {
+  try {
+    const tenantId = await getActiveTenantId();
+    const existing = await db.query.dmAutomationRules.findFirst({
+      where: and(eq(dmAutomationRules.id, id), eq(dmAutomationRules.tenantId, tenantId)),
+    });
+
+    if (!existing) {
+      return { error: "DM rule not found" };
+    }
+
+    const [updated] = await db.update(dmAutomationRules)
+      .set({
+        isActive: !existing.isActive,
+        updatedAt: new Date(),
+      })
+      .where(eq(dmAutomationRules.id, id))
+      .returning();
+
+    return { rule: updated };
+  } catch (error: any) {
+    console.error("Failed to toggle DM rule:", error);
+    return { error: "Failed to toggle DM rule" };
+  }
+}
