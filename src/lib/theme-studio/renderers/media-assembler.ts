@@ -220,7 +220,6 @@ export async function renderPackageMedia(
       success: true,
     };
   } catch (err: any) {
-    signal?.throwIfAborted();
     const message = err.message || "Failed to render package media";
     await db.update(contentPackages).set({
       status: "failed",
@@ -228,6 +227,7 @@ export async function renderPackageMedia(
       metrics: { ...priorMetrics, failurePhase: "render" },
       updatedAt: new Date(),
     }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
+    signal?.throwIfAborted();
     return {
       packageId,
       mediaType: format?.mediaType || "image",
