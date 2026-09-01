@@ -187,13 +187,14 @@ export function ReplyCard({
                 value={draftContent}
                 onChange={(e) => setDraftContent(e.target.value)}
                 className="min-h-[80px] text-sm"
+                disabled={loading}
               />
               <div className="flex gap-2 justify-end">
-                <Button variant="outline" size="sm" onClick={handleCancelEdit}>
+                <Button variant="outline" size="sm" onClick={handleCancelEdit} disabled={loading}>
                   {stagedContent !== undefined ? "Discard" : "Cancel"}
                 </Button>
                 <Button size="sm" onClick={handleSaveEdit} disabled={loading}>
-                  Save
+                  {loading ? "Saving…" : "Save"}
                 </Button>
               </div>
             </div>

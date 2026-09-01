@@ -1,10 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ReplyCard } from "@/components/engagement/reply-card";
 
 const updateReplyDraft = vi.fn(async (_replyDraftId: string, _content: string) => ({ success: true }));
+
+afterEach(() => {
+  updateReplyDraft.mockReset();
+  updateReplyDraft.mockResolvedValue({ success: true });
+});
 
 vi.mock("@/app/actions/engagement", () => ({
   approveReply: vi.fn(),
@@ -96,5 +101,26 @@ describe("ReplyCard WebMCP staging", () => {
     expect(updateReplyDraft).toHaveBeenLastCalledWith("draft-1", "Human-reviewed reply");
     expect(onSaved).toHaveBeenCalledWith("Agent-staged reply");
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("freezes the staged editor while its save is pending", async () => {
+    let resolveSave!: (value: { success: true }) => void;
+    updateReplyDraft.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    const onSaved = vi.fn(() => true);
+    render(<ReplyCard
+      item={item}
+      stagedContent="Reviewed reply"
+      onStagedEditSaved={onSaved}
+      onActionComplete={vi.fn()}
+    />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("textbox")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Discard" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+
+    resolveSave({ success: true });
+    await screen.findByRole("button", { name: "Approve & Send" });
+    expect(onSaved).toHaveBeenCalledWith("Reviewed reply");
   });
 });
