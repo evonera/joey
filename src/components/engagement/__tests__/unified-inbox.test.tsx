@@ -181,6 +181,40 @@ describe("UnifiedInbox", () => {
     expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
   });
 
+  it("keeps a selection confirmed when a same-target refresh supersedes its request", async () => {
+    let resolveSelection!: (value: ReturnType<typeof result>) => void;
+    const selectionResponse = new Promise<ReturnType<typeof result>>((resolve) => { resolveSelection = resolve; });
+    let conversationCCalls = 0;
+    mockGetUnifiedInbox.mockImplementation((input: { selectedConversationId?: string }) => {
+      expect(input.selectedConversationId).toBe(conversationC.id);
+      conversationCCalls += 1;
+      if (conversationCCalls === 1) return selectionResponse;
+      return Promise.resolve(result(
+        conversationC,
+        [activity("gamma-message", "Gamma timeline", "2026-09-01T10:02:00Z")],
+      ));
+    });
+    render(<UnifiedInbox initialResult={result(
+      conversationA,
+      [activity("alpha-message", "Alpha timeline", "2026-09-01T10:00:00Z")],
+    )} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Gamma Recent Gamma/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
+    await screen.findByRole("heading", { name: "Gamma" });
+
+    resolveSelection(result(
+      conversationC,
+      [activity("gamma-message", "Gamma timeline", "2026-09-01T10:02:00Z")],
+    ));
+    await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("heading", { name: "Gamma" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
+    await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(3));
+    expect(mockGetUnifiedInbox.mock.calls[2][0].selectedConversationId).toBe(conversationC.id);
+  });
+
 
   it("reports an agent selection failure when the requested conversation was not loaded", async () => {
     mockGetUnifiedInbox.mockResolvedValue(result(

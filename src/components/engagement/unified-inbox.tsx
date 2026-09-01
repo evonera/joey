@@ -65,7 +65,14 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
       if (requestId === loadRequestId.current) setLoading(false);
       throw error;
     }
-    if (requestId !== loadRequestId.current) return false;
+    const responseEstablishesRequestedSelection = Boolean(
+      options?.selected
+      && requestedSelectedId
+      && selectedConversationIdRef.current === requestedSelectedId
+      && "selectedConversation" in response
+      && response.selectedConversation?.id === requestedSelectedId,
+    );
+    if (requestId !== loadRequestId.current && !responseEstablishesRequestedSelection) return false;
     if (requestedSelectedId && selectedConversationIdRef.current && requestedSelectedId !== selectedConversationIdRef.current) {
       setLoading(false);
       return false;
