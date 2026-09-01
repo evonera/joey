@@ -37,10 +37,55 @@ function splitGraphemes(text: string): string[] {
   return Array.from(text);
 }
 
+function getGraphemeWidth(g: string): number {
+  const code = g.codePointAt(0) || 0;
+  if (
+    (code >= 0x1100 && code <= 0x11ff) ||
+    (code >= 0x2e80 && code <= 0xa4cf) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe10 && code <= 0xfe19) ||
+    (code >= 0xfe30 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0xffe0 && code <= 0xffe6) ||
+    (code >= 0x1f000 && code <= 0x1ffff) ||
+    (code >= 0x2600 && code <= 0x27ff)
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+function getVisualWidth(text: string): number {
+  const graphemes = splitGraphemes(text);
+  let width = 0;
+  for (const g of graphemes) {
+    width += getGraphemeWidth(g);
+  }
+  return width;
+}
+
+function sliceByVisualWidth(graphemes: string[], maxWidthUnits: number): { slice: string[]; remainder: string[] } {
+  let width = 0;
+  let splitIndex = 0;
+  while (splitIndex < graphemes.length) {
+    const gw = getGraphemeWidth(graphemes[splitIndex]);
+    if (width + gw > maxWidthUnits && splitIndex > 0) {
+      break;
+    }
+    width += gw;
+    splitIndex++;
+  }
+  return {
+    slice: graphemes.slice(0, splitIndex),
+    remainder: graphemes.slice(splitIndex),
+  };
+}
+
 /**
- * Wraps text into lines with a maximum character count, splitting long unbroken tokens to prevent canvas overflow.
+ * Wraps text into lines with a maximum visual width, splitting long unbroken tokens to prevent canvas overflow.
  */
-function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
+function wrapText(text: string, maxVisualWidthPerLine: number = 28): string[] {
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let currentLine = "";
@@ -49,21 +94,22 @@ function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
     if (!rawWord) continue;
     let graphemes = splitGraphemes(rawWord);
 
-    while (graphemes.length > maxCharsPerLine) {
+    while (getVisualWidth(graphemes.join("")) > maxVisualWidthPerLine) {
       if (currentLine) {
         lines.push(currentLine);
         currentLine = "";
       }
-      lines.push(graphemes.slice(0, maxCharsPerLine).join(""));
-      graphemes = graphemes.slice(maxCharsPerLine);
+      const { slice, remainder } = sliceByVisualWidth(graphemes, maxVisualWidthPerLine);
+      lines.push(slice.join(""));
+      graphemes = remainder;
     }
 
     const remainingWord = graphemes.join("");
     if (!remainingWord) continue;
 
-    const currentGraphemesCount = splitGraphemes(currentLine ? currentLine + " " + remainingWord : remainingWord).length;
-    if (currentGraphemesCount <= maxCharsPerLine) {
-      currentLine = currentLine ? currentLine + " " + remainingWord : remainingWord;
+    const candidateLine = currentLine ? currentLine + " " + remainingWord : remainingWord;
+    if (getVisualWidth(candidateLine) <= maxVisualWidthPerLine) {
+      currentLine = candidateLine;
     } else {
       if (currentLine) lines.push(currentLine);
       currentLine = remainingWord;
@@ -111,8 +157,9 @@ export function renderCardSvg(options: CardRenderOptions): string {
   const bodyLines = wrapText(body, 36).slice(0, maxBodyLines);
 
   const isCarousel = slideNumber !== undefined && totalSlides !== undefined;
-  const clampedTag = tag.length > 20 ? `${tag.slice(0, 17)}...` : tag;
-  const tagBadgeWidth = Math.min(clampedTag.length * 13 + 32, 280);
+  const tagGraphemes = splitGraphemes(tag);
+  const clampedTag = tagGraphemes.length > 20 ? `${tagGraphemes.slice(0, 17).join("")}...` : tag;
+  const tagBadgeWidth = Math.min(getVisualWidth(clampedTag) * 13 + 32, 320);
 
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
