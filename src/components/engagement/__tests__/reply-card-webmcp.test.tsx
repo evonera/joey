@@ -101,6 +101,8 @@ describe("ReplyCard WebMCP staging", () => {
     expect(updateReplyDraft).toHaveBeenLastCalledWith("draft-1", "Human-reviewed reply");
     expect(onSaved).toHaveBeenCalledWith("Agent-staged reply");
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("Human-reviewed reply")).toBeInTheDocument();
+    expect(screen.queryByText("Original reply")).not.toBeInTheDocument();
   });
 
   it("freezes the staged editor while its save is pending", async () => {

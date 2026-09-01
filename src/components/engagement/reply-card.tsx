@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { approveReply, rejectReply, sendReply, updateReplyDraft, skipEngagementItem } from "@/app/actions/engagement";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,11 +57,26 @@ export function ReplyCard({
   const [isRejecting, setIsRejecting] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
+  const locallySavedDraft = useRef<{ id: string; content: string } | null>(null);
 
   useEffect(() => {
-    setDraftContent(stagedContent ?? item.replyDraft?.content ?? "");
-    if (stagedContent !== undefined) setIsEditing(true);
-  }, [item.replyDraft?.content, stagedContent]);
+    const replyDraftId = item.replyDraft?.id;
+    const serverContent = item.replyDraft?.content ?? "";
+    if (stagedContent !== undefined) {
+      locallySavedDraft.current = null;
+      setDraftContent(stagedContent);
+      setIsEditing(true);
+      return;
+    }
+    const savedDraft = locallySavedDraft.current;
+    if (savedDraft && savedDraft.id === replyDraftId) {
+      if (savedDraft.content !== serverContent) return;
+      locallySavedDraft.current = null;
+    } else {
+      locallySavedDraft.current = null;
+    }
+    setDraftContent(serverContent);
+  }, [item.replyDraft?.content, item.replyDraft?.id, stagedContent]);
 
   const pendingReply = item.replyDraft && ["pending_review", "failed"].includes(item.replyDraft.status);
   const sendFailed = item.replyDraft?.status === "failed";
@@ -120,6 +135,9 @@ export function ReplyCard({
       alert(response.error);
       return;
     }
+    const persistedContent = draftContent.trim();
+    locallySavedDraft.current = { id: item.replyDraft.id, content: persistedContent };
+    setDraftContent(persistedContent);
     const stagedSnapshotCleared = stagedSnapshot === undefined
       ? true
       : onStagedEditSaved?.(stagedSnapshot) ?? true;
