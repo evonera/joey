@@ -168,6 +168,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
       }
     }
   } catch (err: any) {
+    signal?.throwIfAborted();
     errors.push(err.message || "Failed to fetch feed");
   }
 

@@ -202,6 +202,8 @@ export async function renderPackageMedia(
       .update(contentPackages)
       .set({
         renderedAssetUrls: renderedUrls,
+        status: "pending_review",
+        error: null,
         updatedAt: new Date(),
       })
       .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
@@ -213,6 +215,7 @@ export async function renderPackageMedia(
       success: true,
     };
   } catch (err: any) {
+    signal?.throwIfAborted();
     const message = err.message || "Failed to render package media";
     await db.update(contentPackages).set({
       status: "failed",

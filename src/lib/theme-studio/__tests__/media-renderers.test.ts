@@ -1,8 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { renderCardSvg, renderCarouselSlideSvgs } from "@/lib/theme-studio/renderers/static-card-renderer";
 import { generateWordTimestamps, buildVerticalNewsComposition } from "@/lib/theme-studio/renderers/video-renderer";
+import { shouldRetryFailedRender } from "@/lib/theme-studio/pipeline/orchestrator";
 
 describe("Theme Studio Media Renderers (Phase 4)", () => {
+  describe("Render recovery", () => {
+    it("retries transient unrendered packages without retrying completed or unsupported video renders", () => {
+      expect(shouldRetryFailedRender([], "R2 temporarily unavailable")).toBe(true);
+      expect(shouldRetryFailedRender([{ url: "https://cdn.example.com/card.png" }], "old error")).toBe(false);
+      expect(shouldRetryFailedRender([], "Video preview is available, but an MP4 render worker has not been configured")).toBe(false);
+    });
+  });
+
   describe("Static Card Renderer", () => {
     it("renders valid SVG card with custom brand kit and typography", () => {
       const svg = renderCardSvg({
