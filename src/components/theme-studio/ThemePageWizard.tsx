@@ -174,14 +174,19 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
       toast.success("Theme page created successfully!");
       router.push(`/theme-studio/${pageId}`);
     } catch (err: any) {
+      let rollbackError: string | null = null;
       if (createdPageId) {
         try {
-          await deleteThemePage(createdPageId);
-        } catch {
-          // best-effort cleanup
+          const delRes = await deleteThemePage(createdPageId);
+          if (delRes?.error) {
+            rollbackError = delRes.error;
+          }
+        } catch (delErr: any) {
+          rollbackError = delErr.message || "Failed to rollback partial theme page";
         }
       }
-      toast.error(err.message || "Failed to create theme page");
+      const baseMsg = err.message || "Failed to create theme page";
+      toast.error(rollbackError ? `${baseMsg} (Rollback warning: ${rollbackError})` : baseMsg);
     } finally {
       setLoading(false);
     }

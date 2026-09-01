@@ -64,8 +64,11 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
           ? sources.slice(index % sources.length, (index % sources.length) + 2)
           : [];
         const sourceNames = assignedSources.map((s) => s.name);
-        const dominantRights = assignedSources[0]?.rightsCategory || "unverified";
-        const isCompliant = ["owned", "public_domain", "cc_by", "cc_by_sa", "commercial_license"].includes(dominantRights);
+        const allowedCategories = ["owned", "public_domain", "cc_by", "cc_by_sa", "commercial_license"];
+        const isCompliant = assignedSources.length > 0 && assignedSources.every((s) => allowedCategories.includes(s.rightsCategory));
+        const rightsSummary = assignedSources.length > 0 
+          ? Array.from(new Set(assignedSources.map((s) => s.rightsCategory || "unverified"))).join(", ")
+          : "unverified";
 
         return {
           id: `sim_pkg_${index + 1}`,
@@ -79,7 +82,7 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
           caption: `🔥 Essential update for ${themePage.niche || "enthusiasts"}.\n\nSwipe through for the breakdown. What's your take on this?\n\nComment 'GUIDE' to receive the full report in your DMs!\n\n#${(themePage.niche || "daily").replace(/\s+/g, "")} #updates #insights`,
           provenance: {
             sourcesUsed: sourceNames,
-            rightsVerified: dominantRights,
+            rightsVerified: rightsSummary,
             confidenceScore: assignedSources.length > 0 ? (isCompliant ? 0.95 : 0.45) : 0.0,
             isCompliant,
           },
