@@ -28,7 +28,7 @@ Eve remains Joey's agent/session runtime. Theme Studio's recurring production wo
 - Deterministic branded cards and carousels rendered to real PNG assets. Uploads use run-owned durable R2 cleanup reservations and asset-library registration.
 - A page-scoped human package queue. Agents cannot approve or publish through WebMCP.
 - Idempotent Zernio publishing, stale-attempt recovery, selected-account fencing, and post-webhook reconciliation.
-- Instagram/Facebook keyword-triggered private replies through Zernio after an idempotently ingested comment is associated with a published Theme Studio package. Per-comment delivery claims, attempt fencing, bounded retry backoff, and stable request IDs make webhook redelivery safe.
+- Instagram/Facebook keyword-triggered private replies through Zernio after an idempotently ingested comment is associated with a published Theme Studio package. Per-comment delivery claims, attempt fencing, bounded retry backoff, stable request IDs, and the existing one-minute worker provide autonomous recovery without relying on webhook redelivery.
 - Two page-scoped, read-only WebMCP tools: inspect the visible Theme Page and check configuration readiness.
 
 ## Safety contract
