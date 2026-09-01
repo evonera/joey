@@ -122,11 +122,15 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
     try {
       loaded = await load({ selected: conversationId });
     } catch (error) {
-      selectedConversationIdRef.current = previousSelectedId;
+      if (selectedConversationIdRef.current === conversationId) {
+        selectedConversationIdRef.current = previousSelectedId;
+      }
       throw error;
     }
     if (!loaded) {
-      selectedConversationIdRef.current = previousSelectedId;
+      if (selectedConversationIdRef.current === conversationId) {
+        selectedConversationIdRef.current = previousSelectedId;
+      }
       throw new Error(`Conversation "${conversationId}" could not be established as the visible selection`);
     }
     setSelectedId(conversationId);

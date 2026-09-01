@@ -39,6 +39,7 @@ const baseConversation = {
 
 const conversationA = { ...baseConversation, id: "conversation-a", participantName: "Alpha", lastMessagePreview: "Recent Alpha" };
 const conversationB = { ...baseConversation, id: "conversation-b", participantName: "Beta", lastMessagePreview: "Recent Beta" };
+const conversationC = { ...baseConversation, id: "conversation-c", participantName: "Gamma", lastMessagePreview: "Recent Gamma" };
 
 function activity(id: string, body: string, occurredAt: string) {
   return {
@@ -59,7 +60,7 @@ function activity(id: string, body: string, occurredAt: string) {
 
 function result(selectedConversation: typeof conversationA, activities: ReturnType<typeof activity>[], olderActivityCursor: string | null = null) {
   return {
-    conversations: [conversationA, conversationB],
+    conversations: [conversationA, conversationB, conversationC],
     selectedConversation,
     activities,
     olderActivityCursor,
@@ -109,6 +110,44 @@ describe("UnifiedInbox", () => {
     await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
     await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("heading", { name: "Beta" })).toBeInTheDocument();
+  });
+
+  it("does not let a failed agent selection roll back a newer human selection", async () => {
+    let resolveAgentSelection!: (value: ReturnType<typeof result>) => void;
+    const agentSelection = new Promise<ReturnType<typeof result>>((resolve) => { resolveAgentSelection = resolve; });
+    mockGetUnifiedInbox.mockImplementation((input: { selectedConversationId?: string }) => {
+      if (input.selectedConversationId === conversationB.id) return agentSelection;
+      if (input.selectedConversationId === conversationC.id) {
+        return Promise.resolve(result(
+          conversationC,
+          [activity("gamma-message", "Gamma timeline", "2026-09-01T10:02:00Z")],
+        ));
+      }
+      throw new Error("Unexpected inbox request");
+    });
+    render(<UnifiedInbox initialResult={result(
+      conversationA,
+      [activity("alpha-message", "Alpha timeline", "2026-09-01T10:00:00Z")],
+    )} />);
+
+    const selectTool = webMcpHarness.tools.find((tool) => tool.name === "joey_select_engagement_conversation")!;
+    const agentCall = selectTool.execute(
+      { conversationId: conversationB.id },
+      { signal: new AbortController().signal },
+    ) as Promise<{ isError?: boolean }>;
+    await userEvent.click(screen.getByRole("button", { name: /Gamma Recent Gamma/ }));
+    await screen.findByRole("heading", { name: "Gamma" });
+
+    resolveAgentSelection(result(
+      conversationB,
+      [activity("beta-message", "Beta timeline", "2026-09-01T10:01:00Z")],
+    ));
+    expect((await agentCall).isError).toBe(true);
+    expect(screen.getByRole("heading", { name: "Gamma" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
+    await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(3));
+    expect(mockGetUnifiedInbox.mock.calls[2][0].selectedConversationId).toBe(conversationC.id);
   });
 
 
