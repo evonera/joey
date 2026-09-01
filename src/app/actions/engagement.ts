@@ -9,9 +9,273 @@ import {
   socialAccounts,
   tenants,
   agentConfigs,
+  engagementActivities,
+  engagementConversations,
 } from "@/lib/db/schema";
-import { eq, and, desc, asc, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, ilike, lt, or } from "drizzle-orm";
 import { getZernioClient } from "./zernio";
+import { syncZernioInboxBackfill } from "@/lib/engagement-inbox";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+export type UnifiedInboxConversation = {
+  id: string;
+  platform: string;
+  kind: string;
+  participantName: string | null;
+  participantHandle: string | null;
+  participantAvatar: string | null;
+  status: string;
+  unreadCount: number;
+  lastMessagePreview: string | null;
+  lastActivityAt: Date;
+};
+
+export type UnifiedInboxActivity = {
+  id: string;
+  type: string;
+  direction: string;
+  body: string | null;
+  actorName: string | null;
+  actorHandle: string | null;
+  actorAvatar: string | null;
+  attachments: Array<Record<string, unknown>> | null;
+  deliveryStatus: string | null;
+  isRead: boolean;
+  isDeleted: boolean;
+  occurredAt: Date;
+};
+
+export async function getUnifiedInbox(input: {
+  status?: string;
+  kind?: string;
+  search?: string;
+  cursor?: string;
+  activityCursor?: string;
+  selectedConversationId?: string;
+  limit?: number;
+} = {}) {
+  try {
+    const tenantId = await getActiveTenantId();
+    const limit = Math.min(Math.max(input.limit ?? 30, 1), 50);
+    const conditions = [eq(engagementConversations.tenantId, tenantId)];
+    if (input.status && input.status !== "all") conditions.push(eq(engagementConversations.status, input.status));
+    if (input.kind && input.kind !== "all") conditions.push(eq(engagementConversations.kind, input.kind));
+    if (input.cursor) {
+      const [cursorTime, cursorId] = input.cursor.split("|");
+      const cursor = new Date(cursorTime);
+      if (!Number.isNaN(cursor.getTime()) && cursorId) {
+        conditions.push(or(
+          lt(engagementConversations.lastActivityAt, cursor),
+          and(eq(engagementConversations.lastActivityAt, cursor), lt(engagementConversations.id, cursorId)),
+        )!);
+      }
+    }
+    const search = input.search?.trim();
+    if (search) {
+      const pattern = `%${search.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+      conditions.push(or(
+        ilike(engagementConversations.participantName, pattern),
+        ilike(engagementConversations.participantHandle, pattern),
+        ilike(engagementConversations.lastMessagePreview, pattern),
+      )!);
+    }
+
+    const rows = await db.query.engagementConversations.findMany({
+      where: and(...conditions),
+      orderBy: [desc(engagementConversations.lastActivityAt), desc(engagementConversations.id)],
+      limit: limit + 1,
+      columns: {
+        id: true,
+        platform: true,
+        kind: true,
+        participantName: true,
+        participantHandle: true,
+        participantAvatar: true,
+        status: true,
+        unreadCount: true,
+        lastMessagePreview: true,
+        lastActivityAt: true,
+      },
+    });
+    const hasMore = rows.length > limit;
+    const conversations = rows.slice(0, limit);
+    const selectedConversationId = input.selectedConversationId ?? conversations[0]?.id;
+    const selected = selectedConversationId
+      ? await db.query.engagementConversations.findFirst({
+          where: and(
+            eq(engagementConversations.id, selectedConversationId),
+            eq(engagementConversations.tenantId, tenantId),
+          ),
+          columns: {
+            id: true,
+            platform: true,
+            kind: true,
+            participantName: true,
+            participantHandle: true,
+            participantAvatar: true,
+            status: true,
+            unreadCount: true,
+            lastMessagePreview: true,
+            lastActivityAt: true,
+          },
+        })
+      : undefined;
+    const activityConditions = selected ? [
+            eq(engagementActivities.tenantId, tenantId),
+            eq(engagementActivities.conversationId, selected.id),
+          ] : [];
+    if (selected && input.activityCursor) {
+      const [cursorTime, cursorId] = input.activityCursor.split("|");
+      const cursor = new Date(cursorTime);
+      if (!Number.isNaN(cursor.getTime()) && cursorId) {
+        activityConditions.push(or(
+          lt(engagementActivities.occurredAt, cursor),
+          and(eq(engagementActivities.occurredAt, cursor), lt(engagementActivities.id, cursorId)),
+        )!);
+      }
+    }
+    const activityRows = selected
+      ? await db.query.engagementActivities.findMany({
+          where: and(...activityConditions),
+          orderBy: [desc(engagementActivities.occurredAt), desc(engagementActivities.id)],
+          limit: 101,
+          columns: {
+            id: true,
+            type: true,
+            direction: true,
+            body: true,
+            actorName: true,
+            actorHandle: true,
+            actorAvatar: true,
+            attachments: true,
+            deliveryStatus: true,
+            isRead: true,
+            isDeleted: true,
+            occurredAt: true,
+          },
+        })
+      : [];
+    const hasOlderActivities = activityRows.length > 100;
+    const activities = activityRows.slice(0, 100).reverse();
+    const selectedItem = selected
+      ? await db.query.engagementItems.findFirst({
+          where: and(
+            eq(engagementItems.tenantId, tenantId),
+            eq(engagementItems.conversationId, selected.id),
+          ),
+          orderBy: [desc(engagementItems.createdAt)],
+        })
+      : undefined;
+    const selectedDraft = selectedItem
+      ? await db.query.replyDrafts.findFirst({
+          where: and(
+            eq(replyDrafts.tenantId, tenantId),
+            eq(replyDrafts.engagementItemId, selectedItem.id),
+          ),
+          orderBy: [desc(replyDrafts.createdAt)],
+        })
+      : undefined;
+
+    return {
+      conversations,
+      selectedConversation: selected ?? null,
+      activities,
+      olderActivityCursor: hasOlderActivities && activities[0]
+        ? `${activities[0].occurredAt.toISOString()}|${activities[0].id}`
+        : null,
+      selectedEngagementItem: selectedItem ? {
+        id: selectedItem.id,
+        platform: selectedItem.platform,
+        platformPostId: selectedItem.platformPostId,
+        platformCommentId: selectedItem.platformCommentId,
+        commenterName: selectedItem.commenterName,
+        commenterHandle: selectedItem.commenterHandle,
+        commenterAvatar: selectedItem.commenterAvatar,
+        text: selectedItem.text,
+        type: selectedItem.type,
+        status: selectedItem.status,
+        createdAt: selectedItem.createdAt,
+        replyDraft: selectedDraft ? {
+          id: selectedDraft.id,
+          content: selectedDraft.content,
+          status: selectedDraft.status,
+          feedback: selectedDraft.feedback,
+          createdAt: selectedDraft.createdAt,
+        } : null,
+      } : null,
+      nextCursor: hasMore && conversations.at(-1)
+        ? `${conversations.at(-1)!.lastActivityAt.toISOString()}|${conversations.at(-1)!.id}`
+        : null,
+    };
+  } catch (error) {
+    console.error("Failed to load unified inbox:", error);
+    return { error: "Failed to load unified inbox" };
+  }
+}
+
+export async function markConversationRead(conversationId: string) {
+  try {
+    const tenantId = await getActiveTenantId();
+    const conversation = await db.query.engagementConversations.findFirst({
+      where: and(
+        eq(engagementConversations.id, conversationId),
+        eq(engagementConversations.tenantId, tenantId),
+      ),
+      columns: { id: true, kind: true, externalConversationId: true, socialAccountId: true },
+    });
+    if (!conversation) return { error: "Conversation not found" };
+    if (conversation.kind === "dm" && conversation.socialAccountId) {
+      const account = await db.query.socialAccounts.findFirst({
+        where: and(
+          eq(socialAccounts.id, conversation.socialAccountId),
+          eq(socialAccounts.tenantId, tenantId),
+        ),
+        columns: { platformAccountId: true },
+      });
+      if (account) {
+        const { zernio } = await getZernioClient();
+        const remote = await zernio.messages.markConversationRead({
+          path: { conversationId: conversation.externalConversationId },
+          body: { accountId: account.platformAccountId },
+        });
+        if (remote.error) throw remote.error;
+      }
+    }
+    await db.transaction(async (tx) => {
+      const [updated] = await tx.update(engagementConversations)
+        .set({ unreadCount: 0, updatedAt: new Date() })
+        .where(and(
+          eq(engagementConversations.id, conversationId),
+          eq(engagementConversations.tenantId, tenantId),
+        ))
+        .returning({ id: engagementConversations.id });
+      if (!updated) throw new Error("Conversation not found");
+      await tx.update(engagementActivities)
+        .set({ isRead: true, updatedAt: new Date() })
+        .where(and(
+          eq(engagementActivities.conversationId, conversationId),
+          eq(engagementActivities.tenantId, tenantId),
+          eq(engagementActivities.direction, "incoming"),
+        ));
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to mark conversation read:", error);
+    return { error: "Failed to mark conversation read" };
+  }
+}
+
+export async function syncUnifiedInbox() {
+  try {
+    const tenantId = await getActiveTenantId();
+    const rateLimit = await checkRateLimit(`engagement-sync:${tenantId}`, 1, 60_000);
+    if (!rateLimit.allowed) return { error: "Inbox sync is limited to one request per minute" };
+    return { success: true, ...(await syncZernioInboxBackfill(tenantId)) };
+  } catch (error) {
+    console.error("Failed to sync unified inbox:", error);
+    return { error: "Failed to sync inbox from Zernio" };
+  }
+}
 
 export type EngagementItemWithReply = {
   id: string;

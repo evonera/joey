@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { verifyWebhookSignature, storeWebhookEvent, markWebhookProcessed, resolveTenantFromPayload, storeEngagementItem, type ZernioWebhookPayload } from "@/lib/webhooks";
+import { verifyWebhookSignature, storeWebhookEvent, markWebhookProcessed, resolveTenantFromPayload, type ZernioWebhookPayload } from "@/lib/webhooks";
+import { ingestZernioEngagementEvent, ZERNIO_ENGAGEMENT_EVENTS } from "@/lib/engagement-inbox";
 import { webhookEvents, flows, flowRuns } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -202,9 +203,8 @@ export async function POST(req: NextRequest) {
             return;
           }
 
-          // Store engagement item for comment.received events
-          if (payload.event === "comment.received") {
-            await storeEngagementItem(payload, tenantId);
+          if (ZERNIO_ENGAGEMENT_EVENTS.has(payload.event)) {
+            await ingestZernioEngagementEvent(payload, tenantId);
           }
 
           // Fan out to active flows listening for this event

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { db } from "@/lib/db";
-import { webhookEvents, socialAccounts, engagementItems, flowRuns } from "@/lib/db/schema";
+import { webhookEvents, socialAccounts, flowRuns } from "@/lib/db/schema";
 import { eq, and, sql, gt } from "drizzle-orm";
 
 export function verifyWebhookSignature(rawBody: string, signature: string, secret: string): boolean {
@@ -121,63 +121,11 @@ export async function markWebhookProcessed(eventId: string, error?: string, expe
 
 export async function resolveTenantFromPayload(payload: ZernioWebhookPayload): Promise<string | null> {
   const account = (payload as any).account;
-  if (!account?.id) return null;
+  const accountId = account?.accountId || account?.id;
+  if (!accountId) return null;
 
   const socialAccount = await db.query.socialAccounts.findFirst({
-    where: eq(socialAccounts.platformAccountId, account.id),
+    where: eq(socialAccounts.platformAccountId, String(accountId)),
   });
   return socialAccount?.tenantId ?? null;
-}
-
-export async function storeEngagementItem(payload: ZernioWebhookPayload, tenantId: string) {
-  const data = payload as any;
-  const comment = data.comment || data.mention || {};
-  const account = data.account || {};
-
-  const eventType = payload.event; // 'comment.received' or 'message.received'
-
-  if (eventType !== "comment.received") return null;
-
-  const platform = account.platform || data.platform || "unknown";
-  const platformCommentId = comment.id || payload.id;
-  const socialAccount = account.id
-    ? await db.query.socialAccounts.findFirst({
-        where: and(
-          eq(socialAccounts.tenantId, tenantId),
-          eq(socialAccounts.platformAccountId, String(account.id)),
-        ),
-        columns: { id: true },
-      })
-    : undefined;
-
-  const [item] = await db.insert(engagementItems).values({
-    tenantId,
-    socialAccountId: socialAccount?.id,
-    platform,
-    platformPostId: comment.postId || comment.mediaId,
-    platformCommentId,
-    commenterName: comment.fromName || comment.username,
-    commenterHandle: comment.fromHandle || comment.fromUsername,
-    commenterAvatar: comment.fromAvatar,
-    text: comment.text || comment.message || "",
-    type: "comment",
-    status: "pending",
-    metadata: payload as any,
-  }).onConflictDoNothing({
-    target: [
-      engagementItems.tenantId,
-      engagementItems.platform,
-      engagementItems.platformCommentId,
-    ],
-  }).returning();
-
-  if (item) return item;
-
-  return db.query.engagementItems.findFirst({
-    where: and(
-      eq(engagementItems.tenantId, tenantId),
-      eq(engagementItems.platform, platform),
-      eq(engagementItems.platformCommentId, platformCommentId),
-    ),
-  });
 }

@@ -250,10 +250,77 @@ export const messages = pgTable("messages", {
   threadIdx: index("messages_thread_id_idx").on(table.threadId, table.createdAt),
 }));
 
+export const engagementConversations = pgTable("engagement_conversations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  socialAccountId: text("social_account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
+  platform: varchar("platform", { length: 50 }).notNull(),
+  kind: varchar("kind", { length: 20 }).notNull(), // 'dm' | 'comment' | 'review'
+  externalConversationId: text("external_conversation_id").notNull(),
+  contactId: text("contact_id"),
+  participantId: text("participant_id"),
+  participantName: text("participant_name"),
+  participantHandle: text("participant_handle"),
+  participantAvatar: text("participant_avatar"),
+  status: varchar("status", { length: 30 }).notNull().default("active"),
+  unreadCount: integer("unread_count").notNull().default(0),
+  lastMessagePreview: text("last_message_preview"),
+  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  externalIdx: uniqueIndex("engagement_conversations_external_idx").on(
+    table.tenantId,
+    table.platform,
+    table.kind,
+    table.externalConversationId,
+  ),
+  queueIdx: index("engagement_conversations_queue_idx").on(table.tenantId, table.status, table.lastActivityAt.desc()),
+}));
+
+export const engagementActivities = pgTable("engagement_activities", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  conversationId: text("conversation_id").notNull().references(() => engagementConversations.id, { onDelete: "cascade" }),
+  platform: varchar("platform", { length: 50 }).notNull(),
+  externalActivityId: text("external_activity_id").notNull(),
+  eventId: text("event_id"),
+  type: varchar("type", { length: 30 }).notNull(), // 'message' | 'comment' | 'mention' | 'review' | 'reaction'
+  direction: varchar("direction", { length: 20 }).notNull().default("incoming"),
+  body: text("body"),
+  actorId: text("actor_id"),
+  actorName: text("actor_name"),
+  actorHandle: text("actor_handle"),
+  actorAvatar: text("actor_avatar"),
+  attachments: jsonb("attachments").$type<Array<Record<string, unknown>>>().default([]),
+  deliveryStatus: varchar("delivery_status", { length: 30 }),
+  isRead: boolean("is_read").notNull().default(false),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  occurredAt: timestamp("occurred_at").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  externalIdx: uniqueIndex("engagement_activities_external_idx").on(table.tenantId, table.conversationId, table.externalActivityId),
+  timelineIdx: index("engagement_activities_timeline_idx").on(table.tenantId, table.conversationId, table.occurredAt),
+}));
+
+export const engagementSyncCursors = pgTable("engagement_sync_cursors", {
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  source: varchar("source", { length: 30 }).notNull(),
+  cursor: text("cursor").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantSourceIdx: uniqueIndex("engagement_sync_cursors_tenant_source_idx").on(table.tenantId, table.source),
+}));
+
 export const engagementItems = pgTable("engagement_items", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   socialAccountId: text("social_account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
+  conversationId: text("conversation_id").references(() => engagementConversations.id, { onDelete: "cascade" }),
+  activityId: text("activity_id").references(() => engagementActivities.id, { onDelete: "cascade" }),
   platform: varchar("platform", { length: 50 }).notNull(),
   platformPostId: text("platform_post_id"),
   platformCommentId: text("platform_comment_id"),
