@@ -14,6 +14,11 @@ Joey is a multi-tenant, autonomous social media management platform built on Nex
 - **LLM Token Tracking**: Granular tracking and visualization of input/output token usage per tenant.
 - **Evaluations**: Built-in Eve Evals for CI/CD regression testing on agent draft quality and approval gate logic.
 
+## Product documentation
+
+- [WebMCP tools](docs/webmcp.md): page-scoped tools agents can use and their human-approval boundaries.
+- [Theme Studio product contract](docs/theme-studio.md): planned multimodal theme-page automation built on Joey's existing flow platform.
+
 ## Tech Stack
 - **Framework**: Next.js 16 (App Router)
 - **Database**: PostgreSQL (Neon) with Drizzle ORM
