@@ -106,6 +106,8 @@ export function TemplateCanvasEditor({
       if (initialTemplate.id) {
         const res = await updateThemeTemplate(initialTemplate.id, {
           name,
+          formatId,
+          renderer: selectedFormat?.mediaType === "video" ? "remotion" : "puppeteer",
           componentSpec: spec,
         });
         if (res.error) throw new Error(res.error);

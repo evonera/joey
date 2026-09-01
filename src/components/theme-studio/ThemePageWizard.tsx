@@ -101,13 +101,16 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
       // 2. Add Sources
       for (const src of sources) {
         if (src.url.trim()) {
-          await createThemeSource({
+          const srcRes = await createThemeSource({
             themePageId: pageId,
             name: src.name.trim() || "Source Feed",
             sourceType: src.type,
             url: src.url.trim(),
             rightsCategory: "cc_by",
           });
+          if (srcRes.error) {
+            throw new Error(`Failed to configure source "${src.name}": ${srcRes.error}`);
+          }
         }
       }
 
@@ -117,20 +120,37 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
       const video = availableFormats.find((f) => f.slug === "instagram-reel-9x16") || availableFormats[0];
 
       if (selectedPreset === "growth") {
-        if (squareCard) await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Daily News Card", priority: 0 });
-        if (carousel) await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "5-Slide Deep Dive Carousel", priority: 1 });
-        if (video) await createThemeSlot({ themePageId: pageId, formatId: video.id, label: "9:16 Short Breakdown Video", priority: 2 });
+        if (squareCard) {
+          const r = await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Daily News Card", priority: 0 });
+          if (r.error) throw new Error(`Failed to create slot: ${r.error}`);
+        }
+        if (carousel) {
+          const r = await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "5-Slide Deep Dive Carousel", priority: 1 });
+          if (r.error) throw new Error(`Failed to create slot: ${r.error}`);
+        }
+        if (video) {
+          const r = await createThemeSlot({ themePageId: pageId, formatId: video.id, label: "9:16 Short Breakdown Video", priority: 2 });
+          if (r.error) throw new Error(`Failed to create slot: ${r.error}`);
+        }
       } else if (selectedPreset === "authority") {
-        if (carousel) await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Morning Carousel Playbook", priority: 0 });
-        if (carousel) await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Evening Strategy Breakdown", priority: 1 });
+        if (carousel) {
+          const r1 = await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Morning Carousel Playbook", priority: 0 });
+          if (r1.error) throw new Error(`Failed to create slot: ${r1.error}`);
+          const r2 = await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Evening Strategy Breakdown", priority: 1 });
+          if (r2.error) throw new Error(`Failed to create slot: ${r2.error}`);
+        }
       } else {
-        if (squareCard) await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Morning Flash News", priority: 0 });
-        if (squareCard) await createThemeSlot({ themePageId: squareCard.id, formatId: squareCard.id, label: "Evening Recap Card", priority: 1 });
+        if (squareCard) {
+          const r1 = await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Morning Flash News", priority: 0 });
+          if (r1.error) throw new Error(`Failed to create slot: ${r1.error}`);
+          const r2 = await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Evening Recap Card", priority: 1 });
+          if (r2.error) throw new Error(`Failed to create slot: ${r2.error}`);
+        }
       }
 
       // 4. Create Default Visual Template
       if (squareCard) {
-        await createThemeTemplate({
+        const tmplRes = await createThemeTemplate({
           themePageId: pageId,
           name: `${name} Official Card Template`,
           formatId: squareCard.id,
@@ -144,6 +164,9 @@ export function ThemePageWizard({ availableFormats }: ThemePageWizardProps) {
             bodyTemplate: "{{summary}}",
           },
         });
+        if (tmplRes.error) {
+          throw new Error(`Failed to create default template: ${tmplRes.error}`);
+        }
       }
 
       toast.success("Theme page created successfully!");

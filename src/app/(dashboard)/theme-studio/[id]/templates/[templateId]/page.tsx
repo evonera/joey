@@ -38,7 +38,11 @@ export default async function ThemePageTemplateEditorRoute({
   }
 
   const templateRes = await getThemeTemplateById(templateId);
-  if (templateRes.error || !templateRes.template) {
+  if (
+    templateRes.error ||
+    !templateRes.template ||
+    (templateRes.template.themePageId && templateRes.template.themePageId !== id)
+  ) {
     notFound();
   }
 

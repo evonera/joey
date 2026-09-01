@@ -17,6 +17,8 @@ export interface CreateThemeTemplateInput {
 
 export interface UpdateThemeTemplateInput {
   name?: string;
+  formatId?: string;
+  renderer?: 'puppeteer' | 'remotion';
   componentSpec?: Record<string, unknown>;
   propsSchema?: Record<string, unknown>;
   previewUrl?: string;
@@ -130,6 +132,8 @@ export async function updateThemeTemplate(id: string, data: UpdateThemeTemplateI
     const [updated] = await db.update(themeVisualTemplates)
       .set({
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+        ...(data.formatId !== undefined ? { formatId: data.formatId } : {}),
+        ...(data.renderer !== undefined ? { renderer: data.renderer } : {}),
         ...(data.componentSpec !== undefined ? { componentSpec: data.componentSpec } : {}),
         ...(data.propsSchema !== undefined ? { propsSchema: data.propsSchema } : {}),
         ...(data.previewUrl !== undefined ? { previewUrl: data.previewUrl } : {}),

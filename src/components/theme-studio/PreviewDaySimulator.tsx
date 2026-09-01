@@ -59,6 +59,13 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
         const isVideo = slot.format?.mediaType === "video";
         const isCarousel = slot.format?.mediaType === "carousel";
 
+        const assignedSources = sources.length > 0 
+          ? sources.slice(index % sources.length, (index % sources.length) + 2)
+          : [];
+        const sourceNames = assignedSources.map((s) => s.name);
+        const dominantRights = assignedSources[0]?.rightsCategory || "unverified";
+        const isCompliant = ["owned", "public_domain", "cc_by", "cc_by_sa", "commercial_license"].includes(dominantRights);
+
         return {
           id: `sim_pkg_${index + 1}`,
           slotLabel: slot.label || slot.format?.name || `Slot #${index + 1}`,
@@ -70,9 +77,10 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
             : "Breaking Analysis: Strategic Moves Behind Recent Market Shifts",
           caption: `🔥 Essential update for ${themePage.niche || "enthusiasts"}.\n\nSwipe through for the breakdown. What's your take on this?\n\nComment 'GUIDE' to receive the full report in your DMs!\n\n#${(themePage.niche || "daily").replace(/\s+/g, "")} #updates #insights`,
           provenance: {
-            sourcesUsed: sources.slice(0, 2).map((s) => s.name),
-            rightsVerified: "cc_by",
-            confidenceScore: 0.98,
+            sourcesUsed: sourceNames,
+            rightsVerified: dominantRights,
+            confidenceScore: assignedSources.length > 0 ? (isCompliant ? 0.95 : 0.45) : 0.0,
+            isCompliant,
           },
           slides: isCarousel
             ? [

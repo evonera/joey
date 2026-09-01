@@ -5,6 +5,7 @@ import { ThemePageHeader } from "@/components/theme-studio/ThemePageHeader";
 import { DailyMixScheduler } from "@/components/theme-studio/DailyMixScheduler";
 import { SourcesManager } from "@/components/theme-studio/SourcesManager";
 import { DmRulesBuilder } from "@/components/theme-studio/DmRulesBuilder";
+import { PreviewDaySimulator } from "@/components/theme-studio/PreviewDaySimulator";
 
 describe("Theme Studio UI Components", () => {
   it("renders ThemePageHeader with page name and navigation tabs", () => {
@@ -115,4 +116,37 @@ describe("Theme Studio UI Components", () => {
     expect(screen.getByText(/12 DMs Sent/)).toBeDefined();
     expect(screen.getByText(/8 Clicks/)).toBeDefined();
   });
+
+  it("renders PreviewDaySimulator with accurate source provenance badges", () => {
+    const mockThemePage = {
+      id: "page_abc",
+      name: "Tech AI Weekly",
+      niche: "AI engineering updates",
+    };
+
+    const mockSlots = [
+      {
+        id: "slot_1",
+        label: "Morning Card",
+        format: { id: "fmt_1", name: "Square Card", mediaType: "image", aspectRatio: "1:1" },
+      },
+    ];
+
+    const mockSources = [
+      { id: "src_1", name: "Open Source AI Feed", rightsCategory: "cc_by" },
+    ];
+
+    render(
+      <PreviewDaySimulator
+        themePage={mockThemePage}
+        slots={mockSlots}
+        sources={mockSources}
+        templates={[]}
+      />
+    );
+
+    expect(screen.getByText(/"Preview Day" Simulation/)).toBeDefined();
+    expect(screen.getByText(/Simulate a Full Day's Production/)).toBeDefined();
+  });
 });
+
