@@ -111,6 +111,8 @@ export function renderCardSvg(options: CardRenderOptions): string {
   const bodyLines = wrapText(body, 36).slice(0, maxBodyLines);
 
   const isCarousel = slideNumber !== undefined && totalSlides !== undefined;
+  const clampedTag = tag.length > 20 ? `${tag.slice(0, 17)}...` : tag;
+  const tagBadgeWidth = Math.min(clampedTag.length * 13 + 32, 280);
 
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -131,8 +133,8 @@ export function renderCardSvg(options: CardRenderOptions): string {
 
   <!-- Top Header Tag -->
   <g transform="translate(80, 80)">
-    <rect x="0" y="0" width="${tag.length * 14 + 32}" height="42" rx="21" fill="${escapeXml(accentColor)}" fill-opacity="0.18" stroke="${escapeXml(accentColor)}" stroke-opacity="0.4" stroke-width="2" />
-    <text x="16" y="27" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="16" font-weight="800" letter-spacing="1.5">${escapeXml(tag.toUpperCase())}</text>
+    <rect x="0" y="0" width="${tagBadgeWidth}" height="42" rx="21" fill="${escapeXml(accentColor)}" fill-opacity="0.18" stroke="${escapeXml(accentColor)}" stroke-opacity="0.4" stroke-width="2" />
+    <text x="16" y="27" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="16" font-weight="800" letter-spacing="1.5">${escapeXml(clampedTag.toUpperCase())}</text>
   </g>
 
   ${

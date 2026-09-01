@@ -73,11 +73,23 @@ export async function renderPackageMedia(packageId: string): Promise<RenderPacka
         brandKit,
       });
 
-      // Video composition spec recorded in package metadata
-      renderedUrls.push({
-        url: `remotion://compositions/VerticalNewsReel?title=${encodeURIComponent(pkg.title)}`,
-        type: "video",
-      });
+      const specJson = JSON.stringify(composition);
+      const buffer = Buffer.from(specJson, "utf-8");
+
+      try {
+        const { publicUrl } = await uploadBufferToR2(
+          buffer,
+          "application/json",
+          pkg.tenantId,
+          { customKey: `${pkg.tenantId}/theme-studio/${pkg.id}/composition.json` }
+        );
+        renderedUrls.push({ url: publicUrl, type: "video" });
+      } catch {
+        renderedUrls.push({
+          url: `data:application/json;base64,${buffer.toString("base64")}`,
+          type: "video",
+        });
+      }
     } else {
       // Standard static image card
       const svg = renderCardSvg({
