@@ -60,9 +60,18 @@ export function ReplyCard({
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
   const hasHumanEdits = useRef(false);
+  const activeReplyDraftId = useRef<string | undefined>(item.replyDraft?.id);
 
   useEffect(() => {
+    const replyDraftId = item.replyDraft?.id;
     const serverContent = item.replyDraft?.content ?? "";
+    if (activeReplyDraftId.current !== replyDraftId) {
+      activeReplyDraftId.current = replyDraftId;
+      hasHumanEdits.current = false;
+      setDraftContent(stagedContent ?? serverContent);
+      setIsEditing(stagedContent !== undefined);
+      return;
+    }
     if (stagedContent !== undefined) {
       if (!hasHumanEdits.current) setDraftContent(stagedContent);
       setIsEditing(true);

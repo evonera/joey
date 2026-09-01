@@ -89,6 +89,29 @@ describe("UnifiedInbox", () => {
     expect(JSON.parse(inspected.content[0].text).selectedConversation.id).toBe(conversationB.id);
   });
 
+  it("carries a confirmed agent selection through a later inbox refresh", async () => {
+    mockGetUnifiedInbox.mockImplementation((input: { selectedConversationId?: string }) => {
+      expect(input.selectedConversationId).toBe(conversationB.id);
+      return Promise.resolve(result(
+        conversationB,
+        [activity("beta-message", "Beta timeline", "2026-09-01T10:01:00Z")],
+      ));
+    });
+    render(<UnifiedInbox initialResult={result(
+      conversationA,
+      [activity("alpha-message", "Alpha timeline", "2026-09-01T10:00:00Z")],
+    )} />);
+
+    const selectTool = webMcpHarness.tools.find((tool) => tool.name === "joey_select_engagement_conversation")!;
+    const options = { signal: new AbortController().signal };
+    const selected = await selectTool.execute({ conversationId: conversationB.id }, options) as { isError?: boolean };
+    expect(selected.isError).not.toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
+    await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("heading", { name: "Beta" })).toBeInTheDocument();
+  });
+
+
   it("reports an agent selection failure when the requested conversation was not loaded", async () => {
     mockGetUnifiedInbox.mockResolvedValue(result(
       conversationA,

@@ -48,6 +48,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   const loadRequestId = useRef(0);
   const pagesRef = useRef(pages);
   const selectedRef = useRef<UnifiedInboxConversation | null>(null);
+  const selectedConversationIdRef = useRef<string | undefined>(initialSelectedId);
   const activitiesRef = useRef(activityPages);
   const selectedItemRef = useRef<EngagementWebMcpItem>(null);
   const stagedReplyEditsRef = useRef(stagedReplyEdits);
@@ -55,16 +56,21 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
 
   const load = useCallback(async (options?: { append?: boolean; cursor?: string | null; selected?: string; activityCursor?: string | null; prependActivities?: boolean }) => {
     const requestId = ++loadRequestId.current;
+    const requestedSelectedId = options?.selected ?? selectedConversationIdRef.current ?? selectedId;
     setLoading(true);
     let response: InboxResult;
     try {
-      response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: options?.selected ?? selectedId });
+      response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: requestedSelectedId });
     } catch (error) {
       if (requestId === loadRequestId.current) setLoading(false);
       throw error;
     }
     if (requestId !== loadRequestId.current) return false;
-    if (options?.selected && (!("selectedConversation" in response) || response.selectedConversation?.id !== options.selected)) {
+    if (requestedSelectedId && selectedConversationIdRef.current && requestedSelectedId !== selectedConversationIdRef.current) {
+      setLoading(false);
+      return false;
+    }
+    if (requestedSelectedId && (!("selectedConversation" in response) || response.selectedConversation?.id !== requestedSelectedId)) {
       setLoading(false);
       return false;
     }
@@ -81,7 +87,10 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
       }
       if (options?.append) setPages((current) => [...current, ...conversations]);
       else if (!options?.selected) setPages(conversations);
-      if (!selectedId && response.selectedConversation?.id) setSelectedId(response.selectedConversation.id);
+      if (!selectedConversationIdRef.current && response.selectedConversation?.id) {
+        selectedConversationIdRef.current = response.selectedConversation.id;
+        setSelectedId(response.selectedConversation.id);
+      }
       setActivityPages((current) => options?.prependActivities ? [...responseActivities, ...current] : responseActivities);
     }
     setLoading(false);
@@ -107,8 +116,19 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   stagedReplyEditsRef.current = stagedReplyEdits;
 
   const selectConversationForAgent = useCallback(async (conversationId: string) => {
-    const loaded = await load({ selected: conversationId });
-    if (!loaded) throw new Error(`Conversation "${conversationId}" could not be established as the visible selection`);
+    const previousSelectedId = selectedConversationIdRef.current;
+    selectedConversationIdRef.current = conversationId;
+    let loaded: boolean;
+    try {
+      loaded = await load({ selected: conversationId });
+    } catch (error) {
+      selectedConversationIdRef.current = previousSelectedId;
+      throw error;
+    }
+    if (!loaded) {
+      selectedConversationIdRef.current = previousSelectedId;
+      throw new Error(`Conversation "${conversationId}" could not be established as the visible selection`);
+    }
     setSelectedId(conversationId);
     setMobileDetailOpen(true);
   }, [load]);
@@ -180,6 +200,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
 
   const selectConversation = async (conversation: UnifiedInboxConversation) => {
     const isAlreadySelected = selectedId === conversation.id;
+    selectedConversationIdRef.current = conversation.id;
     setSelectedId(conversation.id);
     setMobileDetailOpen(true);
     if (!isAlreadySelected) await load({ selected: conversation.id });

@@ -165,4 +165,22 @@ describe("ReplyCard WebMCP staging", () => {
     rerender(<ReplyCard item={serverUpdatedItem} onEditSaved={onSaved} onActionComplete={vi.fn()} />);
     expect(screen.getByText("Later server revision")).toBeInTheDocument();
   });
+
+  it("resets unsaved human state when the selected reply draft changes", async () => {
+    const { rerender } = render(<ReplyCard item={item} onActionComplete={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = screen.getByRole("textbox");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "Unsaved text from conversation A");
+
+    const conversationBItem = {
+      ...item,
+      id: "item-2",
+      replyDraft: { ...item.replyDraft, id: "draft-2", content: "Conversation B reply" },
+    };
+    rerender(<ReplyCard item={conversationBItem} onActionComplete={vi.fn()} />);
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("Conversation B reply")).toBeInTheDocument();
+    expect(screen.queryByText("Unsaved text from conversation A")).not.toBeInTheDocument();
+  });
 });
