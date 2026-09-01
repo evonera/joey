@@ -1,0 +1,90 @@
+import { describe, it, expect } from "vitest";
+import { renderCardSvg, renderCarouselSlideSvgs } from "@/lib/theme-studio/renderers/static-card-renderer";
+import { generateWordTimestamps, buildVerticalNewsComposition } from "@/lib/theme-studio/renderers/video-renderer";
+
+describe("Theme Studio Media Renderers (Phase 4)", () => {
+  describe("Static Card Renderer", () => {
+    it("renders valid SVG card with custom brand kit and typography", () => {
+      const svg = renderCardSvg({
+        title: "Anthropic Releases Claude 3.7 Sonnet with Hybrid Reasoning",
+        body: "A deep dive into how simultaneous fast response and deep thinking mode works.",
+        tag: "BREAKING",
+        sourceName: "TechCrunch",
+        brandKit: {
+          primaryColor: "#030712",
+          accentColor: "#f59e0b",
+          textColor: "#ffffff",
+          watermark: "@AIEngineerDaily",
+        },
+        aspectRatio: "1:1",
+      });
+
+      expect(svg).toContain("<svg");
+      expect(svg).toContain('width="1080"');
+      expect(svg).toContain('height="1080"');
+      expect(svg).toContain("Anthropic Releases");
+      expect(svg).toContain("Claude 3.7");
+      expect(svg).toContain("BREAKING");
+      expect(svg).toContain("@AIEngineerDaily");
+      expect(svg).toContain("#f59e0b");
+    });
+
+    it("renders 4:5 portrait card dimensions correctly", () => {
+      const svg = renderCardSvg({
+        title: "Portrait Instagram Card",
+        aspectRatio: "4:5",
+      });
+
+      expect(svg).toContain('width="1080"');
+      expect(svg).toContain('height="1350"');
+    });
+
+    it("renders multi-slide carousel sequence with slide numbering indicators", () => {
+      const slides = [
+        { title: "Slide 1: Overview", body: "Introduction" },
+        { title: "Slide 2: Strategy", body: "Detailed analysis" },
+        { title: "Slide 3: Execution", body: "Action items" },
+      ];
+
+      const svgSlides = renderCarouselSlideSvgs(slides, { watermark: "@GrowthHacker" });
+
+      expect(svgSlides).toHaveLength(3);
+      expect(svgSlides[0]).toContain("1/3");
+      expect(svgSlides[1]).toContain("2/3");
+      expect(svgSlides[2]).toContain("3/3");
+      expect(svgSlides[0]).toContain("Slide 1: Overview");
+      expect(svgSlides[2]).toContain("Slide 3: Execution");
+    });
+  });
+
+  describe("Video Composition & Captions Engine", () => {
+    it("computes word-level timestamps and duration from narration text", () => {
+      const text = "LeBron James sets the all-time scoring record with iconic fadeaway jumper";
+      const { durationSeconds, totalFrames, words } = generateWordTimestamps(text, 0, 150, 30);
+
+      expect(words).toHaveLength(11);
+      expect(words[0].word).toBe("LeBron");
+      expect(words[0].startFrame).toBe(0);
+      expect(words[0].endFrame).toBeGreaterThan(0);
+      expect(durationSeconds).toBeGreaterThan(0);
+      expect(totalFrames).toBe(words[words.length - 1].endFrame);
+    });
+
+    it("constructs vertical short video composition spec with hook, points, and CTA", () => {
+      const comp = buildVerticalNewsComposition({
+        title: "3 Surprising Productivity Hacks",
+        points: ["Timeboxing in 90-minute blocks", "Zero-notification mornings"],
+        ctaKeyword: "FOCUS",
+        brandKit: { primaryColor: "#1e1b4b", accentColor: "#a855f7", watermark: "@ProductivityDaily" },
+      });
+
+      expect(comp.scenes).toHaveLength(4); // hook + 2 points + cta
+      expect(comp.scenes[0].type).toBe("hook");
+      expect(comp.scenes[1].type).toBe("point");
+      expect(comp.scenes[2].type).toBe("point");
+      expect(comp.scenes[3].type).toBe("cta");
+      expect(comp.scenes[3].narrationText).toContain("FOCUS");
+      expect(comp.brandKit?.watermark).toBe("@ProductivityDaily");
+    });
+  });
+});
