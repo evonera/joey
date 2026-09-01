@@ -34,14 +34,15 @@ export function parseRssXml(xml: string, defaultRights: string = "unknown"): Nor
     const title = titleMatch ? titleMatch[1].trim() : "Untitled";
     const url = linkMatch ? (linkMatch[1] || "").trim() : "";
     const body = descMatch ? descMatch[1].replace(/<[^>]*>/g, " ").trim() : title;
-    const publishedAt = dateMatch ? new Date(dateMatch[1].trim()) : new Date();
+    const parsedDate = dateMatch ? new Date(dateMatch[1].trim()) : null;
+    const publishedAt = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : undefined;
 
     if (title && url) {
       items.push({
         title,
         body,
         url,
-        publishedAt: isNaN(publishedAt.getTime()) ? new Date() : publishedAt,
+        publishedAt,
         rightsCategory: defaultRights,
       });
     }
@@ -108,11 +109,15 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
       const rawArray = Array.isArray(json) ? json : json.articles || json.data || json.items || [];
       for (const row of rawArray) {
         if (row.title) {
+          const rawDate = row.publishedAt || row.published_at || row.date;
+          const parsedHttpDate = rawDate ? new Date(rawDate) : null;
+          const publishedAt = parsedHttpDate && !isNaN(parsedHttpDate.getTime()) ? parsedHttpDate : undefined;
+
           items.push({
             title: row.title,
             body: row.description || row.body || row.summary || row.title,
             url: row.url || row.link || source.url,
-            publishedAt: row.publishedAt ? new Date(row.publishedAt) : new Date(),
+            publishedAt,
             rightsCategory: source.rightsCategory,
           });
         }
@@ -144,7 +149,7 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
       url: item.url,
       canonicalUrlHash: urlHash,
       contentHash: bodyHash,
-      publishedAt: item.publishedAt || new Date(),
+      publishedAt: item.publishedAt || null,
       rightsCategory: item.rightsCategory || source.rightsCategory || "unknown",
       metadata: item.metadata || {},
       status: "raw",

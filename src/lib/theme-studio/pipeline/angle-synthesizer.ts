@@ -48,22 +48,31 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
       });
     }
 
-    const memberRights = memberItems.map((m) => m.rightsCategory || "unknown");
-    const dominantRights = memberRights.length > 0 ? memberRights[0] : "unknown";
-    const hasSourceUrl = memberItems.length > 0 && memberItems.every((m) => Boolean(m.url && m.url.trim()));
-    const hasTimestamp = memberItems.length > 0 && memberItems.every((m) => Boolean(m.publishedAt));
-
-    const verification = verifyRightsAndProvenance({
-      rightsCategory: dominantRights,
-      policy: (page.defaultRightsPolicy as any) || "strict",
-      hasSourceUrl,
-      hasTimestamp,
-    });
-
-    if (!verification.isCompliant) {
+    if (memberItems.length === 0) {
       skippedSlotsCount++;
       continue;
     }
+
+    // Verify rights & provenance for every individual member item in the cluster
+    const verifications = memberItems.map((m) =>
+      verifyRightsAndProvenance({
+        rightsCategory: m.rightsCategory || "unknown",
+        policy: (page.defaultRightsPolicy as any) || "strict",
+        hasSourceUrl: Boolean(m.url && m.url.trim()),
+        hasTimestamp: Boolean(m.publishedAt),
+      })
+    );
+
+    const isAllCompliant = verifications.every((v) => v.isCompliant);
+    if (!isAllCompliant) {
+      skippedSlotsCount++;
+      continue;
+    }
+
+    const attributionTexts = Array.from(
+      new Set(verifications.map((v) => v.attributionText).filter(Boolean))
+    );
+    const attributionBlock = attributionTexts.length > 0 ? `\n\n${attributionTexts.join("\n")}` : "";
 
     const title = `${cluster.title}`;
     const hashtags = [
@@ -72,7 +81,7 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
       "#updates",
     ];
 
-    const caption = `${title}\n\n${cluster.summary || ""}\n\n${verification.attributionText || ""}\n\n${hashtags.join(" ")}`;
+    const caption = `${title}\n\n${cluster.summary || ""}${attributionBlock}\n\n${hashtags.join(" ")}`;
 
     const [pkg] = await db.insert(contentPackages).values({
       tenantId: page.tenantId,
@@ -90,9 +99,9 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
         sourcesCount: memberItems.length || 1,
         factsCount: Array.isArray(cluster.facts) ? cluster.facts.length : 0,
         policy: page.defaultRightsPolicy,
-        rightsVerified: dominantRights,
-        isCompliant: verification.isCompliant,
-        attributionText: verification.attributionText || null,
+        rightsVerified: Array.from(new Set(memberItems.map((m) => m.rightsCategory || "unknown"))).join(", "),
+        isCompliant: true,
+        attributionText: attributionTexts.length > 0 ? attributionTexts.join("; ") : null,
         generatedAt: new Date().toISOString(),
       },
       status: "pending_review",

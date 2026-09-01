@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { sourceItems, storyClusters, themePages } from "@/lib/db/schema";
-import { eq, and, desc, gte, inArray } from "drizzle-orm";
+import { eq, and, desc, gte, inArray, isNotNull } from "drizzle-orm";
 
 export interface ClusterCandidate {
   title: string;
@@ -56,6 +56,7 @@ export async function clusterSourceItems(themePageId: string): Promise<{
     where: and(
       eq(sourceItems.themePageId, themePageId),
       eq(sourceItems.status, "raw"),
+      isNotNull(sourceItems.publishedAt),
       gte(sourceItems.publishedAt, cutoff)
     ),
     orderBy: [desc(sourceItems.publishedAt)],
