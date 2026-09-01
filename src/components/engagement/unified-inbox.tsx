@@ -204,10 +204,30 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
 
   const selectConversation = async (conversation: UnifiedInboxConversation) => {
     const isAlreadySelected = selectedId === conversation.id;
+    const previousSelectedId = selectedConversationIdRef.current;
     selectedConversationIdRef.current = conversation.id;
     setSelectedId(conversation.id);
     setMobileDetailOpen(true);
-    if (!isAlreadySelected) await load({ selected: conversation.id });
+    if (!isAlreadySelected) {
+      let loaded = false;
+      try {
+        loaded = await load({ selected: conversation.id });
+      } catch (error) {
+        if (selectedConversationIdRef.current === conversation.id) {
+          selectedConversationIdRef.current = previousSelectedId;
+          setSelectedId(previousSelectedId);
+        }
+        window.alert(error instanceof Error ? error.message : "Failed to load conversation");
+        return;
+      }
+      if (!loaded) {
+        if (selectedConversationIdRef.current === conversation.id) {
+          selectedConversationIdRef.current = previousSelectedId;
+          setSelectedId(previousSelectedId);
+        }
+        return;
+      }
+    }
     if (conversation.unreadCount > 0) {
       const read = await markConversationRead(conversation.id);
       if (read.success) setPages((current) => current.map((row) => row.id === conversation.id ? { ...row, unreadCount: 0 } : row));

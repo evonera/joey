@@ -150,6 +150,37 @@ describe("UnifiedInbox", () => {
     expect(mockGetUnifiedInbox.mock.calls[2][0].selectedConversationId).toBe(conversationC.id);
   });
 
+  it("rolls back a failed human selection before later refreshes", async () => {
+    mockGetUnifiedInbox.mockImplementation((input: { selectedConversationId?: string }) => {
+      if (input.selectedConversationId === conversationC.id) {
+        return Promise.resolve(result(
+          conversationA,
+          [activity("alpha-message", "Alpha timeline", "2026-09-01T10:00:00Z")],
+        ));
+      }
+      if (input.selectedConversationId === conversationA.id) {
+        return Promise.resolve(result(
+          conversationA,
+          [activity("alpha-message", "Alpha timeline", "2026-09-01T10:00:00Z")],
+        ));
+      }
+      throw new Error("Unexpected inbox request");
+    });
+    render(<UnifiedInbox initialResult={result(
+      conversationA,
+      [activity("alpha-message", "Alpha timeline", "2026-09-01T10:00:00Z")],
+    )} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Gamma Recent Gamma/ }));
+    await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
+    await waitFor(() => expect(mockGetUnifiedInbox).toHaveBeenCalledTimes(2));
+    expect(mockGetUnifiedInbox.mock.calls[1][0].selectedConversationId).toBe(conversationA.id);
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+  });
+
 
   it("reports an agent selection failure when the requested conversation was not loaded", async () => {
     mockGetUnifiedInbox.mockResolvedValue(result(
