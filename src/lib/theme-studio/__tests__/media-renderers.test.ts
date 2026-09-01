@@ -83,6 +83,19 @@ describe("Theme Studio Media Renderers (Phase 4)", () => {
       expect(svg).toContain("🚀");
     });
 
+    it("preserves complex ZWJ multi-codepoint grapheme clusters without dividing emoji sequences", () => {
+      const familyEmoji = "👨‍👩‍👧‍👦";
+      const unbrokenZwjString = familyEmoji.repeat(30);
+      const svg = renderCardSvg({
+        title: unbrokenZwjString,
+        aspectRatio: "1:1",
+      });
+
+      expect(svg).toContain("<svg");
+      expect(svg).not.toContain("\uFFFD");
+      expect(svg).toContain("👨‍👩‍👧‍👦");
+    });
+
     it("renders multi-slide carousel sequence with slide numbering indicators", () => {
       const slides = [
         { title: "Slide 1: Overview", body: "Introduction" },

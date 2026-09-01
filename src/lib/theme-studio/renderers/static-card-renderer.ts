@@ -29,6 +29,14 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, "&apos;");
 }
 
+function splitGraphemes(text: string): string[] {
+  if (typeof Intl !== "undefined" && typeof (Intl as any).Segmenter === "function") {
+    const segmenter = new (Intl as any).Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(segmenter.segment(text), (s: any) => s.segment);
+  }
+  return Array.from(text);
+}
+
 /**
  * Wraps text into lines with a maximum character count, splitting long unbroken tokens to prevent canvas overflow.
  */
@@ -39,22 +47,23 @@ function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
 
   for (const rawWord of words) {
     if (!rawWord) continue;
-    let remainingWord = rawWord;
+    let graphemes = splitGraphemes(rawWord);
 
-    while (Array.from(remainingWord).length > maxCharsPerLine) {
+    while (graphemes.length > maxCharsPerLine) {
       if (currentLine) {
         lines.push(currentLine);
         currentLine = "";
       }
-      const remainingCharacters = Array.from(remainingWord);
-      lines.push(remainingCharacters.slice(0, maxCharsPerLine).join(""));
-      remainingWord = remainingCharacters.slice(maxCharsPerLine).join("");
+      lines.push(graphemes.slice(0, maxCharsPerLine).join(""));
+      graphemes = graphemes.slice(maxCharsPerLine);
     }
 
+    const remainingWord = graphemes.join("");
     if (!remainingWord) continue;
 
-    if ((currentLine + " " + remainingWord).trim().length <= maxCharsPerLine) {
-      currentLine = (currentLine + " " + remainingWord).trim();
+    const currentGraphemesCount = splitGraphemes(currentLine ? currentLine + " " + remainingWord : remainingWord).length;
+    if (currentGraphemesCount <= maxCharsPerLine) {
+      currentLine = currentLine ? currentLine + " " + remainingWord : remainingWord;
     } else {
       if (currentLine) lines.push(currentLine);
       currentLine = remainingWord;
