@@ -73,6 +73,25 @@ describe("Theme Studio Multi-Platform Publishing (Phase 5)", () => {
       expect(finalized.publishedPostId).toBeDefined();
       expect(finalized.publishedUrl).toContain("instagram.com/p/");
     });
+
+    it("creates multi-image containers and attaches all media IDs on XProvider", async () => {
+      const x = new XProvider();
+      const mockCreds = {
+        accountId: "x_123",
+        platform: "x",
+        accessToken: "test_token",
+      };
+
+      const mediaUrls = ["https://r2.dev/i1.png", "https://r2.dev/i2.png", "https://r2.dev/i3.png"];
+      const container = await x.createMediaContainer(mockCreds, mediaUrls, "carousel", "Breaking News on X");
+      expect(container.status).toBe("READY");
+      expect(container.containerId.split(",")).toHaveLength(3);
+
+      const published = await x.finalizePublish(mockCreds, container.containerId, "Breaking News on X");
+      expect(published.success).toBe(true);
+      expect(published.publishedPostId).toBeDefined();
+      expect(published.publishedUrl).toContain("x.com/user/status/");
+    });
   });
 
   describe("Platform Variant Adapter", () => {

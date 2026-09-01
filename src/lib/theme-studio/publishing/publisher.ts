@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
-import { contentPackages, themePages, themeContentFormats, socialAccounts } from "@/lib/db/schema";
+import { contentPackages, themePages, themeContentFormats, socialAccounts, apiKeys } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { decrypt } from "@/lib/crypto";
 import { adaptPackageForPlatform } from "./variant-adapter";
 import { InstagramProvider } from "./providers/instagram-provider";
 import { TikTokProvider } from "./providers/tiktok-provider";
@@ -109,10 +110,31 @@ export async function publishContentPackage(
       };
     }
 
+    const key = await db.query.apiKeys.findFirst({
+      where: and(
+        eq(apiKeys.tenantId, tenantId),
+        eq(apiKeys.provider, platform)
+      ),
+    }) || await db.query.apiKeys.findFirst({
+      where: and(
+        eq(apiKeys.tenantId, tenantId),
+        eq(apiKeys.provider, "zernio")
+      ),
+    });
+
+    let token = account.platformAccountId;
+    if (key?.encryptedKey) {
+      try {
+        token = decrypt(key.encryptedKey);
+      } catch {
+        token = key.encryptedKey;
+      }
+    }
+
     authAccount = {
       accountId: account.platformAccountId,
       platform,
-      accessToken: account.id,
+      accessToken: token,
     };
   }
 

@@ -46,8 +46,10 @@ export class XProvider implements IPlatformProvider {
     }
 
     if (account.accessToken.startsWith("test_") || account.accessToken.startsWith("mock_")) {
-      const containerId = `mock_media_${crypto.randomUUID().slice(0, 12)}`;
-      return { containerId, status: "READY" };
+      const mockIds = (mediaUrls.length > 0 ? mediaUrls : ["img"]).map(
+        () => `mock_media_${crypto.randomUUID().slice(0, 12)}`
+      );
+      return { containerId: mockIds.join(","), status: "READY" };
     }
 
     if (mediaUrls.length === 0) {
@@ -55,41 +57,48 @@ export class XProvider implements IPlatformProvider {
     }
 
     try {
-      // Ingest remote media URL and upload to Twitter v1.1 media upload API
-      const mediaRes = await fetch(mediaUrls[0]);
-      if (!mediaRes.ok) {
-        return {
-          containerId: "",
-          status: "ERROR",
-          error: `Failed to fetch media asset from URL: ${mediaRes.statusText}`,
-        };
-      }
+      const mediaIds: string[] = [];
+      const urlsToUpload = mediaUrls.slice(0, 4);
 
-      const mediaBuffer = await mediaRes.arrayBuffer();
-      const base64Data = Buffer.from(mediaBuffer).toString("base64");
+      for (const mediaUrl of urlsToUpload) {
+        // Ingest remote media URL and upload to Twitter v1.1 media upload API
+        const mediaRes = await fetch(mediaUrl);
+        if (!mediaRes.ok) {
+          return {
+            containerId: "",
+            status: "ERROR",
+            error: `Failed to fetch media asset from URL: ${mediaRes.statusText}`,
+          };
+        }
 
-      const uploadRes = await fetch("https://upload.twitter.com/1.1/media/upload.json", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${account.accessToken}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          media_data: base64Data,
-        }).toString(),
-      });
+        const mediaBuffer = await mediaRes.arrayBuffer();
+        const base64Data = Buffer.from(mediaBuffer).toString("base64");
 
-      const uploadData = await uploadRes.json();
-      if (!uploadRes.ok || !uploadData.media_id_string) {
-        return {
-          containerId: "",
-          status: "ERROR",
-          error: uploadData.errors?.[0]?.message || uploadData.error || "Failed to upload media to X",
-        };
+        const uploadRes = await fetch("https://upload.twitter.com/1.1/media/upload.json", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${account.accessToken}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            media_data: base64Data,
+          }).toString(),
+        });
+
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok || !uploadData.media_id_string) {
+          return {
+            containerId: "",
+            status: "ERROR",
+            error: uploadData.errors?.[0]?.message || uploadData.error || "Failed to upload media to X",
+          };
+        }
+
+        mediaIds.push(uploadData.media_id_string);
       }
 
       return {
-        containerId: uploadData.media_id_string,
+        containerId: mediaIds.join(","),
         status: "READY",
       };
     } catch (err: any) {
@@ -137,7 +146,10 @@ export class XProvider implements IPlatformProvider {
     try {
       const tweetPayload: Record<string, any> = { text: caption };
       if (containerId && !containerId.startsWith("mock_")) {
-        tweetPayload.media = { media_ids: [containerId] };
+        const ids = containerId.split(",").map((id) => id.trim()).filter(Boolean);
+        if (ids.length > 0) {
+          tweetPayload.media = { media_ids: ids };
+        }
       }
 
       const res = await fetch("https://api.twitter.com/2/tweets", {
