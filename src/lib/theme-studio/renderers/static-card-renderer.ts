@@ -65,7 +65,7 @@ export function renderCardSvg(options: CardRenderOptions): string {
   } = options;
 
   let width = options.width || 1080;
-  let height = options.height || (aspectRatio === "4:5" ? 1350 : aspectRatio === "16:9" ? 607 : 1080);
+  let height = options.height || (aspectRatio === "4:5" ? 1350 : aspectRatio === "16:9" ? 607 : aspectRatio === "9:16" ? 1920 : 1080);
 
   const primaryColor = brandKit.primaryColor || "#0f172a";
   const accentColor = brandKit.accentColor || "#38bdf8";
@@ -73,11 +73,18 @@ export function renderCardSvg(options: CardRenderOptions): string {
   const watermark = brandKit.watermark || "@ThemePage";
   const fontFamily = brandKit.fontFamily || "system-ui, -apple-system, sans-serif";
 
-  const titleLines = wrapText(title, 24);
-  const bodyLines = wrapText(body, 36).slice(0, 4);
+  const rawTitleLines = wrapText(title, 24);
+  const titleLines = rawTitleLines.slice(0, 3);
+  if (rawTitleLines.length > 3 && titleLines[2]) {
+    titleLines[2] = titleLines[2].replace(/\.{3}$/, "") + "...";
+  }
 
-  const titleStartY = height * 0.38;
-  const bodyStartY = titleStartY + titleLines.length * 56 + 30;
+  const titleStartY = height * 0.32;
+  const bodyStartY = titleStartY + titleLines.length * 60 + 24;
+
+  const availableBodyHeight = (height - 140) - bodyStartY;
+  const maxBodyLines = Math.max(1, Math.min(4, Math.floor(availableBodyHeight / 42)));
+  const bodyLines = wrapText(body, 36).slice(0, maxBodyLines);
 
   const isCarousel = slideNumber !== undefined && totalSlides !== undefined;
 

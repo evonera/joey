@@ -27,11 +27,13 @@ export function RemotionPreviewPlayer({ composition }: RemotionPreviewPlayerProp
 
   // Determine active scene based on currentTime
   let activeSceneIndex = 0;
+  let activeSceneStart = 0;
   let elapsed = 0;
   for (let i = 0; i < composition.scenes.length; i++) {
     const s = composition.scenes[i];
     if (currentTime >= elapsed && currentTime < elapsed + s.durationInSeconds) {
       activeSceneIndex = i;
+      activeSceneStart = elapsed;
       break;
     }
     elapsed += s.durationInSeconds;
@@ -80,7 +82,7 @@ export function RemotionPreviewPlayer({ composition }: RemotionPreviewPlayerProp
                     idx < activeSceneIndex
                       ? "100%"
                       : idx === activeSceneIndex
-                      ? `${((currentTime % scene.durationInSeconds) / scene.durationInSeconds) * 100}%`
+                      ? `${Math.min(100, Math.max(0, ((currentTime - activeSceneStart) / scene.durationInSeconds) * 100))}%`
                       : "0%",
                   backgroundColor: composition.brandKit?.accentColor || "#38bdf8",
                 }}

@@ -39,6 +39,27 @@ describe("Theme Studio Media Renderers (Phase 4)", () => {
       expect(svg).toContain('height="1350"');
     });
 
+    it("renders 9:16 vertical card dimensions correctly without collapsing to square", () => {
+      const svg = renderCardSvg({
+        title: "Vertical Story Card",
+        aspectRatio: "9:16",
+      });
+
+      expect(svg).toContain('width="1080"');
+      expect(svg).toContain('height="1920"');
+    });
+
+    it("clamps exceptionally long titles to prevent canvas overflow and footer collision", () => {
+      const extremelyLongTitle = "A Very Long Comprehensive Analytical Headline Exploring Emerging AI Architectures and Infrastructure Shifts in Modern Production Environments";
+      const svg = renderCardSvg({
+        title: extremelyLongTitle,
+        aspectRatio: "1:1",
+      });
+
+      expect(svg).toContain("<svg");
+      expect(svg).toContain("...");
+    });
+
     it("renders multi-slide carousel sequence with slide numbering indicators", () => {
       const slides = [
         { title: "Slide 1: Overview", body: "Introduction" },
