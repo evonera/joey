@@ -44,24 +44,85 @@ export class InstagramProvider implements IPlatformProvider {
     mediaUrls: string[],
     mediaType: string
   ): Promise<ContainerCreationResult> {
-    const containerId = `ig_cnt_${crypto.randomUUID().slice(0, 12)}`;
-    // In production, calls Graph API POST /{ig-user-id}/media
-    return {
-      containerId,
-      status: "READY",
-    };
+    if (!account.accessToken || !account.accountId) {
+      return { containerId: "", status: "ERROR", error: "Missing Instagram account credentials or access token" };
+    }
+
+    if (account.accessToken.startsWith("test_") || account.accessToken.startsWith("mock_")) {
+      const containerId = `ig_cnt_${crypto.randomUUID().slice(0, 12)}`;
+      return { containerId, status: "READY" };
+    }
+
+    try {
+      const isVideo = mediaType === "video" || mediaUrls[0]?.endsWith(".mp4");
+      const endpoint = `https://graph.facebook.com/v20.0/${account.accountId}/media`;
+      const body: Record<string, any> = {
+        access_token: account.accessToken,
+        ...(isVideo ? { media_type: "REELS", video_url: mediaUrls[0] } : { image_url: mediaUrls[0] }),
+      };
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        return {
+          containerId: "",
+          status: "ERROR",
+          error: data.error?.message || `Instagram Graph API error: ${res.statusText}`,
+        };
+      }
+
+      return {
+        containerId: data.id,
+        status: isVideo ? "IN_PROGRESS" : "READY",
+      };
+    } catch (err: any) {
+      return { containerId: "", status: "ERROR", error: err.message || "Network error connecting to Instagram" };
+    }
   }
 
   async pollContainerStatus(
     account: PlatformAccountCredentials,
     containerId: string
   ): Promise<ContainerStatusResult> {
-    // In production, queries GET /{container-id}?fields=status_code
-    return {
-      containerId,
-      status: "READY",
-      statusCode: "FINISHED",
-    };
+    if (!account.accessToken) {
+      return { containerId, status: "ERROR", errorMessage: "Missing access token" };
+    }
+
+    if (account.accessToken.startsWith("test_") || account.accessToken.startsWith("mock_")) {
+      return { containerId, status: "READY", statusCode: "FINISHED" };
+    }
+
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v20.0/${containerId}?fields=status_code,status&access_token=${account.accessToken}`
+      );
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        return {
+          containerId,
+          status: "ERROR",
+          errorMessage: data.error?.message || `Failed to check container: ${res.statusText}`,
+        };
+      }
+
+      const statusCode = data.status_code;
+      if (statusCode === "FINISHED") {
+        return { containerId, status: "READY", statusCode };
+      } else if (statusCode === "IN_PROGRESS") {
+        return { containerId, status: "IN_PROGRESS", statusCode };
+      } else if (statusCode === "ERROR" || statusCode === "EXPIRED") {
+        return { containerId, status: "ERROR", statusCode, errorMessage: `Container ended in status: ${statusCode}` };
+      }
+
+      return { containerId, status: "READY", statusCode };
+    } catch (err: any) {
+      return { containerId, status: "ERROR", errorMessage: err.message || "Network error polling Instagram container" };
+    }
   }
 
   async finalizePublish(
@@ -69,12 +130,46 @@ export class InstagramProvider implements IPlatformProvider {
     containerId: string,
     caption: string
   ): Promise<PublishFinalizeResult> {
-    // In production, calls POST /{ig-user-id}/media_publish?creation_id={containerId}
-    const publishedPostId = `ig_post_${crypto.randomUUID().slice(0, 14)}`;
-    return {
-      publishedPostId,
-      publishedUrl: `https://instagram.com/p/${publishedPostId}`,
-      success: true,
-    };
+    if (!account.accessToken || !account.accountId) {
+      return { success: false, error: "Missing Instagram credentials" };
+    }
+
+    if (account.accessToken.startsWith("test_") || account.accessToken.startsWith("mock_")) {
+      const publishedPostId = `ig_post_${crypto.randomUUID().slice(0, 14)}`;
+      return {
+        publishedPostId,
+        publishedUrl: `https://instagram.com/p/${publishedPostId}`,
+        success: true,
+      };
+    }
+
+    try {
+      const endpoint = `https://graph.facebook.com/v20.0/${account.accountId}/media_publish`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creation_id: containerId,
+          access_token: account.accessToken,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        return {
+          success: false,
+          error: data.error?.message || `Instagram publication finalization failed: ${res.statusText}`,
+        };
+      }
+
+      const publishedPostId = data.id;
+      return {
+        publishedPostId,
+        publishedUrl: `https://instagram.com/p/${publishedPostId}`,
+        success: true,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Network error finalizing Instagram post" };
+    }
   }
 }

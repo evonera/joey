@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { contentPackages, themePages, themeContentFormats } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { contentPackages, themePages, themeContentFormats, socialAccounts } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { adaptPackageForPlatform } from "./variant-adapter";
 import { InstagramProvider } from "./providers/instagram-provider";
 import { TikTokProvider } from "./providers/tiktok-provider";
@@ -74,11 +74,47 @@ export async function publishContentPackage(
     .set({ status: "publishing", updatedAt: new Date() })
     .where(eq(contentPackages.id, packageId));
 
-  const authAccount = {
-    accountId: credentials?.accountId || "mock_account_1",
-    platform,
-    accessToken: credentials?.accessToken || "mock_token",
-  };
+  let authAccount: { accountId: string; platform: string; accessToken: string };
+
+  if (credentials?.accountId && credentials?.accessToken) {
+    authAccount = {
+      accountId: credentials.accountId,
+      platform,
+      accessToken: credentials.accessToken,
+    };
+  } else {
+    const page = await db.query.themePages.findFirst({
+      where: eq(themePages.id, pkg.themePageId),
+    });
+    const tenantId = page?.tenantId || pkg.tenantId;
+
+    const account = await db.query.socialAccounts.findFirst({
+      where: and(
+        eq(socialAccounts.tenantId, tenantId),
+        eq(socialAccounts.platform, platform)
+      ),
+    });
+
+    if (!account) {
+      const errorMsg = `No connected ${platform} account found for tenant. Please connect an account in Settings.`;
+      await db
+        .update(contentPackages)
+        .set({ status: "failed", error: errorMsg, updatedAt: new Date() })
+        .where(eq(contentPackages.id, packageId));
+
+      return {
+        packageId,
+        status: "failed",
+        error: errorMsg,
+      };
+    }
+
+    authAccount = {
+      accountId: account.platformAccountId,
+      platform,
+      accessToken: account.id,
+    };
+  }
 
   try {
     // Step 1: Create Container

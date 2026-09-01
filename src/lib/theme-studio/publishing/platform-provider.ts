@@ -20,7 +20,7 @@ export interface ContainerStatusResult {
 }
 
 export interface PublishFinalizeResult {
-  publishedPostId: string;
+  publishedPostId?: string;
   publishedUrl?: string;
   success: boolean;
   error?: string;
