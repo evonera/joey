@@ -58,6 +58,23 @@ describe("Theme Studio Editorial Pipeline", () => {
       const hash2 = hashCanonicalUrl(itemUrl2);
       expect(hash1).not.toBe(hash2);
     });
+
+    it("ensures fragment-bearing endpoint URLs retain fallback searchParams without being swallowed by hash removal", () => {
+      const endpointWithHash = "https://api.example.com/v1/feed#section-top";
+      const parsed1 = new URL(endpointWithHash);
+      parsed1.hash = "";
+      parsed1.searchParams.set("item_id", "row-1");
+
+      const parsed2 = new URL(endpointWithHash);
+      parsed2.hash = "";
+      parsed2.searchParams.set("item_id", "row-2");
+
+      const norm1 = normalizeCanonicalUrl(parsed1.toString());
+      const norm2 = normalizeCanonicalUrl(parsed2.toString());
+
+      expect(norm1).not.toBe(norm2);
+      expect(hashCanonicalUrl(parsed1.toString())).not.toBe(hashCanonicalUrl(parsed2.toString()));
+    });
   });
 
   describe("RSS Parser", () => {

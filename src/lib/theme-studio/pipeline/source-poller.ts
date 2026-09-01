@@ -114,11 +114,30 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
           const parsedHttpDate = rawDate ? new Date(rawDate) : null;
           const publishedAt = parsedHttpDate && !isNaN(parsedHttpDate.getTime()) ? parsedHttpDate : undefined;
 
-          const itemUrl = row.url || row.link || (
-            row.id
-              ? `${source.url}${source.url.includes("?") ? "&" : "?"}item_id=${encodeURIComponent(String(row.id))}`
-              : `${source.url}${source.url.includes("?") ? "&" : "?"}item_hash=${createHash("sha256").update(row.title + (row.description || row.body || row.summary || "")).digest("hex").slice(0, 16)}`
-          );
+          let itemUrl = row.url || row.link;
+          if (!itemUrl) {
+            try {
+              const parsed = new URL(source.url);
+              parsed.hash = "";
+              if (row.id) {
+                parsed.searchParams.set("item_id", String(row.id));
+              } else {
+                const hash = createHash("sha256")
+                  .update(row.title + (row.description || row.body || row.summary || ""))
+                  .digest("hex")
+                  .slice(0, 16);
+                parsed.searchParams.set("item_hash", hash);
+              }
+              itemUrl = parsed.toString();
+            } catch {
+              const cleanBase = source.url.split("#")[0];
+              const sep = cleanBase.includes("?") ? "&" : "?";
+              const suffix = row.id
+                ? `item_id=${encodeURIComponent(String(row.id))}`
+                : `item_hash=${createHash("sha256").update(row.title + (row.description || row.body || row.summary || "")).digest("hex").slice(0, 16)}`;
+              itemUrl = `${cleanBase}${sep}${suffix}`;
+            }
+          }
 
           items.push({
             title: row.title,

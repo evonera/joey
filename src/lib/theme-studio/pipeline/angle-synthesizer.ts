@@ -104,6 +104,16 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
     const caption = `${title}\n\n${cluster.summary || ""}${attributionBlock}\n\n${hashtags.join(" ")}`;
 
     const pkg = await db.transaction(async (tx) => {
+      const [claimedCluster] = await tx
+        .update(storyClusters)
+        .set({ status: "allocated", updatedAt: new Date() })
+        .where(and(eq(storyClusters.id, cluster.id), eq(storyClusters.status, "open")))
+        .returning();
+
+      if (!claimedCluster) {
+        return null;
+      }
+
       const [inserted] = await tx.insert(contentPackages).values({
         tenantId: page.tenantId,
         themePageId,
@@ -128,15 +138,14 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
         status: "pending_review",
       }).returning();
 
-      await tx
-        .update(storyClusters)
-        .set({ status: "allocated", updatedAt: new Date() })
-        .where(eq(storyClusters.id, cluster.id));
-
       return inserted;
     });
 
-    packageIds.push(pkg.id);
+    if (pkg) {
+      packageIds.push(pkg.id);
+    } else {
+      skippedSlotsCount++;
+    }
   }
 
   return {
