@@ -103,36 +103,40 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
 
     const caption = `${title}\n\n${cluster.summary || ""}${attributionBlock}\n\n${hashtags.join(" ")}`;
 
-    const [pkg] = await db.insert(contentPackages).values({
-      tenantId: page.tenantId,
-      themePageId,
-      slotId: slot.id,
-      clusterId: cluster.id,
-      formatId: slot.formatId,
-      templateId: slot.overrideTemplateId || null,
-      title,
-      caption,
-      hashtags,
-      renderedAssetUrls: [],
-      provenance: {
+    const pkg = await db.transaction(async (tx) => {
+      const [inserted] = await tx.insert(contentPackages).values({
+        tenantId: page.tenantId,
+        themePageId,
+        slotId: slot.id,
         clusterId: cluster.id,
-        sourcesCount: memberItems.length || 1,
-        factsCount: Array.isArray(cluster.facts) ? cluster.facts.length : 0,
-        policy: page.defaultRightsPolicy,
-        rightsVerified: Array.from(new Set(memberItems.map((m) => m.rightsCategory || "unknown"))).join(", "),
-        isCompliant: true,
-        attributionText: attributionTexts.length > 0 ? attributionTexts.join("; ") : null,
-        generatedAt: new Date().toISOString(),
-      },
-      status: "pending_review",
-    }).returning();
+        formatId: slot.formatId,
+        templateId: slot.overrideTemplateId || null,
+        title,
+        caption,
+        hashtags,
+        renderedAssetUrls: [],
+        provenance: {
+          clusterId: cluster.id,
+          sourcesCount: memberItems.length || 1,
+          factsCount: Array.isArray(cluster.facts) ? cluster.facts.length : 0,
+          policy: page.defaultRightsPolicy,
+          rightsVerified: Array.from(new Set(memberItems.map((m) => m.rightsCategory || "unknown"))).join(", "),
+          isCompliant: true,
+          attributionText: attributionTexts.length > 0 ? attributionTexts.join("; ") : null,
+          generatedAt: new Date().toISOString(),
+        },
+        status: "pending_review",
+      }).returning();
+
+      await tx
+        .update(storyClusters)
+        .set({ status: "allocated", updatedAt: new Date() })
+        .where(eq(storyClusters.id, cluster.id));
+
+      return inserted;
+    });
 
     packageIds.push(pkg.id);
-
-    await db
-      .update(storyClusters)
-      .set({ status: "allocated", updatedAt: new Date() })
-      .where(eq(storyClusters.id, cluster.id));
   }
 
   return {

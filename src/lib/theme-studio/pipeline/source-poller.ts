@@ -116,8 +116,8 @@ export async function pollAndIngestSource(sourceId: string): Promise<{
 
           const itemUrl = row.url || row.link || (
             row.id
-              ? `${source.url}#item-${row.id}`
-              : `${source.url}#item-${createHash("sha256").update(row.title + (row.description || row.body || row.summary || "")).digest("hex").slice(0, 16)}`
+              ? `${source.url}${source.url.includes("?") ? "&" : "?"}item_id=${encodeURIComponent(String(row.id))}`
+              : `${source.url}${source.url.includes("?") ? "&" : "?"}item_hash=${createHash("sha256").update(row.title + (row.description || row.body || row.summary || "")).digest("hex").slice(0, 16)}`
           );
 
           items.push({

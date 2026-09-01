@@ -44,6 +44,20 @@ describe("Theme Studio Editorial Pipeline", () => {
 
       expect(hash1).toBe(hash2);
     });
+
+    it("generates distinct canonical URL hashes for HTTP items using query parameters", () => {
+      const sourceUrl = "https://api.example.com/v1/news";
+      const itemUrl1 = `${sourceUrl}?item_id=article-101`;
+      const itemUrl2 = `${sourceUrl}?item_id=article-102`;
+
+      const norm1 = normalizeCanonicalUrl(itemUrl1);
+      const norm2 = normalizeCanonicalUrl(itemUrl2);
+      expect(norm1).not.toBe(norm2);
+
+      const hash1 = hashCanonicalUrl(itemUrl1);
+      const hash2 = hashCanonicalUrl(itemUrl2);
+      expect(hash1).not.toBe(hash2);
+    });
   });
 
   describe("RSS Parser", () => {
