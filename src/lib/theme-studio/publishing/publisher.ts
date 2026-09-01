@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { contentPackages, themePages, themeContentFormats, socialAccounts, apiKeys } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { decrypt } from "@/lib/crypto";
 import { adaptPackageForPlatform } from "./variant-adapter";
 import { InstagramProvider } from "./providers/instagram-provider";
@@ -92,7 +92,8 @@ export async function publishContentPackage(
     const account = await db.query.socialAccounts.findFirst({
       where: and(
         eq(socialAccounts.tenantId, tenantId),
-        eq(socialAccounts.platform, platform)
+        eq(socialAccounts.platform, platform),
+        eq(socialAccounts.isActive, true)
       ),
     });
 
@@ -110,25 +111,40 @@ export async function publishContentPackage(
       };
     }
 
+    // Resolve platform-specific OAuth access token or platform API credential
+    const keyConditions = [eq(apiKeys.provider, platform)];
+    if (platform === "x") keyConditions.push(eq(apiKeys.provider, "twitter"));
+    if (platform === "instagram") keyConditions.push(eq(apiKeys.provider, "meta"), eq(apiKeys.provider, "facebook"));
+
     const key = await db.query.apiKeys.findFirst({
       where: and(
         eq(apiKeys.tenantId, tenantId),
-        eq(apiKeys.provider, platform)
-      ),
-    }) || await db.query.apiKeys.findFirst({
-      where: and(
-        eq(apiKeys.tenantId, tenantId),
-        eq(apiKeys.provider, "zernio")
+        or(...keyConditions),
+        eq(apiKeys.status, "active")
       ),
     });
 
-    let token = account.platformAccountId;
+    let token: string | null = null;
     if (key?.encryptedKey) {
       try {
         token = decrypt(key.encryptedKey);
       } catch {
         token = key.encryptedKey;
       }
+    }
+
+    if (!token) {
+      const errorMsg = `No active OAuth access token found for ${platform}. Please authenticate and configure your ${platform} credentials in Settings.`;
+      await db
+        .update(contentPackages)
+        .set({ status: "failed", error: errorMsg, updatedAt: new Date() })
+        .where(eq(contentPackages.id, packageId));
+
+      return {
+        packageId,
+        status: "failed",
+        error: errorMsg,
+      };
     }
 
     authAccount = {
