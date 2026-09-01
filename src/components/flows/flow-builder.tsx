@@ -38,7 +38,7 @@ import { getNodeMeta as getNode } from "@/lib/flows/catalog";
 import type { FlowGraphDoc } from "@/lib/flows/types";
 import { catalog } from "@/lib/flows/catalog";
 import { createFlowWebMcpTools } from "@/lib/flows/webmcp";
-import { builderStateToGraphDoc } from "@/lib/flows/builder-state";
+import { builderStateToGraphDoc, isAgentReviewSnapshotCurrent } from "@/lib/flows/builder-state";
 import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
 import { ZodForm } from "./zod-form";
 import { RunsPanel } from "./runs-panel";
@@ -148,6 +148,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   const [lastAgentChange, setLastAgentChange] = useState<string | null>(null);
   const idCounter = useRef(1);
   const webMcpNodeCounter = useRef(1);
+  const agentChangeRevisionRef = useRef(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const reactFlowRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   const graphRef = useRef<FlowGraphDoc>(initialGraph);
@@ -164,6 +165,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
 
   const stageAgentGraph = useCallback((graph: FlowGraphDoc, selectedNodeId: string, summary: string) => {
     graphRef.current = graph;
+    agentChangeRevisionRef.current += 1;
     setRfNodes(graph.nodes.map(graphNodeToReactFlow));
     setRfEdges(graph.edges.map(graphEdgeToReactFlow));
     setSelectedId(selectedNodeId);
@@ -176,6 +178,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
 
   const stageAgentName = useCallback((nextName: string, summary: string) => {
     nameRef.current = nextName;
+    agentChangeRevisionRef.current += 1;
     setName(nextName);
     setAgentChangeCount((count) => count + 1);
     setLastAgentChange(summary);
@@ -253,26 +256,40 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   }
 
   async function handleSave() {
+    const reviewedAgentRevision = agentChangeRevisionRef.current;
+    const reviewedGraph = toGraphDoc();
+    const reviewedName = nameRef.current;
     setBusy(true);
     try {
-      const res = await saveFlow(flow.id, { name, graph: toGraphDoc() });
+      const res = await saveFlow(flow.id, { name: reviewedName, graph: reviewedGraph });
       if (res.error || res.issues) {
         toast.error(res.error ?? res.issues!.filter(i=>i.severity==="error").map(i=>i.message).join("\n"));
       } else {
-        toast.success("Saved");
-        setAgentChangeCount(0);
-        setLastAgentChange(null);
+        if (isAgentReviewSnapshotCurrent(reviewedAgentRevision, agentChangeRevisionRef.current)) {
+          toast.success("Saved");
+          setAgentChangeCount(0);
+          setLastAgentChange(null);
+        } else {
+          toast.info("Saved the reviewed snapshot. New WebMCP changes are still staged.");
+        }
         router.refresh();
       }
     } finally { setBusy(false); }
   }
 
   async function handleTestRun() {
+    const reviewedAgentRevision = agentChangeRevisionRef.current;
+    const reviewedGraph = toGraphDoc();
+    const reviewedName = nameRef.current;
     setBusy(true);
     try {
-      const saveRes = await saveFlow(flow.id, { name, graph: toGraphDoc() });
+      const saveRes = await saveFlow(flow.id, { name: reviewedName, graph: reviewedGraph });
       if (!saveRes.ok) {
         toast.error(saveRes.error ?? saveRes.issues!.map(i=>i.message).join("\n"));
+        return;
+      }
+      if (!isAgentReviewSnapshotCurrent(reviewedAgentRevision, agentChangeRevisionRef.current)) {
+        toast.warning("New WebMCP changes arrived during save. Review them before testing.");
         return;
       }
       setAgentChangeCount(0);

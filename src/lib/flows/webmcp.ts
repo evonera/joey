@@ -140,7 +140,7 @@ export function addFlowGraphNode(
   const node: FlowGraphNode = {
     id,
     type: definition.type,
-    config: input.config === undefined ? {} : parseNodeConfig(definition.type, input.config),
+    config: parseNodeConfig(definition.type, input.config ?? {}),
     position: positionForNode(graph, input.afterNodeId),
   };
   return { graph: graphWith(graph, { nodes: [...graph.nodes, node] }), node };

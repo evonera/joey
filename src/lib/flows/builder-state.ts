@@ -27,3 +27,7 @@ export function builderStateToGraphDoc(nodes: BuilderNode[], edges: BuilderEdge[
     })),
   };
 }
+
+export function isAgentReviewSnapshotCurrent(reviewedRevision: number, currentRevision: number): boolean {
+  return reviewedRevision === currentRevision;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { builderStateToGraphDoc } from "@/lib/flows/builder-state";
+import { builderStateToGraphDoc, isAgentReviewSnapshotCurrent } from "@/lib/flows/builder-state";
 import {
   addFlowGraphNode,
   configureFlowGraphNode,
@@ -35,6 +35,9 @@ describe("WebMCP flow graph operations", () => {
       type: "ai.llm",
       config: { provider: "openai" },
     }, "invalid")).toThrow("Invalid config for ai.llm");
+    expect(() => addFlowGraphNode(second.graph, {
+      type: "ai.llm",
+    }, "missing-config")).toThrow("Invalid config for ai.llm");
   });
 
   it("replaces config only after schema validation and applies defaults", () => {
@@ -94,6 +97,11 @@ describe("WebMCP flow graph operations", () => {
       { id: "target", position: { x: 200, y: 0 }, data: { nodeType: "action.notify", config: {} } },
     ], [{ source: "split", target: "target", sourceHandle: "a" }]);
     expect(graph.edges).toEqual([{ from: "split", to: "target", branch: "a" }]);
+  });
+
+  it("keeps newer agent changes marked when an older review snapshot finishes saving", () => {
+    expect(isAgentReviewSnapshotCurrent(3, 3)).toBe(true);
+    expect(isAgentReviewSnapshotCurrent(3, 4)).toBe(false);
   });
 });
 
