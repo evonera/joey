@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { contentPackages, storyClusters, themeSlots, themePages, sourceItems } from "@/lib/db/schema";
+import { contentPackages, storyClusters, themeSlots, themePages, sourceItems, themeSources } from "@/lib/db/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { verifyRightsAndProvenance } from "./fact-rights-verifier";
 
@@ -53,17 +53,31 @@ export async function synthesizeAndAllocatePackages(themePageId: string): Promis
       continue;
     }
 
+    const sourceIds = Array.from(new Set(memberItems.map((m) => m.sourceId).filter(Boolean))) as string[];
+    const parentSources = sourceIds.length > 0 ? await db.query.themeSources.findMany({
+      where: inArray(themeSources.id, sourceIds),
+    }) : [];
+    const sourceMap = new Map(parentSources.map((s) => [s.id, s.name]));
+
     // Verify rights & provenance for every individual member item in the cluster
-    const verifications = memberItems.map((m) =>
-      verifyRightsAndProvenance({
+    const verifications = memberItems.map((m) => {
+      let publisherName = m.sourceId ? sourceMap.get(m.sourceId) : undefined;
+      if (!publisherName && m.url) {
+        try {
+          publisherName = new URL(m.url).hostname.replace(/^www\./, "");
+        } catch {
+          publisherName = undefined;
+        }
+      }
+      return verifyRightsAndProvenance({
         rightsCategory: m.rightsCategory || "unknown",
         policy: (page.defaultRightsPolicy as any) || "strict",
         hasSourceUrl: Boolean(m.url && m.url.trim()),
         hasTimestamp: Boolean(m.publishedAt),
-        sourceName: m.title ? (m.title.length > 50 ? `${m.title.slice(0, 47)}...` : m.title) : undefined,
+        sourceName: publisherName,
         sourceUrl: m.url || undefined,
-      })
-    );
+      });
+    });
 
     const isAllCompliant = verifications.every((v) => v.isCompliant);
     if (!isAllCompliant) {

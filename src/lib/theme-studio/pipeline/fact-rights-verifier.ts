@@ -72,14 +72,21 @@ export function verifyRightsAndProvenance(check: VerificationPolicyCheck): Verif
   }
 
   const isCompliant = rightsPassed && provenancePassed;
-  const sourceIdentity = sourceName || sourceUrl || "Verified feed";
+  let sourceIdentity = sourceName;
+  if (sourceUrl && sourceName) {
+    sourceIdentity = `${sourceName} (${sourceUrl})`;
+  } else if (sourceUrl) {
+    sourceIdentity = sourceUrl;
+  } else if (!sourceIdentity) {
+    sourceIdentity = "Verified source";
+  }
 
   return {
     isCompliant,
     rightsPassed,
     provenancePassed,
     attributionRequired,
-    attributionText: attributionRequired ? `Source: ${sourceIdentity} (${rightsCategory.toUpperCase()})` : undefined,
+    attributionText: attributionRequired ? `Source: ${sourceIdentity} [${rightsCategory.toUpperCase()}]` : undefined,
     violations,
   };
 }
