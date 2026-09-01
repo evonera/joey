@@ -55,18 +55,36 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   const load = useCallback(async (options?: { append?: boolean; cursor?: string | null; selected?: string; activityCursor?: string | null; prependActivities?: boolean }) => {
     const requestId = ++loadRequestId.current;
     setLoading(true);
-    const response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: options?.selected ?? selectedId });
-    if (requestId !== loadRequestId.current) return;
+    let response: InboxResult;
+    try {
+      response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: options?.selected ?? selectedId });
+    } catch (error) {
+      if (requestId === loadRequestId.current) setLoading(false);
+      throw error;
+    }
+    if (requestId !== loadRequestId.current) return false;
+    if (options?.selected && (!("selectedConversation" in response) || response.selectedConversation?.id !== options.selected)) {
+      setLoading(false);
+      return false;
+    }
     setResult(response);
     if ("conversations" in response) {
       const conversations = response.conversations ?? [];
+      const responseActivities = response.activities ?? [];
+      if (options?.selected) {
+        selectedRef.current = response.selectedConversation ?? null;
+        selectedItemRef.current = response.selectedEngagementItem ?? null;
+        activitiesRef.current = options.prependActivities
+          ? [...responseActivities, ...activitiesRef.current]
+          : responseActivities;
+      }
       if (options?.append) setPages((current) => [...current, ...conversations]);
       else if (!options?.selected) setPages(conversations);
       if (!selectedId && response.selectedConversation?.id) setSelectedId(response.selectedConversation.id);
-      const responseActivities = response.activities ?? [];
       setActivityPages((current) => options?.prependActivities ? [...responseActivities, ...current] : responseActivities);
     }
     setLoading(false);
+    return true;
   }, [kind, search, selectedId, status]);
 
   useEffect(() => {
@@ -88,9 +106,10 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   stagedReplyEditsRef.current = stagedReplyEdits;
 
   const selectConversationForAgent = useCallback(async (conversationId: string) => {
+    const loaded = await load({ selected: conversationId });
+    if (!loaded) throw new Error(`Conversation "${conversationId}" could not be established as the visible selection`);
     setSelectedId(conversationId);
     setMobileDetailOpen(true);
-    await load({ selected: conversationId });
   }, [load]);
 
   const stageReplyEdit = useCallback((replyDraftId: string, content: string) => {

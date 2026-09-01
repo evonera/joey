@@ -50,7 +50,7 @@ export function ReplyCard({
   onActionComplete: () => void;
   stagedContent?: string;
   onDiscardStagedEdit?: () => void;
-  onStagedEditSaved?: (savedContent: string) => boolean;
+  onStagedEditSaved?: (expectedStagedContent: string) => boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftContent, setDraftContent] = useState(item.replyDraft?.content || "");
@@ -112,6 +112,7 @@ export function ReplyCard({
 
   const handleSaveEdit = async () => {
     if (!item.replyDraft) return;
+    const stagedSnapshot = stagedContent;
     setLoading(true);
     const response = await updateReplyDraft(item.replyDraft.id, draftContent);
     setLoading(false);
@@ -119,7 +120,9 @@ export function ReplyCard({
       alert(response.error);
       return;
     }
-    const stagedSnapshotCleared = onStagedEditSaved?.(draftContent) ?? true;
+    const stagedSnapshotCleared = stagedSnapshot === undefined
+      ? true
+      : onStagedEditSaved?.(stagedSnapshot) ?? true;
     setIsEditing(!stagedSnapshotCleared);
     onActionComplete();
   };

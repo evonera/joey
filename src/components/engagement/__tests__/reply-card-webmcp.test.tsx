@@ -79,4 +79,22 @@ describe("ReplyCard WebMCP staging", () => {
     expect(onSaved).toHaveBeenCalledWith("Older staged reply");
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
+
+  it("clears the original staged snapshot after saving a human edit", async () => {
+    const onSaved = vi.fn(() => true);
+    render(<ReplyCard
+      item={item}
+      stagedContent="Agent-staged reply"
+      onStagedEditSaved={onSaved}
+      onActionComplete={vi.fn()}
+    />);
+
+    const editor = screen.getByRole("textbox");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "Human-reviewed reply");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(updateReplyDraft).toHaveBeenLastCalledWith("draft-1", "Human-reviewed reply");
+    expect(onSaved).toHaveBeenCalledWith("Agent-staged reply");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
 });
