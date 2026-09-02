@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { contentPackages, themeSlots } from "@/lib/db/schema";
-import { and, eq, desc, gt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getZernioClientForTenant } from "@/lib/publisher-core";
 import { operationalEvent } from "@/lib/operations-log";
 
@@ -79,15 +79,17 @@ export async function syncThemeStudioAnalytics(
   limit = SYNC_BATCH_LIMIT,
 ): Promise<SyncResult> {
   // Query published packages that have a zernioPostId and may need analytics refresh.
+  // Filter for zernioPostId at SQL level to avoid fetching ineligible rows.
   // Order by analyticsSyncedAt (nulls first = never synced first) to prioritize stale records.
   const candidates = await db.query.contentPackages.findMany({
     where: and(
       eq(contentPackages.tenantId, tenantId),
       eq(contentPackages.status, "published"),
+      sql`(${contentPackages.metrics}->>'zernioPostId') IS NOT NULL AND length(${contentPackages.metrics}->>'zernioPostId') > 0`,
     ),
     orderBy: [
-      sql`(contentPackages.metrics->>'analyticsSyncedAt') IS NULL DESC`,
-      sql`(contentPackages.metrics->>'analyticsSyncedAt') ASC NULLS FIRST`,
+      sql`(${contentPackages.metrics}->>'analyticsSyncedAt') IS NULL DESC`,
+      sql`(${contentPackages.metrics}->>'analyticsSyncedAt') ASC NULLS FIRST`,
     ],
     limit: limit * 2,
   });
@@ -164,13 +166,18 @@ export async function syncThemeStudioAnalytics(
   return { processed: eligible.length, updated, skipped, errors };
 }
 
-async function fetchActiveSlotTenants(cursor: Date | null): Promise<Array<{ tenantId: string; createdAt: Date }>> {
+interface SlotCursor { createdAt: Date; id: string }
+
+async function fetchActiveSlotTenants(cursor: SlotCursor | null): Promise<Array<{ tenantId: string; createdAt: Date; id: string }>> {
   return db.query.themeSlots.findMany({
-    columns: { tenantId: true, createdAt: true },
+    columns: { tenantId: true, createdAt: true, id: true },
     where: cursor
-      ? and(eq(themeSlots.isActive, true), gt(themeSlots.createdAt, cursor))
+      ? and(
+          eq(themeSlots.isActive, true),
+          sql`(${themeSlots.createdAt} > ${cursor.createdAt} OR (${themeSlots.createdAt} = ${cursor.createdAt} AND ${themeSlots.id} > ${cursor.id}))`,
+        )
       : eq(themeSlots.isActive, true),
-    orderBy: [themeSlots.createdAt],
+    orderBy: [themeSlots.createdAt, themeSlots.id],
     limit: SCHEDULER_PAGE_SIZE,
   });
 }
@@ -182,7 +189,7 @@ async function fetchActiveSlotTenants(cursor: Date | null): Promise<Array<{ tena
  */
 export async function processThemeStudioAnalyticsSync(limit = SYNC_BATCH_LIMIT): Promise<void> {
   const seen = new Set<string>();
-  let cursor: Date | null = null;
+  let cursor: SlotCursor | null = null;
 
   for (;;) {
     const slots = await fetchActiveSlotTenants(cursor);
@@ -208,7 +215,8 @@ export async function processThemeStudioAnalyticsSync(limit = SYNC_BATCH_LIMIT):
       }
     }
 
-    cursor = slots[slots.length - 1].createdAt;
+    const last = slots[slots.length - 1];
+    cursor = { createdAt: last.createdAt, id: last.id };
     if (slots.length < SCHEDULER_PAGE_SIZE) break;
   }
 }

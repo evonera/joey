@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { contentPackages, themeSlots, themeContentFormats, mixRecommendations } from "@/lib/db/schema";
-import { eq, and, desc, gt, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { calculateQualityScore } from "./quality-scorer";
 
 const MIN_SAMPLES_PER_FORMAT = 3;
@@ -172,28 +172,25 @@ export async function storeMixRecommendation(
 }
 
 /**
- * Accept a pending recommendation: atomically claim it, then apply slot reorder.
- * Uses a CAS guard (status: pending → accepted) to prevent concurrent acceptance.
+ * Accept a pending recommendation: apply slot reorder, then mark as accepted.
  * Slot priority updates are idempotent — re-applying the same value is safe on retry.
+ * If a slot update fails (e.g., deleted slot), the recommendation stays pending
+ * and a subsequent retry can re-attempt the remaining updates.
  */
 export async function acceptMixRecommendation(
   tenantId: string,
   recommendationId: string,
 ): Promise<{ applied: number }> {
-  const claimed = await db
-    .update(mixRecommendations)
-    .set({ status: "accepted", acceptedAt: new Date() })
-    .where(
-      and(
-        eq(mixRecommendations.id, recommendationId),
-        eq(mixRecommendations.tenantId, tenantId),
-        eq(mixRecommendations.status, "pending"),
-      ),
-    )
-    .returning({ id: mixRecommendations.id, adjustments: mixRecommendations.adjustments });
-  if (claimed.length === 0) return { applied: 0 };
+  const rec = await db.query.mixRecommendations.findFirst({
+    where: and(
+      eq(mixRecommendations.id, recommendationId),
+      eq(mixRecommendations.tenantId, tenantId),
+      eq(mixRecommendations.status, "pending"),
+    ),
+  });
+  if (!rec) return { applied: 0 };
 
-  const adjustments = claimed[0].adjustments as Array<{
+  const adjustments = rec.adjustments as Array<{
     slotId: string;
     previousPriority: number;
     newPriority: number;
@@ -202,13 +199,19 @@ export async function acceptMixRecommendation(
   let applied = 0;
   for (const adj of adjustments) {
     if (adj.previousPriority !== adj.newPriority) {
-      await db
+      const result = await db
         .update(themeSlots)
         .set({ priority: adj.newPriority, updatedAt: new Date() })
-        .where(and(eq(themeSlots.id, adj.slotId), eq(themeSlots.tenantId, tenantId)));
-      applied++;
+        .where(and(eq(themeSlots.id, adj.slotId), eq(themeSlots.tenantId, tenantId)))
+        .returning({ id: themeSlots.id });
+      if (result.length > 0) applied++;
     }
   }
+
+  await db
+    .update(mixRecommendations)
+    .set({ status: "accepted", acceptedAt: new Date() })
+    .where(and(eq(mixRecommendations.id, recommendationId), eq(mixRecommendations.tenantId, tenantId)));
 
   return { applied };
 }
@@ -234,13 +237,18 @@ export async function discardMixRecommendation(
   return result.length > 0;
 }
 
-async function fetchActiveSlots(cursor: Date | null): Promise<Array<{ tenantId: string; themePageId: string; createdAt: Date }>> {
+interface SlotCursor { createdAt: Date; id: string }
+
+async function fetchActiveSlots(cursor: SlotCursor | null): Promise<Array<{ tenantId: string; themePageId: string; createdAt: Date; id: string }>> {
   return db.query.themeSlots.findMany({
-    columns: { tenantId: true, themePageId: true, createdAt: true },
+    columns: { tenantId: true, themePageId: true, createdAt: true, id: true },
     where: cursor
-      ? and(eq(themeSlots.isActive, true), gt(themeSlots.createdAt, cursor))
+      ? and(
+          eq(themeSlots.isActive, true),
+          sql`(${themeSlots.createdAt} > ${cursor.createdAt} OR (${themeSlots.createdAt} = ${cursor.createdAt} AND ${themeSlots.id} > ${cursor.id}))`,
+        )
       : eq(themeSlots.isActive, true),
-    orderBy: [themeSlots.createdAt],
+    orderBy: [themeSlots.createdAt, themeSlots.id],
     limit: SCHEDULER_PAGE_SIZE,
   });
 }
@@ -252,7 +260,7 @@ async function fetchActiveSlots(cursor: Date | null): Promise<Array<{ tenantId: 
  */
 export async function processThemeStudioOptimization(): Promise<void> {
   const seen = new Set<string>();
-  let cursor: Date | null = null;
+  let cursor: SlotCursor | null = null;
 
   for (;;) {
     const slots = await fetchActiveSlots(cursor);
@@ -276,7 +284,8 @@ export async function processThemeStudioOptimization(): Promise<void> {
       }
     }
 
-    cursor = slots[slots.length - 1].createdAt;
+    const last = slots[slots.length - 1];
+    cursor = { createdAt: last.createdAt, id: last.id };
     if (slots.length < SCHEDULER_PAGE_SIZE) break;
   }
 }
