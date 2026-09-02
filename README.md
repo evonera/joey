@@ -58,7 +58,7 @@ Joey uses PostgreSQL with pgvector. The Docker setup includes a database automat
 
 Same env vars as Vercel above.
 
-> **Note:** Vercel/Netlify free tiers run background tasks hourly. For 1-minute execution, use an external cron pinger (e.g., [cron-job.org](https://cron-job.org)) hitting your `/api/cron` endpoint with `Authorization: Bearer <CRON_SECRET>`.
+> **Note:** Vercel runs background tasks hourly using `vercel.json`. Netlify requires an external cron pinger (e.g., [cron-job.org](https://cron-job.org)) to invoke `/api/cron` with `Authorization: Bearer <CRON_SECRET>` at the desired interval.
 
 ### Required Environment Variables
 
