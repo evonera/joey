@@ -28,6 +28,53 @@ Joey is a multi-tenant, autonomous social media management platform built on Nex
 - **Styling**: Tailwind CSS v4, Shadcn UI
 - **Deployment**: Vercel Ready
 
+## Deployment
+
+### Docker (Self-Host) — Includes database
+```bash
+git clone https://github.com/evonera/joey.git
+cd joey
+cp .env.example .env
+# Edit .env — set BETTER_AUTH_SECRET, ENCRYPTION_KEY
+docker compose up -d
+```
+Joey uses PostgreSQL with pgvector. The Docker setup includes a database automatically.
+
+### Vercel (Hosted) — Requires external database
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/evonera/joey)
+
+1. Click the deploy button above
+2. Create a free [Neon](https://neon.tech) database
+3. Set env vars in the Vercel dashboard:
+   - `DATABASE_URL` — Neon connection string
+   - `DATABASE_PROVIDER=neon`
+   - `BETTER_AUTH_SECRET` — random string
+   - `ENCRYPTION_KEY` — `openssl rand -base64 32`
+   - `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`
+   - `CRON_SECRET` — random string (secures background analytics sync)
+
+### Netlify (Hosted) — Requires external database
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/evonera/joey)
+
+Same env vars as Vercel above.
+
+> **Note:** Vercel/Netlify free tiers run background tasks hourly. For 1-minute execution, use an external cron pinger (e.g., [cron-job.org](https://cron-job.org)) hitting your `/api/cron` endpoint with `Authorization: Bearer <CRON_SECRET>`.
+
+### Required Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string (included with Docker) |
+| `DATABASE_PROVIDER` | For Neon | Set to `neon` when using Neon serverless |
+| `BETTER_AUTH_SECRET` | Yes | Random string for session signing |
+| `ENCRYPTION_KEY` | Yes | 32-byte base64 string for API key encryption |
+| `NEXT_PUBLIC_APP_URL` | Yes | Your app's public URL |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | For asset storage (R2) |
+| `R2_ACCESS_KEY_ID` | Yes | R2 access key |
+| `R2_SECRET_ACCESS_KEY` | Yes | R2 secret key |
+| `R2_BUCKET_NAME` | Yes | R2 bucket name |
+| `CRON_SECRET` | Vercel/Netlify | Secures `/api/cron` background tasks |
+
 ## Getting Started
 
 ### Prerequisites
