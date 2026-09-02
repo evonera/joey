@@ -71,21 +71,7 @@ export const auth = betterAuth({
             create: {
                 after: async (user) => {
                     try {
-                        const displayName = user.name?.trim() || "User";
-                        const slugBase = displayName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') || 'workspace';
-                        const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
-                        const [tenant] = await db.insert(schema.tenants).values({
-                            id: crypto.randomUUID(),
-                            name: `${displayName}'s Workspace`,
-                            slug,
-                        }).returning();
-                        await db.insert(schema.member).values({
-                            id: crypto.randomUUID(),
-                            organizationId: tenant.id,
-                            userId: user.id,
-                            role: "owner",
-                            createdAt: new Date(),
-                        });
+                        await provisionDefaultWorkspace(user.id, user.name);
                     } catch (err) {
                         console.error("Failed to auto-create default workspace for new user:", err);
                     }
@@ -272,6 +258,45 @@ export async function getActiveTenantIdFromSession(
     return resolveActiveTenant(session);
 }
 
+/**
+ * Atomically and idempotently provisions a default workspace and owner membership
+ * for a user. If a workspace membership already exists (e.g. concurrent provisioning),
+ * the existing organizationId is returned.
+ */
+export async function provisionDefaultWorkspace(userId: string, userName?: string | null): Promise<string> {
+    return await db.transaction(async (tx) => {
+        // Double-check membership inside transaction to ensure idempotency against concurrent provisioning
+        const existing = await tx.query.member.findFirst({
+            where: eq(schema.member.userId, userId),
+            orderBy: [desc(schema.member.createdAt)],
+        });
+        if (existing?.organizationId) {
+            return existing.organizationId;
+        }
+
+        const displayName = userName?.trim() || "User";
+        const slugBase = displayName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') || 'workspace';
+        const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
+        const tenantId = crypto.randomUUID();
+
+        await tx.insert(schema.tenants).values({
+            id: tenantId,
+            name: `${displayName}'s Workspace`,
+            slug,
+        });
+
+        await tx.insert(schema.member).values({
+            id: crypto.randomUUID(),
+            organizationId: tenantId,
+            userId,
+            role: "owner",
+            createdAt: new Date(),
+        });
+
+        return tenantId;
+    });
+}
+
 async function resolveActiveTenant(session: AuthSession): Promise<string> {
     // Try to get the active organization from the session
     if (session.session.activeOrganizationId) {
@@ -286,7 +311,7 @@ async function resolveActiveTenant(session: AuthSession): Promise<string> {
         }
     }
 
-    // Fallback: finding the first organization they are a member of
+    // 2. Fall back to user's most recent organization membership
     const membership = await db.query.member.findFirst({
         where: eq(schema.member.userId, session.user.id),
         orderBy: [desc(schema.member.createdAt)],
@@ -304,24 +329,9 @@ async function resolveActiveTenant(session: AuthSession): Promise<string> {
         return membership.organizationId;
     }
 
-    // Fallback: auto-provision a workspace if the user has none yet
+    // 3. Fallback: auto-provision a workspace atomically if the user has none yet
     try {
-        const displayName = session.user.name?.trim() || "User";
-        const slugBase = displayName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') || 'workspace';
-        const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
-        const [tenant] = await db.insert(schema.tenants).values({
-            id: crypto.randomUUID(),
-            name: `${displayName}'s Workspace`,
-            slug,
-        }).returning();
-        await db.insert(schema.member).values({
-            id: crypto.randomUUID(),
-            organizationId: tenant.id,
-            userId: session.user.id,
-            role: "owner",
-            createdAt: new Date(),
-        });
-        return tenant.id;
+        return await provisionDefaultWorkspace(session.user.id, session.user.name);
     } catch (provisionErr) {
         console.error("Failed to provision workspace in resolveActiveTenant:", provisionErr);
         throw new Error("No active workspace found");

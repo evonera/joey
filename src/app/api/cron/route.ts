@@ -8,24 +8,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { processThemeStudioAnalyticsSync } = await import("@/lib/theme-studio/learning/analytics-sync");
-  const { processThemeStudioOptimization } = await import("@/lib/theme-studio/learning/recipe-optimizer");
   const { publishDueDrafts } = await import("@/lib/publisher-core");
   const { runFlowsTick } = await import("../../../../agent/schedules/flows-tick");
   const { processTelegramOutbox } = await import("@/lib/telegram-outbox");
   const { pruneExpiredRateLimits } = await import("@/lib/rate-limit");
 
+  // runFlowsTick() internally coordinates stale run reconciliation, R2 cleanup,
+  // stale webhook delivery recovery, Telegram DM retries, Theme Studio analytics sync,
+  // and recipe optimization before executing active scheduled flows.
   const results = await Promise.allSettled([
-    publishDueDrafts(),
+    publishDueDrafts({ limit: 10 }),
     runFlowsTick(),
     processTelegramOutbox(),
     pruneExpiredRateLimits(),
-    processThemeStudioAnalyticsSync(),
-    processThemeStudioOptimization(),
   ]);
 
   const summary = results.map((r, i) => ({
-    task: ["publishDrafts", "flowsTick", "telegramOutbox", "pruneRateLimits", "analyticsSync", "recipeOptimization"][i],
+    task: ["publishDrafts", "flowsTick", "telegramOutbox", "pruneRateLimits"][i],
     status: r.status,
     ...(r.status === "rejected" ? { error: String(r.reason) } : {}),
   }));

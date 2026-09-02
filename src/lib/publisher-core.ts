@@ -25,7 +25,10 @@ export async function getZernioClientForTenant(tenantId: string) {
 export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio) {
     // 1. Atomically claim the draft for publishing
     const updateResult = await db.update(drafts)
-        .set({ status: "publishing" })
+        .set({ 
+            status: "publishing",
+            errorMessage: `claimed:${Date.now()}` 
+        })
         .where(
             and(
                 eq(drafts.id, draftId), 
@@ -193,11 +196,61 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
 }
 
 /**
- * Publishes all approved drafts scheduled for now or in the past.
- * Used by both background Eve cron schedules and the serverless /api/cron endpoint.
+ * Recovers drafts stranded in 'publishing' state due to interrupted worker execution
+ * or network timeouts. Resets scheduled drafts back to 'approved' for retry, or 'failed'
+ * for manual drafts.
  */
-export async function publishDueDrafts(): Promise<{ published: number; failed: number }> {
+export async function recoverStalePublishingDrafts(staleAfterMs = 5 * 60 * 1000): Promise<number> {
+    const now = Date.now();
+    const staleCutoffDate = new Date(now - staleAfterMs);
+
+    const stranded = await db.select({
+        id: drafts.id,
+        tenantId: drafts.tenantId,
+        errorMessage: drafts.errorMessage,
+        scheduledFor: drafts.scheduledFor,
+        createdAt: drafts.createdAt,
+    })
+    .from(drafts)
+    .where(eq(drafts.status, "publishing"));
+
+    let recoveredCount = 0;
+    for (const d of stranded) {
+        let isStale = false;
+        if (d.errorMessage?.startsWith("claimed:")) {
+            const timestamp = parseInt(d.errorMessage.split(":")[1], 10);
+            if (!isNaN(timestamp) && now - timestamp >= staleAfterMs) {
+                isStale = true;
+            }
+        } else if (d.scheduledFor && d.scheduledFor < staleCutoffDate) {
+            isStale = true;
+        } else if (d.createdAt < staleCutoffDate) {
+            isStale = true;
+        }
+
+        if (isStale) {
+            await db.update(drafts)
+                .set({
+                    status: d.scheduledFor ? "approved" : "failed",
+                    errorMessage: "Publishing timed out or was interrupted; recovered for retry.",
+                })
+                .where(and(eq(drafts.id, d.id), eq(drafts.status, "publishing")));
+            recoveredCount++;
+        }
+    }
+
+    return recoveredCount;
+}
+
+/**
+ * Publishes approved drafts scheduled for now or in the past with batch bounds.
+ * Automatically recovers stranded publishing claims before executing due drafts.
+ */
+export async function publishDueDrafts(options: { limit?: number; staleAfterMs?: number } = {}): Promise<{ published: number; failed: number; recovered: number }> {
+    const recovered = await recoverStalePublishingDrafts(options.staleAfterMs);
     const now = new Date();
+    const batchLimit = options.limit ?? 10;
+
     const pendingDrafts = await db.select({
         id: drafts.id,
         tenantId: drafts.tenantId
@@ -209,7 +262,8 @@ export async function publishDueDrafts(): Promise<{ published: number; failed: n
             isNotNull(drafts.scheduledFor),
             lte(drafts.scheduledFor, now)
         )
-    );
+    )
+    .limit(batchLimit);
 
     let published = 0;
     let failed = 0;
@@ -229,5 +283,5 @@ export async function publishDueDrafts(): Promise<{ published: number; failed: n
         }
     }
 
-    return { published, failed };
+    return { published, failed, recovered };
 }
