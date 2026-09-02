@@ -10,9 +10,25 @@ export async function GET(request: Request) {
 
   const { processThemeStudioAnalyticsSync } = await import("@/lib/theme-studio/learning/analytics-sync");
   const { processThemeStudioOptimization } = await import("@/lib/theme-studio/learning/recipe-optimizer");
+  const { publishDueDrafts } = await import("@/lib/publisher-core");
+  const { runFlowsTick } = await import("../../../../agent/schedules/flows-tick");
+  const { processTelegramOutbox } = await import("@/lib/telegram-outbox");
+  const { pruneExpiredRateLimits } = await import("@/lib/rate-limit");
 
-  await processThemeStudioAnalyticsSync();
-  await processThemeStudioOptimization();
+  const results = await Promise.allSettled([
+    publishDueDrafts(),
+    runFlowsTick(),
+    processTelegramOutbox(),
+    pruneExpiredRateLimits(),
+    processThemeStudioAnalyticsSync(),
+    processThemeStudioOptimization(),
+  ]);
 
-  return NextResponse.json({ ok: true, timestamp: new Date().toISOString() });
+  const summary = results.map((r, i) => ({
+    task: ["publishDrafts", "flowsTick", "telegramOutbox", "pruneRateLimits", "analyticsSync", "recipeOptimization"][i],
+    status: r.status,
+    ...(r.status === "rejected" ? { error: String(r.reason) } : {}),
+  }));
+
+  return NextResponse.json({ ok: true, timestamp: new Date().toISOString(), summary });
 }

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts, agentConfigs, apiKeys } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, lte } from "drizzle-orm";
 import { createNotification } from "@/lib/notifications";
 import { decrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
@@ -54,12 +54,15 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
 
     const platformOpts = draft.platformOptions as any;
     const targetPlatform = platformOpts?.platform;
+    const targetAccountId = platformOpts?.accountId;
 
     // 2. Look up the corresponding Zernio account ID from socialAccounts
     const account = await db.query.socialAccounts.findFirst({
         where: and(
             eq(socialAccounts.tenantId, tenantId),
-            eq(socialAccounts.platform, targetPlatform)
+            targetAccountId
+                ? eq(socialAccounts.id, targetAccountId)
+                : eq(socialAccounts.platform, targetPlatform)
         )
     });
 
@@ -78,15 +81,17 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     // 4. Call Zernio API with synchronous retries
     let lastError: any = null;
     let response: any = null;
+    const platformName = account.platform === 'x' ? 'twitter' : account.platform;
     
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             response = await zernio.posts.createPost({
+                headers: { "x-request-id": draftId },
                 body: {
                     content: postContent,
                     mediaItems: mediaItems.length > 0 ? mediaItems : undefined,
                     platforms: [{
-                        platform: account.platform,
+                        platform: platformName,
                         accountId: account.platformAccountId
                     }]
                 }
@@ -101,6 +106,16 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         } catch (error: any) {
             lastError = error;
             const status = error?.status || error?.response?.status;
+            
+            // Reconcile duplicate / in-flight post from Zernio 409 response
+            if (status === 409) {
+                const existingPostId = error?.existingPostId || error?.response?.data?.existingPostId || error?.data?.existingPostId;
+                if (existingPostId) {
+                    response = { data: { id: existingPostId } };
+                    lastError = null;
+                    break;
+                }
+            }
             
             if (status === 401 || status === 403) {
                 await db.transaction(async (tx) => {
@@ -175,4 +190,44 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
             
         return { error: unexpectedError.message || "An unexpected system error occurred." };
     }
+}
+
+/**
+ * Publishes all approved drafts scheduled for now or in the past.
+ * Used by both background Eve cron schedules and the serverless /api/cron endpoint.
+ */
+export async function publishDueDrafts(): Promise<{ published: number; failed: number }> {
+    const now = new Date();
+    const pendingDrafts = await db.select({
+        id: drafts.id,
+        tenantId: drafts.tenantId
+    })
+    .from(drafts)
+    .where(
+        and(
+            eq(drafts.status, "approved"),
+            isNotNull(drafts.scheduledFor),
+            lte(drafts.scheduledFor, now)
+        )
+    );
+
+    let published = 0;
+    let failed = 0;
+
+    for (const draft of pendingDrafts) {
+        try {
+            const { zernio } = await getZernioClientForTenant(draft.tenantId);
+            const res = await executePublishDraft(draft.id, draft.tenantId, zernio);
+            if (res.success) {
+                published++;
+            } else {
+                failed++;
+            }
+        } catch (error) {
+            console.error(`Failed to publish scheduled draft ${draft.id} for tenant ${draft.tenantId}:`, error);
+            failed++;
+        }
+    }
+
+    return { published, failed };
 }

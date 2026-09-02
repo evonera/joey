@@ -3,7 +3,7 @@ import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
 import { agentConfigs, tenants, member, drafts, webhookEvents, engagementItems, replyDrafts, socialAccounts } from "@/lib/db/schema";
 import { eq, and, lte, isNotNull, isNull, asc, inArray } from "drizzle-orm";
-import { executePublishDraft, getZernioClientForTenant } from "@/lib/publisher-core";
+import { executePublishDraft, getZernioClientForTenant, publishDueDrafts } from "@/lib/publisher-core";
 import { syncTenantMemories } from "@/lib/ingest-memories";
 import { assertBudget } from "@/lib/usage";
 import { recoverStaleEngagementSends } from "@/lib/engagement-delivery";
@@ -221,29 +221,7 @@ export default defineSchedule({
     }
 
     // --- 2. Publish Scheduled Drafts ---
-    const pendingDrafts = await db.select({
-      id: drafts.id,
-      tenantId: drafts.tenantId
-    })
-    .from(drafts)
-    .where(
-        and(
-            eq(drafts.status, "approved"),
-            isNotNull(drafts.scheduledFor),
-            lte(drafts.scheduledFor, new Date())
-        )
-    );
-
-    for (const draft of pendingDrafts) {
-      try {
-        const { zernio } = await getZernioClientForTenant(draft.tenantId);
-        // Fire and forget (or await it depending on how many we expect)
-        // We await to avoid throttling the DB/Zernio connection pool if there are hundreds
-        await executePublishDraft(draft.id, draft.tenantId, zernio);
-      } catch (error) {
-        console.error(`Failed to publish scheduled draft ${draft.id} for tenant ${draft.tenantId}:`, error);
-      }
-    }
+    await publishDueDrafts();
 
 
     // --- 3. Trigger AI Drafting ---

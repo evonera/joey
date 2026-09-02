@@ -32,6 +32,7 @@ export async function createManualPost(data: {
 
         for (const account of selectedAccounts) {
             const platformOptions = {
+                accountId: account.id,
                 platform: account.platform,
                 mediaUrls: data.mediaUrls,
             };

@@ -21,6 +21,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL="postgresql://placeholder" 
 ENV BETTER_AUTH_SECRET="placeholder"
 
+RUN npx eve build
 RUN npm run build
 
 # Production image, copy all the files and run next
@@ -39,6 +40,7 @@ COPY --from=builder /app/public ./public
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/.output ./.output
 
 USER nextjs
 

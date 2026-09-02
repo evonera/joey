@@ -67,6 +67,31 @@ export const auth = betterAuth({
         }
     }),
     databaseHooks: {
+        user: {
+            create: {
+                after: async (user) => {
+                    try {
+                        const displayName = user.name?.trim() || "User";
+                        const slugBase = displayName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') || 'workspace';
+                        const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
+                        const [tenant] = await db.insert(schema.tenants).values({
+                            id: crypto.randomUUID(),
+                            name: `${displayName}'s Workspace`,
+                            slug,
+                        }).returning();
+                        await db.insert(schema.member).values({
+                            id: crypto.randomUUID(),
+                            organizationId: tenant.id,
+                            userId: user.id,
+                            role: "owner",
+                            createdAt: new Date(),
+                        });
+                    } catch (err) {
+                        console.error("Failed to auto-create default workspace for new user:", err);
+                    }
+                },
+            },
+        },
         session: {
             create: {
                 before: async (session) => {
@@ -86,6 +111,25 @@ export const auth = betterAuth({
     },
     emailAndPassword: {
         enabled: true,
+        sendResetPassword: async ({ user, url }) => {
+            const resendApiKey = process.env.RESEND_API_KEY;
+            if (resendApiKey) {
+                try {
+                    const { Resend } = await import("resend");
+                    const resend = new Resend(resendApiKey);
+                    await resend.emails.send({
+                        from: process.env.EMAIL_FROM || "Joey <no-reply@joey.evonera.com>",
+                        to: user.email,
+                        subject: "Reset your Joey password",
+                        html: `<p>Hello ${user.name || "there"},</p><p>You requested a password reset. Click the link below to set a new password:</p><p><a href="${url}">${url}</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
+                    });
+                } catch (err) {
+                    console.error("Failed to send reset password email via Resend:", err);
+                }
+            } else {
+                console.log(`[auth] Password reset requested for ${user.email}. Reset URL: ${url}`);
+            }
+        },
     },
     socialProviders: {
         ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET ? {
@@ -249,13 +293,37 @@ async function resolveActiveTenant(session: AuthSession): Promise<string> {
     });
 
     if (membership?.organizationId) {
-        // Set it in the database for future requests
-        await auth.api.setActiveOrganization({
-            headers: await headers(),
-            body: { organizationId: membership.organizationId }
-        });
+        try {
+            await auth.api.setActiveOrganization({
+                headers: await headers(),
+                body: { organizationId: membership.organizationId }
+            });
+        } catch {
+            // Setting cookies is not permitted during Server Component rendering; safe to ignore
+        }
         return membership.organizationId;
     }
 
-    throw new Error("No active workspace found");
+    // Fallback: auto-provision a workspace if the user has none yet
+    try {
+        const displayName = session.user.name?.trim() || "User";
+        const slugBase = displayName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') || 'workspace';
+        const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
+        const [tenant] = await db.insert(schema.tenants).values({
+            id: crypto.randomUUID(),
+            name: `${displayName}'s Workspace`,
+            slug,
+        }).returning();
+        await db.insert(schema.member).values({
+            id: crypto.randomUUID(),
+            organizationId: tenant.id,
+            userId: session.user.id,
+            role: "owner",
+            createdAt: new Date(),
+        });
+        return tenant.id;
+    } catch (provisionErr) {
+        console.error("Failed to provision workspace in resolveActiveTenant:", provisionErr);
+        throw new Error("No active workspace found");
+    }
 }

@@ -23,9 +23,7 @@ import { operationalEvent } from "@/lib/operations-log";
  * trigger.schedule node. Webhook triggers are dispatched from the Zernio
  * receiver instead.
  */
-export default defineSchedule({
-  cron: "* * * * *",
-  async run() {
+export async function runFlowsTick() {
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
     // for >30 min (from any trigger, including approval resumes or crashed flows)
     // is reconciled based on its accumulated step execution state. Active runs
@@ -219,7 +217,11 @@ export default defineSchedule({
         }
       }),
     );
-  },
+}
+
+export default defineSchedule({
+  cron: "* * * * *",
+  run: runFlowsTick,
 });
 
 export function isScheduleDue(

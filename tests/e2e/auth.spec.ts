@@ -5,13 +5,13 @@ test('unauthenticated users are redirected to login', async ({ page }) => {
 
   await page.waitForURL('**/login*');
 
-  await expect(page.locator('h2')).toContainText('Sign in to Joey');
+  await expect(page.locator('h1')).toContainText('Welcome to Joey');
 });
 
 test('dashboard sub-routes also redirect to login', async ({ page }) => {
   await page.goto('/drafts');
   await page.waitForURL('**/login*');
-  await expect(page.locator('h2')).toContainText('Sign in to Joey');
+  await expect(page.locator('h1')).toContainText('Welcome to Joey');
 });
 
 test('all tenant dashboard surfaces redirect unauthenticated users', async ({ page }) => {

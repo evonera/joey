@@ -26,7 +26,7 @@ test('clicking hero CTA navigates to signup', async ({ page }) => {
 
   await page.locator('text=Start Automating').click();
   await page.waitForURL('**/signup');
-  await expect(page.locator('h2')).toContainText('Create your account');
+  await expect(page.locator('h1')).toContainText('Create your Joey Workspace');
 });
 
 test('clicking Log in navigates to login', async ({ page }) => {
@@ -34,5 +34,5 @@ test('clicking Log in navigates to login', async ({ page }) => {
 
   await page.locator('a[href="/login"]').click();
   await page.waitForURL('**/login');
-  await expect(page.locator('h2')).toContainText('Sign in to Joey');
+  await expect(page.locator('h1')).toContainText('Welcome to Joey');
 });
