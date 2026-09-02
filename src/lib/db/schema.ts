@@ -747,6 +747,21 @@ export const contentPackages = pgTable("content_packages", {
   tenantIdx: index("content_packages_tenant_id_idx").on(table.tenantId),
 }));
 
+export const mixRecommendations = pgTable("mix_recommendations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  themePageId: text("theme_page_id").notNull().references(() => themePages.id, { onDelete: "cascade" }),
+  formatScores: jsonb("format_scores").default({}).notNull(),
+  adjustments: jsonb("adjustments").default([]).notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  acceptedAt: timestamp("accepted_at"),
+}, (table) => ({
+  tenantIdx: index("mix_recommendations_tenant_id_idx").on(table.tenantId),
+  pageIdx: index("mix_recommendations_page_id_idx").on(table.themePageId),
+  pendingIdx: index("mix_recommendations_pending_idx").on(table.tenantId, table.themePageId, table.status),
+}));
+
 export const dmAutomationRules = pgTable("dm_automation_rules", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),

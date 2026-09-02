@@ -121,6 +121,16 @@ export default defineSchedule({
     const { processThemeStudioDmRetries } = await import("@/lib/engagement-inbox");
     await processThemeStudioDmRetries();
 
+    // Analytics sync: fetch per-post engagement data from Zernio for published
+    // packages and update contentPackages.metrics. Must run before optimization.
+    const { processThemeStudioAnalyticsSync } = await import("@/lib/theme-studio/learning/analytics-sync");
+    await processThemeStudioAnalyticsSync();
+
+    // Optimization: generate human-reviewed mix recommendations when enough
+    // analytics data has accumulated. Skips pages with pending recommendations.
+    const { processThemeStudioOptimization } = await import("@/lib/theme-studio/learning/recipe-optimizer");
+    await processThemeStudioOptimization();
+
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
     });
