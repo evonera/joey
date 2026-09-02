@@ -8,15 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
-  Upload,
-  Trash2,
-  Search,
-  ImageIcon,
-  FileIcon,
-  FilmIcon,
-  Loader2,
-  X,
-} from "lucide-react";
+  Upload01Icon as Upload,
+  Delete02Icon as Trash2,
+  Search01Icon as Search,
+  Image01Icon as ImageIcon,
+  File02Icon as FileIcon,
+  Video01Icon as FilmIcon,
+  Loading03Icon as Loader2,
+  Cancel01Icon as X,
+} from "hugeicons-react";
 
 type Asset = Awaited<ReturnType<typeof listAssets>>["assets"][number];
 

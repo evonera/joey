@@ -33,7 +33,14 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
-import { ArrowUpIcon, ImageIcon, Monitor, PlusIcon, SquareIcon, XIcon } from "lucide-react";
+import { 
+  ArrowUp01Icon as ArrowUpIcon, 
+  Image01Icon as ImageIcon, 
+  ComputerIcon as Monitor, 
+  PlusSignIcon as PlusIcon, 
+  StopIcon as SquareIcon, 
+  Cancel01Icon as XIcon 
+} from "hugeicons-react";
 import { nanoid } from "nanoid";
 import type {
   ChangeEvent,

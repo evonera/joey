@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BookMarked, Clock3, Plus, Trash2, Workflow } from "lucide-react";
+import { Bookmark01Icon as BookMarked, Clock01Icon as Clock3, PlusSignIcon as Plus, Delete02Icon as Trash2, GitForkIcon as Workflow } from "hugeicons-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {

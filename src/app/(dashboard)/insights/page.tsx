@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getInsights } from "@/app/actions/insights";
-import { Loader2, Lightbulb, TrendingUp, Clock, Target } from "lucide-react";
+import { Loading03Icon as Loader2, BulbIcon as Lightbulb, ChartAverageIcon as TrendingUp, Clock01Icon as Clock, Target02Icon as Target } from "hugeicons-react";
 
 export default function InsightsPage() {
   const [isLoading, setIsLoading] = useState(true);

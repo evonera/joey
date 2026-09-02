@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { CalendarView } from "@/components/calendar/calendar-view";
-import { Loader2 } from "lucide-react";
+import { Loading03Icon as Loader2 } from "hugeicons-react";
 
 export default function CalendarPage() {
   return (

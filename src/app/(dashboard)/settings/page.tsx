@@ -6,7 +6,7 @@ import { getConnectedAccounts } from "@/app/actions/zernio";
 import { getUsage } from "@/app/actions/usage";
 import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
 import { getNotificationPreferences, saveNotificationPreferences } from "@/app/actions/notifications";
-import { Loader2, Save, CheckCircle2, TrendingUp, AlertTriangle, Sparkles, Eye, EyeOff, Trash2, PlugZap, Bell } from "lucide-react";
+import { Loading03Icon as Loader2, FloppyDiskIcon as Save, CheckmarkCircle02Icon as CheckCircle2, ChartAverageIcon as TrendingUp, Alert02Icon as AlertTriangle, SparklesIcon as Sparkles, ViewIcon as Eye, ViewOffSlashIcon as EyeOff, Delete02Icon as Trash2, FlashIcon as PlugZap, Notification01Icon as Bell } from "hugeicons-react";
 import { ConnectionsPanel } from "./connections-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
 import { IntegrationsPanel } from "./integrations-panel";

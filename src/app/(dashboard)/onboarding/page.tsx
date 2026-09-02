@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, CheckCircle, Loader2 } from "lucide-react";
+import { Key01Icon as KeyRound, CheckmarkCircle02Icon as CheckCircle, Loading03Icon as Loader2 } from "hugeicons-react";
 
 export default function OnboardingPage() {
   const [apiKey, setApiKey] = useState("");

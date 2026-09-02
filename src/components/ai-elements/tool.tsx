@@ -5,13 +5,13 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { cn } from "@/lib/utils";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
-  CheckCircleIcon,
-  ChevronDownIcon,
+  CheckmarkCircle02Icon as CheckCircleIcon,
+  ArrowDown01Icon as ChevronDownIcon,
   CircleIcon,
-  ClockIcon,
-  WrenchIcon,
-  XCircleIcon,
-} from "lucide-react";
+  Clock01Icon as ClockIcon,
+  Wrench01Icon as WrenchIcon,
+  CancelCircleIcon as XCircleIcon,
+} from "hugeicons-react";
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement } from "react";
 

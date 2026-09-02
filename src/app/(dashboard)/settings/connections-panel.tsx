@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plug, PlugZap, Loader2, ExternalLink, Trash2, Plus } from "lucide-react";
+import { LinkSquare02Icon as Plug, FlashIcon as PlugZap, Loading03Icon as Loader2, LinkSquare01Icon as ExternalLink, Delete02Icon as Trash2, PlusSignIcon as Plus } from "hugeicons-react";
 
 interface ConnectionItem {
   toolkit: string;

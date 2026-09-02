@@ -7,13 +7,13 @@ import type {
   EveMessagePart,
 } from "eve/react";
 import {
-  CheckCircleIcon,
-  ExternalLinkIcon,
-  FileIcon,
-  ImageIcon,
-  KeyRoundIcon,
-  XCircleIcon,
-} from "lucide-react";
+  CheckmarkCircle02Icon as CheckCircleIcon,
+  LinkSquare01Icon as ExternalLinkIcon,
+  File02Icon as FileIcon,
+  Image01Icon as ImageIcon,
+  Key01Icon as KeyRoundIcon,
+  CancelCircleIcon as XCircleIcon,
+} from "hugeicons-react";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
 import {

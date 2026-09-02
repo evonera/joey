@@ -7,7 +7,7 @@ import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { format, parse, startOfWeek, getDay, addHours, isBefore, startOfDay } from "date-fns";
 import { enUS } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft01Icon as ChevronLeft, ArrowRight01Icon as ChevronRight, PlusSignIcon as Plus, Image01Icon as ImageIcon } from "hugeicons-react";
 import { IconBrandTwitter as Twitter, IconBrandLinkedin as Linkedin, IconBrandFacebook as Facebook, IconBrandInstagram as Instagram } from "@tabler/icons-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";

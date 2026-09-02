@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Alert02Icon as AlertTriangle, CheckmarkCircle02Icon as CheckCircle2 } from "hugeicons-react";
 import { getTenantOperationalHealth } from "@/app/actions/operations";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

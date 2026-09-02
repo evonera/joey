@@ -2,18 +2,19 @@
 
 import * as React from "react"
 import {
-  IconDashboard,
-  IconFileText,
-  IconSettings,
-  IconUsers,
-  IconBook,
-  IconBulb,
-  IconPhoto,
-  IconMessage,
-  IconChartBar,
-  IconGitBranch,
-  IconActivity,
-} from "@tabler/icons-react"
+  DashboardSquare01Icon,
+  File02Icon,
+  Comment01Icon,
+  UserMultiple02Icon,
+  PaintBoardIcon,
+  BulbIcon,
+  Analytics01Icon,
+  GitForkIcon,
+  SparklesIcon,
+  Image01Icon,
+  Activity01Icon,
+  Settings02Icon,
+} from "hugeicons-react"
 
 import { NavMain } from "@/components/nav-main"
 import {
@@ -24,71 +25,71 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { WorkspaceSwitcher } from "./workspace-switcher"
+import { OrganizationSwitcher } from "@/components/auth/OrganizationSwitcher"
 
 export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: React.ComponentProps<typeof Sidebar> & { pendingDraftCount?: number; pendingReplyCount?: number }) {
   const navMain = [
     {
       title: "Dashboard",
       url: "/dashboard",
-      icon: IconDashboard,
+      icon: DashboardSquare01Icon,
     },
     {
       title: "Drafts",
       url: "/drafts",
-      icon: IconFileText,
+      icon: File02Icon,
       badge: pendingDraftCount,
     },
     {
       title: "Engagement",
       url: "/engagement",
-      icon: IconMessage,
+      icon: Comment01Icon,
       badge: pendingReplyCount,
     },
     {
       title: "Accounts",
       url: "/accounts",
-      icon: IconUsers,
+      icon: UserMultiple02Icon,
     },
     {
       title: "Brand Kit",
       url: "/brandkit",
-      icon: IconBook,
+      icon: PaintBoardIcon,
     },
     {
       title: "Insights",
       url: "/insights",
-      icon: IconBulb,
+      icon: BulbIcon,
     },
     {
       title: "Analytics",
       url: "/analytics",
-      icon: IconChartBar,
+      icon: Analytics01Icon,
     },
     {
       title: "Flows",
       url: "/flows",
-      icon: IconGitBranch,
+      icon: GitForkIcon,
     },
     {
       title: "Theme Studio",
       url: "/theme-studio",
-      icon: IconBulb,
+      icon: SparklesIcon,
     },
     {
       title: "Assets",
       url: "/assets",
-      icon: IconPhoto,
+      icon: Image01Icon,
     },
     {
       title: "Operations",
       url: "/operations",
-      icon: IconActivity,
+      icon: Activity01Icon,
     },
     {
       title: "Settings",
       url: "/settings",
-      icon: IconSettings,
+      icon: Settings02Icon,
     },
   ];
 
@@ -107,7 +108,7 @@ export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: R
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <WorkspaceSwitcher />
+        <OrganizationSwitcher className="w-full mt-2" />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />

@@ -7,7 +7,7 @@ import {
   revokeApiToken,
   type PublicApiToken,
 } from "@/app/actions/api-tokens";
-import { CheckCircle2, Copy, Loader2, Plus, Trash2 } from "lucide-react";
+import { CheckmarkCircle02Icon as CheckCircle2, Copy01Icon as Copy, Loading03Icon as Loader2, PlusSignIcon as Plus, Delete02Icon as Trash2 } from "hugeicons-react";
 
 const SCOPES = [
   { id: "read", label: "read", hint: "List accounts, drafts, posts", locked: true },

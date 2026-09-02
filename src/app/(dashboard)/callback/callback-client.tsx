@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { handleZernioCallback, selectEntityAndFinalize } from "@/app/actions/zernio";
 import { EntitySelector } from "@/app/_components/entity-selector";
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loading03Icon as Loader2, CheckmarkCircle02Icon as CheckCircle2, AlertCircleIcon as AlertCircle } from "hugeicons-react";
 
 type CallbackStep = "processing" | "select_entity" | "success" | "error";
 
