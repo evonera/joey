@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { contentPackages, themeSources } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, or, sql, asc } from "drizzle-orm";
 import { pollAndIngestSource } from "./source-poller";
 import { clusterSourceItems } from "./story-clusterer";
 import { synthesizeAndAllocatePackages, PackageGenerationResult } from "./angle-synthesizer";
@@ -71,16 +71,27 @@ export async function runEditorialPipeline(
   await heartbeat?.();
 
   const packageResult = await synthesizeAndAllocatePackages(tenantId, themePageId, flowRunId, signal, heartbeat);
-  const failedPackages = await db.query.contentPackages.findMany({
+  const recoverablePackages = await db.query.contentPackages.findMany({
     where: and(
       eq(contentPackages.tenantId, tenantId),
       eq(contentPackages.themePageId, themePageId),
-      inArray(contentPackages.status, ["pending_review", "failed"]),
+      sql`${contentPackages.renderedAssetUrls} = '[]'::jsonb`,
+      or(
+        and(
+          eq(contentPackages.status, "pending_review"),
+          sql`coalesce(${contentPackages.metrics}->>'failurePhase', 'render_pending') in ('render_pending', 'render')`,
+        ),
+        and(
+          eq(contentPackages.status, "failed"),
+          sql`${contentPackages.metrics}->>'failurePhase' = 'render'`,
+        ),
+      ),
     ),
     columns: { id: true, status: true, renderedAssetUrls: true, metrics: true },
+    orderBy: [asc(contentPackages.updatedAt), asc(contentPackages.id)],
     limit: 50,
   });
-  const retryPackageIds = failedPackages
+  const retryPackageIds = recoverablePackages
     .filter((pkg) => shouldRetryPackageRender(pkg.status, pkg.renderedAssetUrls, pkg.metrics))
     .map((pkg) => pkg.id);
   const packageIdsToRender = [...new Set([...retryPackageIds, ...packageResult.packageIds])];
