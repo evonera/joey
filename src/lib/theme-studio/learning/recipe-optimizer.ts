@@ -172,35 +172,36 @@ export async function storeMixRecommendation(
 }
 
 /**
- * Accept a pending recommendation: apply slot reorder, then mark as accepted.
+ * Accept a pending recommendation: atomically claim it, then apply slot reorder.
+ * The CAS guard (pending → accepted) prevents concurrent acceptance.
  * Slot priority updates are idempotent — re-applying the same value is safe on retry.
- * If a slot update fails (e.g., deleted slot), the recommendation stays pending
- * and a subsequent retry can re-attempt the remaining updates.
  */
 export async function acceptMixRecommendation(
   tenantId: string,
   recommendationId: string,
 ): Promise<{ applied: number }> {
-  const rec = await db.query.mixRecommendations.findFirst({
-    where: and(
-      eq(mixRecommendations.id, recommendationId),
-      eq(mixRecommendations.tenantId, tenantId),
-      eq(mixRecommendations.status, "pending"),
-    ),
-  });
-  if (!rec) return { applied: 0 };
+  const claimed = await db
+    .update(mixRecommendations)
+    .set({ status: "accepted", acceptedAt: new Date() })
+    .where(
+      and(
+        eq(mixRecommendations.id, recommendationId),
+        eq(mixRecommendations.tenantId, tenantId),
+        eq(mixRecommendations.status, "pending"),
+      ),
+    )
+    .returning({ id: mixRecommendations.id, adjustments: mixRecommendations.adjustments });
+  if (claimed.length === 0) return { applied: 0 };
 
-  const adjustments = rec.adjustments as Array<{
+  const adjustments = claimed[0].adjustments as Array<{
     slotId: string;
     previousPriority: number;
     newPriority: number;
   }>;
 
   let applied = 0;
-  let expected = 0;
   for (const adj of adjustments) {
     if (adj.previousPriority !== adj.newPriority) {
-      expected++;
       const result = await db
         .update(themeSlots)
         .set({ priority: adj.newPriority, updatedAt: new Date() })
@@ -209,15 +210,6 @@ export async function acceptMixRecommendation(
       if (result.length > 0) applied++;
     }
   }
-
-  if (applied < expected) {
-    return { applied };
-  }
-
-  await db
-    .update(mixRecommendations)
-    .set({ status: "accepted", acceptedAt: new Date() })
-    .where(and(eq(mixRecommendations.id, recommendationId), eq(mixRecommendations.tenantId, tenantId)));
 
   return { applied };
 }
