@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { contentPackages, themeSlots } from "@/lib/db/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, gt, sql } from "drizzle-orm";
 import { getZernioClientForTenant } from "@/lib/publisher-core";
 import { operationalEvent } from "@/lib/operations-log";
 
 const SYNC_BATCH_LIMIT = 25;
 const STALE_SYNC_HOURS = 24;
+const SCHEDULER_PAGE_SIZE = 100;
 
 interface ZernioPostAnalytics {
   reach?: number;
@@ -78,13 +79,16 @@ export async function syncThemeStudioAnalytics(
   limit = SYNC_BATCH_LIMIT,
 ): Promise<SyncResult> {
   // Query published packages that have a zernioPostId and may need analytics refresh.
-  // We fetch broadly and filter in-app for staleness to avoid jsonb comparison issues.
+  // Order by analyticsSyncedAt (nulls first = never synced first) to prioritize stale records.
   const candidates = await db.query.contentPackages.findMany({
     where: and(
       eq(contentPackages.tenantId, tenantId),
       eq(contentPackages.status, "published"),
     ),
-    orderBy: [desc(contentPackages.publishedAt)],
+    orderBy: [
+      sql`(contentPackages.metrics->>'analyticsSyncedAt') IS NULL DESC`,
+      sql`(contentPackages.metrics->>'analyticsSyncedAt') ASC NULLS FIRST`,
+    ],
     limit: limit * 2,
   });
 
@@ -160,35 +164,51 @@ export async function syncThemeStudioAnalytics(
   return { processed: eligible.length, updated, skipped, errors };
 }
 
+async function fetchActiveSlotTenants(cursor: Date | null): Promise<Array<{ tenantId: string; createdAt: Date }>> {
+  return db.query.themeSlots.findMany({
+    columns: { tenantId: true, createdAt: true },
+    where: cursor
+      ? and(eq(themeSlots.isActive, true), gt(themeSlots.createdAt, cursor))
+      : eq(themeSlots.isActive, true),
+    orderBy: [themeSlots.createdAt],
+    limit: SCHEDULER_PAGE_SIZE,
+  });
+}
+
 /**
  * Process analytics sync for all active theme pages across the tenant.
  * Called from the 1-minute tick.
+ * Uses cursor-based pagination to cover all active slots.
  */
 export async function processThemeStudioAnalyticsSync(limit = SYNC_BATCH_LIMIT): Promise<void> {
-  const activeSlots = await db.query.themeSlots.findMany({
-    columns: { tenantId: true },
-    where: eq(themeSlots.isActive, true),
-    limit: 100,
-  });
-
   const seen = new Set<string>();
-  for (const { tenantId } of activeSlots) {
-    if (seen.has(tenantId)) continue;
-    seen.add(tenantId);
+  let cursor: Date | null = null;
 
-    try {
-      const result = await syncThemeStudioAnalytics(tenantId, limit);
-      if (result.updated > 0) {
-        operationalEvent("info", "theme_studio.analytics_synced", {
+  for (;;) {
+    const slots = await fetchActiveSlotTenants(cursor);
+    if (slots.length === 0) break;
+
+    for (const { tenantId } of slots) {
+      if (seen.has(tenantId)) continue;
+      seen.add(tenantId);
+
+      try {
+        const result = await syncThemeStudioAnalytics(tenantId, limit);
+        if (result.updated > 0) {
+          operationalEvent("info", "theme_studio.analytics_synced", {
+            tenantId,
+            ...result,
+          });
+        }
+      } catch (err) {
+        operationalEvent("error", "theme_studio.analytics_sync_failed", {
           tenantId,
-          ...result,
+          error: err instanceof Error ? err.message : "Unknown error",
         });
       }
-    } catch (err) {
-      operationalEvent("error", "theme_studio.analytics_sync_failed", {
-        tenantId,
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
     }
+
+    cursor = slots[slots.length - 1].createdAt;
+    if (slots.length < SCHEDULER_PAGE_SIZE) break;
   }
 }

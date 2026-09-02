@@ -1,10 +1,11 @@
 import { db } from "@/lib/db";
 import { contentPackages, themeSlots, themeContentFormats, mixRecommendations } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gt, sql } from "drizzle-orm";
 import { calculateQualityScore } from "./quality-scorer";
 
 const MIN_SAMPLES_PER_FORMAT = 3;
 const RECOMMENDATION_FRESHNESS_HOURS = 168; // 7 days
+const SCHEDULER_PAGE_SIZE = 100;
 
 export interface SlotOptimizationResult {
   themePageId: string;
@@ -171,22 +172,28 @@ export async function storeMixRecommendation(
 }
 
 /**
- * Accept a pending recommendation: apply slot reorder and mark as accepted.
+ * Accept a pending recommendation: atomically claim it, then apply slot reorder.
+ * Uses a CAS guard (status: pending → accepted) to prevent concurrent acceptance.
+ * Slot priority updates are idempotent — re-applying the same value is safe on retry.
  */
 export async function acceptMixRecommendation(
   tenantId: string,
   recommendationId: string,
 ): Promise<{ applied: number }> {
-  const rec = await db.query.mixRecommendations.findFirst({
-    where: and(
-      eq(mixRecommendations.id, recommendationId),
-      eq(mixRecommendations.tenantId, tenantId),
-      eq(mixRecommendations.status, "pending"),
-    ),
-  });
-  if (!rec) return { applied: 0 };
+  const claimed = await db
+    .update(mixRecommendations)
+    .set({ status: "accepted", acceptedAt: new Date() })
+    .where(
+      and(
+        eq(mixRecommendations.id, recommendationId),
+        eq(mixRecommendations.tenantId, tenantId),
+        eq(mixRecommendations.status, "pending"),
+      ),
+    )
+    .returning({ id: mixRecommendations.id, adjustments: mixRecommendations.adjustments });
+  if (claimed.length === 0) return { applied: 0 };
 
-  const adjustments = rec.adjustments as Array<{
+  const adjustments = claimed[0].adjustments as Array<{
     slotId: string;
     previousPriority: number;
     newPriority: number;
@@ -202,11 +209,6 @@ export async function acceptMixRecommendation(
       applied++;
     }
   }
-
-  await db
-    .update(mixRecommendations)
-    .set({ status: "accepted", acceptedAt: new Date() })
-    .where(and(eq(mixRecommendations.id, recommendationId), eq(mixRecommendations.tenantId, tenantId)));
 
   return { applied };
 }
@@ -232,33 +234,49 @@ export async function discardMixRecommendation(
   return result.length > 0;
 }
 
+async function fetchActiveSlots(cursor: Date | null): Promise<Array<{ tenantId: string; themePageId: string; createdAt: Date }>> {
+  return db.query.themeSlots.findMany({
+    columns: { tenantId: true, themePageId: true, createdAt: true },
+    where: cursor
+      ? and(eq(themeSlots.isActive, true), gt(themeSlots.createdAt, cursor))
+      : eq(themeSlots.isActive, true),
+    orderBy: [themeSlots.createdAt],
+    limit: SCHEDULER_PAGE_SIZE,
+  });
+}
+
 /**
  * Periodically generate recommendations for active pages.
  * Skips if a pending recommendation already exists.
+ * Uses cursor-based pagination to cover all active slots.
  */
 export async function processThemeStudioOptimization(): Promise<void> {
-  const activeSlots = await db.query.themeSlots.findMany({
-    columns: { tenantId: true, themePageId: true },
-    where: eq(themeSlots.isActive, true),
-    limit: 100,
-  });
-
   const seen = new Set<string>();
-  for (const { tenantId, themePageId } of activeSlots) {
-    const key = `${tenantId}:${themePageId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+  let cursor: Date | null = null;
 
-    try {
-      const existing = await getPendingRecommendation(tenantId, themePageId);
-      if (existing) continue;
+  for (;;) {
+    const slots = await fetchActiveSlots(cursor);
+    if (slots.length === 0) break;
 
-      const result = await optimizeThemeSlotMix(tenantId, themePageId, { applyChanges: false });
-      if (!result.adjustments.some((a) => a.previousPriority !== a.newPriority)) continue;
+    for (const { tenantId, themePageId } of slots) {
+      const key = `${tenantId}:${themePageId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
 
-      await storeMixRecommendation(tenantId, result);
-    } catch {
-      // optimization failures are non-fatal
+      try {
+        const existing = await getPendingRecommendation(tenantId, themePageId);
+        if (existing) continue;
+
+        const result = await optimizeThemeSlotMix(tenantId, themePageId, { applyChanges: false });
+        if (!result.adjustments.some((a) => a.previousPriority !== a.newPriority)) continue;
+
+        await storeMixRecommendation(tenantId, result);
+      } catch {
+        // optimization failures are non-fatal
+      }
     }
+
+    cursor = slots[slots.length - 1].createdAt;
+    if (slots.length < SCHEDULER_PAGE_SIZE) break;
   }
 }
