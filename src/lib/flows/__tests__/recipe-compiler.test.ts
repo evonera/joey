@@ -10,6 +10,7 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
     audience: "Die-hard basketball fans looking for fast, statistical analysis",
     voice: "High energy, data-driven, analytical yet fun",
     defaultRightsPolicy: "strict",
+    connectedPlatforms: ["instagram"],
   };
 
   const mockSources = [
@@ -91,62 +92,67 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
     expect(triggers).toHaveLength(1);
     expect(triggers[0].type).toBe("trigger.schedule");
 
-    // Verify active sources are included (inactive excluded)
-    const sourceNodes = graph.nodes.filter((n) => n.type.startsWith("data."));
-    expect(sourceNodes).toHaveLength(3); // rss, reddit, http
-    expect(graph.nodes.some((n) => n.type === "data.rss")).toBe(true);
-    expect(graph.nodes.some((n) => n.type === "data.reddit")).toBe(true);
-    expect(graph.nodes.some((n) => n.type === "data.http")).toBe(true);
-
-    // Verify deduplication node exists
-    const dedupeNode = graph.nodes.find((n) => n.type === "transform.dedupe");
-    expect(dedupeNode).toBeDefined();
-
-    // Verify editorial synthesis node exists with page context
-    const editorialNode = graph.nodes.find((n) => n.id === "ai_editorial_synthesis");
-    expect(editorialNode).toBeDefined();
-    expect(editorialNode?.config.systemPrompt).toContain("NBA Daily Pulse");
-    expect(editorialNode?.config.systemPrompt).toContain("NBA basketball highlights");
-
-    // Verify slots are generated
-    const slotNodes = graph.nodes.filter((n) => n.id.startsWith("slot_ai_"));
-    expect(slotNodes).toHaveLength(2);
-
-    // Verify approval gate and create draft action exist
-    const approvalGate = graph.nodes.find((n) => n.type === "logic.approval");
-    expect(approvalGate).toBeDefined();
-
-    const createDraft = graph.nodes.find((n) => n.type === "action.create_draft");
-    expect(createDraft).toBeDefined();
+    const runNode = graph.nodes.find((n) => n.type === "action.theme_studio_run");
+    expect(runNode).toBeDefined();
+    expect(runNode?.config.themePageId).toBe(mockPage.id);
+    expect(graph.nodes).toHaveLength(2);
   });
 
-  it("handles a page with no sources gracefully with a fallback search step", () => {
+  it("refuses activation when no trusted sources are configured", () => {
     const result = compileThemeRecipe({
       page: mockPage,
       sources: [],
       slots: mockSlots,
     });
 
-    expect(result.isValid).toBe(true);
+    expect(result.isValid).toBe(false);
+    expect(result.validationIssues).toContain("Add at least one active Theme Studio source.");
     const validation = validateGraph(result.graph);
     expect(validation.ok).toBe(true);
-
-    const searchNode = result.graph.nodes.find((n) => n.type === "data.exa_search");
-    expect(searchNode).toBeDefined();
   });
 
-  it("handles a page with no slots gracefully", () => {
+  it("refuses activation when no content slots are configured", () => {
     const result = compileThemeRecipe({
       page: mockPage,
       sources: mockSources,
       slots: [],
     });
 
-    expect(result.isValid).toBe(true);
+    expect(result.isValid).toBe(false);
+    expect(result.validationIssues).toContain("Add at least one active Theme Studio content slot.");
     const validation = validateGraph(result.graph);
     expect(validation.ok).toBe(true);
 
-    const draftNode = result.graph.nodes.find((n) => n.type === "action.create_draft");
-    expect(draftNode).toBeDefined();
+  });
+
+  it("fails closed while video output has no production renderer", () => {
+    const result = compileThemeRecipe({
+      page: mockPage,
+      sources: mockSources,
+      slots: [{
+        id: "slot_video",
+        label: "Daily reel",
+        priority: 0,
+        format: {
+          slug: "vertical-video",
+          name: "Vertical video",
+          platform: "instagram",
+          mediaType: "video",
+        },
+      }],
+    });
+    expect(result.isValid).toBe(false);
+    expect(result.validationIssues).toContain("Remove video slots until a production MP4 renderer is configured.");
+  });
+
+  it("refuses activation when an active slot has no matching publishing account", () => {
+    const result = compileThemeRecipe({
+      page: { ...mockPage, connectedPlatforms: ["x"] },
+      sources: mockSources,
+      slots: mockSlots,
+    });
+
+    expect(result.isValid).toBe(false);
+    expect(result.validationIssues).toContain("Select an active instagram publishing account.");
   });
 });

@@ -1,6 +1,28 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as React from "react";
 import { render, screen } from "@testing-library/react";
+
+const webMcpHarness = vi.hoisted(() => ({ tools: [] as WebMCP.ModelContextTool[] }));
+
+vi.mock("@/app/actions/theme-pages", () => ({
+  activateThemePage: vi.fn(),
+  pauseThemePage: vi.fn(),
+}));
+vi.mock("@/app/actions/theme-slots", () => ({
+  createThemeSlot: vi.fn(), deleteThemeSlot: vi.fn(), reorderThemeSlots: vi.fn(),
+}));
+vi.mock("@/app/actions/theme-sources", () => ({
+  createThemeSource: vi.fn(), deleteThemeSource: vi.fn(), toggleThemeSource: vi.fn(),
+}));
+vi.mock("@/app/actions/dm-rules", () => ({
+  createDmRule: vi.fn(), deleteDmRule: vi.fn(), toggleDmRule: vi.fn(),
+}));
+vi.mock("@/hooks/use-webmcp-tools", () => ({
+  useWebMcpTools: (tools: WebMCP.ModelContextTool[]) => {
+    webMcpHarness.tools = tools;
+    return true;
+  },
+}));
 import { ThemePageHeader } from "@/components/theme-studio/ThemePageHeader";
 import { DailyMixScheduler } from "@/components/theme-studio/DailyMixScheduler";
 import { SourcesManager } from "@/components/theme-studio/SourcesManager";
@@ -26,6 +48,11 @@ describe("Theme Studio UI Components", () => {
     expect(screen.getByText("Daily Mix")).toBeDefined();
     expect(screen.getByText("Templates")).toBeDefined();
     expect(screen.getByText("Preview Day")).toBeDefined();
+    expect(screen.getByText("WebMCP ready")).toBeDefined();
+    expect(webMcpHarness.tools.map((tool) => tool.name)).toEqual([
+      "theme_studio_inspect_page",
+      "theme_studio_check_readiness",
+    ]);
   });
 
   it("renders DailyMixScheduler with initial slots", () => {
@@ -148,4 +175,3 @@ describe("Theme Studio UI Components", () => {
     expect(screen.getByText(/Simulate a Full Day's Production/)).toBeDefined();
   });
 });
-

@@ -2,7 +2,7 @@
 
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { themeSlots, themePages, themeContentFormats } from "@/lib/db/schema";
+import { themeSlots, themePages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 
 export interface CreateThemeSlotInput {
@@ -68,6 +68,20 @@ export async function createThemeSlot(data: CreateThemeSlotInput) {
     if (!format) {
       return { error: "Content format not found" };
     }
+    if (format.mediaType === "video") {
+      return { error: "Video slots require the production MP4 renderer, which is not configured yet" };
+    }
+    if (data.overrideTemplateId) {
+      const template = await db.query.themeVisualTemplates.findFirst({
+        where: and(
+          eq(themeVisualTemplates.id, data.overrideTemplateId),
+          eq(themeVisualTemplates.tenantId, tenantId),
+          eq(themeVisualTemplates.formatId, data.formatId),
+        ),
+        columns: { id: true },
+      });
+      if (!template) return { error: "Template is not available for this content format" };
+    }
 
     const existingSlots = await db.query.themeSlots.findMany({
       where: and(eq(themeSlots.themePageId, data.themePageId), eq(themeSlots.tenantId, tenantId)),
@@ -97,6 +111,30 @@ export async function createThemeSlot(data: CreateThemeSlotInput) {
 export async function updateThemeSlot(id: string, data: UpdateThemeSlotInput) {
   try {
     const tenantId = await getActiveTenantId();
+    const existing = await db.query.themeSlots.findFirst({
+      where: and(eq(themeSlots.id, id), eq(themeSlots.tenantId, tenantId)),
+    });
+    if (!existing) return { error: "Theme slot not found" };
+    const formatId = data.formatId ?? existing.formatId;
+    const format = await db.query.themeContentFormats.findFirst({
+      where: and(eq(themeContentFormats.id, formatId), eq(themeContentFormats.tenantId, tenantId)),
+      columns: { id: true, mediaType: true },
+    });
+    if (!format) return { error: "Content format not found" };
+    if (format.mediaType === "video") {
+      return { error: "Video slots require the production MP4 renderer, which is not configured yet" };
+    }
+    if (data.overrideTemplateId) {
+      const template = await db.query.themeVisualTemplates.findFirst({
+        where: and(
+          eq(themeVisualTemplates.id, data.overrideTemplateId),
+          eq(themeVisualTemplates.tenantId, tenantId),
+          eq(themeVisualTemplates.formatId, formatId),
+        ),
+        columns: { id: true },
+      });
+      if (!template) return { error: "Template is not available for this content format" };
+    }
 
     const [updated] = await db.update(themeSlots)
       .set({

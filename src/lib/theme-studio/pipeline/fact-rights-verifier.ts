@@ -50,7 +50,7 @@ export function verifyRightsAndProvenance(check: VerificationPolicyCheck): Verif
     }
     attributionRequired = ["cc_by", "cc_by_sa"].includes(rightsCategory);
   } else if (policy === "moderate") {
-    rightsPassed = MODERATE_ALLOWED_RIGHTS.has(rightsCategory) || rightsCategory === "unknown";
+    rightsPassed = MODERATE_ALLOWED_RIGHTS.has(rightsCategory);
     if (!rightsPassed) {
       violations.push(`Rights category "${rightsCategory}" is restricted.`);
     }

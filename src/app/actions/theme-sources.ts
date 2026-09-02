@@ -8,7 +8,7 @@ import { eq, and, desc } from "drizzle-orm";
 export interface CreateThemeSourceInput {
   themePageId: string;
   name: string;
-  sourceType: 'rss' | 'http' | 'reddit' | 'api';
+  sourceType: 'rss' | 'http' | 'reddit';
   url: string;
   pollIntervalMinutes?: number;
   freshnessWindowHours?: number;
@@ -19,7 +19,7 @@ export interface CreateThemeSourceInput {
 
 export interface UpdateThemeSourceInput {
   name?: string;
-  sourceType?: 'rss' | 'http' | 'reddit' | 'api';
+  sourceType?: 'rss' | 'http' | 'reddit';
   url?: string;
   pollIntervalMinutes?: number;
   freshnessWindowHours?: number;
@@ -27,6 +27,16 @@ export interface UpdateThemeSourceInput {
   langFilter?: string;
   rightsCategory?: string;
   isActive?: boolean;
+}
+
+function validSourceLocation(type: "rss" | "http" | "reddit", value: string): boolean {
+  if (type === "reddit" && /^(?:r\/)?[A-Za-z0-9_]{2,21}$/.test(value)) return true;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export async function getThemeSources(themePageId: string) {
@@ -53,6 +63,10 @@ export async function createThemeSource(data: CreateThemeSourceInput) {
     if (!data.url || !data.url.trim()) {
       return { error: "Source URL is required" };
     }
+    if (!['rss', 'http', 'reddit'].includes(data.sourceType)) return { error: "Unsupported source type" };
+    if (!validSourceLocation(data.sourceType, data.url.trim())) return { error: "Use an HTTPS URL or a valid subreddit name" };
+    if (data.pollIntervalMinutes !== undefined && (data.pollIntervalMinutes < 5 || data.pollIntervalMinutes > 10080)) return { error: "Poll interval must be between 5 minutes and 7 days" };
+    if (data.freshnessWindowHours !== undefined && (data.freshnessWindowHours < 1 || data.freshnessWindowHours > 720)) return { error: "Freshness window must be between 1 and 720 hours" };
 
     // Verify page belongs to tenant
     const page = await db.query.themePages.findFirst({
@@ -86,6 +100,18 @@ export async function createThemeSource(data: CreateThemeSourceInput) {
 export async function updateThemeSource(id: string, data: UpdateThemeSourceInput) {
   try {
     const tenantId = await getActiveTenantId();
+    if (data.sourceType !== undefined && !['rss', 'http', 'reddit'].includes(data.sourceType)) return { error: "Unsupported source type" };
+    if (data.url !== undefined || data.sourceType !== undefined) {
+      const existing = await db.query.themeSources.findFirst({
+        where: and(eq(themeSources.id, id), eq(themeSources.tenantId, tenantId)),
+      });
+      if (!existing) return { error: "Theme source not found" };
+      const type = data.sourceType ?? existing.sourceType as "rss" | "http" | "reddit";
+      const url = data.url?.trim() ?? existing.url;
+      if (!validSourceLocation(type, url)) return { error: "Use an HTTPS URL or a valid subreddit name" };
+    }
+    if (data.pollIntervalMinutes !== undefined && (data.pollIntervalMinutes < 5 || data.pollIntervalMinutes > 10080)) return { error: "Poll interval must be between 5 minutes and 7 days" };
+    if (data.freshnessWindowHours !== undefined && (data.freshnessWindowHours < 1 || data.freshnessWindowHours > 720)) return { error: "Freshness window must be between 1 and 720 hours" };
 
     const [updated] = await db.update(themeSources)
       .set({
@@ -143,7 +169,7 @@ export async function toggleThemeSource(id: string) {
         isActive: !existing.isActive,
         updatedAt: new Date(),
       })
-      .where(eq(themeSources.id, id))
+      .where(and(eq(themeSources.id, id), eq(themeSources.tenantId, tenantId)))
       .returning();
 
     return { source: updated };

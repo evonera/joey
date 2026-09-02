@@ -11,8 +11,7 @@ import {
   IconCheck, 
   IconClock, 
   IconLoader2,
-  IconShieldCheck,
-  IconAlertTriangle
+  IconShieldCheck
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 
@@ -60,16 +59,6 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
         const isVideo = slot.format?.mediaType === "video";
         const isCarousel = slot.format?.mediaType === "carousel";
 
-        const assignedSources = sources.length > 0 
-          ? sources.slice(index % sources.length, (index % sources.length) + 2)
-          : [];
-        const sourceNames = assignedSources.map((s) => s.name);
-        const allowedCategories = ["owned", "public_domain", "cc_by", "cc_by_sa", "commercial_license"];
-        const isCompliant = assignedSources.length > 0 && assignedSources.every((s) => allowedCategories.includes(s.rightsCategory));
-        const rightsSummary = assignedSources.length > 0 
-          ? Array.from(new Set(assignedSources.map((s) => s.rightsCategory || "unverified"))).join(", ")
-          : "unverified";
-
         return {
           id: `sim_pkg_${index + 1}`,
           slotLabel: slot.label || slot.format?.name || `Slot #${index + 1}`,
@@ -81,10 +70,11 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
             : "Breaking Analysis: Strategic Moves Behind Recent Market Shifts",
           caption: `🔥 Essential update for ${themePage.niche || "enthusiasts"}.\n\nSwipe through for the breakdown. What's your take on this?\n\nComment 'GUIDE' to receive the full report in your DMs!\n\n#${(themePage.niche || "daily").replace(/\s+/g, "")} #updates #insights`,
           provenance: {
-            sourcesUsed: sourceNames,
-            rightsVerified: rightsSummary,
-            confidenceScore: assignedSources.length > 0 ? (isCompliant ? 0.95 : 0.45) : 0.0,
-            isCompliant,
+            sourcesUsed: sources.slice(0, 2).map((s) => s.name),
+            rightsCategories: [...new Set(sources.slice(0, 2).map((s) => s.rightsCategory))],
+            isVerified: sources.length > 0 && sources.slice(0, 2).every((s) =>
+              ["owned", "generated", "public_domain", "cc_by", "cc_by_sa", "commercial_license"].includes(s.rightsCategory)
+            ),
           },
           slides: isCarousel
             ? [
@@ -101,7 +91,7 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
       setSimulatedPackages(mockPackages);
       setSimulating(false);
       setHasRun(true);
-      toast.success("Simulation complete! 24-hour mix generated.");
+      toast.success("Mock day preview generated");
     }, 1200);
   }
 
@@ -111,7 +101,7 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
         <div>
           <h2 className="text-lg font-semibold tracking-tight">"Preview Day" Simulation</h2>
           <p className="text-sm text-muted-foreground">
-            Test your recipe against mock and live data to preview what tomorrow's batch will look like.
+            Preview tomorrow&apos;s layout using clearly labeled mock content. This does not fetch or verify live stories.
           </p>
         </div>
         <button
@@ -150,36 +140,20 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
         </div>
       ) : (
         <div className="space-y-6">
-          {(() => {
-            const allCompliant = simulatedPackages.length > 0 && simulatedPackages.every((p) => p.provenance.isCompliant);
-            return (
-              <div
-                className={`flex items-center justify-between p-4 rounded-xl text-xs border ${
-                  allCompliant
-                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300"
-                    : "bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-300"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  {allCompliant ? (
-                    <IconCheck className="w-4 h-4 shrink-0 font-bold" />
-                  ) : (
-                    <IconAlertTriangle className="w-4 h-4 shrink-0 font-bold" />
-                  )}
-                  <span>
-                    Simulated <strong>{simulatedPackages.length} packages</strong> across {sources.length} active feeds.{" "}
-                    {allCompliant ? "All rights verified." : "Some packages require license/rights review."}
-                  </span>
-                </div>
-                <button
-                  onClick={handleSimulate}
-                  className="underline hover:no-underline font-semibold"
-                >
-                  Re-run
-                </button>
-              </div>
-            );
-          })()}
+          <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 p-4 rounded-xl text-xs">
+            <div className="flex items-center gap-2">
+              <IconCheck className="w-4 h-4 shrink-0 font-bold" />
+              <span>
+                Simulated <strong>{simulatedPackages.length} packages</strong> across {sources.length} active feeds. This preview does not publish or certify factual claims.
+              </span>
+            </div>
+            <button
+              onClick={handleSimulate}
+              className="underline hover:no-underline font-semibold"
+            >
+              Re-run
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {simulatedPackages.map((pkg, idx) => (
@@ -192,15 +166,9 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary">
                       Slot #{idx + 1} · {pkg.slotLabel}
                     </span>
-                    {pkg.provenance.isCompliant ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                        <IconShieldCheck className="w-3.5 h-3.5" /> Rights Verified ({pkg.provenance.rightsVerified.toUpperCase()})
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                        <IconAlertTriangle className="w-3.5 h-3.5" /> Rights Review Needed ({pkg.provenance.rightsVerified.toUpperCase()})
-                      </span>
-                    )}
+                    <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${pkg.provenance.isVerified ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                      <IconShieldCheck className="w-3.5 h-3.5" /> {pkg.provenance.isVerified ? "Source rights declared" : "Rights review required"}
+                    </span>
                   </div>
 
                   <h3 className="font-bold text-base leading-snug">{pkg.title}</h3>
@@ -221,10 +189,8 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
                 </div>
 
                 <div className="pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Sources: {pkg.provenance.sourcesUsed.length > 0 ? pkg.provenance.sourcesUsed.join(", ") : "None assigned"}</span>
-                  <span className={`font-semibold ${pkg.provenance.isCompliant ? "text-primary" : "text-amber-600 dark:text-amber-400"}`}>
-                    {pkg.provenance.isCompliant ? "Ready for Approval" : "Needs Rights Review"}
-                  </span>
+                  <span>Sources: {pkg.provenance.sourcesUsed.join(", ")}</span>
+                  <span className="font-semibold text-primary">Mock preview only</span>
                 </div>
               </div>
             ))}

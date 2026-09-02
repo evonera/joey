@@ -2,8 +2,9 @@
 
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { themePages, themeSources, themeSlots, themeVisualTemplates, contentPackages } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
+import { eq, and, desc, like, inArray } from "drizzle-orm";
+import { syncThemePageFlow } from "@/lib/flows/recipe-compiler";
 
 export interface CreateThemePageInput {
   name: string;
@@ -23,7 +24,43 @@ export interface UpdateThemePageInput {
   brandKit?: Record<string, unknown>;
   connectedAccounts?: string[];
   defaultRightsPolicy?: string;
-  status?: string;
+}
+
+function normalizeText(value: string | undefined, maxLength: number): string | null {
+  const normalized = value?.trim() || "";
+  if (normalized.length > maxLength) throw new Error(`Text must be ${maxLength} characters or fewer`);
+  return normalized || null;
+}
+
+function sanitizeBrandKit(value: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!value) return null;
+  const color = (key: string, fallback: string) => {
+    const candidate = value[key];
+    return typeof candidate === "string" && /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : fallback;
+  };
+  return {
+    primaryColor: color("primaryColor", "#0f172a"),
+    accentColor: color("accentColor", "#38bdf8"),
+    watermark: normalizeText(typeof value.watermark === "string" ? value.watermark : undefined, 80),
+  };
+}
+
+async function validateConnectedAccounts(tenantId: string, accountIds: string[] | undefined): Promise<string[]> {
+  const uniqueIds = [...new Set(accountIds || [])];
+  const ownedAccounts = uniqueIds.length === 0 ? [] : await db.query.socialAccounts.findMany({
+    where: and(eq(socialAccounts.tenantId, tenantId), inArray(socialAccounts.id, uniqueIds)),
+    columns: { id: true },
+  });
+  if (ownedAccounts.length !== uniqueIds.length) throw new Error("One or more publishing accounts are unavailable");
+  return uniqueIds;
+}
+
+function safeMutationError(error: unknown, fallback: string): string {
+  if (error instanceof Error && (
+    /^Text must be \d+ characters or fewer$/.test(error.message)
+    || error.message === "One or more publishing accounts are unavailable"
+  )) return error.message;
+  return fallback;
 }
 
 export async function getThemePages() {
@@ -64,18 +101,38 @@ export async function getThemePageById(id: string) {
       where: and(eq(themeVisualTemplates.themePageId, id), eq(themeVisualTemplates.tenantId, tenantId)),
     });
 
+    const formats = await db.query.themeContentFormats.findMany({
+      where: eq(themeContentFormats.tenantId, tenantId),
+      columns: { id: true, platform: true },
+    });
+
     const recentPackages = await db.query.contentPackages.findMany({
       where: and(eq(contentPackages.themePageId, id), eq(contentPackages.tenantId, tenantId)),
       orderBy: [desc(contentPackages.createdAt)],
       limit: 10,
     });
+    const selectedAccountIds = Array.isArray(page.connectedAccounts)
+      ? page.connectedAccounts.filter((accountId): accountId is string => typeof accountId === "string")
+      : [];
+    const publishingAccounts = selectedAccountIds.length > 0
+      ? await db.query.socialAccounts.findMany({
+          where: and(
+            eq(socialAccounts.tenantId, tenantId),
+            eq(socialAccounts.isActive, true),
+            inArray(socialAccounts.id, selectedAccountIds),
+          ),
+          columns: { id: true, platform: true },
+        })
+      : [];
 
     return {
       page,
       sources,
       slots,
       templates,
+      formats,
       recentPackages,
+      publishingAccounts,
     };
   } catch (error: any) {
     console.error("Failed to fetch theme page details:", error);
@@ -89,15 +146,21 @@ export async function createThemePage(data: CreateThemePageInput) {
     if (!data.name || !data.name.trim()) {
       return { error: "Page name is required" };
     }
+    const name = data.name.trim();
+    if (name.length > 120) return { error: "Page name must be 120 characters or fewer" };
+    if (data.defaultRightsPolicy && !["strict", "moderate", "permissive"].includes(data.defaultRightsPolicy)) {
+      return { error: "Invalid rights policy" };
+    }
+    const connectedAccounts = await validateConnectedAccounts(tenantId, data.connectedAccounts);
 
     const [page] = await db.insert(themePages).values({
       tenantId,
-      name: data.name.trim(),
-      niche: data.niche?.trim() || null,
-      audience: data.audience?.trim() || null,
-      voice: data.voice?.trim() || null,
-      brandKit: data.brandKit || null,
-      connectedAccounts: data.connectedAccounts || [],
+      name,
+      niche: normalizeText(data.niche, 240),
+      audience: normalizeText(data.audience, 500),
+      voice: normalizeText(data.voice, 2_000),
+      brandKit: sanitizeBrandKit(data.brandKit),
+      connectedAccounts,
       defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
       status: 'draft',
     }).returning();
@@ -105,24 +168,32 @@ export async function createThemePage(data: CreateThemePageInput) {
     return { page };
   } catch (error: any) {
     console.error("Failed to create theme page:", error);
-    return { error: "Failed to create theme page" };
+    return { error: safeMutationError(error, "Failed to create theme page") };
   }
 }
 
 export async function updateThemePage(id: string, data: UpdateThemePageInput) {
   try {
     const tenantId = await getActiveTenantId();
+    if (data.defaultRightsPolicy !== undefined && !["strict", "moderate", "permissive"].includes(data.defaultRightsPolicy)) {
+      return { error: "Invalid rights policy" };
+    }
+    if (data.connectedAccounts !== undefined) {
+      data = { ...data, connectedAccounts: await validateConnectedAccounts(tenantId, data.connectedAccounts) };
+    }
+    if (data.name !== undefined && (!data.name.trim() || data.name.trim().length > 120)) {
+      return { error: "Page name must contain 1-120 characters" };
+    }
 
     const [updated] = await db.update(themePages)
       .set({
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
-        ...(data.niche !== undefined ? { niche: data.niche?.trim() || null } : {}),
-        ...(data.audience !== undefined ? { audience: data.audience?.trim() || null } : {}),
-        ...(data.voice !== undefined ? { voice: data.voice?.trim() || null } : {}),
-        ...(data.brandKit !== undefined ? { brandKit: data.brandKit } : {}),
+        ...(data.niche !== undefined ? { niche: normalizeText(data.niche, 240) } : {}),
+        ...(data.audience !== undefined ? { audience: normalizeText(data.audience, 500) } : {}),
+        ...(data.voice !== undefined ? { voice: normalizeText(data.voice, 2_000) } : {}),
+        ...(data.brandKit !== undefined ? { brandKit: sanitizeBrandKit(data.brandKit) } : {}),
         ...(data.connectedAccounts !== undefined ? { connectedAccounts: data.connectedAccounts } : {}),
         ...(data.defaultRightsPolicy !== undefined ? { defaultRightsPolicy: data.defaultRightsPolicy } : {}),
-        ...(data.status !== undefined ? { status: data.status } : {}),
         updatedAt: new Date(),
       })
       .where(and(eq(themePages.id, id), eq(themePages.tenantId, tenantId)))
@@ -135,7 +206,7 @@ export async function updateThemePage(id: string, data: UpdateThemePageInput) {
     return { page: updated };
   } catch (error: any) {
     console.error("Failed to update theme page:", error);
-    return { error: "Failed to update theme page" };
+    return { error: safeMutationError(error, "Failed to update theme page") };
   }
 }
 
@@ -155,10 +226,17 @@ export async function deleteThemePage(id: string) {
 export async function activateThemePage(id: string) {
   try {
     const tenantId = await getActiveTenantId();
+    const compilation = await syncThemePageFlow(tenantId, id);
+    if (!compilation.compiled.isValid) {
+      return { error: `Theme recipe is invalid: ${compilation.compiled.validationIssues.join("; ")}` };
+    }
+    if (!compilation.flow) {
+      return { error: "Theme recipe could not be compiled" };
+    }
+
     const [updated] = await db.update(themePages)
       .set({
         status: 'active',
-        recipeRevision: db.query ? undefined : undefined, // bump revision
         updatedAt: new Date(),
       })
       .where(and(eq(themePages.id, id), eq(themePages.tenantId, tenantId)))
@@ -167,6 +245,10 @@ export async function activateThemePage(id: string) {
     if (!updated) {
       return { error: "Theme page not found" };
     }
+
+    await db.update(flows)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(and(eq(flows.id, compilation.flow.id), eq(flows.tenantId, tenantId)));
 
     return { page: updated };
   } catch (error: any) {
@@ -189,6 +271,13 @@ export async function pauseThemePage(id: string) {
     if (!updated) {
       return { error: "Theme page not found" };
     }
+
+    await db.update(flows)
+      .set({ status: "paused", updatedAt: new Date() })
+      .where(and(
+        eq(flows.tenantId, tenantId),
+        like(flows.description, `[Theme Studio:${id}]%`),
+      ));
 
     return { page: updated };
   } catch (error: any) {

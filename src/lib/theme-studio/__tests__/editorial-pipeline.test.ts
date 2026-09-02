@@ -5,7 +5,7 @@ import {
   normalizeContentBody, 
   hashContentBody 
 } from "@/lib/theme-studio/pipeline/deduplicator";
-import { parseRssXml } from "@/lib/theme-studio/pipeline/source-poller";
+import { fallbackItemUrl, parseRssXml } from "@/lib/theme-studio/pipeline/source-poller";
 import { verifyRightsAndProvenance } from "@/lib/theme-studio/pipeline/fact-rights-verifier";
 import { calculateTopicOverlap } from "@/lib/theme-studio/pipeline/story-clusterer";
 
@@ -75,6 +75,16 @@ describe("Theme Studio Editorial Pipeline", () => {
       expect(norm1).not.toBe(norm2);
       expect(hashCanonicalUrl(parsed1.toString())).not.toBe(hashCanonicalUrl(parsed2.toString()));
     });
+
+    it("gives URL-less HTTP feed rows stable, distinct identities", () => {
+      const endpoint = "https://api.example.com/v1/feed?locale=en#latest";
+      const first = fallbackItemUrl(endpoint, { id: "row-1" }, "First", "Body");
+      const second = fallbackItemUrl(endpoint, { id: "row-2" }, "Second", "Body");
+
+      expect(first).toBe("https://api.example.com/v1/feed?locale=en&item_id=row-1");
+      expect(second).toBe("https://api.example.com/v1/feed?locale=en&item_id=row-2");
+      expect(hashCanonicalUrl(first!)).not.toBe(hashCanonicalUrl(second!));
+    });
   });
 
   describe("RSS Parser", () => {
@@ -99,6 +109,11 @@ describe("Theme Studio Editorial Pipeline", () => {
       expect(items[0].url).toBe("https://example.com/nba/1");
       expect(items[0].body).toBe("Full game recap and stats breakdown.");
       expect(items[0].rightsCategory).toBe("cc_by");
+    });
+
+    it("does not invent a publication timestamp when a feed omits one", () => {
+      const items = parseRssXml("<rss><channel><item><title>Undated</title><link>https://example.com/undated</link></item></channel></rss>");
+      expect(items[0].publishedAt).toBeUndefined();
     });
   });
 

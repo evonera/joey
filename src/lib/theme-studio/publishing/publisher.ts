@@ -1,230 +1,237 @@
-import { db } from "@/lib/db";
-import { contentPackages, themePages, themeContentFormats, socialAccounts, apiKeys } from "@/lib/db/schema";
-import { eq, and, or } from "drizzle-orm";
-import { decrypt } from "@/lib/crypto";
-import { adaptPackageForPlatform } from "./variant-adapter";
-import { InstagramProvider } from "./providers/instagram-provider";
-import { TikTokProvider } from "./providers/tiktok-provider";
-import { XProvider } from "./providers/x-provider";
-import type { IPlatformProvider } from "./platform-provider";
+import { and, eq, inArray, lt, or } from "drizzle-orm";
 
-export interface PublishPackageResult {
-  packageId: string;
-  status: "published" | "failed";
-  publishedPostId?: string;
+import { db } from "@/lib/db";
+import {
+  contentPackages,
+  socialAccounts,
+  themeContentFormats,
+  themePages,
+} from "@/lib/db/schema";
+import { getZernioClientForTenant } from "@/lib/publisher-core";
+
+import { adaptPackageForPlatform } from "./variant-adapter";
+
+export interface PublishContentPackageResult {
+  success: boolean;
+  status: "publishing" | "published" | "failed";
+  zernioPostId?: string;
   publishedUrl?: string;
   error?: string;
 }
 
-const PROVIDERS: Record<string, IPlatformProvider> = {
-  instagram: new InstagramProvider(),
-  tiktok: new TikTokProvider(),
-  x: new XProvider(),
-  twitter: new XProvider(),
-};
+function zernioPlatform(platform: string): string {
+  return platform === "x" ? "twitter" : platform;
+}
+
+function isPublicHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+async function failPackage(
+  packageId: string,
+  tenantId: string,
+  message: string,
+): Promise<PublishContentPackageResult> {
+  await db
+    .update(contentPackages)
+    .set({ status: "failed", error: message, updatedAt: new Date() })
+    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
+
+  return { success: false, status: "failed", error: message };
+}
 
 /**
- * Executes the 3-step async publishing pipeline for a content package.
+ * Publishes an approved Theme Studio package through the tenant's Zernio
+ * connection. The package ID is also used as Zernio's idempotency key so a
+ * retry cannot create a second logical post.
  */
 export async function publishContentPackage(
   packageId: string,
-  credentials?: { accountId: string; accessToken: string }
-): Promise<PublishPackageResult> {
+  tenantId: string,
+): Promise<PublishContentPackageResult> {
   const pkg = await db.query.contentPackages.findFirst({
-    where: eq(contentPackages.id, packageId),
+    where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)),
   });
-  if (!pkg) throw new Error("Content package not found");
+  if (!pkg) {
+    return { success: false, status: "failed", error: "Content package not found" };
+  }
 
-  const format = await db.query.themeContentFormats.findFirst({
-    where: eq(themeContentFormats.id, pkg.formatId),
+  const [page, format] = await Promise.all([
+    db.query.themePages.findFirst({
+      where: and(eq(themePages.id, pkg.themePageId), eq(themePages.tenantId, tenantId)),
+    }),
+    db.query.themeContentFormats.findFirst({
+      where: and(eq(themeContentFormats.id, pkg.formatId), eq(themeContentFormats.tenantId, tenantId)),
+    }),
+  ]);
+
+  if (!page || !format) {
+    return failPackage(packageId, tenantId, "Theme page or content format not found");
+  }
+
+  const selectedAccountIds = Array.isArray(page.connectedAccounts)
+    ? page.connectedAccounts.filter((id): id is string => typeof id === "string")
+    : [];
+  const priorMetrics = pkg.metrics && typeof pkg.metrics === "object"
+    ? pkg.metrics as Record<string, unknown>
+    : {};
+  const priorAccountId = typeof priorMetrics.publishAccountId === "string"
+    ? priorMetrics.publishAccountId
+    : undefined;
+  if (selectedAccountIds.length === 0 && !priorAccountId) {
+    return failPackage(packageId, tenantId, "Select a connected social account before publishing");
+  }
+
+  const accounts = await db.query.socialAccounts.findMany({
+    where: and(
+      eq(socialAccounts.tenantId, tenantId),
+      inArray(socialAccounts.id, priorAccountId
+        ? [...new Set([...selectedAccountIds, priorAccountId])]
+        : selectedAccountIds),
+    ),
   });
-
-  const platform = (format?.platform || "instagram").toLowerCase();
-  const provider = PROVIDERS[platform] || PROVIDERS.instagram;
+  const targetPlatform = zernioPlatform(format.platform);
+  const account = (priorAccountId ? accounts.find((candidate) => candidate.id === priorAccountId) : undefined)
+    ?? accounts.find(
+      (candidate) => selectedAccountIds.includes(candidate.id)
+        && candidate.isActive !== false
+        && zernioPlatform(candidate.platform) === targetPlatform,
+    );
+  if (!account) {
+    return failPackage(
+      packageId,
+      tenantId,
+      `No selected, active ${format.platform} account is connected`,
+    );
+  }
 
   const variant = adaptPackageForPlatform(
     pkg,
-    platform as any,
-    (format?.mediaType as any) || "image"
+    format.platform as "instagram" | "tiktok" | "x",
+    format.mediaType as "image" | "carousel" | "video",
   );
-
-  // Validate limits
-  const validation = provider.validateContent(
-    variant.adaptedCaption,
-    variant.mediaUrls,
-    variant.mediaType
-  );
-
-  if (!validation.valid) {
-    const errorMsg = `Platform validation failed: ${validation.errors.join("; ")}`;
-    await db
-      .update(contentPackages)
-      .set({ status: "failed", error: errorMsg, updatedAt: new Date() })
-      .where(eq(contentPackages.id, packageId));
-
-    return {
-      packageId,
-      status: "failed",
-      error: errorMsg,
-    };
+  if (variant.mediaUrls.length === 0 || variant.mediaUrls.some((url) => !isPublicHttpsUrl(url))) {
+    return failPackage(packageId, tenantId, "Publishing requires publicly reachable HTTPS media");
+  }
+  if (format.platform === "tiktok" && variant.mediaType !== "video") {
+    return failPackage(packageId, tenantId, "TikTok publishing requires a rendered video asset");
   }
 
-  // Set status to publishing
-  await db
+  const claimTime = new Date();
+  const stalePublishingCutoff = new Date(claimTime.getTime() - 10 * 60_000);
+  const claimed = await db
     .update(contentPackages)
-    .set({ status: "publishing", updatedAt: new Date() })
-    .where(eq(contentPackages.id, packageId));
-
-  let authAccount: { accountId: string; platform: string; accessToken: string };
-
-  if (credentials?.accountId && credentials?.accessToken) {
-    authAccount = {
-      accountId: credentials.accountId,
-      platform,
-      accessToken: credentials.accessToken,
-    };
-  } else {
-    const page = await db.query.themePages.findFirst({
-      where: eq(themePages.id, pkg.themePageId),
-    });
-    const tenantId = page?.tenantId || pkg.tenantId;
-
-    const account = await db.query.socialAccounts.findFirst({
-      where: and(
-        eq(socialAccounts.tenantId, tenantId),
-        eq(socialAccounts.platform, platform),
-        eq(socialAccounts.isActive, true)
+    .set({
+      status: "publishing",
+      error: null,
+      metrics: {
+        ...priorMetrics,
+        publishAccountId: account.id,
+        publishRequestId: pkg.id,
+        publishAttemptAt: claimTime.toISOString(),
+      },
+      updatedAt: claimTime,
+    })
+    .where(
+      and(
+        eq(contentPackages.id, packageId),
+        eq(contentPackages.tenantId, tenantId),
+        or(
+          inArray(contentPackages.status, ["approved", "failed"]),
+          and(eq(contentPackages.status, "publishing"), lt(contentPackages.updatedAt, stalePublishingCutoff)),
+        ),
       ),
-    });
-
-    if (!account) {
-      const errorMsg = `No connected ${platform} account found for tenant. Please connect an account in Settings.`;
-      await db
-        .update(contentPackages)
-        .set({ status: "failed", error: errorMsg, updatedAt: new Date() })
-        .where(eq(contentPackages.id, packageId));
-
-      return {
-        packageId,
-        status: "failed",
-        error: errorMsg,
-      };
-    }
-
-    // Resolve platform-specific OAuth access token or platform API credential
-    const keyConditions = [eq(apiKeys.provider, platform)];
-    if (platform === "x") keyConditions.push(eq(apiKeys.provider, "twitter"));
-    if (platform === "instagram") keyConditions.push(eq(apiKeys.provider, "meta"), eq(apiKeys.provider, "facebook"));
-
-    const key = await db.query.apiKeys.findFirst({
-      where: and(
-        eq(apiKeys.tenantId, tenantId),
-        or(...keyConditions),
-        eq(apiKeys.status, "active")
-      ),
-    });
-
-    let token: string | null = null;
-    if (key?.encryptedKey) {
-      try {
-        token = decrypt(key.encryptedKey);
-      } catch {
-        token = key.encryptedKey;
-      }
-    }
-
-    if (!token) {
-      const errorMsg = `No active OAuth access token found for ${platform}. Please authenticate and configure your ${platform} credentials in Settings.`;
-      await db
-        .update(contentPackages)
-        .set({ status: "failed", error: errorMsg, updatedAt: new Date() })
-        .where(eq(contentPackages.id, packageId));
-
-      return {
-        packageId,
-        status: "failed",
-        error: errorMsg,
-      };
-    }
-
-    authAccount = {
-      accountId: account.platformAccountId,
-      platform,
-      accessToken: token,
+    )
+    .returning({ id: contentPackages.id });
+  if (claimed.length === 0) {
+    return {
+      success: false,
+      status: "failed",
+      error: "Package is not approved or is already being published",
     };
   }
 
   try {
-    // Step 1: Create Container
-    const container = await provider.createMediaContainer(
-      authAccount,
-      variant.mediaUrls,
-      variant.mediaType,
-      variant.adaptedCaption
+    const { zernio } = await getZernioClientForTenant(tenantId);
+    const response = await zernio.posts.createPost({
+      headers: { "x-request-id": pkg.id },
+      body: {
+        title: pkg.title,
+        content: variant.adaptedCaption,
+        mediaItems: variant.mediaUrls.map((url) => ({
+          type: variant.mediaType === "video" ? "video" as const : "image" as const,
+          url,
+          altText: variant.mediaType === "video" ? undefined : pkg.title,
+        })),
+        platforms: [{
+          platform: targetPlatform,
+          accountId: account.platformAccountId,
+          customContent: variant.adaptedCaption,
+        }],
+        hashtags: variant.adaptedHashtags,
+        ...(pkg.scheduledFor
+          ? { scheduledFor: pkg.scheduledFor.toISOString() }
+          : { publishNow: true }),
+        metadata: {
+          themePageId: pkg.themePageId,
+          themePackageId: pkg.id,
+        },
+      },
+    });
+
+    const responseData = response.data as (typeof response.data & { existingPost?: NonNullable<typeof response.data>["post"] }) | undefined;
+    let post = responseData?.post ?? responseData?.existingPost;
+    const duplicatePostId = response.error && typeof response.error === "object" && "details" in response.error
+      ? (response.error as { details?: { existingPostId?: string } }).details?.existingPostId
+      : undefined;
+    if (!post && duplicatePostId) {
+      const existing = await zernio.posts.getPost({ path: { postId: duplicatePostId } });
+      post = existing.data?.post;
+    }
+    if (response.error && !post) {
+      const message = typeof response.error === "object" && response.error && "error" in response.error
+        ? String(response.error.error)
+        : "Zernio rejected the post";
+      throw new Error(message);
+    }
+    if (!post?._id) {
+      throw new Error("Zernio did not return a post identifier");
+    }
+
+    const published = post.status === "published";
+    const platformResult = post.platforms?.find(
+      (candidate: { platform?: string; platformPostUrl?: string }) => candidate.platform === targetPlatform,
     );
-    if (container.status === "ERROR") {
-      throw new Error(container.error || "Failed to create media container");
-    }
-
-    // Step 2: Poll Container Status until READY or ERROR
-    let polled = await provider.pollContainerStatus(authAccount, container.containerId);
-    let attempts = 0;
-    const maxAttempts = 20;
-
-    while (polled.status === "IN_PROGRESS" && attempts < maxAttempts) {
-      attempts++;
-      const delayMs = Math.min(500 * attempts, 2000);
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      polled = await provider.pollContainerStatus(authAccount, container.containerId);
-    }
-
-    if (polled.status === "ERROR") {
-      throw new Error(polled.errorMessage || "Media processing failed on platform");
-    }
-
-    if (polled.status !== "READY") {
-      throw new Error(`Media container processing timed out after ${maxAttempts} polling attempts`);
-    }
-
-    // Step 3: Finalize Publish
-    const final = await provider.finalizePublish(
-      authAccount,
-      container.containerId,
-      variant.adaptedCaption
-    );
-    if (!final.success) {
-      throw new Error(final.error || "Failed to finalize post publication");
-    }
-
-    // Update package record
     await db
       .update(contentPackages)
       .set({
-        status: "published",
-        publishedAt: new Date(),
-        publishedPostId: final.publishedPostId,
+        status: published ? "published" : "publishing",
+        publishedPostId: platformResult?.platformPostId ?? post._id,
+        publishedAt: published ? new Date() : null,
+        metrics: {
+          ...priorMetrics,
+          publishAccountId: account.id,
+          publishRequestId: pkg.id,
+          zernioPostId: post._id,
+          ...(platformResult?.platformPostUrl ? { publishedUrl: platformResult.platformPostUrl } : {}),
+        },
         error: null,
         updatedAt: new Date(),
       })
-      .where(eq(contentPackages.id, packageId));
+      .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
 
     return {
-      packageId,
-      status: "published",
-      publishedPostId: final.publishedPostId,
-      publishedUrl: final.publishedUrl,
+      success: true,
+      status: published ? "published" : "publishing",
+      zernioPostId: post._id,
+      publishedUrl: platformResult?.platformPostUrl,
     };
-  } catch (err: any) {
-    const errorMsg = err.message || "Publishing failed";
-    await db
-      .update(contentPackages)
-      .set({ status: "failed", error: errorMsg, updatedAt: new Date() })
-      .where(eq(contentPackages.id, packageId));
-
-    return {
-      packageId,
-      status: "failed",
-      error: errorMsg,
-    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Zernio publishing failed";
+    return failPackage(packageId, tenantId, message);
   }
 }

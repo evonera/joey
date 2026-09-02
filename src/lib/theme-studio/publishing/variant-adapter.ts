@@ -51,14 +51,14 @@ export function adaptPackageForPlatform(
     const topHashtags = rawHashtags.slice(0, 5).join(" ");
     const adaptedCaption = `${pkg.title}\n\nComment below to get the full guide.\n\n${topHashtags}`;
 
-    const isVideoAsset = mediaType === "video" || mediaUrls.some((u) => u.endsWith(".mp4") || u.startsWith("remotion://"));
-
     return {
       platform: "tiktok",
       adaptedCaption,
       adaptedHashtags: rawHashtags.slice(0, 5),
       mediaUrls,
-      mediaType: isVideoAsset ? "video" : mediaType,
+      // Adapting copy cannot turn an image into a video. The publisher rejects
+      // non-video TikTok packages until the video renderer produces an MP4.
+      mediaType,
     };
   }
 

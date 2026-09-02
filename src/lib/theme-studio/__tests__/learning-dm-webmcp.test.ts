@@ -61,9 +61,10 @@ describe("Theme Studio Learning Loop, DM Automation & WebMCP (Phase 6)", () => {
           status: "draft",
           rightsPolicy: "strict",
           connectedAccountCount: 1,
+          connectedPlatforms: ["instagram"],
         },
         sources: [{ id: "source-1", name: "Official feed", sourceType: "rss", rightsCategory: "cc_by", isActive: true }],
-        slots: [{ id: "slot-1", label: "Morning card", cadence: "daily", isActive: true }],
+        slots: [{ id: "slot-1", label: "Morning card", cadence: "daily", isActive: true, platform: "instagram" }],
         packages: [],
       }));
       const toolNames = tools.map((tool) => tool.name);
@@ -77,6 +78,30 @@ describe("Theme Studio Learning Loop, DM Automation & WebMCP (Phase 6)", () => {
         expect(tool.inputSchema).toBeDefined();
         expect(typeof tool.execute).toBe("function");
       }
+    });
+
+    it("reports a selected account on the wrong platform as not ready", async () => {
+      const tools = createThemeStudioWebMcpTools(() => ({
+        page: {
+          id: "page-1",
+          name: "Basketball Daily",
+          niche: "NBA",
+          audience: "Basketball fans",
+          status: "draft",
+          rightsPolicy: "strict",
+          connectedAccountCount: 1,
+          connectedPlatforms: ["x"],
+        },
+        sources: [{ id: "source-1", name: "Official feed", sourceType: "rss", rightsCategory: "owned", isActive: true }],
+        slots: [{ id: "slot-1", label: "Morning card", cadence: "daily", isActive: true, platform: "instagram" }],
+        packages: [],
+      }));
+      const readiness = tools.find((tool) => tool.name === "theme_studio_check_readiness")!;
+      const result = await readiness.execute({}, { signal: new AbortController().signal }) as { content: Array<{ text: string }> };
+      const payload = JSON.parse(result.content[0].text) as { ready: boolean; issues: string[] };
+
+      expect(payload.ready).toBe(false);
+      expect(payload.issues).toContain("Select an active instagram publishing account");
     });
   });
 });

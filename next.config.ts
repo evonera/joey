@@ -18,6 +18,9 @@ const withAnalyze = bundleAnalyzer({
 
 const nextConfig: NextConfig = {
   output: process.env.NEXT_OUTPUT === "export" ? "export" : "standalone",
+  // resvg ships platform-native binaries and must remain a Node server
+  // dependency instead of being bundled into Turbopack ESM chunks.
+  serverExternalPackages: ["@resvg/resvg-js"],
   pageExtensions: ["ts", "tsx", "mdx"],
   async headers() {
     // Turbopack/dev tooling (React refresh, HMR) requires eval; production does not.

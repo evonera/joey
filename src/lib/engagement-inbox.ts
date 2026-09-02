@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   engagementActivities,
@@ -265,53 +265,33 @@ async function dispatchThemeStudioDm(item: typeof engagementItems.$inferSelect):
  * are tenant-scoped and attempt-fenced, so overlapping minute ticks are safe.
  */
 export async function processThemeStudioDmRetries(limit = 25): Promise<{ processed: number }> {
-  try {
-    const now = new Date();
-
-    // Transition abandoned sending leases that reached maximum attempts to terminal failed state
-    await db.update(engagementItems).set({
-      dmDispatchStatus: "failed",
-      dmDispatchLeaseExpiresAt: null,
-      dmDispatchError: "Private reply exceeded maximum retry attempts",
-    }).where(and(
-      eq(engagementItems.dmDispatchStatus, "sending"),
-      gte(engagementItems.dmDispatchAttempts, DM_DISPATCH_MAX_ATTEMPTS),
+  const now = new Date();
+  const candidates = await db.query.engagementItems.findMany({
+    where: and(
+      lt(engagementItems.dmDispatchAttempts, DM_DISPATCH_MAX_ATTEMPTS),
       or(
-        isNull(engagementItems.dmDispatchLeaseExpiresAt),
-        lt(engagementItems.dmDispatchLeaseExpiresAt, now),
-      ),
-    ));
-
-    const candidates = await db.query.engagementItems.findMany({
-      where: and(
-        lt(engagementItems.dmDispatchAttempts, DM_DISPATCH_MAX_ATTEMPTS),
-        or(
-          and(
-            eq(engagementItems.dmDispatchStatus, "failed"),
-            or(
-              isNull(engagementItems.dmDispatchLeaseExpiresAt),
-              lt(engagementItems.dmDispatchLeaseExpiresAt, now),
-            ),
+        and(
+          eq(engagementItems.dmDispatchStatus, "failed"),
+          or(
+            isNull(engagementItems.dmDispatchLeaseExpiresAt),
+            lt(engagementItems.dmDispatchLeaseExpiresAt, now),
           ),
-          and(
-            eq(engagementItems.dmDispatchStatus, "sending"),
-            or(
-              isNull(engagementItems.dmDispatchLeaseExpiresAt),
-              lt(engagementItems.dmDispatchLeaseExpiresAt, now),
-            ),
+        ),
+        and(
+          eq(engagementItems.dmDispatchStatus, "sending"),
+          or(
+            isNull(engagementItems.dmDispatchLeaseExpiresAt),
+            lt(engagementItems.dmDispatchLeaseExpiresAt, now),
           ),
         ),
       ),
-      limit: Math.min(Math.max(limit, 1), 100),
-    });
-    const outcomes = await Promise.allSettled(candidates.map(dispatchThemeStudioDm));
-    return {
-      processed: outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value).length,
-    };
-  } catch (err) {
-    console.error("Theme Studio private reply retry processing failed:", err);
-    return { processed: 0 };
-  }
+    ),
+    limit: Math.min(Math.max(limit, 1), 100),
+  });
+  const outcomes = await Promise.allSettled(candidates.map(dispatchThemeStudioDm));
+  return {
+    processed: outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value).length,
+  };
 }
 
 async function ingestComment(payload: ZernioWebhookPayload, tenantId: string) {

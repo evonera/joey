@@ -1,8 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { renderCardSvg, renderCarouselSlideSvgs } from "@/lib/theme-studio/renderers/static-card-renderer";
 import { generateWordTimestamps, buildVerticalNewsComposition } from "@/lib/theme-studio/renderers/video-renderer";
+import { shouldRetryPackageRender } from "@/lib/theme-studio/pipeline/orchestrator";
 
 describe("Theme Studio Media Renderers (Phase 4)", () => {
+  describe("Render recovery", () => {
+    it("retries transient unrendered packages without retrying completed or unsupported video renders", () => {
+      expect(shouldRetryPackageRender("pending_review", [], { failurePhase: "render_pending" })).toBe(true);
+      expect(shouldRetryPackageRender("pending_review", [], {})).toBe(true);
+      expect(shouldRetryPackageRender("failed", [], { failurePhase: "render" })).toBe(true);
+      expect(shouldRetryPackageRender("failed", [{ url: "https://cdn.example.com/card.png" }], { failurePhase: "render" })).toBe(false);
+      expect(shouldRetryPackageRender("failed", [], { failurePhase: "render_unsupported" })).toBe(false);
+      expect(shouldRetryPackageRender("failed", [], { failurePhase: "publish" })).toBe(false);
+    });
+  });
+
   describe("Static Card Renderer", () => {
     it("renders valid SVG card with custom brand kit and typography", () => {
       const svg = renderCardSvg({

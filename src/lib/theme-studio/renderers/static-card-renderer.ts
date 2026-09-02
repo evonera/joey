@@ -9,6 +9,9 @@ export interface CardRenderOptions {
     textColor?: string;
     watermark?: string;
     fontFamily?: string;
+    titleSize?: number;
+    bodySize?: number;
+    showWatermark?: boolean;
   };
   aspectRatio?: "1:1" | "4:5" | "16:9" | "9:16";
   width?: number;
@@ -29,63 +32,63 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, "&apos;");
 }
 
+function safeColor(value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  return /^(?:#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([\d\s.,%+-]+\)|[a-z]{3,20})$/i.test(trimmed)
+    ? trimmed
+    : fallback;
+}
+
 function splitGraphemes(text: string): string[] {
-  if (typeof Intl !== "undefined" && typeof (Intl as any).Segmenter === "function") {
-    const segmenter = new (Intl as any).Segmenter(undefined, { granularity: "grapheme" });
-    return Array.from(segmenter.segment(text), (s: any) => s.segment);
+  if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(segmenter.segment(text), ({ segment }) => segment);
   }
   return Array.from(text);
 }
 
-function getGraphemeWidth(g: string): number {
-  const code = g.codePointAt(0) || 0;
-  if (
+function graphemeWidth(grapheme: string): number {
+  const code = grapheme.codePointAt(0) || 0;
+  return (
     (code >= 0x1100 && code <= 0x11ff) ||
     (code >= 0x2e80 && code <= 0xa4cf) ||
     (code >= 0xac00 && code <= 0xd7a3) ||
     (code >= 0xf900 && code <= 0xfaff) ||
-    (code >= 0xfe10 && code <= 0xfe19) ||
-    (code >= 0xfe30 && code <= 0xfe6f) ||
-    (code >= 0xff00 && code <= 0xff60) ||
-    (code >= 0xffe0 && code <= 0xffe6) ||
+    (code >= 0xfe10 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xffe6) ||
     (code >= 0x1f000 && code <= 0x1ffff) ||
     (code >= 0x2600 && code <= 0x27ff)
-  ) {
-    return 2;
-  }
-  return 1;
+  ) ? 2 : 1;
 }
 
-function getVisualWidth(text: string): number {
-  const graphemes = splitGraphemes(text);
-  let width = 0;
-  for (const g of graphemes) {
-    width += getGraphemeWidth(g);
-  }
-  return width;
+function visualWidth(text: string): number {
+  return splitGraphemes(text).reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
 }
 
-function sliceByVisualWidth(graphemes: string[], maxWidthUnits: number): { slice: string[]; remainder: string[] } {
+function takeVisualWidth(graphemes: string[], maxWidth: number): { head: string[]; tail: string[] } {
   let width = 0;
-  let splitIndex = 0;
-  while (splitIndex < graphemes.length) {
-    const gw = getGraphemeWidth(graphemes[splitIndex]);
-    if (width + gw > maxWidthUnits && splitIndex > 0) {
-      break;
-    }
-    width += gw;
-    splitIndex++;
+  let index = 0;
+  while (index < graphemes.length) {
+    const nextWidth = graphemeWidth(graphemes[index]);
+    if (index > 0 && width + nextWidth > maxWidth) break;
+    width += nextWidth;
+    index++;
   }
-  return {
-    slice: graphemes.slice(0, splitIndex),
-    remainder: graphemes.slice(splitIndex),
-  };
+  return { head: graphemes.slice(0, index), tail: graphemes.slice(index) };
+}
+
+function clampVisualWidth(text: string, maxWidth: number): string {
+  if (visualWidth(text) <= maxWidth) return text;
+  const ellipsis = "...";
+  const { head } = takeVisualWidth(splitGraphemes(text), Math.max(1, maxWidth - visualWidth(ellipsis)));
+  return `${head.join("")}${ellipsis}`;
 }
 
 /**
- * Wraps text into lines with a maximum visual width, splitting long unbroken tokens to prevent canvas overflow.
+ * Wraps text by approximate visual width without splitting grapheme clusters.
  */
-function wrapText(text: string, maxVisualWidthPerLine: number = 28): string[] {
+function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let currentLine = "";
@@ -93,30 +96,35 @@ function wrapText(text: string, maxVisualWidthPerLine: number = 28): string[] {
   for (const rawWord of words) {
     if (!rawWord) continue;
     let graphemes = splitGraphemes(rawWord);
-
-    while (getVisualWidth(graphemes.join("")) > maxVisualWidthPerLine) {
+    while (visualWidth(graphemes.join("")) > maxCharsPerLine) {
       if (currentLine) {
         lines.push(currentLine);
         currentLine = "";
       }
-      const { slice, remainder } = sliceByVisualWidth(graphemes, maxVisualWidthPerLine);
-      lines.push(slice.join(""));
-      graphemes = remainder;
+      const { head, tail } = takeVisualWidth(graphemes, maxCharsPerLine);
+      lines.push(head.join(""));
+      graphemes = tail;
     }
-
-    const remainingWord = graphemes.join("");
-    if (!remainingWord) continue;
-
-    const candidateLine = currentLine ? currentLine + " " + remainingWord : remainingWord;
-    if (getVisualWidth(candidateLine) <= maxVisualWidthPerLine) {
-      currentLine = candidateLine;
+    const word = graphemes.join("");
+    if (!word) continue;
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    if (visualWidth(candidate) <= maxCharsPerLine) {
+      currentLine = candidate;
     } else {
       if (currentLine) lines.push(currentLine);
-      currentLine = remainingWord;
+      currentLine = word;
     }
   }
   if (currentLine) lines.push(currentLine);
   return lines;
+}
+
+function boundedLines(text: string, maxCharsPerLine: number, maxLines: number): string[] {
+  const lines = wrapText(text, maxCharsPerLine);
+  if (lines.length <= maxLines) return lines;
+  const bounded = lines.slice(0, maxLines);
+  bounded[maxLines - 1] = clampVisualWidth(bounded[maxLines - 1].replace(/[.…]+$/, ""), maxCharsPerLine - 3) + "...";
+  return bounded;
 }
 
 /**
@@ -134,32 +142,30 @@ export function renderCardSvg(options: CardRenderOptions): string {
     totalSlides,
   } = options;
 
-  let width = options.width || 1080;
-  let height = options.height || (aspectRatio === "4:5" ? 1350 : aspectRatio === "16:9" ? 607 : aspectRatio === "9:16" ? 1920 : 1080);
+  const width = options.width || 1080;
+  const height = options.height || (aspectRatio === "4:5" ? 1350 : aspectRatio === "16:9" ? 607 : aspectRatio === "9:16" ? 1920 : 1080);
 
-  const primaryColor = brandKit.primaryColor || "#0f172a";
-  const accentColor = brandKit.accentColor || "#38bdf8";
-  const textColor = brandKit.textColor || "#f8fafc";
+  const primaryColor = safeColor(brandKit.primaryColor, "#0f172a");
+  const accentColor = safeColor(brandKit.accentColor, "#38bdf8");
+  const textColor = safeColor(brandKit.textColor, "#f8fafc");
   const watermark = brandKit.watermark || "@ThemePage";
   const fontFamily = brandKit.fontFamily || "system-ui, -apple-system, sans-serif";
+  const titleFontSize = Math.min(72, Math.max(28, brandKit.titleSize ? brandKit.titleSize * 1.5 : 48));
+  const bodyFontSize = Math.min(40, Math.max(18, brandKit.bodySize ? brandKit.bodySize * 1.5 : 26));
 
-  const rawTitleLines = wrapText(title, 24);
-  const titleLines = rawTitleLines.slice(0, 3);
-  if (rawTitleLines.length > 3 && titleLines[2]) {
-    titleLines[2] = titleLines[2].replace(/\.{3}$/, "") + "...";
-  }
+  const titleLines = boundedLines(title, 24, aspectRatio === "16:9" ? 3 : 6);
+  const bodyLines = wrapText(body, 36).slice(0, 4);
+  const clampedTag = clampVisualWidth(tag.toUpperCase(), 20);
+  const tagBadgeWidth = Math.min(visualWidth(clampedTag) * 14 + 32, 320);
+  const clampedSourceName = sourceName ? clampVisualWidth(sourceName, 30) : undefined;
+  const clampedWatermark = clampVisualWidth(watermark, 32);
 
-  const titleStartY = height * 0.32;
-  const bodyStartY = titleStartY + titleLines.length * 60 + 24;
-
-  const availableBodyHeight = (height - 140) - bodyStartY;
-  const maxBodyLines = Math.max(1, Math.min(4, Math.floor(availableBodyHeight / 42)));
-  const bodyLines = wrapText(body, 36).slice(0, maxBodyLines);
+  const titleStartY = height * 0.38;
+  const titleLineHeight = titleFontSize * 1.25;
+  const bodyLineHeight = bodyFontSize * 1.5;
+  const bodyStartY = titleStartY + titleLines.length * titleLineHeight + 30;
 
   const isCarousel = slideNumber !== undefined && totalSlides !== undefined;
-  const tagGraphemes = splitGraphemes(tag);
-  const clampedTag = tagGraphemes.length > 20 ? `${tagGraphemes.slice(0, 17).join("")}...` : tag;
-  const tagBadgeWidth = Math.min(getVisualWidth(clampedTag) * 13 + 32, 320);
 
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -181,12 +187,12 @@ export function renderCardSvg(options: CardRenderOptions): string {
   <!-- Top Header Tag -->
   <g transform="translate(80, 80)">
     <rect x="0" y="0" width="${tagBadgeWidth}" height="42" rx="21" fill="${escapeXml(accentColor)}" fill-opacity="0.18" stroke="${escapeXml(accentColor)}" stroke-opacity="0.4" stroke-width="2" />
-    <text x="16" y="27" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="16" font-weight="800" letter-spacing="1.5">${escapeXml(clampedTag.toUpperCase())}</text>
+    <text x="16" y="27" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="16" font-weight="800" letter-spacing="1.5">${escapeXml(clampedTag)}</text>
   </g>
 
   ${
-    sourceName
-      ? `<text x="${width - 80}" y="108" text-anchor="end" fill="${escapeXml(textColor)}" fill-opacity="0.65" font-family="${escapeXml(fontFamily)}" font-size="20" font-weight="600">${escapeXml(sourceName)}</text>`
+    clampedSourceName
+      ? `<text x="${width - 80}" y="108" text-anchor="end" fill="${escapeXml(textColor)}" fill-opacity="0.65" font-family="${escapeXml(fontFamily)}" font-size="20" font-weight="600">${escapeXml(clampedSourceName)}</text>`
       : ""
   }
 
@@ -205,7 +211,7 @@ export function renderCardSvg(options: CardRenderOptions): string {
     ${titleLines
       .map(
         (line, idx) =>
-          `<text x="0" y="${idx * 60}" fill="${escapeXml(textColor)}" font-family="${escapeXml(fontFamily)}" font-size="48" font-weight="900" letter-spacing="-0.5">${escapeXml(line)}</text>`
+          `<text x="0" y="${idx * titleLineHeight}" fill="${escapeXml(textColor)}" font-family="${escapeXml(fontFamily)}" font-size="${titleFontSize}" font-weight="900" letter-spacing="-0.5">${escapeXml(line)}</text>`
       )
       .join("\n    ")}
   </g>
@@ -217,19 +223,19 @@ export function renderCardSvg(options: CardRenderOptions): string {
     ${bodyLines
       .map(
         (line, idx) =>
-          `<text x="0" y="${idx * 40}" fill="${escapeXml(textColor)}" fill-opacity="0.85" font-family="${escapeXml(fontFamily)}" font-size="26" font-weight="400" line-height="1.5">${escapeXml(line)}</text>`
+          `<text x="0" y="${idx * bodyLineHeight}" fill="${escapeXml(textColor)}" fill-opacity="0.85" font-family="${escapeXml(fontFamily)}" font-size="${bodyFontSize}" font-weight="400">${escapeXml(line)}</text>`
       )
       .join("\n    ")}
   </g>`
       : ""
   }
 
-  <!-- Footer Watermark -->
+  ${brandKit.showWatermark === false ? "" : `<!-- Footer Watermark -->
   <g transform="translate(80, ${height - 90})">
     <line x1="0" y1="0" x2="${width - 160}" y2="0" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1.5" />
-    <text x="0" y="45" fill="${escapeXml(textColor)}" fill-opacity="0.75" font-family="${escapeXml(fontFamily)}" font-size="22" font-weight="700">${escapeXml(watermark)}</text>
+    <text x="0" y="45" fill="${escapeXml(textColor)}" fill-opacity="0.75" font-family="${escapeXml(fontFamily)}" font-size="22" font-weight="700">${escapeXml(clampedWatermark)}</text>
     <text x="${width - 160}" y="45" text-anchor="end" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="18" font-weight="600">Joey.ai Theme Studio</text>
-  </g>
+  </g>`}
 </svg>`;
 }
 

@@ -1,7 +1,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { getThemePages } from "@/app/actions/theme-pages";
-import { getContentFormats } from "@/app/actions/theme-content-formats";
 import { 
   IconSparkles, 
   IconPlus, 
@@ -12,10 +11,7 @@ import {
 } from "@tabler/icons-react";
 
 export default async function ThemeStudioOverviewPage() {
-  const [pagesRes, formatsRes] = await Promise.all([
-    getThemePages(),
-    getContentFormats(),
-  ]);
+  const pagesRes = await getThemePages();
 
   const pages = pagesRes.pages || [];
 
@@ -50,7 +46,7 @@ export default async function ThemeStudioOverviewPage() {
           </div>
           <h2 className="text-xl font-bold">No Theme Pages Created Yet</h2>
           <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
-            Theme Studio turns raw news and stories into structured daily cards, carousels, and vertical videos with automatic fact attribution and proof-of-rights.
+            Theme Studio turns trusted news and stories into reviewable daily cards and carousels with source attribution and explicit rights gates.
           </p>
           <Link
             href="/theme-studio/new"

@@ -37,5 +37,6 @@ export async function reviewThemePackage(
 }
 
 export async function publishThemePackage(packageId: string) {
-  return publishContentPackage(packageId);
+  const tenantId = await getActiveTenantId();
+  return publishContentPackage(packageId, tenantId);
 }
