@@ -10,9 +10,17 @@ import {
   IconBrandInstagram,
   IconBrandTiktok,
   IconBrandX,
-  IconLoader2
+  IconLoader2,
+  IconBulb,
+  IconCheck,
+  IconX,
 } from "@tabler/icons-react";
 import { createThemeSlot, deleteThemeSlot } from "@/app/actions/theme-slots";
+import {
+  getMixRecommendations,
+  acceptRecommendation,
+  discardRecommendation,
+} from "@/app/actions/mix-recommendations";
 import { toast } from "sonner";
 
 interface SlotItem {
@@ -56,6 +64,42 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
   const [selectedFormatId, setSelectedFormatId] = React.useState(supportedFormats[0]?.id || "");
   const [slotLabel, setSlotLabel] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [recommendation, setRecommendation] = React.useState<{ id: string; formatScores: Record<string, { averageScore: number; sampleCount: number }>; adjustments: Array<{ slotId: string; formatId: string; previousPriority: number; newPriority: number; formatName: string; score: number }> } | null>(null);
+  const [recLoading, setRecLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    getMixRecommendations(themePageId).then((res) => setRecommendation(res.recommendation));
+  }, [themePageId]);
+
+  async function handleAcceptRecommendation() {
+    if (!recommendation) return;
+    setRecLoading(true);
+    try {
+      const res = await acceptRecommendation(recommendation.id);
+      if (res.error) throw new Error(res.error);
+      setRecommendation(null);
+      toast.success(`Applied ${res.applied} slot reorder${res.applied === 1 ? "" : "s"}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to apply recommendation");
+    } finally {
+      setRecLoading(false);
+    }
+  }
+
+  async function handleDiscardRecommendation() {
+    if (!recommendation) return;
+    setRecLoading(true);
+    try {
+      const res = await discardRecommendation(recommendation.id);
+      if (res.error) throw new Error(res.error);
+      setRecommendation(null);
+      toast.success("Recommendation dismissed");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to dismiss recommendation");
+    } finally {
+      setRecLoading(false);
+    }
+  }
 
   async function handleAddSlot(e: React.FormEvent) {
     e.preventDefault();
@@ -243,6 +287,59 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {recommendation && (
+        <div className="p-5 border rounded-xl bg-amber-500/5 border-amber-500/20 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600">
+              <IconBulb className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                Mix Optimization Ready
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Joey analyzed your recent post performance and suggests reordering your daily mix slots.
+                Higher-performing formats are moved earlier in the rotation.
+              </p>
+              <div className="mt-3 space-y-1.5">
+                {recommendation.adjustments
+                  .filter((a) => a.previousPriority !== a.newPriority)
+                  .map((adj) => (
+                    <div key={adj.slotId} className="text-xs text-muted-foreground">
+                      <span className="font-medium">{adj.formatName}</span>
+                      {" "}— {adj.previousPriority < adj.newPriority ? "moved down" : "moved up"}
+                      {" "}to position #{adj.newPriority + 1}
+                      <span className="ml-1.5 px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">
+                        score {adj.score}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={handleAcceptRecommendation}
+                  disabled={recLoading}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {recLoading ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconCheck className="w-3.5 h-3.5" />}
+                  Apply Reorder
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDiscardRecommendation}
+                  disabled={recLoading}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted disabled:opacity-50"
+                >
+                  <IconX className="w-3.5 h-3.5" />
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

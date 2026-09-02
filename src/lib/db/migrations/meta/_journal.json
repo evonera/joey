@@ -232,6 +232,13 @@
       "when": 1788339600000,
       "tag": "0032_theme_studio_dm_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788400000000,
+      "tag": "0033_mix_recommendations",
+      "breakpoints": true
     }
   ]
 }

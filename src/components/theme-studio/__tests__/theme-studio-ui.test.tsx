@@ -17,6 +17,11 @@ vi.mock("@/app/actions/theme-sources", () => ({
 vi.mock("@/app/actions/dm-rules", () => ({
   createDmRule: vi.fn(), deleteDmRule: vi.fn(), toggleDmRule: vi.fn(),
 }));
+vi.mock("@/app/actions/mix-recommendations", () => ({
+  getMixRecommendations: vi.fn().mockResolvedValue({ recommendation: null }),
+  acceptRecommendation: vi.fn(),
+  discardRecommendation: vi.fn(),
+}));
 vi.mock("@/hooks/use-webmcp-tools", () => ({
   useWebMcpTools: (tools: WebMCP.ModelContextTool[]) => {
     webMcpHarness.tools = tools;
