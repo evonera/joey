@@ -197,8 +197,10 @@ export async function acceptMixRecommendation(
   }>;
 
   let applied = 0;
+  let expected = 0;
   for (const adj of adjustments) {
     if (adj.previousPriority !== adj.newPriority) {
+      expected++;
       const result = await db
         .update(themeSlots)
         .set({ priority: adj.newPriority, updatedAt: new Date() })
@@ -206,6 +208,10 @@ export async function acceptMixRecommendation(
         .returning({ id: themeSlots.id });
       if (result.length > 0) applied++;
     }
+  }
+
+  if (applied < expected) {
+    return { applied };
   }
 
   await db
