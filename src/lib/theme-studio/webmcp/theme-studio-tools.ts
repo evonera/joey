@@ -33,8 +33,10 @@ export function createThemeStudioWebMcpTools(
     defineWebMcpTool(
       {
         name: "theme_studio_inspect_page",
+        title: "Inspect Theme Studio page",
         description: "Inspect the visible Theme Studio page, its sources, daily mix, connected-account count, and recent package states. This tool is read-only.",
         inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
       },
       emptyInput,
       () => ({
@@ -46,8 +48,10 @@ export function createThemeStudioWebMcpTools(
     defineWebMcpTool(
       {
         name: "theme_studio_check_readiness",
+        title: "Check Theme Studio readiness",
         description: "Check whether the visible Theme Studio page has the minimum configuration needed for activation. This tool never approves or publishes content.",
         inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
       },
       emptyInput,
       () => {
