@@ -4,6 +4,18 @@ Joey exposes contextual browser tools through WebMCP. Tools are registered only 
 
 WebMCP is an assistance surface, not an unattended publishing API. Agents may inspect content and stage reversible edits, but a person must use Joey's controls to save executable flows, approve replies, or publish content.
 
+## Browser support and enabling
+
+WebMCP is currently available in Chrome 149+ and Edge 150+ behind an origin trial, in ChatGPT Desktop, and experimentally in Brave Leo. Firefox and Safari have not shipped it.
+
+To enable the origin trial on a deployed Joey origin:
+
+1. Register the deployment origin for the WebMCP trial in the Chrome (https://developer.chrome.com/origintrials) or Edge origin-trial console.
+2. Set `NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN` to the issued token. Joey emits it as `<meta http-equiv="origin-trial">` in the root layout.
+3. The trial token is public by design and scoped to the registered origin; localhost testing without a token is not supported by the browser, so use the origin-trial keyed to your preview origin or ChatGPT Desktop.
+
+Tool registration is defensive: if `document.modelContext` is absent (unsupported browser or non-secure context), pages still work normally and the "WebMCP ready" indicators stay hidden.
+
 ## Availability and trust boundaries
 
 | Page | Tools | Agent may change | Human-only boundary |

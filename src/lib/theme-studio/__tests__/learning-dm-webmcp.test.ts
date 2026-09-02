@@ -77,6 +77,8 @@ describe("Theme Studio Learning Loop, DM Automation & WebMCP (Phase 6)", () => {
         expect(tool.description).toBeDefined();
         expect(tool.inputSchema).toBeDefined();
         expect(typeof tool.execute).toBe("function");
+        expect(tool.title).toBeDefined();
+        expect(tool.annotations).toEqual({ readOnlyHint: true, untrustedContentHint: true });
       }
     });
 

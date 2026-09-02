@@ -7,6 +7,8 @@ const inter = Inter({ subsets: ["latin"] });
 
 const siteUrl = "https://joey.evonera.com";
 
+const webMcpOriginTrialToken = process.env.NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN;
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: "Joey — Autonomous Social Media Agent",
@@ -96,6 +98,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {webMcpOriginTrialToken ? (
+          <meta httpEquiv="origin-trial" content={webMcpOriginTrialToken} />
+        ) : null}
+      </head>
       <body className={inter.className}>
         <Script
           id="schema-org"
