@@ -67,6 +67,9 @@ describe("flow platform reconciliation", () => {
     expect(journal.entries.find(({ idx }) => idx === 29)).toEqual(expect.objectContaining({ tag: "0029_engagement_delivery_safety" }));
     expect(journal.entries.find(({ idx }) => idx === 30)).toEqual(expect.objectContaining({ tag: "0030_engagement_unified_inbox" }));
     expect(journal.entries.find(({ idx }) => idx === 31)).toEqual(expect.objectContaining({ tag: "0031_workable_daredevil" }));
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 33, tag: "0033_mix_recommendations" }));
+    expect(journal.entries.find(({ idx }) => idx === 32)).toEqual(expect.objectContaining({ tag: "0032_theme_studio_dm_delivery" }));
+    expect(journal.entries.find(({ idx }) => idx === 33)).toEqual(expect.objectContaining({ tag: "0033_mix_recommendations" }));
+    expect(journal.entries.find(({ idx }) => idx === 34)).toEqual(expect.objectContaining({ tag: "0034_phase2_dispatch_ledger" }));
+    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 35, tag: "0035_flow_tick_rotation" }));
   });
 });

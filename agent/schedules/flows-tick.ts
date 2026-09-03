@@ -9,19 +9,25 @@
  *   per-item error boundaries so one failure never kills the tick.
  * - Idempotent per interval: active flows are guarded by an in-flight run
  *   check plus lastRunAt spacing, so overlapping ticks are safe.
+ *
+ * Cadence note: the cron MUST stay Hobby-safe (once per day or less —
+ * Vercel rejects more frequent crons on Hobby at deploy time). Sub-day
+ * `intervalMinutes` only take effect on Pro (per-minute crons) or when an
+ * external scheduler invokes `/api/cron` more often.
  */
 import { defineSchedule } from "eve/schedules";
 import { db } from "@/lib/db";
 import { flows, flowRuns } from "@/lib/db/schema";
-import { and, eq, lt, or } from "drizzle-orm";
+import { and, asc, eq, lt, or, sql } from "drizzle-orm";
 import { getNode } from "@/lib/flows/registry";
 import { executeAdmittedFlowRun } from "@/lib/flows/run-flow-server";
 import { operationalEvent } from "@/lib/operations-log";
 
 /**
- * Ticks every minute: starts any ACTIVE flow whose trigger is a due
+ * Runs the admission scan: starts any ACTIVE flow whose trigger is a due
  * trigger.schedule node. Webhook triggers are dispatched from the Zernio
- * receiver instead.
+ * receiver instead. On Hobby the eve cron fires daily (see cadence note
+ * above); the due check makes each fire idempotent.
  */
 export async function runFlowsTick() {
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
@@ -107,34 +113,37 @@ export async function runFlowsTick() {
 
     // Run cleanup only after stale reconciliation. Reservations owned by a
     // live run remain protected; abandoned runs have now become terminal.
-    const { processR2CleanupTasks } = await import("@/lib/storage-cleanup");
-    await processR2CleanupTasks();
+    // Each sub-processor is isolated: one throwing service must never abort
+    // the shared tick for every other tenant's scheduled flows.
+    const subProcessors: Array<[string, () => Promise<unknown>]> = [
+      ["r2-cleanup", async () => { const { processR2CleanupTasks } = await import("@/lib/storage-cleanup"); return processR2CleanupTasks(); }],
+      ["webhook-recovery", async () => { const { recoverStaleWebhookDeliveries } = await import("@/lib/flows/incoming-webhooks"); return recoverStaleWebhookDeliveries(); }],
+      ["theme-dm-retries", async () => { const { processThemeStudioDmRetries } = await import("@/lib/engagement-inbox"); return processThemeStudioDmRetries(); }],
+      ["theme-analytics-sync", async () => { const { processThemeStudioAnalyticsSync } = await import("@/lib/theme-studio/learning/analytics-sync"); return processThemeStudioAnalyticsSync(); }],
+      ["theme-optimization", async () => { const { processThemeStudioOptimization } = await import("@/lib/theme-studio/learning/recipe-optimizer"); return processThemeStudioOptimization(); }],
+    ];
+    for (const [label, task] of subProcessors) {
+      try {
+        await task();
+      } catch (err) {
+        operationalEvent("error", "flows_tick.subprocessor_failed", {
+          task: label,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
-    const { recoverStaleWebhookDeliveries } = await import("@/lib/flows/incoming-webhooks");
-    await recoverStaleWebhookDeliveries();
-
-    // Private-reply failures use durable database backoff. This processor is
-    // independent of webhook redelivery and uses per-item atomic claims, so
-    // overlapping scheduler invocations cannot send competing replies.
-    const { processThemeStudioDmRetries } = await import("@/lib/engagement-inbox");
-    await processThemeStudioDmRetries();
-
-    // Analytics sync: fetch per-post engagement data from Zernio for published
-    // packages and update contentPackages.metrics. Must run before optimization.
-    const { processThemeStudioAnalyticsSync } = await import("@/lib/theme-studio/learning/analytics-sync");
-    await processThemeStudioAnalyticsSync();
-
-    // Optimization: generate human-reviewed mix recommendations when enough
-    // analytics data has accumulated. Skips pages with pending recommendations.
-    const { processThemeStudioOptimization } = await import("@/lib/theme-studio/learning/recipe-optimizer");
-    await processThemeStudioOptimization();
-
+    // Bounded admission scan with guaranteed rotation: flows are ordered by
+    // lastTickedAt (never-examined first) and EVERY examined flow gets its
+    // tick stamp advanced — including skip paths — so no row can monopolize
+    // the window and starve flows past the cutoff.
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
+      orderBy: [sql`${flows.lastTickedAt} ASC NULLS FIRST`, asc(flows.id)],
+      limit: FLOWS_TICK_BATCH_LIMIT,
     });
 
-    await Promise.allSettled(
-      activeFlows.map(async (flow) => {
+    await runWithConcurrencyLimit(activeFlows, FLOWS_TICK_CONCURRENCY, async (flow) => {
         try {
           const graph = flow.graph as { nodes?: { id: string; type: string; config?: Record<string, unknown> }[] };
           const triggerNode = graph.nodes?.find((n) => n.type === "trigger.schedule");
@@ -215,11 +224,50 @@ export async function runFlowsTick() {
         } catch (err) {
           console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
         }
-      }),
-    );
+        // Advance the rotation stamp on every examination (admitted or
+        // skipped) so this row yields the window to unexamined flows.
+        try {
+          await db
+            .update(flows)
+            .set({ lastTickedAt: new Date() })
+            .where(and(eq(flows.id, flow.id), eq(flows.tenantId, flow.tenantId)));
+        } catch (err) {
+          console.error(`[flows-tick] Failed to stamp tick for flow ${flow.id}:`, err);
+        }
+    });
+}
+
+export const FLOWS_TICK_BATCH_LIMIT = 50;
+export const FLOWS_TICK_CONCURRENCY = 5;
+
+/**
+ * Bounded worker pool: at most `limit` items of `items` are processed
+ * concurrently. A rejection in one item never stops the others (each worker
+ * catches per item); the pool resolves once every item has been attempted.
+ */
+export async function runWithConcurrencyLimit<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, queue.length)) }, async () => {
+    while (true) {
+      const item = queue.pop();
+      if (item === undefined) return;
+      try {
+        await fn(item);
+      } catch (err) {
+        console.error("[flows-tick] Bounded worker failed:", err);
+      }
+    }
+  });
+  await Promise.all(workers);
 }
 
 export default defineSchedule({
+  // Hobby-safe daily cadence (see cadence note above). Do NOT raise above
+  // once per day without a Pro plan — Vercel fails the deployment.
   cron: "0 1 * * *",
   run: runFlowsTick,
 });
