@@ -31,11 +31,20 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   const fetchOrgs = React.useCallback(async () => {
     try {
       setLoading(true);
-      const { data: orgList } = await authClient.organization.list();
-      
+      const [listResult, sessionResult] = await Promise.allSettled([
+        authClient.organization.list(),
+        authClient.getSession(),
+      ]);
+
+      const orgList = listResult.status === 'fulfilled' ? listResult.value.data : null;
+      const session = sessionResult.status === 'fulfilled' ? sessionResult.value.data : null;
+      const activeOrgId = (session?.session as any)?.activeOrganizationId;
+
       if (orgList && Array.isArray(orgList)) {
-        setOrganizations(orgList as unknown as Organization[]);
-        setActiveOrg((prev) => prev ?? (orgList[0] as unknown as Organization));
+        const typedList = orgList as unknown as Organization[];
+        setOrganizations(typedList);
+        const matchingOrg = activeOrgId ? typedList.find(o => o.id === activeOrgId) : null;
+        setActiveOrg(matchingOrg ?? typedList[0] ?? null);
       }
     } catch {
       // Graceful fallback
