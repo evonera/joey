@@ -1,9 +1,28 @@
 import { db } from "@/lib/db";
 import { memories } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { generateEmbedding } from "@/lib/embeddings";
+import { assertEmbeddingDimensions, generateEmbedding } from "@/lib/embeddings";
+import { redactPII } from "@/lib/redact-pii";
 
 export type MemoryType = "published_post" | "strategy_insight" | "brand_guideline";
+
+/** Upper bound for persisted memory content (~1500 tokens). */
+export const MEMORY_MAX_CHARS = 6000;
+
+type InsertClient = Pick<typeof db, "insert">;
+
+/**
+ * Single choke point for memory content: trims, redacts PII, and truncates.
+ * Rejects empty input so blank/whitespace memories can never 400 the
+ * embedding call or pollute the vector index.
+ */
+export function prepareMemoryContent(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    throw new Error("Cannot store empty memory.");
+  }
+  return redactPII(trimmed).slice(0, MEMORY_MAX_CHARS);
+}
 
 export async function insertMemory(
   tenantId: string,
@@ -11,8 +30,26 @@ export async function insertMemory(
   type: MemoryType,
   metadata?: Record<string, unknown>,
 ) {
-  const embedding = await generateEmbedding(content, tenantId);
-  const [memory] = await db.insert(memories).values({
+  const prepared = prepareMemoryContent(content);
+  const embedding = await generateEmbedding(prepared, tenantId);
+  return insertMemoryWithEmbedding(tenantId, prepared, type, metadata, embedding);
+}
+
+/**
+ * Persists a memory for a precomputed embedding. Accepts a transaction client
+ * so callers can swap memories atomically (delete-then-insert) without
+ * holding a lock during the embedding network call.
+ */
+export async function insertMemoryWithEmbedding(
+  tenantId: string,
+  content: string,
+  type: MemoryType,
+  metadata: Record<string, unknown> | undefined,
+  embedding: number[],
+  client: InsertClient = db,
+) {
+  assertEmbeddingDimensions(embedding);
+  const [memory] = await client.insert(memories).values({
     tenantId,
     content,
     type,

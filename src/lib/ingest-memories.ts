@@ -1,7 +1,12 @@
 import { db } from "@/lib/db";
 import { agentConfigs, posts, memories } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
-import { insertMemory } from "@/lib/memories";
+import { eq, and, asc, desc, gt } from "drizzle-orm";
+import { generateEmbedding } from "@/lib/embeddings";
+import { insertMemory, insertMemoryWithEmbedding, prepareMemoryContent } from "@/lib/memories";
+import { operationalEvent } from "@/lib/operations-log";
+
+/** Page size for scanning existing published-post memories. */
+const EXISTING_MEMORY_PAGE_SIZE = 200;
 
 export async function syncTenantBrandGuidelines(tenantId: string) {
   const config = await db.query.agentConfigs.findFirst({
@@ -37,16 +42,21 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
     if (updatedAt <= existingUpdatedAt) return;
   }
 
-  await insertMemory(tenantId, content, "brand_guideline", metadata);
-
-  if (existing) {
-    await db.delete(memories)
-      .where(and(
+  // Compute the embedding outside the transaction (no lock held during
+  // network I/O), then swap atomically: delete-all-then-insert, so
+  // concurrent readers never observe duplicate guidelines and historical
+  // dupes are compacted away.
+  const prepared = prepareMemoryContent(content);
+  const embedding = await generateEmbedding(prepared, tenantId);
+  await db.transaction(async (tx) => {
+    await tx.delete(memories).where(
+      and(
         eq(memories.tenantId, tenantId),
         eq(memories.type, "brand_guideline"),
-        eq(memories.id, existing.id),
-      ));
-  }
+      ),
+    );
+    await insertMemoryWithEmbedding(tenantId, prepared, "brand_guideline", metadata, embedding, tx);
+  });
 }
 
 export async function syncTenantPublishedPosts(tenantId: string) {
@@ -61,20 +71,30 @@ export async function syncTenantPublishedPosts(tenantId: string) {
 
   if (publishedPosts.length === 0) return;
 
+  // Paginated scan (id cursor) instead of one unbounded fetch: tenants with
+  // thousands of memories must not OOM the sync.
   const existingPostIds = new Set<string>();
-
-  const existingMemories = await db.query.memories.findMany({
-    where: and(
-      eq(memories.tenantId, tenantId),
-      eq(memories.type, "published_post"),
-    ),
-  });
-
-  for (const mem of existingMemories) {
-    const meta = mem.metadata as any;
-    if (meta?.postId) {
-      existingPostIds.add(meta.postId);
+  let cursor: string | undefined;
+  for (;;) {
+    const batch = await db.query.memories.findMany({
+      where: and(
+        eq(memories.tenantId, tenantId),
+        eq(memories.type, "published_post"),
+        cursor ? gt(memories.id, cursor) : undefined,
+      ),
+      orderBy: [asc(memories.id)],
+      limit: EXISTING_MEMORY_PAGE_SIZE,
+      columns: { id: true, metadata: true },
+    });
+    if (batch.length === 0) break;
+    for (const mem of batch) {
+      const meta = mem.metadata as any;
+      if (meta?.postId) {
+        existingPostIds.add(meta.postId);
+      }
     }
+    if (batch.length < EXISTING_MEMORY_PAGE_SIZE) break;
+    cursor = batch[batch.length - 1].id;
   }
 
   for (const post of publishedPosts) {
@@ -102,8 +122,16 @@ export async function syncTenantPublishedPosts(tenantId: string) {
 }
 
 export async function syncTenantMemories(tenantId: string) {
-  await Promise.all([
+  const results = await Promise.allSettled([
     syncTenantBrandGuidelines(tenantId),
     syncTenantPublishedPosts(tenantId),
   ]);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      operationalEvent("error", "memory_sync.failed", {
+        tenantId,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
+  }
 }
