@@ -17,6 +17,7 @@ interface Organization {
   name: string;
   slug?: string;
   logo?: string | null;
+  createdAt?: string | Date;
 }
 
 export function OrganizationSwitcher({ className }: { className?: string }) {
@@ -42,9 +43,22 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
 
       if (orgList && Array.isArray(orgList)) {
         const typedList = orgList as unknown as Organization[];
-        setOrganizations(typedList);
-        const matchingOrg = activeOrgId ? typedList.find(o => o.id === activeOrgId) : null;
-        setActiveOrg(matchingOrg ?? typedList[0] ?? null);
+        // Sort newest first to mirror server-side fallback: orderBy(desc(member.createdAt))
+        const sortedList = [...typedList].sort((a, b) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return timeB - timeA;
+        });
+        setOrganizations(sortedList);
+
+        const matchingOrg = activeOrgId ? sortedList.find(o => o.id === activeOrgId) : null;
+        const targetOrg = matchingOrg ?? sortedList[0] ?? null;
+        setActiveOrg(targetOrg);
+
+        // When session activeOrganizationId is stale or unset, synchronize it with the resolved newest membership
+        if (targetOrg && (!activeOrgId || !matchingOrg)) {
+          authClient.organization.setActive({ organizationId: targetOrg.id }).catch(() => {});
+        }
       }
     } catch {
       // Graceful fallback
