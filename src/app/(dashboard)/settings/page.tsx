@@ -44,14 +44,25 @@ export default function SettingsPage() {
     budgetLimitUsd: string | null;
   } | null>(null);
   
-  const [apiKeys, setApiKeys] = useState<Record<string, { id: string; provider: string; status: string }>>({});
+  const [apiKeys, setApiKeys] = useState<Record<string, { id: string; provider: string; status: string; maskedKey?: string }>>({});
   const [openaiKeyInput, setOpenaiKeyInput] = useState("");
+  const [anthropicKeyInput, setAnthropicKeyInput] = useState("");
+  const [googleKeyInput, setGoogleKeyInput] = useState("");
   const [falKeyInput, setFalKeyInput] = useState("");
+
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+  const [showGoogleKey, setShowGoogleKey] = useState(false);
   const [showFalKey, setShowFalKey] = useState(false);
+
   const [savingOpenai, setSavingOpenai] = useState(false);
+  const [savingAnthropic, setSavingAnthropic] = useState(false);
+  const [savingGoogle, setSavingGoogle] = useState(false);
   const [savingFal, setSavingFal] = useState(false);
+
   const [openaiSaved, setOpenaiSaved] = useState(false);
+  const [anthropicSaved, setAnthropicSaved] = useState(false);
+  const [googleSaved, setGoogleSaved] = useState(false);
   const [falSaved, setFalSaved] = useState(false);
 
   const [notificationPrefs, setNotificationPrefs] = useState<any>(null);
@@ -72,12 +83,16 @@ export default function SettingsPage() {
           setUsageStats(usageRes.usage);
         }
 
-        const [openaiKey, falKey] = await Promise.all([
+        const [openaiKey, anthropicKey, googleKey, falKey] = await Promise.all([
           getApiKey("openai"),
+          getApiKey("anthropic"),
+          getApiKey("google"),
           getApiKey("fal"),
         ]);
-        const keyMap: Record<string, { id: string; provider: string; status: string }> = {};
+        const keyMap: Record<string, { id: string; provider: string; status: string; maskedKey?: string }> = {};
         if (openaiKey) keyMap["openai"] = openaiKey;
+        if (anthropicKey) keyMap["anthropic"] = anthropicKey;
+        if (googleKey) keyMap["google"] = googleKey;
         if (falKey) keyMap["fal"] = falKey;
         setApiKeys(keyMap);
 
@@ -154,10 +169,15 @@ export default function SettingsPage() {
     setSavingOpenai(true);
     setOpenaiSaved(false);
     try {
-      await saveApiKey("openai", openaiKeyInput.trim());
+      const res = await saveApiKey("openai", openaiKeyInput.trim());
+      if (res?.error) {
+        alert(res.error);
+        return;
+      }
+      const updated = await getApiKey("openai");
       setApiKeys((prev) => ({
         ...prev,
-        openai: { id: "saved", provider: "openai", status: "active" },
+        openai: updated || { id: "saved", provider: "openai", status: "active" },
       }));
       setOpenaiKeyInput("");
       setOpenaiSaved(true);
@@ -169,15 +189,70 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveAnthropicKey = async () => {
+    if (!anthropicKeyInput.trim()) return;
+    setSavingAnthropic(true);
+    setAnthropicSaved(false);
+    try {
+      const res = await saveApiKey("anthropic", anthropicKeyInput.trim());
+      if (res?.error) {
+        alert(res.error);
+        return;
+      }
+      const updated = await getApiKey("anthropic");
+      setApiKeys((prev) => ({
+        ...prev,
+        anthropic: updated || { id: "saved", provider: "anthropic", status: "active" },
+      }));
+      setAnthropicKeyInput("");
+      setAnthropicSaved(true);
+      setTimeout(() => setAnthropicSaved(false), 3000);
+    } catch {
+      alert("Failed to save Anthropic key");
+    } finally {
+      setSavingAnthropic(false);
+    }
+  };
+
+  const handleSaveGoogleKey = async () => {
+    if (!googleKeyInput.trim()) return;
+    setSavingGoogle(true);
+    setGoogleSaved(false);
+    try {
+      const res = await saveApiKey("google", googleKeyInput.trim());
+      if (res?.error) {
+        alert(res.error);
+        return;
+      }
+      const updated = await getApiKey("google");
+      setApiKeys((prev) => ({
+        ...prev,
+        google: updated || { id: "saved", provider: "google", status: "active" },
+      }));
+      setGoogleKeyInput("");
+      setGoogleSaved(true);
+      setTimeout(() => setGoogleSaved(false), 3000);
+    } catch {
+      alert("Failed to save Google API key");
+    } finally {
+      setSavingGoogle(false);
+    }
+  };
+
   const handleSaveFalKey = async () => {
     if (!falKeyInput.trim()) return;
     setSavingFal(true);
     setFalSaved(false);
     try {
-      await saveApiKey("fal", falKeyInput.trim());
+      const res = await saveApiKey("fal", falKeyInput.trim());
+      if (res?.error) {
+        alert(res.error);
+        return;
+      }
+      const updated = await getApiKey("fal");
       setApiKeys((prev) => ({
         ...prev,
-        fal: { id: "saved", provider: "fal", status: "active" },
+        fal: updated || { id: "saved", provider: "fal", status: "active" },
       }));
       setFalKeyInput("");
       setFalSaved(true);
@@ -579,30 +654,87 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Image Generation API Keys Section */}
+        {/* AI & Model Provider Keys (BYOK) Section */}
         <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
           <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
             <div>
-              <h2 className="font-semibold text-zinc-900 dark:text-white">Image Generation API Keys</h2>
-              <p className="text-xs text-zinc-500 mt-1">Bring your own API key to generate images from the compose page or agent.</p>
+              <h2 className="font-semibold text-zinc-900 dark:text-white">AI & Model Provider Keys (BYOK)</h2>
+              <p className="text-xs text-zinc-500 mt-1">Bring your own API keys for agent reasoning, text generation, and image generation. All keys are encrypted at rest with AES-256-GCM and cryptographically isolated to your workspace.</p>
             </div>
             <Sparkles className="h-5 w-5 text-zinc-400" />
           </div>
           <div className="p-6 space-y-6">
+            {/* Google Gemini */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Google Gemini (Gemini 2.5 Flash, 1.5 Pro)
+                </label>
+                {apiKeys["google"] && (
+                  <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-mono">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {apiKeys["google"].maskedKey || "Configured"}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteKey("google")}
+                      className="ml-2 text-zinc-400 hover:text-red-500"
+                      title="Remove Google key"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showGoogleKey ? "text" : "password"}
+                    value={googleKeyInput}
+                    onChange={(e) => setGoogleKeyInput(e.target.value)}
+                    placeholder={apiKeys["google"] ? "AIzaSy... (replace existing)" : "AIzaSy..."}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGoogleKey(!showGoogleKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                  >
+                    {showGoogleKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveGoogleKey}
+                  disabled={!googleKeyInput.trim() || savingGoogle}
+                  className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {savingGoogle ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : googleSaved ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-300" />
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">Your Google Gemini API key from <a href="https://aistudio.google.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Google AI Studio</a>. Stored AES-256-GCM encrypted.</p>
+            </div>
+
             {/* OpenAI */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  OpenAI (DALL-E 3)
+                  OpenAI (GPT-4o, DALL-E 3)
                 </label>
                 {apiKeys["openai"] && (
-                  <span className="flex items-center gap-1 text-xs text-green-600">
+                  <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-mono">
                     <CheckCircle2 className="h-3 w-3" />
-                    Configured
+                    {apiKeys["openai"].maskedKey || "Configured"}
                     <button
                       type="button"
                       onClick={() => handleDeleteKey("openai")}
                       className="ml-2 text-zinc-400 hover:text-red-500"
+                      title="Remove OpenAI key"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -616,7 +748,7 @@ export default function SettingsPage() {
                     value={openaiKeyInput}
                     onChange={(e) => setOpenaiKeyInput(e.target.value)}
                     placeholder={apiKeys["openai"] ? "sk-... (replace existing)" : "sk-..."}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-mono"
                   />
                   <button
                     type="button"
@@ -641,7 +773,63 @@ export default function SettingsPage() {
                   )}
                 </button>
               </div>
-              <p className="text-xs text-zinc-500">Your OpenAI API key with access to DALL-E 3. Stored encrypted.</p>
+              <p className="text-xs text-zinc-500">Your OpenAI API key with access to GPT-4o and DALL-E 3. Stored AES-256-GCM encrypted.</p>
+            </div>
+
+            {/* Anthropic */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Anthropic (Claude 3.7 Sonnet, 3.5 Haiku)
+                </label>
+                {apiKeys["anthropic"] && (
+                  <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-mono">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {apiKeys["anthropic"].maskedKey || "Configured"}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteKey("anthropic")}
+                      className="ml-2 text-zinc-400 hover:text-red-500"
+                      title="Remove Anthropic key"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showAnthropicKey ? "text" : "password"}
+                    value={anthropicKeyInput}
+                    onChange={(e) => setAnthropicKeyInput(e.target.value)}
+                    placeholder={apiKeys["anthropic"] ? "sk-ant-... (replace existing)" : "sk-ant-..."}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAnthropicKey(!showAnthropicKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                  >
+                    {showAnthropicKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveAnthropicKey}
+                  disabled={!anthropicKeyInput.trim() || savingAnthropic}
+                  className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {savingAnthropic ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : anthropicSaved ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-300" />
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">Your Anthropic API key from <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">console.anthropic.com</a>. Stored AES-256-GCM encrypted.</p>
             </div>
 
             {/* fal.ai */}
@@ -651,13 +839,14 @@ export default function SettingsPage() {
                   fal.ai (Flux)
                 </label>
                 {apiKeys["fal"] && (
-                  <span className="flex items-center gap-1 text-xs text-green-600">
+                  <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-mono">
                     <CheckCircle2 className="h-3 w-3" />
-                    Configured
+                    {apiKeys["fal"].maskedKey || "Configured"}
                     <button
                       type="button"
                       onClick={() => handleDeleteKey("fal")}
                       className="ml-2 text-zinc-400 hover:text-red-500"
+                      title="Remove fal key"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -671,7 +860,7 @@ export default function SettingsPage() {
                     value={falKeyInput}
                     onChange={(e) => setFalKeyInput(e.target.value)}
                     placeholder={apiKeys["fal"] ? "FAL_KEY (replace existing)" : "FAL_KEY"}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-mono"
                   />
                   <button
                     type="button"
@@ -696,7 +885,7 @@ export default function SettingsPage() {
                   )}
                 </button>
               </div>
-              <p className="text-xs text-zinc-500">Your fal.ai API key (FAL_KEY). Get one at <a href="https://fal.ai/dashboard" target="_blank" className="text-indigo-600 hover:underline">fal.ai/dashboard</a>. Stored encrypted.</p>
+              <p className="text-xs text-zinc-500">Your fal.ai API key (FAL_KEY). Get one at <a href="https://fal.ai/dashboard" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">fal.ai/dashboard</a>. Stored AES-256-GCM encrypted.</p>
             </div>
           </div>
         </section>

@@ -17,10 +17,16 @@ async function resolveKey(tenantId: string | undefined, provider: string): Promi
       if (tenantKey.status !== "active") {
         throw new Error(`${provider} API key for this workspace is revoked or disabled.`);
       }
-      return decrypt(tenantKey.encryptedKey);
+      return decrypt(tenantKey.encryptedKey, tenantId);
     }
   }
-  const envKey = provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : provider === "openrouter" ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY;
+  const envKey = provider === "anthropic" 
+    ? process.env.ANTHROPIC_API_KEY 
+    : provider === "openrouter" 
+    ? process.env.OPENROUTER_API_KEY 
+    : provider === "google"
+    ? (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY)
+    : process.env.OPENAI_API_KEY;
   if (envKey) return envKey;
   throw new Error(
     `No ${provider} API key available. Add one in Settings → API Keys or set the environment variable.`,
@@ -41,7 +47,7 @@ export type LlmResult = {
  */
 export async function runLlm(opts: {
   tenantId: string;
-  provider: "openai" | "anthropic" | "openrouter";
+  provider: "openai" | "anthropic" | "openrouter" | "google";
   model: string;
   messages: LlmMessage[];
   /** Optional JSON schema (as plain object) to force structured output. */
@@ -117,7 +123,22 @@ export async function runLlm(opts: {
   }
 
   const { default: OpenAI } = await import("openai");
-  const client = new OpenAI({ apiKey, ...(opts.provider === "openrouter" ? { baseURL: "https://openrouter.ai/api/v1", defaultHeaders: { "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "https://joey.evonera.com", "X-Title": "Joey" } } : {}) });
+  const isGoogle = opts.provider === "google";
+  const isOpenRouter = opts.provider === "openrouter";
+  const client = new OpenAI({
+    apiKey,
+    ...(isGoogle
+      ? { baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" }
+      : isOpenRouter
+      ? {
+          baseURL: "https://openrouter.ai/api/v1",
+          defaultHeaders: {
+            "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "https://joey.evonera.com",
+            "X-Title": "Joey",
+          },
+        }
+      : {}),
+  });
   const completionFormat = opts.jsonSchema
     ? {
         type: "json_schema" as const,
@@ -128,9 +149,16 @@ export async function runLlm(opts: {
       }
     : undefined;
 
+  let effectiveModel = opts.model;
+  if (opts.provider === "google" && (!effectiveModel || !effectiveModel.startsWith("gemini-"))) {
+    effectiveModel = "gemini-2.5-flash";
+  } else if (opts.provider === "openai" && (!effectiveModel || effectiveModel.startsWith("claude-") || effectiveModel.startsWith("gemini-"))) {
+    effectiveModel = "gpt-4o-mini";
+  }
+
   const response = await client.chat.completions.create(
     {
-      model: opts.model,
+      model: effectiveModel,
       messages: opts.messages,
       max_tokens: opts.maxTokens ?? 2048,
       ...(completionFormat ? { response_format: completionFormat } : {}),
@@ -148,13 +176,14 @@ export async function runLlm(opts: {
   }
   const choice = response.choices[0];
   if (choice?.message?.refusal) {
-    throw new Error(`OpenAI refused request: ${choice.message.refusal}`);
+    const providerName = isGoogle ? "Google Gemini" : isOpenRouter ? "OpenRouter" : "OpenAI";
+    throw new Error(`${providerName} refused request: ${choice.message.refusal}`);
   }
   if (choice?.finish_reason === "content_filter") {
-    throw new Error("OpenAI generation stopped by content filter.");
+    throw new Error("AI generation stopped by content filter.");
   }
   if (choice?.finish_reason === "length") {
-    throw new Error("OpenAI generation stopped due to max tokens length limit.");
+    throw new Error("AI generation stopped due to max tokens length limit.");
   }
   const text = choice?.message?.content ?? "";
   return { text, json: tryParse(text) };
