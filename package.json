@@ -19,6 +19,7 @@
     "start:eve": "eve start",
     "eval": "eve eval",
     "db:seed": "node --env-file=.env --import tsx src/scripts/seed.ts",
+    "db:migrate": "drizzle-kit migrate",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

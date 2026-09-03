@@ -75,6 +75,8 @@ jobs:
       - run: npm ci
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
+      - name: Apply database migrations
+        run: npm run db:migrate
       - name: Run Playwright tests
         run: npm run test:e2e
       - uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
