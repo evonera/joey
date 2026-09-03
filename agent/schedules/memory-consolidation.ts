@@ -169,11 +169,16 @@ export default defineSchedule({
         }
 
         // Dispatch inside waitUntil and await admission. The slot stays
-        // claimed on success; on failure the stamp is rolled back so the
-        // tenant is retried on the next nightly tick instead of being
-        // skipped for seven days.
+        // claimed on success. On failure the stamp is rolled back ONLY when
+        // the send provably never started: a timeout leaves the underlying
+        // send running (withTimeout cannot cancel it), so the stamp is kept
+        // and the tenant waits out the week rather than risk a duplicate
+        // session from a later tick. A settled rejection means the channel
+        // refused/failed the send — no session exists — so the slot is safe
+        // to release for the next nightly retry.
         waitUntil(
           (async () => {
+            let sendSettled = false;
             try {
               await withTimeout(
                 to(eveChannel, {}).send(consolidationPrompt(), {
@@ -183,7 +188,16 @@ export default defineSchedule({
                     principalId: ownerUserId,
                     attributes: { tenantId },
                   },
-                }),
+                }).then(
+                  (result) => {
+                    sendSettled = true;
+                    return result;
+                  },
+                  (err) => {
+                    sendSettled = true;
+                    throw err;
+                  },
+                ),
                 CONSOLIDATION_SEND_TIMEOUT_MS,
                 `consolidation send ${tenantId}`,
               );
@@ -195,13 +209,19 @@ export default defineSchedule({
               });
             } catch (err) {
               console.error(`[memory-consolidation] Dispatch failed for tenant ${tenantId}:`, err);
-              await releaseConsolidationSlot(tenantId, stampedAt, lastCompacted ?? null);
+              if (sendSettled) {
+                await releaseConsolidationSlot(tenantId, stampedAt, lastCompacted ?? null);
+              }
               await recordAutomationRun({
                 kind: "memory_consolidation",
                 automationId: tenantId,
                 tenantId,
                 status: "error",
-                error: err instanceof Error ? err.message : String(err),
+                error: sendSettled
+                  ? err instanceof Error
+                    ? err.message
+                    : String(err)
+                  : `Dispatch timed out; slot retained to prevent a duplicate session. ${err instanceof Error ? err.message : String(err)}`,
               });
             }
           })(),
