@@ -157,34 +157,56 @@ export async function createThemePage(data: CreateThemePageInput) {
     }
     const connectedAccounts = await validateConnectedAccounts(tenantId, data.connectedAccounts);
 
-    const insertPage = async (runner: any) => {
-      await assertThemePageQuota(tenantId, runner);
-      const [inserted] = await runner.insert(themePages).values({
-        tenantId,
-        name,
-        niche: normalizeText(data.niche, 240),
-        audience: normalizeText(data.audience, 500),
-        voice: normalizeText(data.voice, 2_000),
-        brandKit: sanitizeBrandKit(data.brandKit),
-        connectedAccounts,
-        defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
-        status: 'draft',
-      }).returning();
-      return inserted;
-    };
+    const { checkUsageLimits } = await import("@/lib/billing");
+    const limits = await checkUsageLimits(tenantId);
 
     let page;
-    if (typeof (db as any).transaction === "function") {
-      page = await db.transaction(async (tx) => {
-        try {
-          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
-        } catch {
-          // Advisory lock optional
-        }
-        return insertPage(tx);
-      });
+    if (!limits.isPro) {
+      // Free tier: Atomic conditional insert enforced at SQL level across all database drivers (including Neon HTTP).
+      // The WHERE subquery prevents race conditions atomically without requiring driver transactions.
+      const result = await db.execute(sql`
+        INSERT INTO theme_pages (
+          tenant_id, name, niche, audience, voice, brand_kit, connected_accounts, default_rights_policy, status
+        )
+        SELECT
+          ${tenantId},
+          ${name},
+          ${normalizeText(data.niche, 240)},
+          ${normalizeText(data.audience, 500)},
+          ${normalizeText(data.voice, 2_000)},
+          ${JSON.stringify(sanitizeBrandKit(data.brandKit))}::jsonb,
+          ${JSON.stringify(connectedAccounts)}::jsonb,
+          ${data.defaultRightsPolicy || 'strict'},
+          'draft'
+        WHERE (
+          SELECT count(*) FROM theme_pages WHERE tenant_id = ${tenantId}
+        ) < ${limits.themePageLimit}
+        RETURNING *
+      `);
+
+      const inserted = (result as any).rows?.[0] || (result as any)[0];
+      if (!inserted) {
+        throw new Error(
+          `Free workspace limit reached (${limits.themePageLimit} Theme Page). Upgrade to Pro for unlimited theme pages.`
+        );
+      }
+      page = inserted;
     } else {
-      page = await insertPage(db);
+      const [inserted] = await db
+        .insert(themePages)
+        .values({
+          tenantId,
+          name,
+          niche: normalizeText(data.niche, 240),
+          audience: normalizeText(data.audience, 500),
+          voice: normalizeText(data.voice, 2_000),
+          brandKit: sanitizeBrandKit(data.brandKit),
+          connectedAccounts,
+          defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
+          status: 'draft',
+        })
+        .returning();
+      page = inserted;
     }
 
     return { page };
