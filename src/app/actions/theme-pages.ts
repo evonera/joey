@@ -160,15 +160,17 @@ export async function createThemePage(data: CreateThemePageInput) {
     const { checkUsageLimits } = await import("@/lib/billing");
     const limits = await checkUsageLimits(tenantId);
 
-    let page;
-    if (!limits.isPro) {
-      // Free tier: Atomic conditional insert enforced at SQL level across all database drivers (including Neon HTTP).
-      // The WHERE subquery prevents race conditions atomically without requiring driver transactions.
-      const result = await db.execute(sql`
+    const id = crypto.randomUUID();
+    const connStr = process.env.DATABASE_URL || '';
+    const isNeonHttp = process.env.DATABASE_PROVIDER === 'neon' || connStr.includes('neon.tech');
+
+    const executeInsert = async (executor: typeof db) => {
+      const result = await executor.execute(sql`
         INSERT INTO theme_pages (
-          tenant_id, name, niche, audience, voice, brand_kit, connected_accounts, default_rights_policy, status
+          id, tenant_id, name, niche, audience, voice, brand_kit, connected_accounts, default_rights_policy, status
         )
         SELECT
+          ${id},
           ${tenantId},
           ${name},
           ${normalizeText(data.niche, 240)},
@@ -190,11 +192,24 @@ export async function createThemePage(data: CreateThemePageInput) {
           `Free workspace limit reached (${limits.themePageLimit} Theme Page). Upgrade to Pro for unlimited theme pages.`
         );
       }
-      page = inserted;
+      return inserted;
+    };
+
+    let page;
+    if (!limits.isPro) {
+      if (!isNeonHttp && typeof (db as any).transaction === "function") {
+        page = await db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
+          return executeInsert(tx as unknown as typeof db);
+        });
+      } else {
+        page = await executeInsert(db);
+      }
     } else {
       const [inserted] = await db
         .insert(themePages)
         .values({
+          id,
           tenantId,
           name,
           niche: normalizeText(data.niche, 240),
