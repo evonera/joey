@@ -29,7 +29,16 @@ export async function cancelR2Cleanup(key: string): Promise<void> {
 }
 
 export async function rearmR2Cleanup(tenantId: string, key: string, reason: string): Promise<void> {
-  await db.update(r2CleanupTasks).set({ reason, nextAttemptAt: new Date(), updatedAt: new Date() }).where(and(eq(r2CleanupTasks.key, key), eq(r2CleanupTasks.tenantId, tenantId)));
+  // Upsert, not a bare update: the reference guard may have dropped a stale
+  // task for this key after we read it, and a zero-row update would silently
+  // lose the retry intent. Exactly one actionable task survives either way.
+  await db
+    .insert(r2CleanupTasks)
+    .values({ tenantId, key, reason, nextAttemptAt: new Date() })
+    .onConflictDoUpdate({
+      target: r2CleanupTasks.key,
+      set: { reason, nextAttemptAt: new Date(), updatedAt: new Date() },
+    });
 }
 
 export async function processR2CleanupTasks(limit = 25): Promise<void> {

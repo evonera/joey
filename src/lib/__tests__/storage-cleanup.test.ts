@@ -5,6 +5,8 @@ const mockReturning = vi.fn();
 const mockLimit = vi.fn();
 const mockDeleteObject = vi.fn();
 
+const mockUpsert: (...args: any[]) => any = vi.fn(async () => []);
+
 function stubChain() {
   const chain: Record<string, any> = {};
   chain.set = vi.fn(() => chain);
@@ -12,6 +14,9 @@ function stubChain() {
   chain.returning = (...args: unknown[]) => mockReturning(...args);
   chain.from = vi.fn(() => chain);
   chain.limit = (...args: unknown[]) => mockLimit(...args);
+  chain.onConflictDoNothing = vi.fn(() => Promise.resolve([]));
+  chain.onConflictDoUpdate = (...args: unknown[]) => mockUpsert(...args);
+  chain.values = vi.fn(() => chain);
   return chain;
 }
 
@@ -24,6 +29,7 @@ vi.mock("@/lib/db", () => ({
     update: vi.fn(() => stubChain()),
     select: vi.fn(() => stubChain()),
     delete: vi.fn(() => stubChain()),
+    insert: vi.fn(() => stubChain()),
   },
 }));
 
@@ -71,5 +77,12 @@ describe("r2 cleanup reference guard", () => {
 
     expect(mockDeleteObject).toHaveBeenCalledOnce();
     expect(mockDeleteObject).toHaveBeenCalledWith("t1/obj.png");
+  });
+
+  it("rearms via upsert so a dropped task can never lose retry intent", async () => {
+    const { rearmR2Cleanup } = await import("../storage-cleanup");
+    await rearmR2Cleanup("t1", "t1/obj.png", "asset deleted from database");
+
+    expect(mockUpsert).toHaveBeenCalledOnce();
   });
 });
