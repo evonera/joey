@@ -23,6 +23,17 @@ export async function getZernioClientForTenant(tenantId: string) {
 
 // Reusable core logic for publishing a draft
 export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio) {
+    // 0. Idempotency check: reconcile if this draft was already recorded in posts
+    const alreadyPublished = await db.query.posts.findFirst({
+        where: and(eq(posts.tenantId, tenantId), eq(posts.draftId, draftId))
+    });
+    if (alreadyPublished) {
+        await db.update(drafts)
+            .set({ status: "published", errorMessage: null })
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+        return { success: true };
+    }
+
     // 1. Atomically claim the draft for publishing
     const updateResult = await db.update(drafts)
         .set({ 
@@ -96,7 +107,8 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
                     platforms: [{
                         platform: platformName,
                         accountId: account.platformAccountId
-                    }]
+                    }],
+                    metadata: { draftId }
                 }
             });
 
@@ -108,11 +120,17 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
             break;
         } catch (error: any) {
             lastError = error;
-            const status = error?.status || error?.response?.status;
+            const status = error?.statusCode || error?.status || error?.response?.status;
             
             // Reconcile duplicate / in-flight post from Zernio 409 response
             if (status === 409) {
-                const existingPostId = error?.existingPostId || error?.response?.data?.existingPostId || error?.data?.existingPostId;
+                const existingPostId = 
+                    error?.details?.existingPostId || 
+                    error?.existingPostId || 
+                    error?.response?.data?.details?.existingPostId ||
+                    error?.response?.data?.existingPostId || 
+                    error?.data?.details?.existingPostId ||
+                    error?.data?.existingPostId;
                 if (existingPostId) {
                     response = { data: { id: existingPostId } };
                     lastError = null;
@@ -169,10 +187,16 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
             .set({ status: "published", errorMessage: null })
             .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
 
+        const zernioPostId = 
+            response?.data?.id || 
+            response?.data?.existingPost?.id || 
+            response?.data?.existingPostId || 
+            'unknown';
+
         await tx.insert(posts).values({
             tenantId,
             draftId: draft.id,
-            zernioPostId: response?.data?.id || 'unknown',
+            zernioPostId,
             content: postContent,
             status: "published",
         });
@@ -196,17 +220,30 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
 }
 
 /**
- * Recovers drafts stranded in 'publishing' state due to interrupted worker execution
- * or network timeouts. Resets scheduled drafts back to 'approved' for retry, or 'failed'
- * for manual drafts.
+ * Maximum elapsed time allowed before an interrupted claim can no longer safely
+ * rely on Zernio's ~5-minute same-request idempotency window (x-request-id).
  */
-export async function recoverStalePublishingDrafts(staleAfterMs = 5 * 60 * 1000): Promise<number> {
+const MAX_SAFE_IDEMPOTENCY_WINDOW_MS = 4 * 60 * 1000;
+
+/**
+ * Recovers drafts stranded in 'publishing' state due to interrupted worker execution
+ * or network timeouts.
+ * 
+ * Idempotency Safety Contract:
+ * - If claimed within MAX_SAFE_IDEMPOTENCY_WINDOW_MS (< 4 min):
+ *   Safely resets to 'approved' for retry, guaranteed by x-request-id idempotency on Zernio.
+ * - If claimed >= MAX_SAFE_IDEMPOTENCY_WINDOW_MS (>= 4 min, near/beyond Zernio's 5-min window):
+ *   Checks Zernio's recent posts to reconcile any completed publish without duplicating.
+ *   If absent or uncertain, marks as 'failed' to prevent duplicate social posts.
+ */
+export async function recoverStalePublishingDrafts(staleAfterMs = 2 * 60 * 1000): Promise<number> {
     const now = Date.now();
     const staleCutoffDate = new Date(now - staleAfterMs);
 
     const stranded = await db.select({
         id: drafts.id,
         tenantId: drafts.tenantId,
+        content: drafts.content,
         errorMessage: drafts.errorMessage,
         scheduledFor: drafts.scheduledFor,
         createdAt: drafts.createdAt,
@@ -216,19 +253,33 @@ export async function recoverStalePublishingDrafts(staleAfterMs = 5 * 60 * 1000)
 
     let recoveredCount = 0;
     for (const d of stranded) {
-        let isStale = false;
-        if (d.errorMessage?.startsWith("claimed:")) {
-            const timestamp = parseInt(d.errorMessage.split(":")[1], 10);
-            if (!isNaN(timestamp) && now - timestamp >= staleAfterMs) {
-                isStale = true;
-            }
-        } else if (d.scheduledFor && d.scheduledFor < staleCutoffDate) {
-            isStale = true;
-        } else if (d.createdAt < staleCutoffDate) {
-            isStale = true;
+        // 1. Check if the draft was already recorded in posts table
+        const recorded = await db.query.posts.findFirst({
+            where: and(eq(posts.tenantId, d.tenantId), eq(posts.draftId, d.id))
+        });
+        if (recorded) {
+            await db.update(drafts)
+                .set({ status: "published", errorMessage: null })
+                .where(and(eq(drafts.id, d.id), eq(drafts.tenantId, d.tenantId)));
+            recoveredCount++;
+            continue;
         }
 
-        if (isStale) {
+        let claimTimestamp = 0;
+        if (d.errorMessage?.startsWith("claimed:")) {
+            claimTimestamp = parseInt(d.errorMessage.split(":")[1], 10);
+        }
+
+        const isStale = (claimTimestamp > 0 && now - claimTimestamp >= staleAfterMs) ||
+            (!claimTimestamp && d.scheduledFor && d.scheduledFor < staleCutoffDate) ||
+            (!claimTimestamp && d.createdAt < staleCutoffDate);
+
+        if (!isStale) continue;
+
+        const claimAgeMs = claimTimestamp > 0 ? (now - claimTimestamp) : (now - (d.scheduledFor?.getTime() || d.createdAt.getTime()));
+
+        if (claimAgeMs < MAX_SAFE_IDEMPOTENCY_WINDOW_MS) {
+            // Within safe 5-minute idempotency window: safe to retry via x-request-id
             await db.update(drafts)
                 .set({
                     status: d.scheduledFor ? "approved" : "failed",
@@ -236,6 +287,47 @@ export async function recoverStalePublishingDrafts(staleAfterMs = 5 * 60 * 1000)
                 })
                 .where(and(eq(drafts.id, d.id), eq(drafts.status, "publishing")));
             recoveredCount++;
+        } else {
+            // Exceeds safe 5-minute idempotency window: check Zernio before deciding
+            let reconciled = false;
+            try {
+                const { zernio } = await getZernioClientForTenant(d.tenantId);
+                const listRes = await zernio.posts.listPosts({ query: { limit: 20 } });
+                const recentPosts = (listRes?.data as any)?.posts || (listRes?.data as any) || [];
+                const matchingPost = Array.isArray(recentPosts) ? recentPosts.find((p: any) => 
+                    (d.content && p.content === d.content) || (p.metadata && p.metadata.draftId === d.id)
+                ) : null;
+
+                if (matchingPost?.id) {
+                    await db.transaction(async (tx) => {
+                        await tx.update(drafts)
+                            .set({ status: "published", errorMessage: null })
+                            .where(and(eq(drafts.id, d.id), eq(drafts.tenantId, d.tenantId)));
+                        await tx.insert(posts).values({
+                            tenantId: d.tenantId,
+                            draftId: d.id,
+                            zernioPostId: matchingPost.id,
+                            content: matchingPost.content || d.content || '',
+                            status: "published",
+                        });
+                    });
+                    reconciled = true;
+                    recoveredCount++;
+                }
+            } catch (zernioCheckErr) {
+                console.warn(`[publisher-recovery] Could not verify Zernio posts for draft ${d.id}:`, zernioCheckErr);
+            }
+
+            if (!reconciled) {
+                // Cannot confirm external state and past idempotency window: mark failed to prevent duplicate publishing
+                await db.update(drafts)
+                    .set({
+                        status: "failed",
+                        errorMessage: "Publishing claim timed out beyond the 5-minute deduplication window. Marked failed to prevent duplicate publishing; verify your social feed before retrying.",
+                    })
+                    .where(and(eq(drafts.id, d.id), eq(drafts.status, "publishing")));
+                recoveredCount++;
+            }
         }
     }
 

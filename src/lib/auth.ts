@@ -6,7 +6,7 @@ import { organization } from "better-auth/plugins";
 import DodoPayments from "dodopayments";
 import { db } from "./db";
 import * as schema from "./db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 
 // Dodo Payments is optional at boot so the app can be built and self-hosted
 // without billing credentials. Billing routes fail gracefully at runtime if
@@ -265,7 +265,10 @@ export async function getActiveTenantIdFromSession(
  */
 export async function provisionDefaultWorkspace(userId: string, userName?: string | null): Promise<string> {
     return await db.transaction(async (tx) => {
-        // Double-check membership inside transaction to ensure idempotency against concurrent provisioning
+        // Lock user record to serialize concurrent workspace provisioning for this user
+        await tx.execute(sql`SELECT id FROM ${schema.user} WHERE id = ${userId} FOR UPDATE`);
+
+        // Re-check membership inside transaction now that exclusive lock is held
         const existing = await tx.query.member.findFirst({
             where: eq(schema.member.userId, userId),
             orderBy: [desc(schema.member.createdAt)],
