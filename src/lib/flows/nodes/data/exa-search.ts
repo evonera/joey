@@ -11,7 +11,7 @@ export const exaSearchNode = defineNode({
   description:
     "Neural web search via Exa with authentic news photography extraction and domain filtering. Needs an Exa key in Settings → API Keys.",
   inputs: ["topic"],
-  outputs: ["results"],
+  outputs: ["results", "images"],
   configSchema,
   async execute(input, rawConfig, ctx) {
     const config = configSchema.parse(rawConfig);
@@ -36,7 +36,12 @@ export const exaSearchNode = defineNode({
       images: response.images,
     });
 
-    return { output: results };
+    return {
+      output: {
+        results,
+        images: response.images,
+      },
+    };
   },
 });
 
