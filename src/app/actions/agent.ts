@@ -51,13 +51,25 @@ export async function saveAgentConfig(data: {
 }) {
     try {
         const tenantId = await getActiveTenantId();
-        
+
+        // Monotonic version stamp: rapid saves within the same millisecond
+        // must still order totally, otherwise concurrent memory syncs cannot
+        // tell stale brand guidance from fresh (equal timestamps race).
+        const previous = await db.query.agentConfigs.findFirst({
+            where: eq(agentConfigs.tenantId, tenantId),
+            columns: { updatedAt: true },
+        });
+        const versionStamp = new Date(
+            Math.max(Date.now(), (previous?.updatedAt?.getTime() ?? 0) + 1),
+        );
+
         await db.insert(agentConfigs)
             .values({
                 tenantId,
                 brandVoice: data.brandVoice,
                 postingGoals: data.postingGoals,
                 postingSchedule: data.postingSchedule,
+                updatedAt: versionStamp,
             })
             .onConflictDoUpdate({
                 target: agentConfigs.tenantId,
@@ -65,7 +77,7 @@ export async function saveAgentConfig(data: {
                     brandVoice: data.brandVoice,
                     postingGoals: data.postingGoals,
                     postingSchedule: data.postingSchedule,
-                    updatedAt: new Date()
+                    updatedAt: versionStamp
                 }
             });
 
