@@ -54,11 +54,15 @@ export async function requireProPlan(
   return true;
 }
 
-export async function assertThemePageQuota(tenantId: string): Promise<void> {
+export async function assertThemePageQuota(
+  tenantId: string,
+  tx?: any,
+): Promise<void> {
+  const runner = tx || db;
   const limits = await checkUsageLimits(tenantId);
   if (limits.isPro) return;
 
-  const [res] = await db
+  const [res] = await runner
     .select({ total: count() })
     .from(themePages)
     .where(eq(themePages.tenantId, tenantId));
