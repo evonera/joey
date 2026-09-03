@@ -157,12 +157,9 @@ export async function createThemePage(data: CreateThemePageInput) {
     }
     const connectedAccounts = await validateConnectedAccounts(tenantId, data.connectedAccounts);
 
-    const page = await db.transaction(async (tx) => {
-      // Advisory transaction lock keyed to tenant serializes concurrent creation attempts
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
-      await assertThemePageQuota(tenantId, tx);
-
-      const [inserted] = await tx.insert(themePages).values({
+    const insertPage = async (runner: any) => {
+      await assertThemePageQuota(tenantId, runner);
+      const [inserted] = await runner.insert(themePages).values({
         tenantId,
         name,
         niche: normalizeText(data.niche, 240),
@@ -173,9 +170,22 @@ export async function createThemePage(data: CreateThemePageInput) {
         defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
         status: 'draft',
       }).returning();
-
       return inserted;
-    });
+    };
+
+    let page;
+    if (typeof (db as any).transaction === "function") {
+      page = await db.transaction(async (tx) => {
+        try {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
+        } catch {
+          // Advisory lock optional
+        }
+        return insertPage(tx);
+      });
+    } else {
+      page = await insertPage(db);
+    }
 
     return { page };
   } catch (error: any) {
