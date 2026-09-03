@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { getAuthoritativeActiveTenantId } from '@/app/actions/workspace';
 import { 
   Building01Icon, 
   ArrowDown01Icon, 
@@ -32,33 +33,22 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   const fetchOrgs = React.useCallback(async () => {
     try {
       setLoading(true);
-      const [listResult, sessionResult] = await Promise.allSettled([
+      const [listResult, authoritativeTenantId] = await Promise.allSettled([
         authClient.organization.list(),
-        authClient.getSession(),
+        getAuthoritativeActiveTenantId(),
       ]);
 
       const orgList = listResult.status === 'fulfilled' ? listResult.value.data : null;
-      const session = sessionResult.status === 'fulfilled' ? sessionResult.value.data : null;
-      const activeOrgId = (session?.session as any)?.activeOrganizationId;
+      const activeTenantId = authoritativeTenantId.status === 'fulfilled' ? authoritativeTenantId.value : null;
 
       if (orgList && Array.isArray(orgList)) {
         const typedList = orgList as unknown as Organization[];
-        // Sort newest first to mirror server-side fallback: orderBy(desc(member.createdAt))
-        const sortedList = [...typedList].sort((a, b) => {
-          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return timeB - timeA;
-        });
-        setOrganizations(sortedList);
+        setOrganizations(typedList);
 
-        const matchingOrg = activeOrgId ? sortedList.find(o => o.id === activeOrgId) : null;
-        const targetOrg = matchingOrg ?? sortedList[0] ?? null;
+        // Authoritatively match the workspace resolved by server tenant resolution
+        const matchingOrg = activeTenantId ? typedList.find(o => o.id === activeTenantId) : null;
+        const targetOrg = matchingOrg ?? typedList[0] ?? null;
         setActiveOrg(targetOrg);
-
-        // When session activeOrganizationId is stale or unset, synchronize it with the resolved newest membership
-        if (targetOrg && (!activeOrgId || !matchingOrg)) {
-          authClient.organization.setActive({ organizationId: targetOrg.id }).catch(() => {});
-        }
       }
     } catch {
       // Graceful fallback
