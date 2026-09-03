@@ -5,9 +5,9 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { assets, tenants } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { generateUploadUrl, deleteObject, buildPublicUrl } from "@/lib/storage";
+import { generateUploadUrl, deleteObject, buildPublicUrl, headObject, assertAllowedUpload, R2_MAX_ASSET_BYTES } from "@/lib/storage";
 import { queryAssets } from "@/lib/assets";
-import { enqueueR2Cleanup } from "@/lib/storage-cleanup";
+import { cancelR2Cleanup, enqueueR2Cleanup } from "@/lib/storage-cleanup";
 
 export async function requestUploadUrl(filename: string, mimeType: string) {
   const tenantId = await getActiveTenantId();
@@ -27,8 +27,33 @@ export async function registerAsset(data: {
 }) {
   const tenantId = await getActiveTenantId();
 
-  if (!data.key.startsWith(tenantId + "/")) {
+  if (!data.key.startsWith(tenantId + "/") || data.key.includes("..")) {
     throw new Error("Invalid asset key: namespace mismatch");
+  }
+  if (!data.filename || data.filename.length > 255) {
+    throw new Error("Invalid filename.");
+  }
+  if (!Number.isSafeInteger(data.size) || data.size <= 0 || data.size > R2_MAX_ASSET_BYTES) {
+    throw new Error("Invalid asset size.");
+  }
+  // Extension and MIME must agree (R2-only allowlist); throws otherwise.
+  assertAllowedUpload(data.filename, data.mimeType);
+
+  // Verify the object was actually uploaded before recording it: prevents
+  // phantom rows, quota lies from client-declared sizes, and hijack of
+  // flow-run custom keys.
+  let head: Awaited<ReturnType<typeof headObject>>;
+  try {
+    head = await headObject(data.key);
+  } catch {
+    throw new Error("Uploaded object not found. Complete the upload before registering.");
+  }
+  const actualSize = Number(head.ContentLength ?? NaN);
+  if (!Number.isSafeInteger(actualSize) || actualSize !== data.size) {
+    throw new Error("Asset size does not match the uploaded object.");
+  }
+  if (head.ContentType && head.ContentType !== data.mimeType) {
+    throw new Error("Asset MIME type does not match the uploaded object.");
   }
 
   const [asset] = await db.insert(assets).values({
@@ -68,13 +93,17 @@ export async function deleteAsset(id: string) {
 
   if (!asset) throw new Error("Asset not found");
 
-  await db.delete(assets).where(eq(assets.id, id));
+  // Durable intent first (idempotent): a crash between the DB delete and the
+  // R2 delete still leaves a cleanup task instead of an orphaned object.
+  await enqueueR2Cleanup(tenantId, asset.key, "asset deleted from database");
+
+  await db.delete(assets).where(and(eq(assets.id, id), eq(assets.tenantId, tenantId)));
 
   try {
     await deleteObject(asset.key);
+    await cancelR2Cleanup(asset.key);
   } catch (err) {
     console.error(`[assets] Failed to delete R2 object ${asset.key}:`, err);
-    await enqueueR2Cleanup(tenantId, asset.key, "asset deleted from database");
   }
 
   return { success: true };

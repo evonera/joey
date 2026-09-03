@@ -23,13 +23,13 @@ export async function notifyTelegramApproval(input: { tenantId: string; runId: s
 
   const approval = await db.transaction(async (tx) => {
     const existing = await tx.query.telegramApprovals.findFirst({
-      where: and(eq(telegramApprovals.runId, input.runId), eq(telegramApprovals.status, "pending")),
+      where: and(eq(telegramApprovals.runId, input.runId), eq(telegramApprovals.tenantId, input.tenantId), eq(telegramApprovals.status, "pending")),
     });
     if (existing) {
       const [updated] = await tx
         .update(telegramApprovals)
         .set({ tokenHash: hash, expiresAt, updatedAt: new Date() })
-        .where(eq(telegramApprovals.id, existing.id))
+        .where(and(eq(telegramApprovals.id, existing.id), eq(telegramApprovals.tenantId, input.tenantId)))
         .returning();
       return updated;
     }
