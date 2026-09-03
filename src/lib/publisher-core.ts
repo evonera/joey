@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts, agentConfigs, apiKeys } from "@/lib/db/schema";
-import { eq, and, inArray, isNotNull, lte } from "drizzle-orm";
+import { eq, and, or, inArray, isNotNull, isNull, lte, asc, sql } from "drizzle-orm";
 import { createNotification } from "@/lib/notifications";
 import { decrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
@@ -244,6 +244,8 @@ export async function recoverStalePublishingDrafts(options: { limit?: number; st
     const now = Date.now();
     const staleAfterMs = options.staleAfterMs ?? 2 * 60 * 1000;
     const staleCutoffDate = new Date(now - staleAfterMs);
+    const staleCutoffTimestamp = now - staleAfterMs;
+    const staleClaimBound = `claimed:${staleCutoffTimestamp}`;
     const batchLimit = options.limit ?? 10;
 
     const stranded = await db.select({
@@ -255,7 +257,30 @@ export async function recoverStalePublishingDrafts(options: { limit?: number; st
         createdAt: drafts.createdAt,
     })
     .from(drafts)
-    .where(eq(drafts.status, "publishing"))
+    .where(
+        and(
+            eq(drafts.status, "publishing"),
+            or(
+                // Claimed with a timestamp at or older than stale cutoff
+                and(
+                    sql`${drafts.errorMessage} LIKE 'claimed:%'`,
+                    sql`${drafts.errorMessage} <= ${staleClaimBound}`
+                ),
+                // Or legacy/unmarked claim whose scheduledFor or createdAt has expired
+                and(
+                    or(
+                        isNull(drafts.errorMessage),
+                        sql`${drafts.errorMessage} NOT LIKE 'claimed:%'`
+                    ),
+                    or(
+                        lte(drafts.scheduledFor, staleCutoffDate),
+                        lte(drafts.createdAt, staleCutoffDate)
+                    )
+                )
+            )
+        )
+    )
+    .orderBy(asc(drafts.createdAt))
     .limit(batchLimit);
 
     let recoveredCount = 0;
