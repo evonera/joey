@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { apiKeys } from "@/lib/db/schema";
 import { encrypt } from "@/lib/crypto";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { headers } from "next/headers";
 import { getActiveTenantIdFromSession } from "@/lib/auth";
 
@@ -59,11 +59,14 @@ export async function POST(req: NextRequest) {
                 });
             }
 
-            // Encrypt and store the key bound to tenant context
+            // Encrypt and store the key bound to tenant context (AAD)
             const encrypted = encrypt(apiKey, tenantId);
             
             const existingKey = await db.query.apiKeys.findFirst({
-                where: eq(apiKeys.tenantId, tenantId)
+                where: and(
+                    eq(apiKeys.tenantId, tenantId),
+                    eq(apiKeys.provider, 'zernio'),
+                ),
             });
 
             if (existingKey) {

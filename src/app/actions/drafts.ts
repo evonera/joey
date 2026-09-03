@@ -45,6 +45,13 @@ export async function getPendingDraftCount() {
 
 export async function updateDraft(draftId: string, content: string) {
     try {
+        if (!content || typeof content !== "string" || content.trim().length === 0) {
+            return { error: "Content cannot be empty" };
+        }
+        if (content.length > 50000) {
+            return { error: "Content exceeds maximum length of 50,000 characters" };
+        }
+
         const tenantId = await getActiveTenantId();
         
         await db.update(drafts)
@@ -60,6 +67,10 @@ export async function updateDraft(draftId: string, content: string) {
 
 export async function approveDraft(draftId: string, variantName?: string, content?: string) {
     try {
+        if (content && content.length > 50000) {
+            return { error: "Content exceeds maximum length of 50,000 characters" };
+        }
+
         const tenantId = await getActiveTenantId();
         
         const updateData: Partial<typeof drafts.$inferInsert> & { status: string; errorMessage: null } = { status: "approved", errorMessage: null };
@@ -89,6 +100,10 @@ export async function approveDraft(draftId: string, variantName?: string, conten
 
 export async function rejectDraft(draftId: string, feedback: string) {
     try {
+        if (feedback && feedback.length > 5000) {
+            return { error: "Feedback exceeds maximum length of 5,000 characters" };
+        }
+
         const tenantId = await getActiveTenantId();
         
         await db.update(drafts)

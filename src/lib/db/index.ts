@@ -15,7 +15,7 @@ let instance: Db | null = null;
 
 function getDb(): Db {
     if (!instance) {
-        const connectionString = process.env.DATABASE_URL!;
+        const connectionString = process.env.DATABASE_URL || '';
         const provider = process.env.DATABASE_PROVIDER;
         const isNeonHttp = provider === 'neon-http';
         const isNeon = provider === 'neon' || connectionString.includes('neon.tech');

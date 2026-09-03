@@ -1,6 +1,6 @@
 'use server';
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { publicApiTokens } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -8,7 +8,7 @@ import crypto from "crypto";
 
 export async function createPublicApiToken(name: string, scopes: string[] = ["read", "write"]) {
     try {
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
         const token = crypto.randomBytes(32).toString('hex');
         const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
@@ -23,7 +23,7 @@ export async function createPublicApiToken(name: string, scopes: string[] = ["re
         return { success: true, token };
     } catch (error: any) {
         console.error("Failed to create API token:", error);
-        return { error: "Failed to create API token" };
+        return { error: error?.message || "Failed to create API token" };
     }
 }
 
@@ -52,7 +52,7 @@ export async function listPublicApiTokens() {
 
 export async function revokePublicApiToken(tokenId: string) {
     try {
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
 
         await db.delete(publicApiTokens)
             .where(and(eq(publicApiTokens.id, tokenId), eq(publicApiTokens.tenantId, tenantId)));
@@ -60,6 +60,6 @@ export async function revokePublicApiToken(tokenId: string) {
         return { success: true };
     } catch (error: any) {
         console.error("Failed to revoke API token:", error);
-        return { error: "Failed to revoke API token" };
+        return { error: error?.message || "Failed to revoke API token" };
     }
 }

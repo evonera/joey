@@ -15,6 +15,26 @@ export async function createManualPost(data: {
     scheduledFor?: string; // ISO date string
 }) {
     try {
+        if (!data.content || typeof data.content !== "string" || data.content.trim().length === 0) {
+            return { error: "Post content cannot be empty" };
+        }
+        if (data.content.length > 50000) {
+            return { error: "Post content exceeds maximum length of 50,000 characters" };
+        }
+        if (!Array.isArray(data.accountIds) || data.accountIds.length === 0) {
+            return { error: "At least one target account must be selected" };
+        }
+        if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
+            if (data.mediaUrls.length > 10) {
+                return { error: "Maximum 10 media URLs allowed" };
+            }
+            for (const url of data.mediaUrls) {
+                if (typeof url !== "string" || (!url.startsWith("http://") && !url.startsWith("https://"))) {
+                    return { error: "Invalid media URL format" };
+                }
+            }
+        }
+
         const tenantId = await getActiveTenantId(); // auth check
         
         // Fetch full account info to store platformOptions
