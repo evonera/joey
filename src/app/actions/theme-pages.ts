@@ -157,56 +157,11 @@ export async function createThemePage(data: CreateThemePageInput) {
     }
     const connectedAccounts = await validateConnectedAccounts(tenantId, data.connectedAccounts);
 
-    const { checkUsageLimits } = await import("@/lib/billing");
-    const limits = await checkUsageLimits(tenantId);
-
     const id = crypto.randomUUID();
-    const connStr = process.env.DATABASE_URL || '';
-    const isNeonHttp = process.env.DATABASE_PROVIDER === 'neon' || connStr.includes('neon.tech');
 
-    const executeInsert = async (executor: typeof db) => {
-      const result = await executor.execute(sql`
-        INSERT INTO theme_pages (
-          id, tenant_id, name, niche, audience, voice, brand_kit, connected_accounts, default_rights_policy, status
-        )
-        SELECT
-          ${id},
-          ${tenantId},
-          ${name},
-          ${normalizeText(data.niche, 240)},
-          ${normalizeText(data.audience, 500)},
-          ${normalizeText(data.voice, 2_000)},
-          ${JSON.stringify(sanitizeBrandKit(data.brandKit))}::jsonb,
-          ${JSON.stringify(connectedAccounts)}::jsonb,
-          ${data.defaultRightsPolicy || 'strict'},
-          'draft'
-        WHERE (
-          SELECT count(*) FROM theme_pages WHERE tenant_id = ${tenantId}
-        ) < ${limits.themePageLimit}
-        RETURNING *
-      `);
-
-      const inserted = (result as any).rows?.[0] || (result as any)[0];
-      if (!inserted) {
-        throw new Error(
-          `Free workspace limit reached (${limits.themePageLimit} Theme Page). Upgrade to Pro for unlimited theme pages.`
-        );
-      }
-      return inserted;
-    };
-
-    let page;
-    if (!limits.isPro) {
-      if (!isNeonHttp && typeof (db as any).transaction === "function") {
-        page = await db.transaction(async (tx) => {
-          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
-          return executeInsert(tx as unknown as typeof db);
-        });
-      } else {
-        page = await executeInsert(db);
-      }
-    } else {
-      const [inserted] = await db
+    const insertPage = async (runner: any) => {
+      await assertThemePageQuota(tenantId, runner);
+      const [inserted] = await runner
         .insert(themePages)
         .values({
           id,
@@ -221,7 +176,25 @@ export async function createThemePage(data: CreateThemePageInput) {
           status: 'draft',
         })
         .returning();
-      page = inserted;
+      return inserted;
+    };
+
+    let page;
+    if (typeof (db as any).transaction === "function") {
+      try {
+        page = await db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
+          return insertPage(tx);
+        });
+      } catch (err: any) {
+        if (err?.message?.includes("transaction") || err?.message?.includes("neon-http")) {
+          page = await insertPage(db);
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      page = await insertPage(db);
     }
 
     return { page };
