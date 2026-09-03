@@ -7,7 +7,8 @@ import { executePublishDraft, getZernioClientForTenant, publishDueDrafts } from 
 import { syncTenantMemories } from "@/lib/ingest-memories";
 import { assertBudget } from "@/lib/usage";
 import { recoverStaleEngagementSends } from "@/lib/engagement-delivery";
-import { processThemeStudioDmRetries } from "@/lib/engagement-inbox";
+// NOTE: Theme Studio DM retries are owned by flows-tick (every minute).
+// Do not call processThemeStudioDmRetries here to avoid a duplicate pump.
 // Aliases: toZonedTime() = UTC -> local wall-clock; fromZonedTime() = local -> UTC.
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
@@ -66,7 +67,7 @@ function nextDraftAt(now: Date, schedule?: PostingSchedule | null): Date {
 
 export default defineSchedule({
   cron: "*/5 * * * *",
-  async run({ receive, waitUntil }) {
+  async run({ to, waitUntil }) {
 
     // Release reply-send leases abandoned by crashed workers or transient
     // database failures before admitting more engagement work.
@@ -74,12 +75,6 @@ export default defineSchedule({
       await recoverStaleEngagementSends();
     } catch (err) {
       console.error("[poll] Failed to recover stale engagement sends:", err);
-    }
-
-    try {
-      await processThemeStudioDmRetries();
-    } catch (err) {
-      console.error("[poll] Failed to process Theme Studio DM retries:", err);
     }
 
     // --- 0. Sync Memories for Active Tenants ---
@@ -133,16 +128,17 @@ export default defineSchedule({
       });
 
       waitUntil(
-        receive(eveChannel, {
-          message: `A new comment was received on ${item.platform}. Comment by @${item.commenterHandle || item.commenterName || "unknown"}: "${item.text}". Use the reply_to_comment tool to draft an on-brand response. The engagement item ID is: ${item.id}. ${agentConfig?.brandVoice ? `Brand voice: ${agentConfig.brandVoice}` : ""}`,
-          target: {},
-          auth: {
-            authenticator: "cron",
-            principalType: "user",
-            principalId: ownerMember.userId,
-            attributes: { tenantId: item.tenantId },
+        to(eveChannel, {}).send(
+          `A new comment was received on ${item.platform}. Comment by @${item.commenterHandle || item.commenterName || "unknown"}: "${item.text}". Use the reply_to_comment tool to draft an on-brand response. The engagement item ID is: ${item.id}. ${agentConfig?.brandVoice ? `Brand voice: ${agentConfig.brandVoice}` : ""}`,
+          {
+            auth: {
+              authenticator: "cron",
+              principalType: "user",
+              principalId: ownerMember.userId,
+              attributes: { tenantId: item.tenantId },
+            },
           },
-        })
+        ),
       );
     }
 
@@ -202,16 +198,14 @@ export default defineSchedule({
 
       if (agentMessage) {
         waitUntil(
-          receive(eveChannel, {
-            message: agentMessage,
-            target: {},
+          to(eveChannel, {}).send(agentMessage, {
             auth: {
               authenticator: "cron",
               principalType: "user",
               principalId: ownerMember.userId,
               attributes: { tenantId: resolvedTenantId },
             },
-          })
+          }),
         );
       }
 
@@ -260,16 +254,17 @@ export default defineSchedule({
 
       // Spawn an agent task for this tenant
       waitUntil(
-        receive(eveChannel, {
-          message: "It is time to draft a new social media post. Please review the brand persona and goals, generate a relevant draft, and use the draft_post tool to save it.",
-          target: { }, // Base target, Eve handles session isolation via auth
-          auth: {
-            authenticator: "cron",
-            principalType: "user",
-            principalId: ownerMember.userId,
-            attributes: { tenantId: config.tenantId },
+        to(eveChannel, {}).send(
+          "It is time to draft a new social media post. Please review the brand persona and goals, generate a relevant draft, and use the draft_post tool to save it.",
+          {
+            auth: {
+              authenticator: "cron",
+              principalType: "user",
+              principalId: ownerMember.userId,
+              attributes: { tenantId: config.tenantId },
+            },
           },
-        })
+        ),
       );
 
       // Compute the next drafting slot honouring the tenant's configured

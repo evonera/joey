@@ -41,7 +41,10 @@ describe("Eve Agent web_search tool", () => {
       },
     };
 
-    const output = await webSearchTool.execute(
+    // Note: eve 0.50 types tool executors as a union that includes
+    // AsyncIterable (streaming tools). This execute is a plain async
+    // function, so narrow to any for direct invocation.
+    const output: any = await webSearchTool.execute(
       {
         query: "Steph Curry",
         includeDomains: ["nba.com", "espn.com"],
@@ -72,7 +75,7 @@ describe("Eve Agent web_search tool", () => {
       session: { auth: { current: { attributes: { tenantId: "tenant_abc" } } } },
     };
 
-    const output = await webSearchTool.execute(
+    const output: any = await webSearchTool.execute(
       {
         query: "Test",
         category: "news",
