@@ -23,6 +23,7 @@ import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { useTheme } from "next-themes";
 import {
   ArrowLeft01Icon as ArrowLeft,
   PlayIcon as Play,
@@ -34,21 +35,34 @@ import {
   PauseIcon as Pause,
   Bookmark01Icon as BookMarked,
   Clock01Icon as Clock3,
-  FlashIcon as Zap,
-  DatabaseIcon as Database,
-  FilterIcon as Filter,
-  ArrowUpDownIcon as ArrowDownUp,
   Copy01Icon as Copy,
-  GitForkIcon as GitBranch,
-  BrainIcon as Brain,
-  File02Icon as FileText,
-  Notification01Icon as Bell,
-  RepeatIcon as Repeat2,
-  SecurityCheckIcon as ShieldCheck,
-  Globe02Icon as Globe,
   Time04Icon as History,
-  SparklesIcon as Sparkles,
 } from "hugeicons-react";
+import {
+  Play as PlayLucide,
+  Clock as ClockLucide,
+  Zap as ZapLucide,
+  Globe,
+  Bot,
+  Search,
+  Compass,
+  Rss,
+  Filter,
+  ArrowUpDown,
+  Layers,
+  GitBranch,
+  Repeat,
+  ShieldCheck,
+  Split,
+  Sparkles,
+  Image as ImageIcon,
+  Mic,
+  FileEdit,
+  Bell,
+  FolderDown,
+  LayoutTemplate,
+} from "lucide-react";
+import { IconBrandYoutube, IconBrandReddit, IconBrandTelegram } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -74,30 +88,86 @@ type FlowRow = {
   webhookConfigured: boolean;
 };
 
-const CATEGORY_ICON: Record<string, typeof Zap> = {
-  trigger: Zap, data: Database, transform: Filter, ai: Brain, action: FileText, logic: GitBranch,
+type NodeVisualInfo = {
+  icon: React.ComponentType<{ className?: string; size?: number }>;
+  colorClass: string;
+  bgClass: string;
 };
+
+const NODE_VISUAL_MAP: Record<string, NodeVisualInfo> = {
+  // Triggers
+  "trigger.manual": { icon: PlayLucide, colorClass: "text-emerald-500", bgClass: "bg-emerald-500/10 dark:bg-emerald-500/20" },
+  "trigger.schedule": { icon: ClockLucide, colorClass: "text-blue-500", bgClass: "bg-blue-500/10 dark:bg-blue-500/20" },
+  "trigger.webhook": { icon: ZapLucide, colorClass: "text-amber-500", bgClass: "bg-amber-500/10 dark:bg-amber-500/20" },
+  "trigger.incoming_webhook": { icon: Globe, colorClass: "text-violet-500", bgClass: "bg-violet-500/10 dark:bg-violet-500/20" },
+
+  // Data
+  "data.apify_actor": { icon: Bot, colorClass: "text-cyan-500", bgClass: "bg-cyan-500/10 dark:bg-cyan-500/20" },
+  "data.exa_search": { icon: Search, colorClass: "text-sky-500", bgClass: "bg-sky-500/10 dark:bg-sky-500/20" },
+  "data.tavily_search": { icon: Compass, colorClass: "text-blue-500", bgClass: "bg-blue-500/10 dark:bg-blue-500/20" },
+  "data.http": { icon: Globe, colorClass: "text-teal-500", bgClass: "bg-teal-500/10 dark:bg-teal-500/20" },
+  "data.rss": { icon: Rss, colorClass: "text-orange-500", bgClass: "bg-orange-500/10 dark:bg-orange-500/20" },
+  "data.reddit": { icon: IconBrandReddit as unknown as React.ComponentType<{ className?: string }>, colorClass: "text-orange-600", bgClass: "bg-orange-600/10 dark:bg-orange-600/20" },
+
+  // Transform
+  "transform.filter": { icon: Filter, colorClass: "text-purple-500", bgClass: "bg-purple-500/10 dark:bg-purple-500/20" },
+  "transform.sort": { icon: ArrowUpDown, colorClass: "text-indigo-500", bgClass: "bg-indigo-500/10 dark:bg-indigo-500/20" },
+  "transform.dedupe": { icon: Layers, colorClass: "text-fuchsia-500", bgClass: "bg-fuchsia-500/10 dark:bg-fuchsia-500/20" },
+
+  // Logic
+  "logic.condition": { icon: GitBranch, colorClass: "text-amber-500", bgClass: "bg-amber-500/10 dark:bg-amber-500/20" },
+  "logic.loop": { icon: Repeat, colorClass: "text-amber-600", bgClass: "bg-amber-600/10 dark:bg-amber-600/20" },
+  "logic.approval": { icon: ShieldCheck, colorClass: "text-emerald-500", bgClass: "bg-emerald-500/10 dark:bg-emerald-500/20" },
+  "logic.split": { icon: Split, colorClass: "text-amber-500", bgClass: "bg-amber-500/10 dark:bg-amber-500/20" },
+
+  // AI
+  "ai.llm": { icon: Sparkles, colorClass: "text-violet-500", bgClass: "bg-violet-500/10 dark:bg-violet-500/20" },
+  "ai.transcribe": { icon: Mic, colorClass: "text-rose-500", bgClass: "bg-rose-500/10 dark:bg-rose-500/20" },
+  "ai.image": { icon: ImageIcon, colorClass: "text-fuchsia-500", bgClass: "bg-fuchsia-500/10 dark:bg-fuchsia-500/20" },
+  "ai.youtube_transcript": { icon: IconBrandYoutube as unknown as React.ComponentType<{ className?: string }>, colorClass: "text-red-500", bgClass: "bg-red-500/10 dark:bg-red-500/20" },
+
+  // Actions
+  "action.create_draft": { icon: FileEdit, colorClass: "text-indigo-500", bgClass: "bg-indigo-500/10 dark:bg-indigo-500/20" },
+  "action.notify": { icon: Bell, colorClass: "text-amber-500", bgClass: "bg-amber-500/10 dark:bg-amber-500/20" },
+  "action.save_asset": { icon: FolderDown, colorClass: "text-emerald-500", bgClass: "bg-emerald-500/10 dark:bg-emerald-500/20" },
+  "action.telegram_send": { icon: IconBrandTelegram as unknown as React.ComponentType<{ className?: string }>, colorClass: "text-sky-500", bgClass: "bg-sky-500/10 dark:bg-sky-500/20" },
+  "action.theme_studio_run": { icon: LayoutTemplate, colorClass: "text-pink-500", bgClass: "bg-pink-500/10 dark:bg-pink-500/20" },
+};
+
+function getNodeVisuals(nodeType: string, category: string): NodeVisualInfo {
+  if (NODE_VISUAL_MAP[nodeType]) return NODE_VISUAL_MAP[nodeType];
+  switch (category) {
+    case "trigger": return { icon: ZapLucide, colorClass: "text-amber-500", bgClass: "bg-amber-500/10" };
+    case "data": return { icon: Search, colorClass: "text-blue-500", bgClass: "bg-blue-500/10" };
+    case "transform": return { icon: Filter, colorClass: "text-purple-500", bgClass: "bg-purple-500/10" };
+    case "ai": return { icon: Sparkles, colorClass: "text-violet-500", bgClass: "bg-violet-500/10" };
+    case "action": return { icon: FileEdit, colorClass: "text-indigo-500", bgClass: "bg-indigo-500/10" };
+    case "logic": return { icon: GitBranch, colorClass: "text-amber-500", bgClass: "bg-amber-500/10" };
+    default: return { icon: ZapLucide, colorClass: "text-primary", bgClass: "bg-primary/10" };
+  }
+}
 
 function FlowNode({ data, selected }: NodeProps) {
   const d = data as { label: string; nodeType: string; category: string };
   const def = getNode(d.nodeType);
-  const Icon = CATEGORY_ICON[d.category] ?? Zap;
+  const visuals = getNodeVisuals(d.nodeType, d.category);
+  const IconComponent = visuals.icon;
   const accent =
-    d.category === "trigger" ? "border-amber-400" :
-    d.category === "ai" ? "border-purple-400" :
-    d.category === "action" ? "border-emerald-400" : "border-zinc-300 dark:border-zinc-700";
+    d.category === "trigger" ? "border-amber-500/60" :
+    d.category === "ai" ? "border-purple-500/60" :
+    d.category === "action" ? "border-emerald-500/60" : "border-border";
 
   const outputs = def?.outputs ?? [];
   return (
     <div
-      className={`min-w-[150px] rounded-xl border-2 bg-card px-3 py-2 text-card-foreground shadow-md ${accent} ${selected ? "ring-2 ring-indigo-400" : ""}`}
+      className={`min-w-[155px] rounded-xl border-2 bg-card px-3 py-2 text-card-foreground shadow-md transition-all ${accent} ${selected ? "ring-2 ring-primary" : ""}`}
     >
       {(def?.inputs.length ?? 0) > 0 && <Handle type="target" position={Position.Left} />}
       <div className="flex items-center gap-2">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300">
-          <Icon className="h-3.5 w-3.5" />
+        <span className={`flex h-6 w-6 items-center justify-center rounded-md ${visuals.bgClass} ${visuals.colorClass}`}>
+          <IconComponent className="h-3.5 w-3.5" />
         </span>
-        <span className="text-xs font-semibold">{d.label}</span>
+        <span className="text-xs font-semibold text-foreground">{d.label}</span>
       </div>
       <div className="flex gap-1 mt-1.5 flex-wrap">
         {outputs.map((o) => (
@@ -156,6 +226,8 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   );
 
   const [name, setName] = useState(flow.name);
+  const { resolvedTheme } = useTheme();
+  const colorMode = (resolvedTheme === "dark" ? "dark" : "light") as "dark" | "light";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runsOpen, setRunsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -243,19 +315,21 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   function addNodeType(type: string, screenPos: { x: number; y: number }) {
     const def = getNode(type);
     if (!def) return;
-    // @xyflow/react exposes project via wrapper instance; approximate with container-relative coords
-    const rect = wrapperRef.current?.getBoundingClientRect();
-    const zoom = 1;
-    const position = {
-      x: rect ? screenPos.x - rect.left : screenPos.x,
-      y: rect ? screenPos.y - rect.top : screenPos.y,
-    };
+    const position = reactFlowRef.current
+      ? reactFlowRef.current.screenToFlowPosition({ x: screenPos.x, y: screenPos.y })
+      : (() => {
+          const rect = wrapperRef.current?.getBoundingClientRect();
+          return {
+            x: rect ? screenPos.x - rect.left : screenPos.x,
+            y: rect ? screenPos.y - rect.top : screenPos.y,
+          };
+        })();
     const id = `n${Date.now()}${idCounter.current++}`;
     setRfNodes((nds) => [
       ...nds,
       {
         id, type: "flowNode",
-        position: { x: position.x / zoom, y: position.y / zoom },
+        position,
         data: { label: def.label, nodeType: def.type, category: def.category, config: {} },
       } as Node,
     ]);
@@ -398,7 +472,8 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{category}</p>
             <div className="space-y-1.5">
               {entries.map((entry) => {
-                const Icon = CATEGORY_ICON[entry.category] ?? Zap;
+                const visuals = getNodeVisuals(entry.type, entry.category);
+                const IconComponent = visuals.icon;
                 return (
                   <button
                     key={entry.type}
@@ -406,10 +481,12 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData("application/flow-node", entry.type)}
                     onClick={() => addNodeType(entry.type, { x: 120 + Math.random()*200, y: 120 + Math.random()*160 })}
-                    className="flex w-full items-center gap-2 rounded-lg border bg-card px-2.5 py-2 text-left text-xs font-medium hover:border-indigo-400 hover:bg-accent transition-colors cursor-grab active:cursor-grabbing"
+                    className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-left text-xs font-medium hover:border-primary/50 hover:bg-accent/50 transition-all cursor-grab active:cursor-grabbing shadow-xs"
                   >
-                    <Icon className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
-                    {entry.label}
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-md ${visuals.bgClass} ${visuals.colorClass} shrink-0`}>
+                      <IconComponent className="h-3 w-3" />
+                    </span>
+                    <span className="truncate text-foreground font-medium">{entry.label}</span>
                   </button>
                 );
               })}
@@ -511,6 +588,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
             onConnect={onConnect}
             onInit={(instance) => { reactFlowRef.current = instance; }}
             nodeTypes={nodeTypes}
+            colorMode={colorMode}
             onNodeClick={(_, node) => setSelectedId(node.id)}
             onPaneClick={() => setSelectedId(null)}
             onDrop={(e) => {
@@ -522,10 +600,53 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
             fitView
             proOptions={{ hideAttribution: true }}
           >
-            <Background gap={18} />
-            <Controls showInteractive={false} />
-            <MiniMap pannable zoomable />
+            <Background gap={18} color={colorMode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"} />
+            <Controls 
+              showInteractive={false} 
+              className="!bg-card !border-border !shadow-sm !rounded-lg overflow-hidden [&>button]:!bg-card [&>button]:!border-border [&>button]:!fill-foreground [&>button:hover]:!bg-accent" 
+            />
+            <MiniMap 
+              pannable 
+              zoomable 
+              className="!bg-card !border-border !shadow-sm !rounded-lg overflow-hidden"
+              maskColor={colorMode === "dark" ? "rgba(0, 0, 0, 0.75)" : "rgba(240, 240, 240, 0.7)"}
+              nodeColor={colorMode === "dark" ? "#6366f1" : "#4f46e5"}
+            />
           </ReactFlow>
+
+          {rfNodes.length === 0 && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10 p-4">
+              <div className="pointer-events-auto max-w-sm w-full p-6 rounded-2xl border border-border bg-card/90 backdrop-blur-md shadow-xl text-center space-y-4">
+                <div className="mx-auto w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+                  <Rocket className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground text-base">Your Canvas is Empty</h3>
+                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                    Drag a trigger from the left sidebar to start building, or quickly add a starting point below.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2 justify-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => addNodeType("trigger.schedule", { x: 260, y: 180 })}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-secondary hover:bg-secondary/80 text-foreground transition-colors border border-border shadow-xs"
+                  >
+                    <Clock3 className="w-3.5 h-3.5 text-indigo-500" />
+                    Scheduled Trigger
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addNodeType("trigger.manual", { x: 260, y: 180 })}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-secondary hover:bg-secondary/80 text-foreground transition-colors border border-border shadow-xs"
+                  >
+                    <Play className="w-3.5 h-3.5 text-emerald-500" />
+                    Manual Start
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Config drawer */}
           {selectedDef && selectedNode && (

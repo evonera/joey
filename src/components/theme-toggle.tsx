@@ -14,7 +14,7 @@ export function ThemeToggle({ className }: { className?: string }) {
 
   if (!mounted) {
     return (
-      <div className={`w-8 h-8 rounded-md bg-white/[0.04] border border-white/[0.08] ${className || ''}`} />
+      <div className={`w-8 h-8 rounded-md bg-secondary/50 border border-border ${className || ''}`} />
     );
   }
 
@@ -24,7 +24,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     <button
       type="button"
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      className={`inline-flex items-center justify-center w-8 h-8 rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-white/70 hover:text-white border border-white/[0.08] transition-colors ${className || ''}`}
+      className={`inline-flex items-center justify-center w-8 h-8 rounded-md bg-secondary/60 hover:bg-secondary text-muted-foreground hover:text-foreground border border-border transition-colors ${className || ''}`}
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
     >

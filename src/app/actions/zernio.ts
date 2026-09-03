@@ -22,7 +22,7 @@ export async function getZernioClient() {
         throw new Error("No API key configured");
     }
 
-    const apiKey = decrypt(key.encryptedKey);
+    const apiKey = decrypt(key.encryptedKey, tenantId);
     return { zernio: new Zernio({ apiKey }), tenantId };
 }
 

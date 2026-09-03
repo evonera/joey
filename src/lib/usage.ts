@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { usageTracking, agentConfigs } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { createNotification } from "@/lib/notifications";
 
 // Rough cost models (USD per 1K tokens) used to estimate spend when the provider
@@ -25,6 +25,16 @@ async function getOrCreateUsageRow(tenantId: string) {
     await db.update(usageTracking)
       .set({ periodStart, inputTokensUsed: 0, outputTokensUsed: 0, estimatedCostUsd: "0" })
       .where(eq(usageTracking.id, usage.id));
+
+    // Reset agent pause if it was caused by the billing cycle budget limit.
+    // Preserves unrelated pauses (e.g. invalid API credentials or manual pauses).
+    await db.update(agentConfigs)
+      .set({ isPaused: false, pauseReason: null })
+      .where(and(
+        eq(agentConfigs.tenantId, tenantId),
+        eq(agentConfigs.pauseReason, "budget_exceeded"),
+      ));
+
     usage = await db.query.usageTracking.findFirst({ where: eq(usageTracking.tenantId, tenantId) });
   }
 
@@ -89,7 +99,7 @@ export async function assertBudget(
 
   if (!allowed) {
     await db.update(agentConfigs)
-      .set({ isPaused: true })
+      .set({ isPaused: true, pauseReason: "budget_exceeded" })
       .where(eq(agentConfigs.tenantId, tenantId));
     await createNotification(
       tenantId,

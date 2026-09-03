@@ -260,6 +260,13 @@
       "when": 1788700000000,
       "tag": "0036_one_guideline_per_tenant",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788800000000,
+      "tag": "0037_add_pause_reason_to_agent_configs",
+      "breakpoints": true
     }
   ]
 }

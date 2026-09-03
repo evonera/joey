@@ -16,6 +16,8 @@ import {
   Image01Icon,
   Activity01Icon,
   Settings02Icon,
+  NoteEditIcon,
+  Calendar03Icon,
 } from "hugeicons-react"
 
 import { NavMain, type NavSection } from "@/components/nav-main"
@@ -47,10 +49,20 @@ export function AppSidebar({
           icon: DashboardSquare01Icon,
         },
         {
+          title: "Compose",
+          url: "/compose",
+          icon: NoteEditIcon,
+        },
+        {
           title: "Drafts",
           url: "/drafts",
           icon: File02Icon,
           badge: pendingDraftCount,
+        },
+        {
+          title: "Calendar",
+          url: "/calendar",
+          icon: Calendar03Icon,
         },
         {
           title: "Engagement",
@@ -87,11 +99,6 @@ export function AppSidebar({
           title: "Analytics",
           url: "/analytics",
           icon: Analytics01Icon,
-        },
-        {
-          title: "Insights",
-          url: "/insights",
-          icon: BulbIcon,
         },
       ],
     },

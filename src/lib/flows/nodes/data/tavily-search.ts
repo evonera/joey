@@ -60,7 +60,7 @@ async function resolveKey(tenantId: string): Promise<string> {
     if (tenantKey.status !== "active") {
       throw new Error("Tavily API key for this workspace is revoked or disabled.");
     }
-    return decrypt(tenantKey.encryptedKey);
+    return decrypt(tenantKey.encryptedKey, tenantId);
   }
   if (process.env.TAVILY_API_KEY) return process.env.TAVILY_API_KEY;
   throw new Error("No Tavily API key. Add one in Settings → API Keys (provider: tavily).");

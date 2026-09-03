@@ -299,7 +299,7 @@ async function resolveOpenAiKey(tenantId: string): Promise<string> {
     if (tenantKey.status !== "active") {
       throw new Error("OpenAI API key for this workspace is revoked or disabled.");
     }
-    return decrypt(tenantKey.encryptedKey);
+    return decrypt(tenantKey.encryptedKey, tenantId);
   }
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
   throw new Error("No OpenAI API key available for transcription.");

@@ -514,7 +514,7 @@ export async function sendReply(replyDraftId: string) {
       if (status === 401 || status === 403) {
         try {
           await db.update(agentConfigs)
-            .set({ isPaused: true })
+            .set({ isPaused: true, pauseReason: "api_failure" })
             .where(eq(agentConfigs.tenantId, tenantId));
         } catch (pauseError) {
           console.error("Failed to pause agent after Zernio authorization error:", pauseError);
