@@ -58,7 +58,7 @@ export default function AnalyticsPage() {
               onClick={() => setDays(r.value)}
               className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                 days === r.value
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-[#ffe633] text-black font-semibold"
                   : "text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800"
               }`}
             >

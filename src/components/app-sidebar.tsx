@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
+import Image from "next/image"
 import {
   DashboardSquare01Icon,
   File02Icon,
@@ -16,7 +18,7 @@ import {
   Settings02Icon,
 } from "hugeicons-react"
 
-import { NavMain } from "@/components/nav-main"
+import { NavMain, type NavSection } from "@/components/nav-main"
 import {
   Sidebar,
   SidebarContent,
@@ -27,91 +29,134 @@ import {
 } from "@/components/ui/sidebar"
 import { OrganizationSwitcher } from "@/components/auth/OrganizationSwitcher"
 
-export function AppSidebar({ pendingDraftCount, pendingReplyCount, ...props }: React.ComponentProps<typeof Sidebar> & { pendingDraftCount?: number; pendingReplyCount?: number }) {
-  const navMain = [
+export function AppSidebar({
+  pendingDraftCount,
+  pendingReplyCount,
+  ...props
+}: React.ComponentProps<typeof Sidebar> & {
+  pendingDraftCount?: number
+  pendingReplyCount?: number
+}) {
+  const navSections: NavSection[] = [
     {
-      title: "Dashboard",
-      url: "/dashboard",
-      icon: DashboardSquare01Icon,
+      label: "Workflow",
+      items: [
+        {
+          title: "Dashboard",
+          url: "/dashboard",
+          icon: DashboardSquare01Icon,
+        },
+        {
+          title: "Drafts",
+          url: "/drafts",
+          icon: File02Icon,
+          badge: pendingDraftCount,
+        },
+        {
+          title: "Engagement",
+          url: "/engagement",
+          icon: Comment01Icon,
+          badge: pendingReplyCount,
+        },
+      ],
     },
     {
-      title: "Drafts",
-      url: "/drafts",
-      icon: File02Icon,
-      badge: pendingDraftCount,
+      label: "Studio",
+      items: [
+        {
+          title: "Theme Studio",
+          url: "/theme-studio",
+          icon: SparklesIcon,
+        },
+        {
+          title: "Flows",
+          url: "/flows",
+          icon: GitForkIcon,
+        },
+        {
+          title: "Assets",
+          url: "/assets",
+          icon: Image01Icon,
+        },
+      ],
     },
     {
-      title: "Engagement",
-      url: "/engagement",
-      icon: Comment01Icon,
-      badge: pendingReplyCount,
+      label: "Intelligence",
+      items: [
+        {
+          title: "Analytics",
+          url: "/analytics",
+          icon: Analytics01Icon,
+        },
+        {
+          title: "Insights",
+          url: "/insights",
+          icon: BulbIcon,
+        },
+      ],
     },
     {
-      title: "Accounts",
-      url: "/accounts",
-      icon: UserMultiple02Icon,
+      label: "Setup & Admin",
+      items: [
+        {
+          title: "Brand Kit",
+          url: "/brandkit",
+          icon: PaintBoardIcon,
+        },
+        {
+          title: "Accounts",
+          url: "/accounts",
+          icon: UserMultiple02Icon,
+        },
+        {
+          title: "Settings",
+          url: "/settings",
+          icon: Settings02Icon,
+        },
+        {
+          title: "Operations",
+          url: "/operations",
+          icon: Activity01Icon,
+        },
+      ],
     },
-    {
-      title: "Brand Kit",
-      url: "/brandkit",
-      icon: PaintBoardIcon,
-    },
-    {
-      title: "Insights",
-      url: "/insights",
-      icon: BulbIcon,
-    },
-    {
-      title: "Analytics",
-      url: "/analytics",
-      icon: Analytics01Icon,
-    },
-    {
-      title: "Flows",
-      url: "/flows",
-      icon: GitForkIcon,
-    },
-    {
-      title: "Theme Studio",
-      url: "/theme-studio",
-      icon: SparklesIcon,
-    },
-    {
-      title: "Assets",
-      url: "/assets",
-      icon: Image01Icon,
-    },
-    {
-      title: "Operations",
-      url: "/operations",
-      icon: Activity01Icon,
-    },
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: Settings02Icon,
-    },
-  ];
+  ]
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
-      <SidebarHeader>
+      <SidebarHeader className="p-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              className="data-[slot=sidebar-menu-button]:p-1.5!"
+              className="h-10 hover:bg-sidebar-accent/50 transition-colors"
             >
-              <a href="/dashboard">
-                <span className="text-xl font-bold">Joey.ai</span>
-              </a>
+              <Link href="/dashboard" className="flex items-center gap-2.5">
+                <div className="size-7 rounded-md bg-[#ffe633]/20 border border-[#ffe633]/40 flex items-center justify-center shrink-0 p-0.5">
+                  <Image
+                    src="/joey-mascot.png"
+                    alt="Joey"
+                    width={22}
+                    height={22}
+                    className="object-contain"
+                  />
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-lg font-bold tracking-tight text-foreground">
+                    Joey
+                  </span>
+                  <span className="text-xs font-semibold text-[#ffe633]">
+                    .ai
+                  </span>
+                </div>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <OrganizationSwitcher className="w-full mt-2" />
+        <OrganizationSwitcher className="w-full mt-1.5" />
       </SidebarHeader>
-      <SidebarContent>
-        <NavMain items={navMain} />
+      <SidebarContent className="px-1">
+        <NavMain sections={navSections} />
       </SidebarContent>
     </Sidebar>
   )

@@ -32,8 +32,8 @@ export function UserButton({ className }: { className?: string }) {
 
   if (isPending) {
     return (
-      <div className="w-8 h-8 rounded-full bg-white/[0.06] flex items-center justify-center">
-        <Loading03Icon size={14} className="animate-spin text-white/40" />
+      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+        <Loading03Icon size={14} className="animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -42,7 +42,7 @@ export function UserButton({ className }: { className?: string }) {
     return (
       <Link
         href="/login"
-        className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white hover:bg-white/[0.08] transition-colors"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors"
       >
         <UserIcon size={14} />
         <span>Sign In</span>
@@ -76,7 +76,7 @@ export function UserButton({ className }: { className?: string }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-lg p-1 hover:bg-white/[0.06] transition-colors focus:outline-none"
+        className="flex items-center gap-2 rounded-lg p-1 hover:bg-accent transition-colors focus:outline-none"
         aria-expanded={open}
         aria-haspopup="true"
       >
@@ -86,42 +86,42 @@ export function UserButton({ className }: { className?: string }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-white/[0.08] bg-[#161514] p-1.5 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
-          <div className="px-3 py-2 border-b border-white/[0.06]">
-            <p className="text-xs font-semibold text-white truncate">{user.name || 'User'}</p>
-            <p className="text-[11px] text-white/50 truncate mt-0.5">{user.email}</p>
+        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+          <div className="px-3 py-2 border-b border-border">
+            <p className="text-xs font-semibold text-popover-foreground truncate">{user.name || 'User'}</p>
+            <p className="text-[11px] text-muted-foreground truncate mt-0.5">{user.email}</p>
           </div>
 
           <div className="py-1 space-y-0.5">
             <Link
               href="/settings"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 text-xs text-white/80 hover:text-white rounded-lg hover:bg-white/[0.06] transition-colors"
+              className="flex items-center gap-2.5 px-3 py-2 text-xs text-popover-foreground/80 hover:text-popover-foreground rounded-lg hover:bg-accent transition-colors"
             >
-              <Settings02Icon size={15} className="text-white/40" />
+              <Settings02Icon size={15} className="text-muted-foreground" />
               <span>Workspace Settings</span>
             </Link>
 
             <Link
               href="/settings"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 text-xs text-white/80 hover:text-white rounded-lg hover:bg-white/[0.06] transition-colors"
+              className="flex items-center gap-2.5 px-3 py-2 text-xs text-popover-foreground/80 hover:text-popover-foreground rounded-lg hover:bg-accent transition-colors"
             >
-              <CreditCardIcon size={15} className="text-white/40" />
+              <CreditCardIcon size={15} className="text-muted-foreground" />
               <span>Billing & Plan</span>
             </Link>
 
-            <div className="flex items-center justify-between px-3 py-1.5 text-xs text-white/80">
-              <span className="text-white/50">Theme</span>
+            <div className="flex items-center justify-between px-3 py-1.5 text-xs text-popover-foreground/80">
+              <span className="text-muted-foreground">Theme</span>
               <ThemeToggle />
             </div>
           </div>
 
-          <div className="pt-1 border-t border-white/[0.06]">
+          <div className="pt-1 border-t border-border">
             <button
               type="button"
               onClick={handleSignOut}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:text-red-300 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-destructive hover:text-destructive rounded-lg hover:bg-destructive/10 transition-colors cursor-pointer"
             >
               <Logout01Icon size={15} />
               <span>Sign Out</span>

@@ -40,8 +40,8 @@ export default function DraftsPage() {
                         onClick={() => setStatusFilter(tab.id)}
                         className={`px-4 py-2 border-b-2 whitespace-nowrap text-sm font-medium ${
                             statusFilter === tab.id 
-                                ? "border-indigo-500 text-indigo-600 dark:text-indigo-400" 
-                                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                ? "border-[#ffe633] text-[#ffe633] font-semibold" 
+                                : "border-transparent text-muted-foreground hover:text-foreground"
                         }`}
                     >
                         {tab.label}

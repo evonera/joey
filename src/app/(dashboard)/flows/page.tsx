@@ -87,7 +87,7 @@ export default function FlowsPage() {
             <div key={flow.id} className="group relative rounded-xl border bg-card p-5 shadow-sm transition-shadow hover:shadow-md">
               <Link href={`/flows/${flow.id}`} className="block">
                 <div className="flex items-center gap-2 mb-1">
-                  <h2 className="font-semibold group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{flow.name}</h2>
+                  <h2 className="font-semibold group-hover:text-[#ffe633] transition-colors">{flow.name}</h2>
                   <Badge variant={flow.status === "active" ? "default" : "secondary"} className="text-[10px]">{flow.status}</Badge>
                 </div>
                 {flow.description && <p className="text-sm text-muted-foreground line-clamp-2">{flow.description}</p>}

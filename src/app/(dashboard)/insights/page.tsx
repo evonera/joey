@@ -99,7 +99,7 @@ export default function InsightsPage() {
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="flex items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
-                <TrendingUp className="h-5 w-5 text-indigo-500" />
+                <TrendingUp className="h-5 w-5 text-[#ffe633]" />
                 <div>
                   <p className="text-sm text-zinc-500">Total Reviews</p>
                   <p className="text-xl font-bold">{insights.length}</p>

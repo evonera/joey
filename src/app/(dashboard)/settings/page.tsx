@@ -329,7 +329,7 @@ export default function SettingsPage() {
           type="button"
           onClick={() => submitSave()}
           disabled={isSaving}
-          className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+          className="flex items-center rounded-md bg-[#ffe633] px-4 py-2 text-sm font-semibold text-black shadow-sm hover:bg-[#ffe633]/90 disabled:opacity-50"
         >
           {isSaving ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -417,8 +417,8 @@ export default function SettingsPage() {
                     onClick={() => toggleDay(day.id)}
                     className={`px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
                       activeDays.includes(day.id)
-                        ? "bg-indigo-600 border-indigo-600 text-white"
-                        : "bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                        ? "bg-[#ffe633] border-[#ffe633] text-black font-semibold"
+                        : "bg-card border-border text-foreground hover:bg-muted"
                     }`}
                   >
                     {day.label}
@@ -523,7 +523,7 @@ export default function SettingsPage() {
                             ? 'bg-red-500' 
                             : Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.7 
                               ? 'bg-yellow-500' 
-                              : 'bg-indigo-600'
+                              : 'bg-[#ffe633]'
                         }`}
                         style={{ width: `${Math.min(100, (Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd)) * 100)}%` }}
                       ></div>
@@ -618,7 +618,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={handleSaveNotifications}
                     disabled={savingNotifications}
-                    className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                    className="flex items-center rounded-md bg-[#ffe633] px-4 py-2 text-sm font-semibold text-black shadow-sm hover:bg-[#ffe633]/90 disabled:opacity-50"
                   >
                     {savingNotifications ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -706,7 +706,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={handleSaveGoogleKey}
                   disabled={!googleKeyInput.trim() || savingGoogle}
-                  className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  className="flex items-center rounded-md bg-[#ffe633] px-4 py-2 text-sm font-semibold text-black shadow-sm hover:bg-[#ffe633]/90 disabled:opacity-50"
                 >
                   {savingGoogle ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -762,7 +762,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={handleSaveOpenaiKey}
                   disabled={!openaiKeyInput.trim() || savingOpenai}
-                  className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  className="flex items-center rounded-md bg-[#ffe633] px-4 py-2 text-sm font-semibold text-black shadow-sm hover:bg-[#ffe633]/90 disabled:opacity-50"
                 >
                   {savingOpenai ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -818,7 +818,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={handleSaveAnthropicKey}
                   disabled={!anthropicKeyInput.trim() || savingAnthropic}
-                  className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  className="flex items-center rounded-md bg-[#ffe633] px-4 py-2 text-sm font-semibold text-black shadow-sm hover:bg-[#ffe633]/90 disabled:opacity-50"
                 >
                   {savingAnthropic ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -874,7 +874,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={handleSaveFalKey}
                   disabled={!falKeyInput.trim() || savingFal}
-                  className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  className="flex items-center rounded-md bg-[#ffe633] px-4 py-2 text-sm font-semibold text-black shadow-sm hover:bg-[#ffe633]/90 disabled:opacity-50"
                 >
                   {savingFal ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

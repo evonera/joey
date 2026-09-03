@@ -338,14 +338,14 @@ export function ReplyCard({
 
       {/* Sent state */}
       {hasSentReply && (
-        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg p-3">
+        <div className="bg-muted/40 border border-border rounded-lg p-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <IconCheck className="w-3.5 h-3.5 text-blue-600" />
-            <span className="text-xs font-medium text-blue-700 dark:text-blue-400">
+            <IconCheck className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
               Reply Sent
             </span>
           </div>
-          <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap">
+          <p className="text-sm text-foreground whitespace-pre-wrap">
             {item.replyDraft.content}
           </p>
         </div>

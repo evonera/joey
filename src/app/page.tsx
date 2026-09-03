@@ -158,7 +158,7 @@ export default function LandingPage() {
                 width={1200}
                 height={750}
               />
-              <div className="h-12 w-12 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center mb-6">
+              <div className="h-12 w-12 bg-[#ffe633]/20 text-[#ffe633] rounded-xl flex items-center justify-center mb-6">
                 <CalendarDays className="h-6 w-6" />
               </div>
               <h3 className="text-lg font-bold mb-2">Smart Scheduling</h3>

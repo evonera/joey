@@ -16,10 +16,9 @@ import {
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
 import { registerAsset, requestUploadUrl } from "@/app/actions/assets";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { AgentMessage } from "./agent-message";
-
-const AGENT_NAME = "_eve_temp";
 
 type AgentStatus = ReturnType<typeof useEveAgent>["status"];
 type CancellationState = "idle" | "cancelling";
@@ -97,7 +96,7 @@ export function AgentChat() {
       {isEmpty ? null : (
         <header className="flex h-14 shrink-0 items-center justify-center gap-3 pl-4 pr-2">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-muted-foreground text-sm">{AGENT_NAME}</span>
+            <span className="truncate font-semibold text-sm text-foreground">Joey Agent</span>
             <StatusDot status={agent.status} />
           </span>
         </header>
@@ -146,8 +145,25 @@ export function AgentChat() {
         )}
       >
         {isEmpty ? (
-          <div className="flex flex-col items-center gap-3 text-center">
-            <h1 className="font-medium text-5xl tracking-tighter">{AGENT_NAME}</h1>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="size-16 rounded-2xl bg-[#ffe633]/15 border border-[#ffe633]/30 flex items-center justify-center p-2.5 shadow-sm">
+              <Image
+                src="/joey-mascot.png"
+                alt="Joey"
+                width={52}
+                height={52}
+                className="object-contain"
+                priority
+              />
+            </div>
+            <div className="space-y-1.5">
+              <h1 className="font-semibold text-2xl sm:text-3xl tracking-tight text-foreground">
+                What are we creating today?
+              </h1>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Ask Joey to draft social posts, research trending angles, review engagement, or automate flows.
+              </p>
+            </div>
           </div>
         ) : null}
         <div className="w-full">{composer}</div>

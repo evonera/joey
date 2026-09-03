@@ -98,7 +98,7 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
 
             {!isEditing && !isRejecting && draft.status === 'approved' && (
                 <div className="flex gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                    <Button onClick={handlePublish} disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
+                    <Button onClick={handlePublish} disabled={loading} className="flex-1 bg-[#ffe633] hover:bg-[#ffe633]/90 text-black font-semibold">
                         {loading ? "Publishing..." : "Publish Now"}
                     </Button>
                 </div>
@@ -110,7 +110,7 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
                         <strong>Publish Failed:</strong> {draft.errorMessage || "Unknown error occurred"}
                     </div>
                     <div className="flex gap-2">
-                        <Button onClick={handlePublish} disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
+                        <Button onClick={handlePublish} disabled={loading} className="flex-1 bg-[#ffe633] hover:bg-[#ffe633]/90 text-black font-semibold">
                             {loading ? "Retrying..." : "Retry Publish"}
                         </Button>
                     </div>
@@ -122,7 +122,7 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
                     {hasVariants ? (
                         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                             <SheetTrigger asChild>
-                                <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white">Review Variants</Button>
+                                <Button className="flex-1 bg-[#ffe633] hover:bg-[#ffe633]/90 text-black font-semibold">Review Variants</Button>
                             </SheetTrigger>
                             <SheetContent className="sm:max-w-xl overflow-y-auto">
                                 <SheetHeader className="mb-6">

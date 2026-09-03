@@ -120,20 +120,20 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-white hover:bg-white/[0.06] hover:border-white/[0.15] transition-all focus:outline-none"
+        className="flex items-center gap-2 rounded-lg border border-border bg-sidebar-accent/50 px-3 py-1.5 text-xs text-foreground hover:bg-sidebar-accent hover:border-border/80 transition-all focus:outline-none w-full"
         aria-expanded={open}
       >
-        <Building01Icon size={14} className="text-[#ffe633]" />
-        <span className="font-medium max-w-[120px] truncate">
+        <Building01Icon size={14} className="text-[#ffe633] shrink-0" />
+        <span className="font-medium max-w-[140px] truncate text-left flex-1">
           {loading ? 'Loading...' : (activeOrg?.name || 'My Workspace')}
         </span>
-        <ArrowDown01Icon size={12} className="text-white/40" />
+        <ArrowDown01Icon size={12} className="text-muted-foreground shrink-0" />
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-2 w-60 rounded-xl border border-white/[0.08] bg-[#161514] p-1.5 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
-          <div className="px-3 py-2 border-b border-white/[0.06]">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Workspaces</p>
+        <div className="absolute left-0 top-full mt-2 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+          <div className="px-3 py-2 border-b border-border">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Workspaces</p>
           </div>
 
           <div className="py-1 space-y-0.5 max-h-48 overflow-y-auto">
@@ -149,12 +149,12 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                   disabled={isPendingThis}
                   className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer text-left ${
                     isActive 
-                      ? 'bg-white/[0.08] text-white font-medium' 
-                      : 'text-white/70 hover:text-white hover:bg-white/[0.04]'
+                      ? 'bg-accent text-accent-foreground font-medium' 
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                   }`}
                 >
                   <div className="flex items-center gap-2 truncate">
-                    <div className="w-5 h-5 rounded bg-white/[0.06] text-white/80 flex items-center justify-center text-[10px] font-bold shrink-0">
+                    <div className="w-5 h-5 rounded bg-muted text-muted-foreground flex items-center justify-center text-[10px] font-bold shrink-0">
                       {org.name.slice(0, 1).toUpperCase()}
                     </div>
                     <span className="truncate">{org.name}</span>
@@ -170,7 +170,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
             })}
           </div>
 
-          <div className="pt-1 border-t border-white/[0.06]">
+          <div className="pt-1 border-t border-border">
             {isCreating ? (
               <form onSubmit={handleCreateOrg} className="p-2 space-y-2">
                 <input
@@ -180,7 +180,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                   placeholder="Workspace name"
                   value={newOrgName}
                   onChange={(e) => setNewOrgName(e.target.value)}
-                  className="w-full rounded border border-white/[0.1] bg-white/[0.04] px-2 py-1 text-xs text-white placeholder:text-white/30 focus:border-[#ffe633]/50 focus:outline-none"
+                  className="w-full rounded border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:border-[#ffe633] focus:outline-none"
                 />
                 <div className="flex items-center gap-1.5 justify-end">
                   <button
@@ -189,7 +189,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                       setIsCreating(false);
                       setNewOrgName('');
                     }}
-                    className="px-2 py-1 text-[10px] text-white/50 hover:text-white rounded"
+                    className="px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground rounded"
                   >
                     Cancel
                   </button>

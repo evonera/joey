@@ -6,14 +6,14 @@ import { UserButton } from "@/components/auth/UserButton"
 
 export function SiteHeader({ unreadNotificationCount = 0 }: { unreadNotificationCount?: number }) {
   return (
-    <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b border-white/[0.06] bg-[#0a0908]/80 backdrop-blur-xl transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height) sticky top-0 z-40">
+    <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b border-border bg-background/80 backdrop-blur-xl transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height) sticky top-0 z-40">
       <div className="flex w-full items-center gap-2 px-4 lg:gap-3 lg:px-6">
         <SidebarTrigger className="-ml-1" />
         <Separator
           orientation="vertical"
-          className="mx-1 data-[orientation=vertical]:h-4 bg-white/[0.08]"
+          className="mx-1 data-[orientation=vertical]:h-4 bg-border"
         />
-        <h1 className="text-sm font-semibold tracking-tight text-white">Joey Studio</h1>
+        <h1 className="text-sm font-semibold tracking-tight text-foreground">Joey Studio</h1>
         <div className="ml-auto flex items-center gap-3">
           <NotificationBell initialUnreadCount={unreadNotificationCount} />
           <ThemeToggle />

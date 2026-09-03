@@ -103,14 +103,14 @@ export function ApiTokensPanel() {
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Zapier integration"
               maxLength={100}
-              className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm focus:border-[#ffe633] focus:outline-none"
             />
           </div>
           <button
             type="button"
             onClick={handleCreate}
             disabled={isCreating || !name.trim()}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-[#ffe633] px-4 py-2 text-sm font-semibold text-black hover:bg-[#ffe633]/90 disabled:opacity-50 transition-colors cursor-pointer"
           >
             {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Generate token
@@ -124,8 +124,8 @@ export function ApiTokensPanel() {
               title={scope.hint}
               className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                 scopes.includes(scope.id)
-                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
-                  : "border-zinc-300 dark:border-zinc-700 text-zinc-500"
+                  ? "border-[#ffe633] bg-[#ffe633]/15 text-foreground font-semibold"
+                  : "border-border text-muted-foreground"
               } ${scope.locked ? "cursor-default opacity-80" : ""}`}
             >
               <input
@@ -133,10 +133,10 @@ export function ApiTokensPanel() {
                 checked={scopes.includes(scope.id)}
                 onChange={() => toggleScope(scope.id)}
                 disabled={scope.locked}
-                className="accent-indigo-600"
+                className="accent-[#ffe633]"
               />
               {scope.label}
-              <span className="text-zinc-400 font-normal">{scope.hint}</span>
+              <span className="text-muted-foreground/80 font-normal">{scope.hint}</span>
             </label>
           ))}
         </div>
