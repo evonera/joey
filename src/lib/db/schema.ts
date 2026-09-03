@@ -175,7 +175,27 @@ export const webhookEvents = pgTable("webhook_events", {
   processedAt: timestamp("processed_at"),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/**
+ * Durable ledger of proactive automation runs (reminder/webhook/engagement
+ * dispatches). Powers the operations run-history view; writes are
+ * best-effort and must never fail a dispatch.
+ */
+export const automationRuns = pgTable("automation_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 30 }).notNull(), // 'engagement_dispatch' | 'webhook_dispatch' | 'reminder' | 'webhook'
+  automationId: text("automation_id").notNull(),
+  status: varchar("status", { length: 20 }).default("ok").notNull(), // 'ok' | 'error'
+  threadId: text("thread_id"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("automation_runs_tenant_id_idx").on(table.tenantId, table.createdAt.desc()),
+  kindIdx: index("automation_runs_kind_automation_idx").on(table.kind, table.automationId),
+}));
 
 export const usageTracking = pgTable("usage_tracking", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -337,6 +357,7 @@ export const engagementItems = pgTable("engagement_items", {
   dmDispatchMessageId: text("dm_dispatch_message_id"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   tenantStatusIdx: index("engagement_items_tenant_status_idx").on(table.tenantId, table.status),
   dmDispatchIdx: index("engagement_items_dm_dispatch_idx").on(
