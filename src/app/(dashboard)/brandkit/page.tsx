@@ -8,6 +8,7 @@ export default function BrandKitPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isReindexing, setIsReindexing] = useState(false);
   const [reindexSuccess, setReindexSuccess] = useState(false);
+  const [reindexError, setReindexError] = useState<string | null>(null);
   const [data, setData] = useState<{
     config: { brandVoice: string | null; postingGoals: string | null } | null;
     memories: { id: string; content: string; type: string; createdAt: Date; metadata: unknown }[];
@@ -28,6 +29,7 @@ export default function BrandKitPage() {
   const handleReindex = async () => {
     setIsReindexing(true);
     setReindexSuccess(false);
+    setReindexError(null);
     const res = await reindexMemories();
     if (res.success) {
       const fresh = await getBrandKit();
@@ -36,6 +38,8 @@ export default function BrandKitPage() {
       }
       setReindexSuccess(true);
       setTimeout(() => setReindexSuccess(false), 3000);
+    } else if (res.error) {
+      setReindexError(res.error);
     }
     setIsReindexing(false);
   };
@@ -70,6 +74,12 @@ export default function BrandKitPage() {
           {reindexSuccess ? "Re-indexed!" : "Re-index Memories"}
         </button>
       </div>
+
+      {reindexError && (
+        <p role="alert" className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {reindexError}
+        </p>
+      )}
 
       {data?.summary && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">

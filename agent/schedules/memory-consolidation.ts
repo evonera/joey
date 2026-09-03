@@ -5,11 +5,14 @@ import { agentConfigs, member, memories, tenantMemoryProfiles } from "@/lib/db/s
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { assertBudget } from "@/lib/usage";
 import { recordAutomationRun } from "@/lib/automation-runs";
+import { withTimeout } from "@/lib/dispatch-claim";
 
 /** Skip workspaces with fewer memories than this: nothing worth merging. */
 const MIN_MEMORIES_TO_CONSOLIDATE = 5;
 /** At most one consolidation per tenant per week (cursor: lastCompactedAt). */
 const CONSOLIDATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Admission budget per tenant dispatch; a timeout retries next tick. */
+const CONSOLIDATION_SEND_TIMEOUT_MS = 55_000;
 
 function consolidationPrompt(): string {
   return [
@@ -92,30 +95,51 @@ export default defineSchedule({
           continue;
         }
 
+        // Dispatch inside waitUntil and await admission: the weekly cursor
+        // advances only after the send settles. A rejected send records an
+        // error with the cursor untouched, so the tenant is retried on the
+        // next nightly tick instead of being skipped for seven days.
         waitUntil(
-          to(eveChannel, {}).send(consolidationPrompt(), {
-            auth: {
-              authenticator: "cron",
-              principalType: "user",
-              principalId: ownerUserId,
-              attributes: { tenantId },
-            },
-          }),
+          (async () => {
+            try {
+              await withTimeout(
+                to(eveChannel, {}).send(consolidationPrompt(), {
+                  auth: {
+                    authenticator: "cron",
+                    principalType: "user",
+                    principalId: ownerUserId,
+                    attributes: { tenantId },
+                  },
+                }),
+                CONSOLIDATION_SEND_TIMEOUT_MS,
+                `consolidation send ${tenantId}`,
+              );
+              const stampedAt = new Date();
+              await db
+                .insert(tenantMemoryProfiles)
+                .values({ tenantId, lastCompactedAt: stampedAt })
+                .onConflictDoUpdate({
+                  target: tenantMemoryProfiles.tenantId,
+                  set: { lastCompactedAt: stampedAt, updatedAt: stampedAt },
+                });
+              await recordAutomationRun({
+                kind: "memory_consolidation",
+                automationId: tenantId,
+                tenantId,
+                status: "ok",
+              });
+            } catch (err) {
+              console.error(`[memory-consolidation] Dispatch failed for tenant ${tenantId}:`, err);
+              await recordAutomationRun({
+                kind: "memory_consolidation",
+                automationId: tenantId,
+                tenantId,
+                status: "error",
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          })(),
         );
-        const stampedAt = new Date();
-        await db
-          .insert(tenantMemoryProfiles)
-          .values({ tenantId, lastCompactedAt: stampedAt })
-          .onConflictDoUpdate({
-            target: tenantMemoryProfiles.tenantId,
-            set: { lastCompactedAt: stampedAt, updatedAt: stampedAt },
-          });
-        await recordAutomationRun({
-          kind: "memory_consolidation",
-          automationId: tenantId,
-          tenantId,
-          status: "ok",
-        });
       } catch (err) {
         console.error(`[memory-consolidation] Failed to process tenant ${tenantId}:`, err);
         await recordAutomationRun({
