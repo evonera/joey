@@ -246,6 +246,13 @@
       "when": 1788500000000,
       "tag": "0034_phase2_dispatch_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788600000000,
+      "tag": "0035_flow_tick_rotation",
+      "breakpoints": true
     }
   ]
 }

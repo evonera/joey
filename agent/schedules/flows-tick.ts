@@ -9,19 +9,25 @@
  *   per-item error boundaries so one failure never kills the tick.
  * - Idempotent per interval: active flows are guarded by an in-flight run
  *   check plus lastRunAt spacing, so overlapping ticks are safe.
+ *
+ * Cadence note: the cron MUST stay Hobby-safe (once per day or less —
+ * Vercel rejects more frequent crons on Hobby at deploy time). Sub-day
+ * `intervalMinutes` only take effect on Pro (per-minute crons) or when an
+ * external scheduler invokes `/api/cron` more often.
  */
 import { defineSchedule } from "eve/schedules";
 import { db } from "@/lib/db";
 import { flows, flowRuns } from "@/lib/db/schema";
-import { and, asc, eq, lt, or } from "drizzle-orm";
+import { and, asc, eq, lt, or, sql } from "drizzle-orm";
 import { getNode } from "@/lib/flows/registry";
 import { executeAdmittedFlowRun } from "@/lib/flows/run-flow-server";
 import { operationalEvent } from "@/lib/operations-log";
 
 /**
- * Ticks every minute: starts any ACTIVE flow whose trigger is a due
+ * Runs the admission scan: starts any ACTIVE flow whose trigger is a due
  * trigger.schedule node. Webhook triggers are dispatched from the Zernio
- * receiver instead.
+ * receiver instead. On Hobby the eve cron fires daily (see cadence note
+ * above); the due check makes each fire idempotent.
  */
 export async function runFlowsTick() {
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
@@ -127,13 +133,13 @@ export async function runFlowsTick() {
       }
     }
 
-    // Bounded admission scan: least-recently-active flows first so the limit
-    // round-robins fairly instead of starving flows past the cutoff, and a
-    // concurrency cap so N active flows never fan out into N concurrent
-    // DB+LLM+external pipelines (pool exhaustion / OOM).
+    // Bounded admission scan with guaranteed rotation: flows are ordered by
+    // lastTickedAt (never-examined first) and EVERY examined flow gets its
+    // tick stamp advanced — including skip paths — so no row can monopolize
+    // the window and starve flows past the cutoff.
     const activeFlows = await db.query.flows.findMany({
       where: eq(flows.status, "active"),
-      orderBy: [asc(flows.updatedAt)],
+      orderBy: [sql`${flows.lastTickedAt} ASC NULLS FIRST`, asc(flows.id)],
       limit: FLOWS_TICK_BATCH_LIMIT,
     });
 
@@ -218,6 +224,16 @@ export async function runFlowsTick() {
         } catch (err) {
           console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
         }
+        // Advance the rotation stamp on every examination (admitted or
+        // skipped) so this row yields the window to unexamined flows.
+        try {
+          await db
+            .update(flows)
+            .set({ lastTickedAt: new Date() })
+            .where(and(eq(flows.id, flow.id), eq(flows.tenantId, flow.tenantId)));
+        } catch (err) {
+          console.error(`[flows-tick] Failed to stamp tick for flow ${flow.id}:`, err);
+        }
     });
 }
 
@@ -250,7 +266,9 @@ export async function runWithConcurrencyLimit<T>(
 }
 
 export default defineSchedule({
-  cron: "* * * * *",
+  // Hobby-safe daily cadence (see cadence note above). Do NOT raise above
+  // once per day without a Pro plan — Vercel fails the deployment.
+  cron: "0 1 * * *",
   run: runFlowsTick,
 });
 
