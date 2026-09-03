@@ -1,8 +1,17 @@
 import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
-import { agentConfigs, tenants, member, drafts, webhookEvents, engagementItems, replyDrafts, socialAccounts } from "@/lib/db/schema";
-import { eq, and, lte, isNotNull, isNull, asc, inArray } from "drizzle-orm";
+import { agentConfigs, tenants, member, drafts, webhookEvents } from "@/lib/db/schema";
+import { eq, and, or, lte, isNull, inArray } from "drizzle-orm";
+import {
+  claimEngagementDispatches,
+  claimWebhookDispatches,
+  recoverStaleEngagementDispatches,
+  recoverStaleWebhookDispatches,
+  releaseEngagementDispatch,
+  truncateForDispatch,
+} from "@/lib/dispatch-claim";
+import { recordAutomationRun } from "@/lib/automation-runs";
 import { executePublishDraft, getZernioClientForTenant, publishDueDrafts } from "@/lib/publisher-core";
 import { syncTenantMemories } from "@/lib/ingest-memories";
 import { assertBudget } from "@/lib/usage";
@@ -90,94 +99,116 @@ export default defineSchedule({
     }
 
     // --- 1. Process Pending Engagement Items (Phase 2.7) ---
-    const pendingItems = await db.select({
-      id: engagementItems.id,
-      tenantId: engagementItems.tenantId,
-      platform: engagementItems.platform,
-      text: engagementItems.text,
-      commenterName: engagementItems.commenterName,
-      commenterHandle: engagementItems.commenterHandle,
-      platformPostId: engagementItems.platformPostId,
-    })
-    .from(engagementItems)
-    .leftJoin(replyDrafts, and(
-      eq(replyDrafts.engagementItemId, engagementItems.id),
-      inArray(replyDrafts.status, ["pending_review", "approved", "sent"])
-    ))
-    .where(
-      and(
-        eq(engagementItems.status, "pending"),
-        isNull(replyDrafts.id)
-      )
-    )
-    .orderBy(asc(engagementItems.createdAt))
-    .limit(20);
+    // Recover-then-claim: rows stranded as `dispatching` by a crashed or
+    // overlapping tick become eligible again first; the single-statement CTE
+    // claim (FOR UPDATE SKIP LOCKED) then guarantees only one worker wins
+    // each row, so overlapping polls can no longer double-dispatch the same
+    // comment to the agent.
+    await recoverStaleEngagementDispatches();
+    const pendingItems = await claimEngagementDispatches(20);
+
+    // Batch tenant/owner/config lookups (was one N+1 round-trip per item).
+    const engagementTenantIds = [...new Set(pendingItems.map((item) => item.tenantId))];
+    const [engagementTenants, engagementOwners, engagementConfigs] = engagementTenantIds.length > 0
+      ? await Promise.all([
+          db.select({ id: tenants.id }).from(tenants).where(inArray(tenants.id, engagementTenantIds)),
+          db.select({ organizationId: member.organizationId, userId: member.userId })
+            .from(member)
+            .where(and(inArray(member.organizationId, engagementTenantIds), eq(member.role, "owner"))),
+          db.select({ tenantId: agentConfigs.tenantId, brandVoice: agentConfigs.brandVoice })
+            .from(agentConfigs)
+            .where(inArray(agentConfigs.tenantId, engagementTenantIds)),
+        ])
+      : [[], [], []];
+    const knownTenantIds = new Set(engagementTenants.map((row) => row.id));
+    const ownerByTenant = new Map(engagementOwners.map((row) => [row.organizationId, row.userId]));
+    const brandVoiceByTenant = new Map(engagementConfigs.map((row) => [row.tenantId, row.brandVoice]));
 
     for (const item of pendingItems) {
-      const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.id, item.tenantId),
-      });
-      const ownerMember = await db.query.member.findFirst({
-        where: and(eq(member.organizationId, item.tenantId), eq(member.role, "owner"))
-      });
-      if (!ownerMember) continue;
-      if (!tenant) continue;
+      if (!knownTenantIds.has(item.tenantId)) {
+        await releaseEngagementDispatch(item.id);
+        continue;
+      }
+      const ownerUserId = ownerByTenant.get(item.tenantId);
+      if (!ownerUserId) {
+        await releaseEngagementDispatch(item.id);
+        continue;
+      }
 
-      const agentConfig = await db.query.agentConfigs.findFirst({
-        where: eq(agentConfigs.tenantId, item.tenantId),
-      });
-
+      const brandVoice = brandVoiceByTenant.get(item.tenantId);
       waitUntil(
         to(eveChannel, {}).send(
-          `A new comment was received on ${item.platform}. Comment by @${item.commenterHandle || item.commenterName || "unknown"}: "${item.text}". Use the reply_to_comment tool to draft an on-brand response. The engagement item ID is: ${item.id}. ${agentConfig?.brandVoice ? `Brand voice: ${agentConfig.brandVoice}` : ""}`,
+          `A new comment was received on ${item.platform}. Comment by @${item.commenterHandle || item.commenterName || "unknown"}: "${truncateForDispatch(item.text)}". Use the reply_to_comment tool to draft an on-brand response. The engagement item ID is: ${item.id}. ${brandVoice ? `Brand voice: ${brandVoice}` : ""}`,
           {
             auth: {
               authenticator: "cron",
               principalType: "user",
-              principalId: ownerMember.userId,
+              principalId: ownerUserId,
               attributes: { tenantId: item.tenantId },
             },
           },
         ),
       );
+      await recordAutomationRun({
+        kind: "engagement_dispatch",
+        automationId: item.id,
+        tenantId: item.tenantId,
+        status: "ok",
+      });
+      // Left as `dispatching` on purpose: the lease plus next-tick recovery
+      // re-admit the item only if reply_to_comment never creates a draft
+      // (which would exclude it from future claims via the draft join).
     }
 
     // --- 2. Process Pending Webhook Events (legacy) ---
-    const pendingEvents = await db.query.webhookEvents.findMany({
-      where: and(
-        eq(webhookEvents.status, "pending"),
-        isNotNull(webhookEvents.tenantId)
-      ),
-      limit: 20,
-    });
+    await recoverStaleWebhookDispatches();
+    const pendingEvents = await claimWebhookDispatches(20);
+
+    const webhookTenantIds = [...new Set(pendingEvents.map((event) => event.tenantId))];
+    const [webhookTenants, webhookOwners] = webhookTenantIds.length > 0
+      ? await Promise.all([
+          db.select({ id: tenants.id }).from(tenants).where(inArray(tenants.id, webhookTenantIds)),
+          db.select({ organizationId: member.organizationId, userId: member.userId })
+            .from(member)
+            .where(and(inArray(member.organizationId, webhookTenantIds), eq(member.role, "owner"))),
+        ])
+      : [[], []];
+    const knownWebhookTenants = new Set(webhookTenants.map((row) => row.id));
+    const webhookOwnerByTenant = new Map(webhookOwners.map((row) => [row.organizationId, row.userId]));
 
     for (const event of pendingEvents) {
-      const payload = event.payload as any;
-      const resolvedTenantId = event.tenantId!;
-      const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.id, resolvedTenantId),
-      });
-      const ownerMember = await db.query.member.findFirst({
-        where: and(eq(member.organizationId, resolvedTenantId), eq(member.role, "owner"))
-      });
-      if (!ownerMember) {
-        await db.update(webhookEvents)
-          .set({ status: "failed", errorMessage: "Organization has no owner member" })
-          .where(eq(webhookEvents.id, event.id));
+      const resolvedTenantId = event.tenantId;
+      const terminal = (values: { status: string; processedAt?: Date; errorMessage?: string | null }) =>
+        db.update(webhookEvents).set(values).where(
+          and(eq(webhookEvents.id, event.id), eq(webhookEvents.tenantId, resolvedTenantId)),
+        );
+      const ownerUserId = webhookOwnerByTenant.get(resolvedTenantId);
+      if (!ownerUserId) {
+        await terminal({ status: "failed", errorMessage: "Organization has no owner member" });
+        await recordAutomationRun({
+          kind: "webhook_dispatch",
+          automationId: event.id,
+          tenantId: resolvedTenantId,
+          status: "error",
+          error: "Organization has no owner member",
+        });
         continue;
       }
-      if (!tenant) {
-        await db.update(webhookEvents)
-          .set({ status: "failed", errorMessage: "Tenant not found" })
-          .where(eq(webhookEvents.id, event.id));
+      if (!knownWebhookTenants.has(resolvedTenantId)) {
+        await terminal({ status: "failed", errorMessage: "Tenant not found" });
+        await recordAutomationRun({
+          kind: "webhook_dispatch",
+          automationId: event.id,
+          tenantId: resolvedTenantId,
+          status: "error",
+          error: "Tenant not found",
+        });
         continue;
       }
 
       // Skip comment.received — now handled by engagement items above
       if (event.eventType === "comment.received") {
-        await db.update(webhookEvents)
-          .set({ status: "processed", processedAt: new Date() })
-          .where(eq(webhookEvents.id, event.id));
+        await terminal({ status: "processed", processedAt: new Date() });
         continue;
       }
 
@@ -193,6 +224,20 @@ export default defineSchedule({
           agentMessage = "A post was only partially published across platforms. Check which platforms succeeded and which failed.";
           break;
         default:
+          // Unknown types must reach a terminal state: re-fetching the same
+          // `pending` rows every tick starved the whole queue.
+          await terminal({
+            status: "ignored",
+            processedAt: new Date(),
+            errorMessage: `Unsupported event type: ${event.eventType}`,
+          });
+          await recordAutomationRun({
+            kind: "webhook_dispatch",
+            automationId: event.id,
+            tenantId: resolvedTenantId,
+            status: "ok",
+            error: `Unsupported event type: ${event.eventType}`,
+          });
           continue;
       }
 
@@ -202,16 +247,20 @@ export default defineSchedule({
             auth: {
               authenticator: "cron",
               principalType: "user",
-              principalId: ownerMember.userId,
+              principalId: ownerUserId,
               attributes: { tenantId: resolvedTenantId },
             },
           }),
         );
       }
 
-      await db.update(webhookEvents)
-        .set({ status: "processed", processedAt: new Date() })
-        .where(eq(webhookEvents.id, event.id));
+      await terminal({ status: "processed", processedAt: new Date() });
+      await recordAutomationRun({
+        kind: "webhook_dispatch",
+        automationId: event.id,
+        tenantId: resolvedTenantId,
+        status: "ok",
+      });
     }
 
     // --- 2. Publish Scheduled Drafts ---
@@ -228,7 +277,10 @@ export default defineSchedule({
     .where(
         and(
             eq(agentConfigs.isPaused, false),
-            lte(agentConfigs.nextDraftAt, new Date())
+            or(
+                isNull(agentConfigs.nextDraftAt),
+                lte(agentConfigs.nextDraftAt, new Date())
+            )
         )
     );
 
