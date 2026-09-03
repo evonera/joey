@@ -7,11 +7,19 @@ function joeySession(): AuthFn<Request> {
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session) return null;
     const tenantId = await getActiveTenantIdFromSession(session);
+    const preferredModel = request.headers.get("x-joey-model");
+    const attributes: Record<string, string> = {
+      email: session.user.email,
+      tenantId,
+    };
+    if (preferredModel) {
+      attributes.preferredModel = preferredModel;
+    }
     return {
       authenticator: "better-auth",
       principalId: session.user.id,
       principalType: "user",
-      attributes: { email: session.user.email, tenantId },
+      attributes,
     };
   };
 }

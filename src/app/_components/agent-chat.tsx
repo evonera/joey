@@ -3,7 +3,7 @@
 import type { UserContent } from "ai";
 import { useEveAgent } from "eve/react";
 import { AlertCircleIcon } from "hugeicons-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -11,11 +11,28 @@ import {
 } from "@/components/ai-elements/conversation";
 import {
   PromptInput,
+  PromptInputBody,
+  PromptInputFooter,
+  PromptInputTools,
+  PromptInputSelect,
+  PromptInputSelectTrigger,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectGroup,
+  PromptInputSelectLabel,
+  PromptInputSelectSeparator,
   type PromptInputMessage,
   PromptInputSubmit,
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
 import { registerAsset, requestUploadUrl } from "@/app/actions/assets";
+import { getConfiguredProviders } from "@/app/actions/models";
+import {
+  getModelById,
+  getRecommendedModels,
+  getModelsByProvider,
+  DEFAULT_MODEL_ID,
+} from "@/lib/models";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { AgentMessage } from "./agent-message";
@@ -26,8 +43,43 @@ type CancellationState = "idle" | "cancelling";
 export function AgentChat() {
   const [cancellationError, setCancellationError] = useState<string>();
   const [cancellationState, setCancellationState] = useState<CancellationState>("idle");
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("joey_preferred_model");
+      if (saved) return saved;
+    }
+    return DEFAULT_MODEL_ID;
+  });
+  const [configuredProviders, setConfiguredProviders] = useState<string[]>([]);
+  const [hasEnvKeys, setHasEnvKeys] = useState<{ google: boolean; openai: boolean; anthropic: boolean }>({
+    google: false,
+    openai: false,
+    anthropic: false,
+  });
 
-  const agent = useEveAgent();
+  useEffect(() => {
+    getConfiguredProviders().then((res) => {
+      setConfiguredProviders(res.configuredProviders);
+      setHasEnvKeys(res.hasEnvKeys);
+      // If user has a google key configured and hasn't explicitly chosen another, default to Gemini 2.5 Flash
+      if (typeof window !== "undefined" && !localStorage.getItem("joey_preferred_model") && res.configuredProviders.includes("google")) {
+        setSelectedModel("google/gemini-2.5-flash");
+      }
+    });
+  }, []);
+
+  const handleModelChange = (modelId: string) => {
+    setSelectedModel(modelId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("joey_preferred_model", modelId);
+    }
+  };
+
+  const agent = useEveAgent({
+    headers: async () => ({
+      "x-joey-model": selectedModel,
+    }),
+  });
   const isBusy = agent.status === "submitted" || agent.status === "streaming";
   const isEmpty = agent.data.messages.length === 0;
   const errorMessage = cancellationError ?? agent.error?.message;
@@ -84,10 +136,100 @@ export function AgentChat() {
     await agent.send(parts);
   };
 
+  const currentModelDef = getModelById(selectedModel);
+
   const composer = (
     <PromptInput onSubmit={handleSubmit}>
-      <PromptInputTextarea placeholder="Send a message…" />
-      <PromptInputSubmit onStop={requestCancellation} status={submitStatus} />
+      <PromptInputBody>
+        <PromptInputTextarea placeholder="Send a message…" />
+      </PromptInputBody>
+      <PromptInputFooter>
+        <PromptInputTools>
+          <PromptInputSelect value={selectedModel} onValueChange={handleModelChange}>
+            <PromptInputSelectTrigger className="h-7 text-xs px-2 gap-1.5 border border-border/50 rounded-md bg-background/50 hover:bg-muted/80 transition-colors">
+              <span className="font-medium text-foreground">{currentModelDef.name}</span>
+              {currentModelDef.recommended && (
+                <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded">
+                  Cheap
+                </span>
+              )}
+            </PromptInputSelectTrigger>
+            <PromptInputSelectContent className="w-80 max-h-96">
+              <PromptInputSelectGroup>
+                <PromptInputSelectLabel>⚡ Recommended (Fast & Cheap)</PromptInputSelectLabel>
+                {getRecommendedModels().map((m) => {
+                  const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
+                  return (
+                    <PromptInputSelectItem key={m.id} value={m.id} className="py-2 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <span>{m.name}</span>
+                          <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                            {m.badge}
+                          </span>
+                          {hasKey && (
+                            <span className="ml-auto size-1.5 rounded-full bg-emerald-500" title="Key active" />
+                          )}
+                        </div>
+                        <span className="text-[11px] text-muted-foreground line-clamp-1">{m.description}</span>
+                      </div>
+                    </PromptInputSelectItem>
+                  );
+                })}
+              </PromptInputSelectGroup>
+
+              <PromptInputSelectSeparator />
+
+              <PromptInputSelectGroup>
+                <PromptInputSelectLabel>
+                  Google Gemini {configuredProviders.includes("google") ? "• BYOK Active" : ""}
+                </PromptInputSelectLabel>
+                {getModelsByProvider("google").map((m) => (
+                  <PromptInputSelectItem key={m.id} value={m.id} className="py-1.5 text-xs">
+                    <div className="flex items-center justify-between w-full gap-2">
+                      <span className="font-medium">{m.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{m.badge}</span>
+                    </div>
+                  </PromptInputSelectItem>
+                ))}
+              </PromptInputSelectGroup>
+
+              <PromptInputSelectSeparator />
+
+              <PromptInputSelectGroup>
+                <PromptInputSelectLabel>
+                  OpenAI {configuredProviders.includes("openai") ? "• BYOK Active" : ""}
+                </PromptInputSelectLabel>
+                {getModelsByProvider("openai").map((m) => (
+                  <PromptInputSelectItem key={m.id} value={m.id} className="py-1.5 text-xs">
+                    <div className="flex items-center justify-between w-full gap-2">
+                      <span className="font-medium">{m.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{m.badge}</span>
+                    </div>
+                  </PromptInputSelectItem>
+                ))}
+              </PromptInputSelectGroup>
+
+              <PromptInputSelectSeparator />
+
+              <PromptInputSelectGroup>
+                <PromptInputSelectLabel>
+                  Anthropic {configuredProviders.includes("anthropic") ? "• BYOK Active" : ""}
+                </PromptInputSelectLabel>
+                {getModelsByProvider("anthropic").map((m) => (
+                  <PromptInputSelectItem key={m.id} value={m.id} className="py-1.5 text-xs">
+                    <div className="flex items-center justify-between w-full gap-2">
+                      <span className="font-medium">{m.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{m.badge}</span>
+                    </div>
+                  </PromptInputSelectItem>
+                ))}
+              </PromptInputSelectGroup>
+            </PromptInputSelectContent>
+          </PromptInputSelect>
+        </PromptInputTools>
+        <PromptInputSubmit onStop={requestCancellation} status={submitStatus} />
+      </PromptInputFooter>
     </PromptInput>
   );
 
@@ -97,6 +239,7 @@ export function AgentChat() {
         <header className="flex h-14 shrink-0 items-center justify-center gap-3 pl-4 pr-2">
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate font-semibold text-sm text-foreground">Joey Agent</span>
+            <span className="text-xs text-muted-foreground">({currentModelDef.name})</span>
             <StatusDot status={agent.status} />
           </span>
         </header>
