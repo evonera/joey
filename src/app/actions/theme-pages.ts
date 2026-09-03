@@ -3,8 +3,9 @@
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
-import { eq, and, desc, like, inArray } from "drizzle-orm";
+import { eq, and, desc, like, inArray, sql } from "drizzle-orm";
 import { syncThemePageFlow } from "@/lib/flows/recipe-compiler";
+import { assertThemePageQuota } from "@/lib/billing";
 
 export interface CreateThemePageInput {
   name: string;
@@ -59,6 +60,8 @@ function safeMutationError(error: unknown, fallback: string): string {
   if (error instanceof Error && (
     /^Text must be \d+ characters or fewer$/.test(error.message)
     || error.message === "One or more publishing accounts are unavailable"
+    || error.message.includes("Free workspace limit reached")
+    || error.message.includes("Upgrade to Pro")
   )) return error.message;
   return fallback;
 }
@@ -143,6 +146,7 @@ export async function getThemePageById(id: string) {
 export async function createThemePage(data: CreateThemePageInput) {
   try {
     const tenantId = await getActiveTenantId();
+
     if (!data.name || !data.name.trim()) {
       return { error: "Page name is required" };
     }
@@ -153,17 +157,72 @@ export async function createThemePage(data: CreateThemePageInput) {
     }
     const connectedAccounts = await validateConnectedAccounts(tenantId, data.connectedAccounts);
 
-    const [page] = await db.insert(themePages).values({
-      tenantId,
-      name,
-      niche: normalizeText(data.niche, 240),
-      audience: normalizeText(data.audience, 500),
-      voice: normalizeText(data.voice, 2_000),
-      brandKit: sanitizeBrandKit(data.brandKit),
-      connectedAccounts,
-      defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
-      status: 'draft',
-    }).returning();
+    const id = crypto.randomUUID();
+    const isNeonHttp = process.env.DATABASE_PROVIDER === 'neon-http';
+
+    let page: typeof themePages.$inferSelect;
+
+    if (isNeonHttp) {
+      // neon-http driver executes each query over an independent stateless HTTP call,
+      // so session-level locks and multi-statement transactions are not preserved.
+      // To strictly serialize concurrent creation requests in a single roundtrip,
+      // we acquire a row lock on the tenant row via `SELECT ... FOR UPDATE` inside a CTE.
+      // Postgres serializes concurrent statements locking the same tenant row: the second
+      // request waits, then reads the committed count, preventing duplicate creation.
+      const { checkUsageLimits } = await import("@/lib/billing");
+      const limits = await checkUsageLimits(tenantId);
+      const limit = limits.themePageLimit;
+      const result = await db.execute(sql`
+        WITH locked_tenant AS (
+          SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE
+        )
+        INSERT INTO theme_pages (
+          id, tenant_id, name, niche, audience, voice,
+          brand_kit, connected_accounts, default_rights_policy, status
+        )
+        SELECT
+          ${id}, ${tenantId}, ${name},
+          ${normalizeText(data.niche, 240)},
+          ${normalizeText(data.audience, 500)},
+          ${normalizeText(data.voice, 2_000)},
+          ${JSON.stringify(sanitizeBrandKit(data.brandKit))}::jsonb,
+          ${JSON.stringify(connectedAccounts)}::jsonb,
+          ${data.defaultRightsPolicy || 'strict'}, 'draft'
+        FROM locked_tenant
+        WHERE (
+          SELECT count(*) FROM theme_pages WHERE tenant_id = ${tenantId}
+        ) < ${limit}
+        RETURNING *
+      `);
+      const inserted = (result as any).rows?.[0] ?? (result as any)[0];
+      if (!inserted) {
+        throw new Error("Free workspace limit reached (1 Theme Page). Upgrade to Pro for unlimited theme pages.");
+      }
+      page = inserted;
+    } else {
+      // postgres-js and neon-serverless Pool: use advisory lock inside a
+      // transaction so the count check and insert are fully serialized.
+      page = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
+        await assertThemePageQuota(tenantId, tx);
+        const [inserted] = await tx
+          .insert(themePages)
+          .values({
+            id,
+            tenantId,
+            name,
+            niche: normalizeText(data.niche, 240),
+            audience: normalizeText(data.audience, 500),
+            voice: normalizeText(data.voice, 2_000),
+            brandKit: sanitizeBrandKit(data.brandKit),
+            connectedAccounts,
+            defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
+            status: 'draft',
+          })
+          .returning();
+        return inserted;
+      });
+    }
 
     return { page };
   } catch (error: any) {

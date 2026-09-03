@@ -6,8 +6,7 @@ import {
   IconPlayerPause, 
   IconRefresh, 
   IconVolume, 
-  IconVolumeOff,
-  IconSparkles
+  IconVolumeOff
 } from "@tabler/icons-react";
 import type { RemotionCompositionProps } from "@/lib/theme-studio/renderers/video-renderer";
 
