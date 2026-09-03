@@ -17,7 +17,7 @@ const withAnalyze = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
-  output: process.env.NEXT_OUTPUT === "export" ? "export" : "standalone",
+  output: process.env.NEXT_OUTPUT === "export" ? "export" : (process.env.VERCEL ? undefined : "standalone"),
   // resvg ships platform-native binaries and must remain a Node server
   // dependency instead of being bundled into Turbopack ESM chunks.
   serverExternalPackages: ["@resvg/resvg-js"],

@@ -220,7 +220,7 @@ export async function runFlowsTick() {
 }
 
 export default defineSchedule({
-  cron: "* * * * *",
+  cron: "0 1 * * *",
   run: runFlowsTick,
 });
 

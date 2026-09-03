@@ -5,3 +5,8 @@ node_modules
 .output
 .nitro
 dist
+src-tauri/target
+repos
+tests
+.playwright
+playwright-report

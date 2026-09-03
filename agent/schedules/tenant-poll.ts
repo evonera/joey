@@ -66,7 +66,7 @@ function nextDraftAt(now: Date, schedule?: PostingSchedule | null): Date {
 }
 
 export default defineSchedule({
-  cron: "*/5 * * * *",
+  cron: "0 4 * * *",
   async run({ to, waitUntil }) {
 
     // Release reply-send leases abandoned by crashed workers or transient
