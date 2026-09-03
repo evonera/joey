@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CheckCircle2, Loader2, Trash2 } from "lucide-react";
+import { CheckmarkCircle02Icon as CheckCircle2, Loading03Icon as Loader2, Delete02Icon as Trash2 } from "hugeicons-react";
 import { toast } from "sonner";
 
 const INTEGRATIONS = [

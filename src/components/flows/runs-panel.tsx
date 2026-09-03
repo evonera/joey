@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, RotateCcw, Clock3 } from "lucide-react";
+import { CheckmarkCircle02Icon as CheckCircle2, CancelCircleIcon as XCircle, RefreshIcon as RotateCcw, Clock01Icon as Clock3, Cancel01Icon } from "hugeicons-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { listRuns, resumeRun, restartRun } from "@/app/actions/flows";
@@ -66,7 +66,7 @@ export function RunsPanel({
       >
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">Runs</p>
-          <button className="text-xs text-muted-foreground hover:text-foreground" onClick={onClose}>✕</button>
+          <button className="text-xs text-muted-foreground hover:text-foreground p-1" onClick={onClose}><Cancel01Icon size={14} /></button>
         </div>
 
         <div className="space-y-1">

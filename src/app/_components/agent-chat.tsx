@@ -3,7 +3,7 @@
 import type { UserContent } from "ai";
 import { Client, type HandleMessageStreamEvent } from "eve/client";
 import { useEveAgent } from "eve/react";
-import { AlertCircleIcon } from "lucide-react";
+import { AlertCircleIcon } from "hugeicons-react";
 import { useCallback, useRef, useState } from "react";
 import {
   Conversation,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from "react";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loading03Icon as Loader2, CheckmarkCircle02Icon as CheckCircle2 } from "hugeicons-react";
 
 interface Entity {
   id: string;

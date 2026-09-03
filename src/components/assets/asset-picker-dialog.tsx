@@ -5,8 +5,7 @@ import { listAssets } from "@/app/actions/assets";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { ImageIcon, Search, Loader2, Check } from "lucide-react";
+import { Image01Icon as ImageIcon, Search01Icon as Search, Loading03Icon as Loader2, Tick01Icon as Check } from "hugeicons-react";
 
 type Asset = Awaited<ReturnType<typeof listAssets>>["assets"][number];
 

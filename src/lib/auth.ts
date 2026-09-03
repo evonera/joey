@@ -86,6 +86,24 @@ export const auth = betterAuth({
     },
     emailAndPassword: {
         enabled: true,
+        sendResetPassword: async ({ user, url }) => {
+            if (process.env.RESEND_API_KEY) {
+                try {
+                    const { Resend } = await import("resend");
+                    const resend = new Resend(process.env.RESEND_API_KEY);
+                    await resend.emails.send({
+                        from: process.env.EMAIL_FROM || "Joey <no-reply@joey.dev>",
+                        to: user.email,
+                        subject: "Reset your password",
+                        text: `Click the link below to reset your password:\n\n${url}\n\nIf you did not request this, please ignore this email.`,
+                    });
+                } catch (emailErr) {
+                    console.error("Failed to send password reset email via Resend:", emailErr);
+                }
+            } else {
+                console.log(`[auth] Password reset requested for ${user.email}. Recovery URL: ${url}`);
+            }
+        },
     },
     socialProviders: {
         ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET ? {

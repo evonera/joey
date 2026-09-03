@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getBrandKit, reindexMemories } from "@/app/actions/brandkit";
-import { Loader2, RefreshCw, BookOpen, MessageSquare, CheckCircle2, FileText } from "lucide-react";
+import { Loading03Icon as Loader2, RefreshIcon as RefreshCw, Book02Icon as BookOpen, Comment01Icon as MessageSquare, CheckmarkCircle02Icon as CheckCircle2, File02Icon as FileText } from "hugeicons-react";
 
 export default function BrandKitPage() {
   const [isLoading, setIsLoading] = useState(true);

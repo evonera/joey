@@ -11,7 +11,7 @@ import { PlatformSelector } from "@/components/compose/platform-selector";
 import { SchedulePicker, type ScheduleType } from "@/components/compose/schedule-picker";
 import { PlatformPreviews } from "@/components/compose/platform-previews";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
-import { Loader2, Send, PenSquare, Users, Calendar, ImageIcon, X } from "lucide-react";
+import { Loading03Icon as Loader2, SentIcon as Send, NoteEditIcon as PenSquare, UserMultiple02Icon as Users, Calendar03Icon as Calendar, Image01Icon as ImageIcon, Cancel01Icon as X } from "hugeicons-react";
 import { Input } from "@/components/ui/input";
 
 export default function ComposePage() {

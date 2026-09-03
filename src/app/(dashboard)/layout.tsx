@@ -9,7 +9,7 @@ import { getPendingDraftCount } from "@/app/actions/drafts"
 import { getPendingReplyCount } from "@/app/actions/engagement"
 import { getAgentConfig } from "@/app/actions/agent"
 import { getUnreadNotificationCount } from "@/app/actions/notifications"
-import { AlertCircle } from "lucide-react"
+import { AlertCircleIcon } from "hugeicons-react"
 
 export const dynamic = "force-dynamic"
 
@@ -34,7 +34,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <SiteHeader unreadNotificationCount={unreadNotificationCount || 0} />
         {isPaused && (
             <div className="bg-red-500 text-white px-4 py-2 text-sm flex items-center justify-center gap-2">
-                <AlertCircle className="w-4 h-4" />
+                <AlertCircleIcon className="w-4 h-4" />
                 <span><strong>Automation Paused:</strong> Your Zernio API key is invalid or revoked. Please update it in Settings to resume drafting and publishing.</span>
             </div>
         )}

@@ -7,6 +7,7 @@ import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "./ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { SparklesIcon, Analytics01Icon, SentIcon } from "hugeicons-react";
 
 export function DraftCard({ draft, onActionComplete }: { draft: any, onActionComplete: () => void }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -168,9 +169,9 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
                                         <div className="space-y-2">
                                             <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Agent Follow-ups</p>
                                             <div className="flex flex-wrap gap-2">
-                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">✨ Make it punchier</button>
-                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">📊 Add more data points</button>
-                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">🐦 Rewrite for Twitter</button>
+                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700 inline-flex items-center gap-1.5"><SparklesIcon size={12} /> Make it punchier</button>
+                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700 inline-flex items-center gap-1.5"><Analytics01Icon size={12} /> Add more data points</button>
+                                                <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700 inline-flex items-center gap-1.5"><SentIcon size={12} /> Rewrite for Twitter</button>
                                             </div>
                                         </div>
 

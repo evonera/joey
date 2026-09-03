@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { generateConnectUrl, getConnectedAccounts, disconnectAccount } from "@/app/actions/zernio";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loading03Icon as Loader2, PlusSignIcon as Plus, Delete02Icon as Trash2 } from "hugeicons-react";
 
 const PLATFORMS = [
   { id: "twitter", name: "X (Twitter)" },

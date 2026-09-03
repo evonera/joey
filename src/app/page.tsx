@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Bot, CalendarDays, BarChart3, ShieldCheck, ExternalLink } from "lucide-react";
+import { ArrowRight01Icon as ArrowRight, BotIcon as Bot, Calendar03Icon as CalendarDays, Analytics01Icon as BarChart3, SecurityCheckIcon as ShieldCheck, LinkSquare01Icon as ExternalLink } from "hugeicons-react";
 
 function GithubIcon({ className }: { className?: string }) {
   return (

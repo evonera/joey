@@ -24,10 +24,31 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Play, Save, CheckCircle2, XCircle, Rocket, Pause, BookMarked,
-  Clock3, Zap, Database, Filter, ArrowDownUp, Copy, GitBranch, Brain,
-  FileText, Bell, Repeat2, ShieldCheck, Globe, History, Sparkles,
-} from "lucide-react";
+  ArrowLeft01Icon as ArrowLeft,
+  PlayIcon as Play,
+  FloppyDiskIcon as Save,
+  CheckmarkCircle02Icon as CheckCircle2,
+  CancelCircleIcon as XCircle,
+  Cancel01Icon,
+  RocketIcon as Rocket,
+  PauseIcon as Pause,
+  Bookmark01Icon as BookMarked,
+  Clock01Icon as Clock3,
+  FlashIcon as Zap,
+  DatabaseIcon as Database,
+  FilterIcon as Filter,
+  ArrowUpDownIcon as ArrowDownUp,
+  Copy01Icon as Copy,
+  GitForkIcon as GitBranch,
+  BrainIcon as Brain,
+  File02Icon as FileText,
+  Notification01Icon as Bell,
+  RepeatIcon as Repeat2,
+  SecurityCheckIcon as ShieldCheck,
+  Globe02Icon as Globe,
+  Time04Icon as History,
+  SparklesIcon as Sparkles,
+} from "hugeicons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -511,7 +532,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
             <div className="absolute right-4 top-4 z-10 w-80 rounded-xl border bg-background p-4 shadow-lg space-y-3 max-h-[80%] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">{selectedDef.label}</p>
-                <button className="text-xs text-muted-foreground hover:text-foreground" onClick={()=>setSelectedId(null)}>✕</button>
+                <button className="text-xs text-muted-foreground hover:text-foreground p-1" onClick={()=>setSelectedId(null)}><Cancel01Icon size={14} /></button>
               </div>
               <p className="text-xs text-muted-foreground">{selectedDef.description}</p>
               {Object.keys(selectedNode.data as object).includes("config") && (

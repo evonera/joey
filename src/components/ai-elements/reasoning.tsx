@@ -7,7 +7,7 @@ import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { BrainIcon, ArrowDown01Icon as ChevronDownIcon } from "hugeicons-react";
 import type { ComponentProps, ReactNode } from "react";
 import {
   createContext,

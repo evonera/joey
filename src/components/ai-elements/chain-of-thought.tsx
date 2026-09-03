@@ -4,8 +4,7 @@ import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import type { LucideIcon } from "lucide-react";
-import { BrainIcon, ChevronDownIcon, DotIcon } from "lucide-react";
+import { BrainIcon, ArrowDown01Icon as ChevronDownIcon, CircleIcon as DotIcon } from "hugeicons-react";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, memo, useContext, useMemo } from "react";
 
@@ -84,7 +83,7 @@ export const ChainOfThoughtHeader = memo(
 );
 
 export type ChainOfThoughtStepProps = ComponentProps<"div"> & {
-  icon?: LucideIcon;
+  icon?: React.ComponentType<{ className?: string; size?: number }>;
   label: ReactNode;
   description?: ReactNode;
   status?: "complete" | "active" | "pending";

@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { getAnalytics } from "@/app/actions/analytics";
-import { Loader2, TrendingUp } from "lucide-react";
+import { Loading03Icon as Loader2, ChartAverageIcon as TrendingUp } from "hugeicons-react";
 
 // recharts is large; keep it off the initial dashboard bundle.
 const AnalyticsCharts = dynamic(() => import("./analytics-charts"), {
