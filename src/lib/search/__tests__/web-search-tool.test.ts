@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import webSearchTool from "../web_search";
+import webSearchTool from "#tools/web_search";
 
 vi.mock("@/lib/search/exa-client", () => ({
   searchWithExa: vi.fn(),

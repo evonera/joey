@@ -8,7 +8,7 @@ export interface ExaSearchOptions {
   numResults?: number;
   includeDomains?: string[];
   excludeDomains?: string[];
-  category?: "news" | "company" | "research" | "general";
+  category?: string;
   type?: "neural" | "fast" | "deep";
   startPublishedDate?: string;
   signal?: AbortSignal;
@@ -61,13 +61,6 @@ export async function searchWithExa(
   const apiKey = await resolveExaKey(tenantId);
   const numResults = options.numResults ?? 8;
 
-  const categoryParam =
-    options.category === "news"
-      ? "news"
-      : options.category === "company"
-      ? "company"
-      : undefined;
-
   const bodyPayload: Record<string, unknown> = {
     query: options.query,
     type: options.type ?? "neural",
@@ -79,8 +72,8 @@ export async function searchWithExa(
     },
   };
 
-  if (categoryParam) {
-    bodyPayload.category = categoryParam;
+  if (options.category && options.category !== "general") {
+    bodyPayload.category = options.category;
   }
 
   if (options.includeDomains && options.includeDomains.length > 0) {
