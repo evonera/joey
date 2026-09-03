@@ -21,27 +21,48 @@ export const maxDuration = 60;
  * Approve/publish/send stay scoped: creation tools stage work, humans
  * approve in the Joey UI (mirrors the WebMCP trust boundary).
  */
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Origin, mcp-session-id",
-};
+function getCorsHeaders(request?: Request): Record<string, string> {
+  const origin = request?.headers.get("origin");
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL;
+  let allowOrigin = "*";
 
-export async function OPTIONS() {
+  // When an Origin header is sent by a browser, restrict to configured app origin in production
+  if (process.env.NODE_ENV === "production" && origin && appUrl) {
+    try {
+      const allowedHost = new URL(appUrl).host;
+      const requestHost = new URL(origin).host;
+      allowOrigin = requestHost === allowedHost ? origin : appUrl;
+    } catch {
+      allowOrigin = appUrl;
+    }
+  } else if (origin) {
+    allowOrigin = origin;
+  }
+
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Origin, mcp-session-id",
+  };
+}
+
+export async function OPTIONS(request: Request) {
+  const headers = getCorsHeaders(request);
   return new NextResponse(null, {
     status: 204,
-    headers: corsHeaders,
+    headers,
   });
 }
 
 export async function POST(request: Request) {
+  const headers = getCorsHeaders(request);
   let auth;
   try {
     auth = await authenticateApiRequest(request);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unauthorized";
     const status = message.startsWith("Insufficient scope") ? 403 : 401;
-    return NextResponse.json({ error: message }, { status, headers: corsHeaders });
+    return NextResponse.json({ error: message }, { status, headers });
   }
 
   const server = createJoeyMcpServer({
@@ -55,7 +76,7 @@ export async function POST(request: Request) {
   try {
     await server.connect(transport);
     const response = await transport.handleRequest(request);
-    for (const [key, value] of Object.entries(corsHeaders)) {
+    for (const [key, value] of Object.entries(headers)) {
       response.headers.set(key, value);
     }
     return response;
@@ -67,7 +88,7 @@ export async function POST(request: Request) {
         error: { code: -32603, message },
         id: null,
       },
-      { status: 500, headers: corsHeaders },
+      { status: 500, headers },
     );
   } finally {
     await transport.close().catch(() => undefined);
@@ -75,7 +96,8 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const headers = getCorsHeaders(request);
   return NextResponse.json(
     {
       name: "joey",
@@ -84,17 +106,18 @@ export async function GET() {
       endpoint: "/api/mcp",
       transports: ["streamable-http"],
     },
-    { status: 200, headers: corsHeaders },
+    { status: 200, headers },
   );
 }
 
 export async function DELETE(request: Request) {
+  const headers = getCorsHeaders(request);
   try {
     await authenticateApiRequest(request);
-    return NextResponse.json({ ok: true }, { headers: corsHeaders });
+    return NextResponse.json({ ok: true }, { headers });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unauthorized";
     const status = message.startsWith("Insufficient scope") ? 403 : 401;
-    return NextResponse.json({ error: message }, { status, headers: corsHeaders });
+    return NextResponse.json({ error: message }, { status, headers });
   }
 }

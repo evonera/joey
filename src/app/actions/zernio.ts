@@ -79,7 +79,7 @@ export async function handleZernioCallback(searchParams: Record<string, string>)
             return { error: "Invalid OAuth state: Missing CSRF session" };
         }
         
-        if (state && storedState.value !== state) {
+        if (!state || storedState.value !== state) {
             return { error: "Invalid OAuth state parameter" };
         }
         
@@ -183,6 +183,31 @@ export async function selectEntityAndFinalize(platform: string, entityId: string
     }
 }
 
+export async function finalizeEntitySelection(selection: {
+    platform: string;
+    selectedEntities: { id: string; name: string; type?: string; picture?: string }[];
+    tempToken?: string;
+    connectToken?: string;
+    pendingDataToken?: string;
+}) {
+    try {
+        const { zernio, tenantId } = await getZernioClient();
+        await (zernio.accounts as any).selectEntities({
+            tempToken: selection.tempToken,
+            connect_token: selection.connectToken,
+            pendingDataToken: selection.pendingDataToken,
+            entities: selection.selectedEntities.map(e => ({ id: e.id })),
+        });
+
+        // Sync fresh list
+        await syncConnectedAccounts();
+        return { success: true };
+    } catch (error: any) {
+        console.error("Entity selection failed:", error);
+        return { error: error.message || "Failed to finalize connection" };
+    }
+}
+
 export async function syncConnectedAccounts() {
     try {
         const { zernio, tenantId } = await getZernioClient();
@@ -190,21 +215,48 @@ export async function syncConnectedAccounts() {
         
         if (!data || !data.accounts) return { success: true };
 
-        // Transactional sync to prevent data loss
+        // Non-destructive upsert to preserve account IDs and prevent cascading deletion of social_entities
         await db.transaction(async (tx) => {
-            await tx.delete(socialAccounts).where(eq(socialAccounts.tenantId, tenantId));
-            
-            if (data.accounts.length > 0) {
-                await tx.insert(socialAccounts).values(
-                    data.accounts.map((account: any) => ({
+            const existingAccounts = await tx.query.socialAccounts.findMany({
+                where: eq(socialAccounts.tenantId, tenantId),
+            });
+
+            const fetchedAccountIds = new Set(data.accounts.map((a: any) => String(a.id)));
+
+            for (const account of data.accounts) {
+                const existing = existingAccounts.find(
+                    (ea) => ea.platform === account.platform && ea.platformAccountId === String(account.id)
+                );
+
+                if (existing) {
+                    await tx
+                        .update(socialAccounts)
+                        .set({
+                            accountName: account.username || account.name || 'Unknown',
+                            avatarUrl: account.picture || null,
+                            isActive: true,
+                        })
+                        .where(eq(socialAccounts.id, existing.id));
+                } else {
+                    await tx.insert(socialAccounts).values({
                         tenantId,
                         platform: account.platform,
-                        platformAccountId: account.id,
+                        platformAccountId: String(account.id),
                         accountName: account.username || account.name || 'Unknown',
                         avatarUrl: account.picture || null,
                         isActive: true,
-                    }))
-                );
+                    });
+                }
+            }
+
+            // Deactivate accounts that no longer exist on Zernio without destroying rows or cascade-deleting child entities
+            for (const existing of existingAccounts) {
+                if (!fetchedAccountIds.has(existing.platformAccountId) && existing.isActive) {
+                    await tx
+                        .update(socialAccounts)
+                        .set({ isActive: false })
+                        .where(eq(socialAccounts.id, existing.id));
+                }
             }
         });
 
