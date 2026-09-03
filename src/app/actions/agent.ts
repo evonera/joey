@@ -4,7 +4,7 @@ import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { agentConfigs, tenants } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export async function getAgentConfig() {
     try {
@@ -52,24 +52,18 @@ export async function saveAgentConfig(data: {
     try {
         const tenantId = await getActiveTenantId();
 
-        // Monotonic version stamp: rapid saves within the same millisecond
-        // must still order totally, otherwise concurrent memory syncs cannot
-        // tell stale brand guidance from fresh (equal timestamps race).
-        const previous = await db.query.agentConfigs.findFirst({
-            where: eq(agentConfigs.tenantId, tenantId),
-            columns: { updatedAt: true },
-        });
-        const versionStamp = new Date(
-            Math.max(Date.now(), (previous?.updatedAt?.getTime() ?? 0) + 1),
-        );
-
+        // Atomic monotonic version stamp, computed inside the upsert: the
+        // conflicting row is locked, so concurrent saves serialize and the
+        // second committer always lands strictly after the first. Memory
+        // syncs can therefore totally order rapid saves (a read-compute-
+        // write in JS could not — two readers would compute the same stamp).
         await db.insert(agentConfigs)
             .values({
                 tenantId,
                 brandVoice: data.brandVoice,
                 postingGoals: data.postingGoals,
                 postingSchedule: data.postingSchedule,
-                updatedAt: versionStamp,
+                updatedAt: new Date(),
             })
             .onConflictDoUpdate({
                 target: agentConfigs.tenantId,
@@ -77,7 +71,7 @@ export async function saveAgentConfig(data: {
                     brandVoice: data.brandVoice,
                     postingGoals: data.postingGoals,
                     postingSchedule: data.postingSchedule,
-                    updatedAt: versionStamp
+                    updatedAt: sql`GREATEST(now(), ${agentConfigs.updatedAt} + interval '1 millisecond')`
                 }
             });
 
