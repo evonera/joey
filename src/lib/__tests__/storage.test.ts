@@ -24,7 +24,7 @@ beforeEach(() => {
   process.env.R2_BUCKET_NAME = 'test-bucket';
 });
 
-const { generateUploadUrl, headObject, deleteObject } = await import('../storage');
+const { generateUploadUrl, headObject, deleteObject, assertAllowedUpload, sanitizeUploadExtension } = await import('../storage');
 
 describe('storage', () => {
   describe('generateUploadUrl', () => {
@@ -46,6 +46,21 @@ describe('storage', () => {
       await expect(generateUploadUrl('f.png', 'image/png', 't-1')).rejects.toThrow(
         'Missing R2 credentials'
       );
+    });
+
+    it('rejects MIME/extension mismatches (stored-XSS spoof)', async () => {
+      await expect(generateUploadUrl('evil.png', 'text/html', 't-1')).rejects.toThrow(
+        'Upload type not allowed'
+      );
+      await expect(generateUploadUrl('evil.svg', 'image/svg+xml', 't-1')).rejects.toThrow(
+        'Upload type not allowed'
+      );
+    });
+
+    it('sanitizes traversal extensions', () => {
+      expect(sanitizeUploadExtension('a/bar/baz')).toBe('abarbaz');
+      expect(sanitizeUploadExtension('../x.png')).toBe('png');
+      expect(assertAllowedUpload('photo.JPG', 'image/jpeg')).toBe('jpg');
     });
   });
 

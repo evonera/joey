@@ -7,8 +7,11 @@ export async function connectTelegramBot(token: string, allowedUserIds: number[]
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (!appUrl?.startsWith("https://")) return { error: "NEXT_PUBLIC_APP_URL must be an HTTPS URL." };
   if (!/^\d+:[A-Za-z0-9_-]{30,}$/.test(token.trim())) return { error: "Invalid Telegram bot token format." };
-  try { return { success: true, installation: await installTelegramBot({ tenantId, token: token.trim(), allowedUserIds, appUrl }) }; }
-  catch (error) { console.error("[telegram] bot installation failed", error instanceof Error ? error.message : "unknown error"); return { error: "Telegram rejected the bot configuration." }; }
+  const allowlist = [...new Set(allowedUserIds)];
+  if (allowlist.length === 0) return { error: "Add at least one Telegram user ID. An empty allowlist denies everyone." };
+  if (allowlist.some((value) => !Number.isSafeInteger(value) || value <= 0)) return { error: "Telegram user IDs must be positive integers." };
+  try { return { success: true, installation: await installTelegramBot({ tenantId, token: token.trim(), allowedUserIds: allowlist, appUrl }) }; }
+  catch (error) { console.error("[telegram] bot installation failed", error instanceof Error ? error.message : "unknown error"); return { error: error instanceof Error && /allowed Telegram user ID/.test(error.message) ? error.message : "Telegram rejected the bot configuration." }; }
 }
 
 export async function getTelegramBotStatus() {
