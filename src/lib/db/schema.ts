@@ -441,6 +441,8 @@ export const flows = pgTable("flows", {
   /** Incremented only when status or executable graph semantics change. */
   executionRevision: integer("execution_revision").default(1).notNull(),
   lastRunAt: timestamp("last_run_at"),
+  /** Last time the scheduler examined this flow (admitted or skipped). NULL = never examined; NULLS FIRST keeps unticked flows at the admission head. */
+  lastTickedAt: timestamp("last_ticked_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
