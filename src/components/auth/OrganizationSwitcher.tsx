@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
-import { getAuthoritativeActiveTenantId } from '@/app/actions/workspace';
+import { getAuthoritativeWorkspaceData } from '@/app/actions/workspace';
 import { 
   Building01Icon, 
   ArrowDown01Icon, 
@@ -33,21 +33,42 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   const fetchOrgs = React.useCallback(async () => {
     try {
       setLoading(true);
-      const [listResult, authoritativeTenantId] = await Promise.allSettled([
+      const [listResult, workspaceDataResult] = await Promise.allSettled([
         authClient.organization.list(),
-        getAuthoritativeActiveTenantId(),
+        getAuthoritativeWorkspaceData(),
       ]);
 
       const orgList = listResult.status === 'fulfilled' ? listResult.value.data : null;
-      const activeTenantId = authoritativeTenantId.status === 'fulfilled' ? authoritativeTenantId.value : null;
+      const serverData = workspaceDataResult.status === 'fulfilled' ? workspaceDataResult.value : null;
 
       if (orgList && Array.isArray(orgList)) {
         const typedList = orgList as unknown as Organization[];
-        setOrganizations(typedList);
+
+        // Order organizations according to server membership creation time (newest first)
+        let sortedList = typedList;
+        if (serverData && serverData.orderedTenantIds.length > 0) {
+          const orgMap = new Map(typedList.map(o => [o.id, o]));
+          const ordered: Organization[] = [];
+          for (const id of serverData.orderedTenantIds) {
+            const org = orgMap.get(id);
+            if (org) {
+              ordered.push(org);
+              orgMap.delete(id);
+            }
+          }
+          for (const remaining of orgMap.values()) {
+            ordered.push(remaining);
+          }
+          sortedList = ordered;
+        }
+
+        setOrganizations(sortedList);
 
         // Authoritatively match the workspace resolved by server tenant resolution
-        const matchingOrg = activeTenantId ? typedList.find(o => o.id === activeTenantId) : null;
-        const targetOrg = matchingOrg ?? typedList[0] ?? null;
+        const matchingOrg = serverData?.activeTenantId 
+          ? sortedList.find(o => o.id === serverData.activeTenantId) 
+          : null;
+        const targetOrg = matchingOrg ?? sortedList[0] ?? null;
         setActiveOrg(targetOrg);
       }
     } catch {
