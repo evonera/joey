@@ -163,30 +163,37 @@ export async function createThemePage(data: CreateThemePageInput) {
     let page: typeof themePages.$inferSelect;
 
     if (isNeonHttp) {
-      // neon-http driver has no transaction support. Use an atomic conditional
-      // INSERT...SELECT WHERE count < limit to prevent concurrent over-creation.
-      const { checkUsageLimits } = await import("@/lib/billing");
-      const limits = await checkUsageLimits(tenantId);
-      const limit = limits.themePageLimit;
-      const result = await db.execute(sql`
-        INSERT INTO theme_pages (
-          id, tenant_id, name, niche, audience, voice,
-          brand_kit, connected_accounts, default_rights_policy, status
-        )
-        SELECT
-          ${id}, ${tenantId}, ${name},
-          ${normalizeText(data.niche, 240)},
-          ${normalizeText(data.audience, 500)},
-          ${normalizeText(data.voice, 2_000)},
-          ${JSON.stringify(sanitizeBrandKit(data.brandKit))}::jsonb,
-          ${JSON.stringify(connectedAccounts)}::jsonb,
-          ${data.defaultRightsPolicy || 'strict'}, 'draft'
-        WHERE (
-          SELECT count(*) FROM theme_pages WHERE tenant_id = ${tenantId}
-        ) < ${limit}
-        RETURNING *
-      `);
-      const inserted = (result as any).rows?.[0] ?? (result as any)[0];
+      // Acquire a session-level advisory lock keyed by tenant before the
+      // conditional INSERT so concurrent neon-http requests are serialized.
+      // pg_advisory_lock is supported by neon-http in single-statement mode.
+      await db.execute(sql`SELECT pg_advisory_lock(hashtext(${tenantId}))`);
+      let inserted: typeof themePages.$inferSelect | undefined;
+      try {
+        const { checkUsageLimits } = await import("@/lib/billing");
+        const limits = await checkUsageLimits(tenantId);
+        const limit = limits.themePageLimit;
+        const result = await db.execute(sql`
+          INSERT INTO theme_pages (
+            id, tenant_id, name, niche, audience, voice,
+            brand_kit, connected_accounts, default_rights_policy, status
+          )
+          SELECT
+            ${id}, ${tenantId}, ${name},
+            ${normalizeText(data.niche, 240)},
+            ${normalizeText(data.audience, 500)},
+            ${normalizeText(data.voice, 2_000)},
+            ${JSON.stringify(sanitizeBrandKit(data.brandKit))}::jsonb,
+            ${JSON.stringify(connectedAccounts)}::jsonb,
+            ${data.defaultRightsPolicy || 'strict'}, 'draft'
+          WHERE (
+            SELECT count(*) FROM theme_pages WHERE tenant_id = ${tenantId}
+          ) < ${limit}
+          RETURNING *
+        `);
+        inserted = (result as any).rows?.[0] ?? (result as any)[0];
+      } finally {
+        await db.execute(sql`SELECT pg_advisory_unlock(hashtext(${tenantId}))`).catch(() => {});
+      }
       if (!inserted) {
         throw new Error("Free workspace limit reached (1 Theme Page). Upgrade to Pro for unlimited theme pages.");
       }
