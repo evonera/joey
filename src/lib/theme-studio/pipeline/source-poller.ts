@@ -138,6 +138,51 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
           });
         }
       }
+    } else if (source.sourceType === "exa_topic" || source.sourceType === "exa_search") {
+      const { searchWithExa } = await import("@/lib/search/exa-client");
+      let query = source.url || source.name;
+      let includeDomains: string[] | undefined = undefined;
+
+      if (query.includes("domains=")) {
+        try {
+          const parsed = new URL(query);
+          const qParam = parsed.searchParams.get("q") || parsed.searchParams.get("query");
+          if (qParam) query = qParam;
+          const dParam = parsed.searchParams.get("domains");
+          if (dParam) includeDomains = dParam.split(",").map((d) => d.trim()).filter(Boolean);
+        } catch {
+          // not a full url
+        }
+      }
+
+      const exaRes = await searchWithExa(
+        {
+          query,
+          includeDomains,
+          category: "news",
+          numResults: 20,
+          signal,
+        },
+        tenantId,
+      );
+
+      for (const res of exaRes.results) {
+        if (res.title && res.url) {
+          items.push({
+            title: res.title.slice(0, 500),
+            body: (res.text || res.highlights.join(" ") || res.title).slice(0, 20_000),
+            url: res.url,
+            publishedAt: parsedDate(res.publishedDate),
+            rightsCategory: source.rightsCategory || "news_fair_use",
+            metadata: {
+              heroImage: res.heroImage,
+              imageLinks: res.imageLinks,
+              author: res.author,
+              highlights: res.highlights,
+            },
+          });
+        }
+      }
     } else if (source.sourceType === "http") {
       const res = await outboundRequest(source.url, {
         headers: { "User-Agent": "JoeyThemeStudioBot/1.0" },

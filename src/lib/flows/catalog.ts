@@ -134,6 +134,8 @@ export const apifyActorConfig = z.object({
 export const exaSearchConfig = z.object({
   query: z.string().describe("Search query ({{input}} inserts incoming data as text)"),
   numResults: z.number().int().min(1).max(20).default(5),
+  includeDomains: z.array(z.string()).optional().describe("Optional domains to include, e.g. ['espn.com', 'nba.com']"),
+  excludeDomains: z.array(z.string()).optional().describe("Optional domains to exclude"),
   category: z
     .enum(["news", "company", "research paper", "github", "tweet", "pdf"])
     .optional()
