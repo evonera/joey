@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
 import { eq, and, desc, like, inArray } from "drizzle-orm";
 import { syncThemePageFlow } from "@/lib/flows/recipe-compiler";
+import { assertThemePageQuota } from "@/lib/billing";
 
 export interface CreateThemePageInput {
   name: string;
@@ -59,6 +60,8 @@ function safeMutationError(error: unknown, fallback: string): string {
   if (error instanceof Error && (
     /^Text must be \d+ characters or fewer$/.test(error.message)
     || error.message === "One or more publishing accounts are unavailable"
+    || error.message.includes("Free workspace limit reached")
+    || error.message.includes("Upgrade to Pro")
   )) return error.message;
   return fallback;
 }
@@ -143,6 +146,8 @@ export async function getThemePageById(id: string) {
 export async function createThemePage(data: CreateThemePageInput) {
   try {
     const tenantId = await getActiveTenantId();
+    await assertThemePageQuota(tenantId);
+
     if (!data.name || !data.name.trim()) {
       return { error: "Page name is required" };
     }
