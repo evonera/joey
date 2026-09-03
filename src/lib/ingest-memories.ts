@@ -31,15 +31,15 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
   const metadata = {
     updatedAt: config.updatedAt?.toISOString(),
   };
+  const sourceUpdatedAt = config.updatedAt?.getTime() ?? 0;
 
   if (existing) {
-    const updatedAt = config.updatedAt?.getTime() ?? 0;
     const existingMeta = existing.metadata as any;
     const existingUpdatedAt = existingMeta?.updatedAt
       ? new Date(existingMeta.updatedAt).getTime()
       : 0;
 
-    if (updatedAt <= existingUpdatedAt) return;
+    if (sourceUpdatedAt <= existingUpdatedAt) return;
   }
 
   // Compute the embedding outside the transaction (no lock held during
@@ -49,6 +49,29 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
   const prepared = prepareMemoryContent(content);
   const embedding = await generateEmbedding(prepared, tenantId);
   await db.transaction(async (tx) => {
+    // Re-check under lock: an overlapping sync may have committed a newer
+    // guideline while this embedding was in flight. Aborting here prevents
+    // stale content from overwriting it (lost update).
+    const [locked] = await tx
+      .select({ metadata: memories.metadata })
+      .from(memories)
+      .where(
+        and(
+          eq(memories.tenantId, tenantId),
+          eq(memories.type, "brand_guideline"),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    const lockedUpdatedAt = (locked?.metadata as any)?.updatedAt
+      ? new Date((locked.metadata as any).updatedAt).getTime()
+      : 0;
+    if (lockedUpdatedAt > sourceUpdatedAt) {
+      // Superseded: an overlapping sync committed newer content while this
+      // embedding was in flight. Returning early leaves its write intact
+      // (benign race outcome, not an error).
+      return;
+    }
     await tx.delete(memories).where(
       and(
         eq(memories.tenantId, tenantId),
@@ -121,17 +144,25 @@ export async function syncTenantPublishedPosts(tenantId: string) {
   }
 }
 
-export async function syncTenantMemories(tenantId: string) {
+/**
+ * Syncs both memory streams. Resolves with per-stream outcomes so callers
+ * (e.g. the user-requested brand-kit reindex) can report partial failures
+ * instead of a blanket success.
+ */
+export async function syncTenantMemories(
+  tenantId: string,
+): Promise<{ ok: boolean; errors: string[] }> {
   const results = await Promise.allSettled([
     syncTenantBrandGuidelines(tenantId),
     syncTenantPublishedPosts(tenantId),
   ]);
+  const errors: string[] = [];
   for (const result of results) {
     if (result.status === "rejected") {
-      operationalEvent("error", "memory_sync.failed", {
-        tenantId,
-        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-      });
+      const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      errors.push(message);
+      operationalEvent("error", "memory_sync.failed", { tenantId, error: message });
     }
   }
+  return { ok: errors.length === 0, errors };
 }
