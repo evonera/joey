@@ -32,7 +32,11 @@ export const exaSearchNode = defineNode({
       ctx.tenantId,
     );
 
-    return { output: response.results };
+    const results = Object.assign([...response.results], {
+      images: response.images,
+    });
+
+    return { output: results };
   },
 });
 
