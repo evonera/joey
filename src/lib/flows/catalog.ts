@@ -65,11 +65,11 @@ export const approvalGateConfig = z.object({
 });
 
 export const llmTaskConfig = z.object({
-  provider: z.enum(["openai", "anthropic", "openrouter"]).default("openai"),
+  provider: z.enum(["openai", "anthropic", "openrouter", "google"]).default("openai"),
   model: z
     .string()
     .default("gpt-4o-mini")
-    .describe("Model id, e.g. gpt-4o-mini, gpt-4o, claude-sonnet-4-5"),
+    .describe("Model id, e.g. gpt-4o-mini, gpt-4o, claude-sonnet-4-5, gemini-2.5-flash"),
   systemPrompt: z.string().describe("What this step should do (the system prompt)"),
   userTemplate: z
     .string()
