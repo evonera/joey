@@ -10,7 +10,7 @@ import { uploadAndRegisterFlowAsset } from "../../asset-registration";
 
 async function openAiKey(tenantId: string) {
   const key = await db.query.apiKeys.findFirst({ where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, "openai")) });
-  if (key?.status === "active") return decrypt(key.encryptedKey);
+  if (key?.status === "active") return decrypt(key.encryptedKey, tenantId);
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
   throw new Error("No active OpenAI key is configured.");
 }

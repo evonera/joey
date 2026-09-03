@@ -5,6 +5,9 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { agentConfigs, tenants } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { computeNextDraftTime, type PostingSchedule } from "@/lib/agent-schedule";
+
+export type { PostingSchedule };
 
 export async function getAgentConfig() {
     try {
@@ -15,17 +18,20 @@ export async function getAgentConfig() {
         });
 
         if (!config) {
-            // Create a default empty config
+            // Create a default empty config with future scheduled slot
+            const defaultSchedule: PostingSchedule = {
+                timezone: "UTC",
+                activeDays: ["mon", "tue", "wed", "thu", "fri"],
+                times: ["09:00", "15:00"],
+                selectedAccountIds: []
+            };
+            const nextDraft = computeNextDraftTime(new Date(), defaultSchedule);
             const [newConfig] = await db.insert(agentConfigs).values({
                 tenantId,
                 brandVoice: "",
                 postingGoals: "",
-                postingSchedule: {
-                    timezone: "UTC",
-                    activeDays: ["mon", "tue", "wed", "thu", "fri"],
-                    times: ["09:00", "15:00"],
-                    selectedAccountIds: []
-                }
+                nextDraftAt: nextDraft,
+                postingSchedule: defaultSchedule
             }).returning();
             config = newConfig;
         }
@@ -37,13 +43,6 @@ export async function getAgentConfig() {
     }
 }
 
-export interface PostingSchedule {
-    timezone: string;
-    activeDays: string[];
-    times: string[];
-    selectedAccountIds: string[];
-}
-
 export async function saveAgentConfig(data: {
     brandVoice: string;
     postingGoals: string;
@@ -51,6 +50,7 @@ export async function saveAgentConfig(data: {
 }) {
     try {
         const tenantId = await getActiveTenantId();
+        const nextDraft = computeNextDraftTime(new Date(), data.postingSchedule);
 
         // Atomic monotonic version stamp, computed inside the upsert: the
         // conflicting row is locked, so concurrent saves serialize and the
@@ -63,6 +63,7 @@ export async function saveAgentConfig(data: {
                 brandVoice: data.brandVoice,
                 postingGoals: data.postingGoals,
                 postingSchedule: data.postingSchedule,
+                nextDraftAt: nextDraft,
                 updatedAt: new Date(),
             })
             .onConflictDoUpdate({
@@ -71,6 +72,7 @@ export async function saveAgentConfig(data: {
                     brandVoice: data.brandVoice,
                     postingGoals: data.postingGoals,
                     postingSchedule: data.postingSchedule,
+                    nextDraftAt: nextDraft,
                     updatedAt: sql`GREATEST(now(), ${agentConfigs.updatedAt} + interval '1 millisecond')`
                 }
             });

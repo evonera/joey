@@ -59,8 +59,8 @@ export async function POST(req: NextRequest) {
                 });
             }
 
-            // Encrypt and store the key
-            const encrypted = encrypt(apiKey);
+            // Encrypt and store the key bound to tenant context
+            const encrypted = encrypt(apiKey, tenantId);
             
             const existingKey = await db.query.apiKeys.findFirst({
                 where: eq(apiKeys.tenantId, tenantId)

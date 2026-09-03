@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getDrafts } from "@/app/actions/drafts";
+import Link from "next/link";
 import { DraftCard } from "@/components/draft-card";
 
 export default function DraftsPage() {
@@ -38,9 +39,9 @@ export default function DraftsPage() {
                     <button
                         key={tab.id}
                         onClick={() => setStatusFilter(tab.id)}
-                        className={`px-4 py-2 border-b-2 whitespace-nowrap text-sm font-medium ${
+                        className={`px-4 py-2 border-b-2 whitespace-nowrap text-sm font-medium transition-colors ${
                             statusFilter === tab.id 
-                                ? "border-[#ffe633] text-[#ffe633] font-semibold" 
+                                ? "border-primary text-primary font-semibold" 
                                 : "border-transparent text-muted-foreground hover:text-foreground"
                         }`}
                     >
@@ -59,15 +60,15 @@ export default function DraftsPage() {
                             <div className="flex flex-col items-center gap-3">
                                 <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Try asking your agent to:</p>
                                 <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-                                    <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                    <Link href="/dashboard" className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
                                         Draft a thread about our new product launch
-                                    </button>
-                                    <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                    </Link>
+                                    <Link href="/dashboard" className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
                                         Summarize our latest blog post for LinkedIn
-                                    </button>
-                                    <button disabled title="Coming in Phase 4" className="disabled:opacity-50 text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
+                                    </Link>
+                                    <Link href="/dashboard" className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-2 rounded-full transition-colors border border-zinc-200 dark:border-zinc-700">
                                         Write a punchy tweet about AI trends
-                                    </button>
+                                    </Link>
                                 </div>
                             </div>
                         )}

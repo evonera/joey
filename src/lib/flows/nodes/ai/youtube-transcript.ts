@@ -18,7 +18,7 @@ export const youtubeTranscriptNode = defineNode({
     const parsed = new URL(url);
     if (!["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].includes(parsed.hostname.toLowerCase())) throw new Error("A valid YouTube URL is required.");
     const stored = await db.query.apiKeys.findFirst({ where: and(eq(apiKeys.tenantId, ctx.tenantId), eq(apiKeys.provider, "supadata")) });
-    const apiKey = stored?.status === "active" ? decrypt(stored.encryptedKey) : process.env.SUPADATA_API_KEY;
+    const apiKey = stored?.status === "active" ? decrypt(stored.encryptedKey, ctx.tenantId) : process.env.SUPADATA_API_KEY;
     if (!apiKey) throw new Error("No active Supadata key is configured.");
     const response = await outboundRequest(`https://api.supadata.ai/v1/youtube/transcript?url=${encodeURIComponent(url)}`, { signal: ctx.signal, timeoutMs: 60_000, maxBytes: 10 * 1024 * 1024, headers: { "x-api-key": apiKey, accept: "application/json" } });
     if (response.status < 200 || response.status >= 300) throw new Error(`Supadata returned HTTP ${response.status}.`);

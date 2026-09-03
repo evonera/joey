@@ -72,11 +72,11 @@ export default function AnalyticsCharts({
 
 function Section({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border bg-white dark:bg-zinc-900 shadow-sm">
-      <div className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex items-center gap-2">
+    <div className="rounded-xl border border-border bg-card text-card-foreground shadow-xs">
+      <div className="border-b border-border px-6 py-4 flex items-center gap-2">
         <div>
-          <h2 className="font-semibold text-zinc-900 dark:text-white">{title}</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">{subtitle}</p>
+          <h2 className="font-semibold text-foreground">{title}</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
         </div>
       </div>
       <div className="p-6">{children}</div>

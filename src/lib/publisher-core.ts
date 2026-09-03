@@ -17,7 +17,7 @@ export async function getZernioClientForTenant(tenantId: string) {
         throw new Error("No API key configured for this tenant");
     }
 
-    const apiKey = decrypt(key.encryptedKey);
+    const apiKey = decrypt(key.encryptedKey, tenantId);
     return { zernio: new Zernio({ apiKey }), tenantId };
 }
 
@@ -141,7 +141,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
             if (status === 401 || status === 403) {
                 await db.transaction(async (tx) => {
                     await tx.update(agentConfigs)
-                        .set({ isPaused: true })
+                        .set({ isPaused: true, pauseReason: "api_failure" })
                         .where(eq(agentConfigs.tenantId, tenantId));
                         
                     await tx.update(drafts)
@@ -375,8 +375,18 @@ export async function publishDueDrafts(options: { limit?: number; staleAfterMs?:
             } else {
                 failed++;
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(`Failed to publish scheduled draft ${draft.id} for tenant ${draft.tenantId}:`, error);
+            await db.update(drafts)
+                .set({
+                    status: "failed",
+                    errorMessage: error?.message || "Failed to initialize publisher client",
+                })
+                .where(and(
+                    eq(drafts.id, draft.id),
+                    eq(drafts.tenantId, draft.tenantId),
+                    eq(drafts.status, "approved"),
+                ));
             failed++;
         }
     }

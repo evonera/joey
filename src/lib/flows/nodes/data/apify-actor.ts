@@ -59,7 +59,7 @@ export async function resolveToken(tenantId: string): Promise<string> {
     if (tenantKey.status !== "active") {
       throw new Error("Apify token for this workspace is revoked or disabled.");
     }
-    return decrypt(tenantKey.encryptedKey);
+    return decrypt(tenantKey.encryptedKey, tenantId);
   }
   if (process.env.APIFY_TOKEN) return process.env.APIFY_TOKEN;
   throw new Error("No Apify token. Add one in Settings → API Keys (provider: apify).");

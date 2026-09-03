@@ -168,7 +168,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
 
-    const payload: ZernioWebhookPayload = JSON.parse(rawBody);
+    let payload: ZernioWebhookPayload;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    }
 
     const { event, isDuplicate } = await storeWebhookEvent(payload);
     if (isDuplicate || !event) {

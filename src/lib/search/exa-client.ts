@@ -43,7 +43,7 @@ export async function resolveExaKey(tenantId?: string | null): Promise<string> {
       if (tenantKey.status !== "active") {
         throw new Error("Exa API key for this workspace is disabled or revoked.");
       }
-      return decrypt(tenantKey.encryptedKey);
+      return decrypt(tenantKey.encryptedKey, tenantId);
     }
   }
 

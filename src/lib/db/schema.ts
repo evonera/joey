@@ -136,6 +136,7 @@ export const agentConfigs = pgTable("agent_configs", {
   postingSchedule: jsonb("posting_schedule"), // { cadence: 'daily', timezone: 'America/New_York', times: ['09:00'] }
   nextDraftAt: timestamp("next_draft_at"),
   isPaused: boolean("is_paused").default(false).notNull(),
+  pauseReason: text("pause_reason"), // 'budget_exceeded' | 'api_failure' | 'manual'
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

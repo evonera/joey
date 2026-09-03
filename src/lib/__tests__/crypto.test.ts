@@ -24,9 +24,15 @@ describe('Crypto Utilities', () => {
     const decrypted = decrypt(encrypted, tenantId);
     expect(decrypted).toEqual(originalText);
 
-    // Decrypting with wrong context fails or falls back
-    // When context does not match, decipher with wrong AAD throws, and fallback decipher without AAD also throws authTag mismatch!
+    // Decrypting with wrong context fails
     expect(() => decrypt(encrypted, 'tenant_attacker')).toThrow();
+
+    // Decrypting context-bound ciphertext without providing context throws auth tag mismatch
+    expect(() => decrypt(encrypted)).toThrow();
+
+    // Decrypting legacy ciphertext (encrypted without context) while passing a tenantId gracefully falls back and succeeds
+    const legacyEncrypted = encrypt(originalText);
+    expect(decrypt(legacyEncrypted, tenantId)).toEqual(originalText);
   });
 
   it('should mask keys safely', () => {

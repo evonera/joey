@@ -151,8 +151,8 @@ body {
 }
 
 ::selection {
-  background: rgba(255, 230, 51, 0.25);
-  color: #ffffff;
+  background: rgba(255, 230, 51, 0.35);
+  color: inherit;
 }
 
 button,
