@@ -15,9 +15,13 @@ export const notifyNode = defineNode({
   async execute(input, rawConfig, ctx) {
     const config = configSchema.parse(rawConfig);
 
-    const body = config.messageTemplate?.includes("{{input}}")
+    const { redactPII } = await import("@/lib/redact-pii");
+    const rawBody = config.messageTemplate?.includes("{{input}}")
       ? config.messageTemplate.replaceAll("{{input}}", safeStringify(input))
-      : (config.messageTemplate ?? safeStringify(input)).slice(0, 500);
+      : (config.messageTemplate ?? safeStringify(input));
+    // Redact before truncating so key patterns split by the cut still match,
+    // and always bound: the template branch above was previously unbounded.
+    const body = redactPII(rawBody).slice(0, 500);
 
     if (ctx.signal?.aborted) {
       throw (ctx.signal.reason as Error) ?? new Error("Aborted");
