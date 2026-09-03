@@ -149,9 +149,14 @@ export async function runLlm(opts: {
       }
     : undefined;
 
+  const effectiveModel =
+    opts.provider === "google" && (!opts.model || opts.model === "gpt-4o-mini")
+      ? "gemini-2.5-flash"
+      : opts.model;
+
   const response = await client.chat.completions.create(
     {
-      model: opts.model,
+      model: effectiveModel,
       messages: opts.messages,
       max_tokens: opts.maxTokens ?? 2048,
       ...(completionFormat ? { response_format: completionFormat } : {}),

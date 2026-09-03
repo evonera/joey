@@ -64,23 +64,30 @@ export const approvalGateConfig = z.object({
     .describe("What the user is being asked to approve, e.g. 'Post this thread to X?'"),
 });
 
-export const llmTaskConfig = z.object({
-  provider: z.enum(["openai", "anthropic", "openrouter", "google"]).default("openai"),
-  model: z
-    .string()
-    .default("gpt-4o-mini")
-    .describe("Model id, e.g. gpt-4o-mini, gpt-4o, claude-sonnet-4-5, gemini-2.5-flash"),
-  systemPrompt: z.string().describe("What this step should do (the system prompt)"),
-  userTemplate: z
-    .string()
-    .optional()
-    .describe("User prompt; {{input}} inserts the incoming data as JSON"),
-  outputSchema: z
-    .string()
-    .optional()
-    .describe("Optional JSON Schema for structured output"),
-  maxTokens: z.number().int().min(64).max(8192).optional(),
-});
+export const llmTaskConfig = z
+  .object({
+    provider: z.enum(["openai", "anthropic", "openrouter", "google"]).default("openai"),
+    model: z
+      .string()
+      .default("gpt-4o-mini")
+      .describe("Model id, e.g. gpt-4o-mini, gpt-4o, claude-sonnet-4-5, gemini-2.5-flash"),
+    systemPrompt: z.string().describe("What this step should do (the system prompt)"),
+    userTemplate: z
+      .string()
+      .optional()
+      .describe("User prompt; {{input}} inserts the incoming data as JSON"),
+    outputSchema: z
+      .string()
+      .optional()
+      .describe("Optional JSON Schema for structured output"),
+    maxTokens: z.number().int().min(64).max(8192).optional(),
+  })
+  .transform((data) => {
+    if (data.provider === "google" && data.model === "gpt-4o-mini") {
+      return { ...data, model: "gemini-2.5-flash" };
+    }
+    return data;
+  });
 
 export const transcribeConfig = z.object({
   mediaUrlField: z
