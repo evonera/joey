@@ -227,18 +227,24 @@ const MAX_SAFE_IDEMPOTENCY_WINDOW_MS = 4 * 60 * 1000;
 
 /**
  * Recovers drafts stranded in 'publishing' state due to interrupted worker execution
- * or network timeouts.
+ * or network timeouts with strict batch bounding and safe idempotency windows.
  * 
- * Idempotency Safety Contract:
- * - If claimed within MAX_SAFE_IDEMPOTENCY_WINDOW_MS (< 4 min):
- *   Safely resets to 'approved' for retry, guaranteed by x-request-id idempotency on Zernio.
- * - If claimed >= MAX_SAFE_IDEMPOTENCY_WINDOW_MS (>= 4 min, near/beyond Zernio's 5-min window):
- *   Checks Zernio's recent posts to reconcile any completed publish without duplicating.
- *   If absent or uncertain, marks as 'failed' to prevent duplicate social posts.
+ * Safety guarantees:
+ * 1. Bounded: Restricts processing to at most `limit` stranded drafts per invocation.
+ * 2. Non-blocking: Avoids sequential external network calls in the recovery loop so the cron
+ *    route runtime budget is preserved for due-draft publishing.
+ * 3. Exact matching: Checks local `posts` table by exact `draftId`. Never uses ambiguous content matching.
+ * 4. Window enforcement:
+ *    - If claimed within MAX_SAFE_IDEMPOTENCY_WINDOW_MS (< 4 min): safely resets to 'approved' for retry
+ *      guaranteed by Zernio's ~5-minute x-request-id idempotency key.
+ *    - If claimed >= MAX_SAFE_IDEMPOTENCY_WINDOW_MS (>= 4 min): marks as 'failed' to prevent duplicate
+ *      social posts from being created beyond the deduplication window.
  */
-export async function recoverStalePublishingDrafts(staleAfterMs = 2 * 60 * 1000): Promise<number> {
+export async function recoverStalePublishingDrafts(options: { limit?: number; staleAfterMs?: number } = {}): Promise<number> {
     const now = Date.now();
+    const staleAfterMs = options.staleAfterMs ?? 2 * 60 * 1000;
     const staleCutoffDate = new Date(now - staleAfterMs);
+    const batchLimit = options.limit ?? 10;
 
     const stranded = await db.select({
         id: drafts.id,
@@ -249,7 +255,8 @@ export async function recoverStalePublishingDrafts(staleAfterMs = 2 * 60 * 1000)
         createdAt: drafts.createdAt,
     })
     .from(drafts)
-    .where(eq(drafts.status, "publishing"));
+    .where(eq(drafts.status, "publishing"))
+    .limit(batchLimit);
 
     let recoveredCount = 0;
     for (const d of stranded) {
@@ -276,7 +283,9 @@ export async function recoverStalePublishingDrafts(staleAfterMs = 2 * 60 * 1000)
 
         if (!isStale) continue;
 
-        const claimAgeMs = claimTimestamp > 0 ? (now - claimTimestamp) : (now - (d.scheduledFor?.getTime() || d.createdAt.getTime()));
+        const claimAgeMs = claimTimestamp > 0 
+            ? (now - claimTimestamp) 
+            : (now - (d.scheduledFor?.getTime() || d.createdAt.getTime()));
 
         if (claimAgeMs < MAX_SAFE_IDEMPOTENCY_WINDOW_MS) {
             // Within safe 5-minute idempotency window: safe to retry via x-request-id
@@ -288,46 +297,15 @@ export async function recoverStalePublishingDrafts(staleAfterMs = 2 * 60 * 1000)
                 .where(and(eq(drafts.id, d.id), eq(drafts.status, "publishing")));
             recoveredCount++;
         } else {
-            // Exceeds safe 5-minute idempotency window: check Zernio before deciding
-            let reconciled = false;
-            try {
-                const { zernio } = await getZernioClientForTenant(d.tenantId);
-                const listRes = await zernio.posts.listPosts({ query: { limit: 20 } });
-                const recentPosts = (listRes?.data as any)?.posts || (listRes?.data as any) || [];
-                const matchingPost = Array.isArray(recentPosts) ? recentPosts.find((p: any) => 
-                    (d.content && p.content === d.content) || (p.metadata && p.metadata.draftId === d.id)
-                ) : null;
-
-                if (matchingPost?.id) {
-                    await db.transaction(async (tx) => {
-                        await tx.update(drafts)
-                            .set({ status: "published", errorMessage: null })
-                            .where(and(eq(drafts.id, d.id), eq(drafts.tenantId, d.tenantId)));
-                        await tx.insert(posts).values({
-                            tenantId: d.tenantId,
-                            draftId: d.id,
-                            zernioPostId: matchingPost.id,
-                            content: matchingPost.content || d.content || '',
-                            status: "published",
-                        });
-                    });
-                    reconciled = true;
-                    recoveredCount++;
-                }
-            } catch (zernioCheckErr) {
-                console.warn(`[publisher-recovery] Could not verify Zernio posts for draft ${d.id}:`, zernioCheckErr);
-            }
-
-            if (!reconciled) {
-                // Cannot confirm external state and past idempotency window: mark failed to prevent duplicate publishing
-                await db.update(drafts)
-                    .set({
-                        status: "failed",
-                        errorMessage: "Publishing claim timed out beyond the 5-minute deduplication window. Marked failed to prevent duplicate publishing; verify your social feed before retrying.",
-                    })
-                    .where(and(eq(drafts.id, d.id), eq(drafts.status, "publishing")));
-                recoveredCount++;
-            }
+            // Exceeds safe 5-minute idempotency window: mark as failed to prevent duplicate publishing
+            // and avoid external network calls that could exhaust the route's runtime budget.
+            await db.update(drafts)
+                .set({
+                    status: "failed",
+                    errorMessage: "Publishing claim timed out beyond the 5-minute deduplication window. Marked failed to prevent duplicate publishing; verify your social feeds before retrying.",
+                })
+                .where(and(eq(drafts.id, d.id), eq(drafts.status, "publishing")));
+            recoveredCount++;
         }
     }
 
@@ -339,9 +317,12 @@ export async function recoverStalePublishingDrafts(staleAfterMs = 2 * 60 * 1000)
  * Automatically recovers stranded publishing claims before executing due drafts.
  */
 export async function publishDueDrafts(options: { limit?: number; staleAfterMs?: number } = {}): Promise<{ published: number; failed: number; recovered: number }> {
-    const recovered = await recoverStalePublishingDrafts(options.staleAfterMs);
-    const now = new Date();
     const batchLimit = options.limit ?? 10;
+    const recovered = await recoverStalePublishingDrafts({ 
+        limit: batchLimit, 
+        staleAfterMs: options.staleAfterMs 
+    });
+    const now = new Date();
 
     const pendingDrafts = await db.select({
         id: drafts.id,
