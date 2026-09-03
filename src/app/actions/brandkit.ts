@@ -53,7 +53,11 @@ export async function getBrandKit() {
 export async function reindexMemories() {
     try {
         const tenantId = await getActiveTenantId();
-        await syncTenantMemories(tenantId);
+        const result = await syncTenantMemories(tenantId);
+        if (!result.ok) {
+            console.error("Partial reindex failure:", result.errors);
+            return { error: `Reindex partially failed: ${result.errors.join("; ")}` };
+        }
         return { success: true };
     } catch (error: any) {
         console.error("Failed to reindex memories:", error);
