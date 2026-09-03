@@ -493,4 +493,19 @@ describe("cached fan-out trigger precision (round 4)", () => {
     const sinkFalseStep = result.steps.find((s) => s.nodeId === "sinkFalse");
     expect(sinkFalseStep?.status).toBe("skipped");
   });
+
+  it("routes specific named output properties when connected from named handle", async () => {
+    const graph = doc({
+      nodes: [
+        n("t", "trigger.manual", { samplePayload: JSON.stringify({ results: [{ id: 1 }], images: ["https://example.com/photo.jpg"] }) }),
+        n("filterImages", "transform.filter", { field: "length", operator: "gt", value: "0" }),
+      ],
+      edges: [{ from: "t", to: "filterImages", branch: "images" }],
+    });
+
+    const result = await run(graph);
+    expect(result.status).toBe("succeeded");
+    const filterStep = result.steps.find((s) => s.nodeId === "filterImages");
+    expect(filterStep?.input).toEqual(["https://example.com/photo.jpg"]);
+  });
 });

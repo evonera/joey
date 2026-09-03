@@ -9,7 +9,9 @@ export interface ExaSearchOptions {
   includeDomains?: string[];
   excludeDomains?: string[];
   category?: string;
-  type?: "neural" | "fast" | "deep";
+  /** Exa search type. Defaults to "auto" (balanced relevance and speed).
+   * Use "deep" for thorough research, "instant" for latency-sensitive lookups. */
+  type?: "auto" | "fast" | "instant" | "deep-lite" | "deep" | "deep-reasoning";
   startPublishedDate?: string;
   signal?: AbortSignal;
 }
@@ -63,12 +65,13 @@ export async function searchWithExa(
 
   const bodyPayload: Record<string, unknown> = {
     query: options.query,
-    type: options.type ?? "neural",
+    type: options.type ?? "auto",
     numResults,
+    // highlights-only is the recommended content mode for LLM/agent workflows:
+    // token-efficient, query-relevant excerpts. Requesting text alongside
+    // highlights is an antipattern per Exa docs (stacks cost unnecessarily).
     contents: {
-      text: { maxCharacters: 3000 },
       highlights: true,
-      extras: { imageLinks: 3 },
     },
   };
 
@@ -111,8 +114,6 @@ export async function searchWithExa(
       publishedDate?: string;
       author?: string;
       image?: string;
-      extras?: { imageLinks?: string[] };
-      text?: string;
       highlights?: string[];
     }>;
   };
@@ -128,16 +129,6 @@ export async function searchWithExa(
 
     if (heroImage) allImages.add(heroImage);
 
-    const imageLinks: string[] = [];
-    if (Array.isArray(item.extras?.imageLinks)) {
-      for (const link of item.extras.imageLinks) {
-        if (typeof link === "string" && link.startsWith("http")) {
-          imageLinks.push(link);
-          allImages.add(link);
-        }
-      }
-    }
-
     return {
       id: item.id || `exa_res_${idx + 1}`,
       title: item.title || "Untitled",
@@ -145,8 +136,8 @@ export async function searchWithExa(
       publishedDate: item.publishedDate,
       author: item.author,
       heroImage,
-      imageLinks,
-      text: item.text,
+      imageLinks: heroImage ? [heroImage] : [],
+      text: typeof (item as any).text === "string" ? (item as any).text : undefined,
       highlights: Array.isArray(item.highlights) ? item.highlights : [],
     };
   });
@@ -156,3 +147,4 @@ export async function searchWithExa(
     images: Array.from(allImages),
   };
 }
+

@@ -219,7 +219,22 @@ export async function executeFlow(
     for (const edge of incoming(id)) {
       if (edge.branch && branchOf(edge.from) !== undefined && branchOf(edge.from) !== edge.branch) continue;
       const s = steps.get(edge.from);
-      if (s?.status === "succeeded" && outputs.has(edge.from)) values.push(outputs.get(edge.from));
+      if (s?.status === "succeeded" && outputs.has(edge.from)) {
+        const raw = outputs.get(edge.from);
+        const unwrapped = unwrap(raw);
+        if (
+          edge.branch &&
+          branchOf(edge.from) === undefined &&
+          unwrapped &&
+          typeof unwrapped === "object" &&
+          !Array.isArray(unwrapped) &&
+          edge.branch in (unwrapped as Record<string, unknown>)
+        ) {
+          values.push((unwrapped as Record<string, unknown>)[edge.branch]);
+        } else {
+          values.push(raw);
+        }
+      }
     }
     if (values.length === 0) return undefined;
     if (values.length === 1) return unwrap(values[0]);

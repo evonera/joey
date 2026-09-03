@@ -55,9 +55,7 @@ export default defineTool({
           publishedDate: r.publishedDate,
           heroImage: r.heroImage,
           imageLinks: r.imageLinks,
-          snippet:
-            r.highlights.join(" ... ") ||
-            (r.text ? r.text.slice(0, 300) : ""),
+          snippet: r.highlights.join(" ... ") || "(no excerpt)",
         })),
         availableImages: response.images,
       };

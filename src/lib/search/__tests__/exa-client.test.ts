@@ -6,7 +6,7 @@ vi.mock("@/lib/db", () => ({
     query: {
       apiKeys: {
         findFirst: vi.fn(),
-      },
+      },https://github.com/evonera/joey/pull/75/conflict?name=src%252Flib%252Fsearch%252F__tests__%252Fexa-client.test.ts&base_oid=a2086953765b6334dd77e24d85d90c915037be12&head_oid=989b0be7794bfd317a195cbdb990d4e89d40c0f5
     },
   },
 }));
@@ -66,13 +66,6 @@ describe("Exa Search Client", () => {
             title: "Lakers Win in Thriller",
             url: "https://espn.com/nba/story/1",
             image: "https://espn.com/photos/lebron.jpg",
-            extras: {
-              imageLinks: [
-                "https://espn.com/photos/dunk.jpg",
-                "https://espn.com/photos/crowd.jpg",
-              ],
-            },
-            text: "LeBron scored 35 points in a dramatic fourth-quarter comeback.",
             highlights: ["LeBron scored 35 points", "Fourth quarter comeback"],
           },
         ],
@@ -92,21 +85,17 @@ describe("Exa Search Client", () => {
     expect(response.results).toHaveLength(1);
     expect(response.results[0].title).toBe("Lakers Win in Thriller");
     expect(response.results[0].heroImage).toBe("https://espn.com/photos/lebron.jpg");
-    expect(response.results[0].imageLinks).toEqual([
-      "https://espn.com/photos/dunk.jpg",
-      "https://espn.com/photos/crowd.jpg",
-    ]);
-    expect(response.images).toEqual([
-      "https://espn.com/photos/lebron.jpg",
-      "https://espn.com/photos/dunk.jpg",
-      "https://espn.com/photos/crowd.jpg",
-    ]);
+    expect(response.results[0].imageLinks).toEqual(["https://espn.com/photos/lebron.jpg"]);
+    expect(response.images).toEqual(["https://espn.com/photos/lebron.jpg"]);
 
     // Check payload passed to fetch
     const [, fetchOptions] = mockFetch.mock.calls[0];
     const payload = JSON.parse(fetchOptions.body);
+    expect(payload.type).toBe("auto");
     expect(payload.includeDomains).toEqual(["espn.com", "nba.com"]);
     expect(payload.category).toBe("news");
-    expect(payload.contents.extras).toEqual({ imageLinks: 3 });
+    expect(payload.contents).toEqual({ highlights: true });
+    // Should NOT request text or extras (antipattern per Exa docs)
+    expect(payload.contents.text).toBeUndefined();
   });
 });
