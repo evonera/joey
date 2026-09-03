@@ -83,10 +83,18 @@ export const llmTaskConfig = z
     maxTokens: z.number().int().min(64).max(8192).optional(),
   })
   .transform((data) => {
-    if (data.provider === "google" && data.model === "gpt-4o-mini") {
-      return { ...data, model: "gemini-2.5-flash" };
+    let model = data.model;
+    if (data.provider === "google" && !model.startsWith("gemini-")) {
+      model = "gemini-2.5-flash";
+    } else if (data.provider === "anthropic" && !model.startsWith("claude-")) {
+      model = "claude-3-5-haiku-latest";
+    } else if (
+      data.provider === "openai" &&
+      (model.startsWith("claude-") || model.startsWith("gemini-"))
+    ) {
+      model = "gpt-4o-mini";
     }
-    return data;
+    return { ...data, model };
   });
 
 export const transcribeConfig = z.object({

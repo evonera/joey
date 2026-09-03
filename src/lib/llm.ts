@@ -149,10 +149,12 @@ export async function runLlm(opts: {
       }
     : undefined;
 
-  const effectiveModel =
-    opts.provider === "google" && (!opts.model || opts.model === "gpt-4o-mini")
-      ? "gemini-2.5-flash"
-      : opts.model;
+  let effectiveModel = opts.model;
+  if (opts.provider === "google" && (!effectiveModel || !effectiveModel.startsWith("gemini-"))) {
+    effectiveModel = "gemini-2.5-flash";
+  } else if (opts.provider === "openai" && (!effectiveModel || effectiveModel.startsWith("claude-") || effectiveModel.startsWith("gemini-"))) {
+    effectiveModel = "gpt-4o-mini";
+  }
 
   const response = await client.chat.completions.create(
     {
