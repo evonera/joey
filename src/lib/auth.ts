@@ -6,7 +6,7 @@ import { organization } from "better-auth/plugins";
 import DodoPayments from "dodopayments";
 import { db } from "./db";
 import * as schema from "./db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 
 // Dodo Payments is optional at boot so the app can be built and self-hosted
 // without billing credentials. Billing routes fail gracefully at runtime if
@@ -67,6 +67,17 @@ export const auth = betterAuth({
         }
     }),
     databaseHooks: {
+        user: {
+            create: {
+                after: async (user) => {
+                    try {
+                        await provisionDefaultWorkspace(user.id, user.name);
+                    } catch (err) {
+                        console.error("Failed to auto-create default workspace for new user:", err);
+                    }
+                },
+            },
+        },
         session: {
             create: {
                 before: async (session) => {
@@ -87,21 +98,22 @@ export const auth = betterAuth({
     emailAndPassword: {
         enabled: true,
         sendResetPassword: async ({ user, url }) => {
-            if (process.env.RESEND_API_KEY) {
+            const resendApiKey = process.env.RESEND_API_KEY;
+            if (resendApiKey) {
                 try {
                     const { Resend } = await import("resend");
-                    const resend = new Resend(process.env.RESEND_API_KEY);
+                    const resend = new Resend(resendApiKey);
                     await resend.emails.send({
-                        from: process.env.EMAIL_FROM || "Joey <no-reply@joey.dev>",
+                        from: process.env.EMAIL_FROM || "Joey <no-reply@joey.evonera.com>",
                         to: user.email,
-                        subject: "Reset your password",
-                        text: `Click the link below to reset your password:\n\n${url}\n\nIf you did not request this, please ignore this email.`,
+                        subject: "Reset your Joey password",
+                        html: `<p>Hello ${user.name || "there"},</p><p>You requested a password reset. Click the link below to set a new password:</p><p><a href="${url}">${url}</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
                     });
-                } catch (emailErr) {
-                    console.error("Failed to send password reset email via Resend:", emailErr);
+                } catch (err) {
+                    console.error("Failed to send reset password email via Resend:", err);
                 }
             } else {
-                console.log(`[auth] Password reset requested for ${user.email}. Recovery URL: ${url}`);
+                console.log(`[auth] Password reset requested for ${user.email}. Reset URL: ${url}`);
             }
         },
     },
@@ -246,6 +258,48 @@ export async function getActiveTenantIdFromSession(
     return resolveActiveTenant(session);
 }
 
+/**
+ * Atomically and idempotently provisions a default workspace and owner membership
+ * for a user. If a workspace membership already exists (e.g. concurrent provisioning),
+ * the existing organizationId is returned.
+ */
+export async function provisionDefaultWorkspace(userId: string, userName?: string | null): Promise<string> {
+    return await db.transaction(async (tx) => {
+        // Lock user record to serialize concurrent workspace provisioning for this user
+        await tx.execute(sql`SELECT id FROM ${schema.user} WHERE id = ${userId} FOR UPDATE`);
+
+        // Re-check membership inside transaction now that exclusive lock is held
+        const existing = await tx.query.member.findFirst({
+            where: eq(schema.member.userId, userId),
+            orderBy: [desc(schema.member.createdAt)],
+        });
+        if (existing?.organizationId) {
+            return existing.organizationId;
+        }
+
+        const displayName = userName?.trim() || "User";
+        const slugBase = displayName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') || 'workspace';
+        const slug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
+        const tenantId = crypto.randomUUID();
+
+        await tx.insert(schema.tenants).values({
+            id: tenantId,
+            name: `${displayName}'s Workspace`,
+            slug,
+        });
+
+        await tx.insert(schema.member).values({
+            id: crypto.randomUUID(),
+            organizationId: tenantId,
+            userId,
+            role: "owner",
+            createdAt: new Date(),
+        });
+
+        return tenantId;
+    });
+}
+
 async function resolveActiveTenant(session: AuthSession): Promise<string> {
     // Try to get the active organization from the session
     if (session.session.activeOrganizationId) {
@@ -260,20 +314,29 @@ async function resolveActiveTenant(session: AuthSession): Promise<string> {
         }
     }
 
-    // Fallback: finding the first organization they are a member of
+    // 2. Fall back to user's most recent organization membership
     const membership = await db.query.member.findFirst({
         where: eq(schema.member.userId, session.user.id),
         orderBy: [desc(schema.member.createdAt)],
     });
 
     if (membership?.organizationId) {
-        // Set it in the database for future requests
-        await auth.api.setActiveOrganization({
-            headers: await headers(),
-            body: { organizationId: membership.organizationId }
-        });
+        try {
+            await auth.api.setActiveOrganization({
+                headers: await headers(),
+                body: { organizationId: membership.organizationId }
+            });
+        } catch {
+            // Setting cookies is not permitted during Server Component rendering; safe to ignore
+        }
         return membership.organizationId;
     }
 
-    throw new Error("No active workspace found");
+    // 3. Fallback: auto-provision a workspace atomically if the user has none yet
+    try {
+        return await provisionDefaultWorkspace(session.user.id, session.user.name);
+    } catch (provisionErr) {
+        console.error("Failed to provision workspace in resolveActiveTenant:", provisionErr);
+        throw new Error("No active workspace found");
+    }
 }

@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
-import { getAuthoritativeWorkspaceData } from '@/app/actions/workspace';
 import { 
   Building01Icon, 
   ArrowDown01Icon, 
@@ -18,7 +17,6 @@ interface Organization {
   name: string;
   slug?: string;
   logo?: string | null;
-  createdAt?: string | Date;
 }
 
 export function OrganizationSwitcher({ className }: { className?: string }) {
@@ -28,48 +26,53 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   const [activeOrg, setActiveOrg] = React.useState<Organization | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [switching, setSwitching] = React.useState<string | null>(null);
+  const [isCreating, setIsCreating] = React.useState(false);
+  const [newOrgName, setNewOrgName] = React.useState('');
+  const [creatingLoading, setCreatingLoading] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
+
+  const handleCreateOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOrgName.trim()) return;
+    setCreatingLoading(true);
+    try {
+      const slugBase = newOrgName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-') || 'workspace';
+      const slug = `${slugBase}-${Math.random().toString(36).substring(2, 6)}`;
+      const { data, error } = await authClient.organization.create({
+        name: newOrgName.trim(),
+        slug,
+      });
+
+      if (error) {
+        toast.error(error.message || 'Failed to create workspace');
+        return;
+      }
+
+      if (data?.id) {
+        await authClient.organization.setActive({ organizationId: data.id });
+      }
+
+      toast.success('Workspace created');
+      setIsCreating(false);
+      setNewOrgName('');
+      setOpen(false);
+      router.refresh();
+      window.location.reload();
+    } catch {
+      toast.error('An error occurred while creating workspace');
+    } finally {
+      setCreatingLoading(false);
+    }
+  };
 
   const fetchOrgs = React.useCallback(async () => {
     try {
       setLoading(true);
-      const [listResult, workspaceDataResult] = await Promise.allSettled([
-        authClient.organization.list(),
-        getAuthoritativeWorkspaceData(),
-      ]);
-
-      const orgList = listResult.status === 'fulfilled' ? listResult.value.data : null;
-      const serverData = workspaceDataResult.status === 'fulfilled' ? workspaceDataResult.value : null;
-
+      const { data: orgList } = await authClient.organization.list();
+      
       if (orgList && Array.isArray(orgList)) {
-        const typedList = orgList as unknown as Organization[];
-
-        // Order organizations according to server membership creation time (newest first)
-        let sortedList = typedList;
-        if (serverData && serverData.orderedTenantIds.length > 0) {
-          const orgMap = new Map(typedList.map(o => [o.id, o]));
-          const ordered: Organization[] = [];
-          for (const id of serverData.orderedTenantIds) {
-            const org = orgMap.get(id);
-            if (org) {
-              ordered.push(org);
-              orgMap.delete(id);
-            }
-          }
-          for (const remaining of orgMap.values()) {
-            ordered.push(remaining);
-          }
-          sortedList = ordered;
-        }
-
-        setOrganizations(sortedList);
-
-        // Authoritatively match the workspace resolved by server tenant resolution
-        const matchingOrg = serverData?.activeTenantId 
-          ? sortedList.find(o => o.id === serverData.activeTenantId) 
-          : null;
-        const targetOrg = matchingOrg ?? sortedList[0] ?? null;
-        setActiveOrg(targetOrg);
+        setOrganizations(orgList as unknown as Organization[]);
+        setActiveOrg((prev) => prev ?? (orgList[0] as unknown as Organization));
       }
     } catch {
       // Graceful fallback
@@ -168,17 +171,48 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
           </div>
 
           <div className="pt-1 border-t border-white/[0.06]">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                router.push('/onboarding');
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ffe633] hover:text-[#f0d82e] rounded-lg hover:bg-[#ffe633]/10 transition-colors cursor-pointer"
-            >
-              <PlusSignIcon size={14} />
-              <span>Create Workspace</span>
-            </button>
+            {isCreating ? (
+              <form onSubmit={handleCreateOrg} className="p-2 space-y-2">
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="Workspace name"
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  className="w-full rounded border border-white/[0.1] bg-white/[0.04] px-2 py-1 text-xs text-white placeholder:text-white/30 focus:border-[#ffe633]/50 focus:outline-none"
+                />
+                <div className="flex items-center gap-1.5 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreating(false);
+                      setNewOrgName('');
+                    }}
+                    className="px-2 py-1 text-[10px] text-white/50 hover:text-white rounded"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingLoading || !newOrgName.trim()}
+                    className="px-2.5 py-1 text-[10px] bg-[#ffe633] text-black font-semibold rounded hover:bg-[#ffe633]/90 disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {creatingLoading && <Loading03Icon size={10} className="animate-spin" />}
+                    <span>Create</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsCreating(true)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ffe633] hover:text-[#f0d82e] rounded-lg hover:bg-[#ffe633]/10 transition-colors cursor-pointer"
+              >
+                <PlusSignIcon size={14} />
+                <span>Create Workspace</span>
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { rateLimitCounters } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 
 // Fixed-window per-token rate limiting backed by Postgres so the documented
 // limit holds across application instances and process restarts.
@@ -46,4 +46,16 @@ export async function checkRateLimit(
     remaining: Math.max(0, limit - count),
     resetAt,
   };
+}
+
+/**
+ * Prunes expired rate limit windows older than a threshold (default 24h).
+ */
+export async function pruneExpiredRateLimits(olderThanMs = 24 * 60 * 60 * 1000): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMs);
+  const deleted = await db
+    .delete(rateLimitCounters)
+    .where(lt(rateLimitCounters.windowStart, cutoff))
+    .returning({ tokenId: rateLimitCounters.tokenId });
+  return deleted.length;
 }

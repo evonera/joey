@@ -8,8 +8,6 @@ const inter = Inter({ subsets: ["latin"] });
 
 const siteUrl = "https://joey.evonera.com";
 
-const webMcpOriginTrialToken = process.env.NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN;
-
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: "Joey — Autonomous Social Media Agent",
@@ -97,6 +95,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const webMcpOriginTrialToken = process.env.NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
