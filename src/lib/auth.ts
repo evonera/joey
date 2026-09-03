@@ -54,6 +54,7 @@ async function resolveTenantId(payload: any): Promise<string | null> {
 
 export const auth = betterAuth({
     secret: process.env.BETTER_AUTH_SECRET || process.env.AUTH_SECRET,
+    baseURL: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     database: drizzleAdapter(db, {
         provider: "pg",
         schema: {
@@ -62,6 +63,7 @@ export const auth = betterAuth({
             account: schema.account,
             verification: schema.verification,
             organization: schema.tenants,
+            tenants: schema.tenants,
             member: schema.member,
             invitation: schema.invitation,
         }
@@ -118,18 +120,10 @@ export const auth = betterAuth({
         },
     },
     socialProviders: {
-        ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET ? {
-            github: {
-                clientId: process.env.GITHUB_CLIENT_ID,
-                clientSecret: process.env.GITHUB_CLIENT_SECRET,
-            },
-        } : {}),
-        ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? {
-            google: {
-                clientId: process.env.GOOGLE_CLIENT_ID,
-                clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            },
-        } : {}),
+        google: {
+            clientId: (process.env.GOOGLE_CLIENT_ID || "mock-google-client-id") as string,
+            clientSecret: (process.env.GOOGLE_CLIENT_SECRET || "mock-google-client-secret") as string,
+        },
     },
     plugins: [
         nextCookies(),
