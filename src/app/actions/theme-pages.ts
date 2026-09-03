@@ -3,7 +3,7 @@
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
-import { eq, and, desc, like, inArray } from "drizzle-orm";
+import { eq, and, desc, like, inArray, sql } from "drizzle-orm";
 import { syncThemePageFlow } from "@/lib/flows/recipe-compiler";
 import { assertThemePageQuota } from "@/lib/billing";
 
@@ -146,7 +146,6 @@ export async function getThemePageById(id: string) {
 export async function createThemePage(data: CreateThemePageInput) {
   try {
     const tenantId = await getActiveTenantId();
-    await assertThemePageQuota(tenantId);
 
     if (!data.name || !data.name.trim()) {
       return { error: "Page name is required" };
@@ -158,17 +157,25 @@ export async function createThemePage(data: CreateThemePageInput) {
     }
     const connectedAccounts = await validateConnectedAccounts(tenantId, data.connectedAccounts);
 
-    const [page] = await db.insert(themePages).values({
-      tenantId,
-      name,
-      niche: normalizeText(data.niche, 240),
-      audience: normalizeText(data.audience, 500),
-      voice: normalizeText(data.voice, 2_000),
-      brandKit: sanitizeBrandKit(data.brandKit),
-      connectedAccounts,
-      defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
-      status: 'draft',
-    }).returning();
+    const page = await db.transaction(async (tx) => {
+      // Advisory transaction lock keyed to tenant serializes concurrent creation attempts
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
+      await assertThemePageQuota(tenantId, tx);
+
+      const [inserted] = await tx.insert(themePages).values({
+        tenantId,
+        name,
+        niche: normalizeText(data.niche, 240),
+        audience: normalizeText(data.audience, 500),
+        voice: normalizeText(data.voice, 2_000),
+        brandKit: sanitizeBrandKit(data.brandKit),
+        connectedAccounts,
+        defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
+        status: 'draft',
+      }).returning();
+
+      return inserted;
+    });
 
     return { page };
   } catch (error: any) {
