@@ -230,7 +230,14 @@ export const memories = pgTable("memories", {
   metadata: jsonb("metadata"),
   embedding: vector("embedding", { dimensions: 1536 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Exactly one brand guideline per tenant: serializes first-time concurrent
+  // syncs (no row exists yet to lock) at the database level. Losers observe a
+  // unique violation and skip; see syncTenantBrandGuidelines.
+  oneBrandGuidelinePerTenantIdx: uniqueIndex("memories_one_brand_guideline_per_tenant_idx")
+    .on(table.tenantId)
+    .where(sql`${table.type} = 'brand_guideline'`),
+}));
 
 export const tenantMemoryProfiles = pgTable("tenant_memory_profiles", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

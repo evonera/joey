@@ -8,6 +8,13 @@ import { operationalEvent } from "@/lib/operations-log";
 /** Page size for scanning existing published-post memories. */
 const EXISTING_MEMORY_PAGE_SIZE = 200;
 
+function isUniqueViolation(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  if (code === "23505") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate key|unique constraint|already exists/i.test(message);
+}
+
 export async function syncTenantBrandGuidelines(tenantId: string) {
   const config = await db.query.agentConfigs.findFirst({
     where: eq(agentConfigs.tenantId, tenantId),
@@ -48,7 +55,7 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
   // dupes are compacted away.
   const prepared = prepareMemoryContent(content);
   const embedding = await generateEmbedding(prepared, tenantId);
-  await db.transaction(async (tx) => {
+  const swap = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
     // Re-check under lock: an overlapping sync may have committed a newer
     // guideline while this embedding was in flight. Aborting here prevents
     // stale content from overwriting it (lost update).
@@ -79,7 +86,26 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
       ),
     );
     await insertMemoryWithEmbedding(tenantId, prepared, "brand_guideline", metadata, embedding, tx);
-  });
+  };
+  try {
+    await db.transaction(swap);
+  } catch (err) {
+    // First-time insert race: no row existed to lock, both syncs inserted,
+    // one hit the one-per-tenant unique index. Re-read and retry once only
+    // if ours is strictly newer; otherwise the peer's write stands.
+    if (!isUniqueViolation(err)) throw err;
+    const winner = await db.query.memories.findFirst({
+      where: and(
+        eq(memories.tenantId, tenantId),
+        eq(memories.type, "brand_guideline"),
+      ),
+    });
+    const winnerUpdatedAt = (winner?.metadata as any)?.updatedAt
+      ? new Date((winner?.metadata as any).updatedAt).getTime()
+      : 0;
+    if (!winner || sourceUpdatedAt <= winnerUpdatedAt) return;
+    await db.transaction(swap);
+  }
 }
 
 export async function syncTenantPublishedPosts(tenantId: string) {

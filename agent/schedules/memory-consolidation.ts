@@ -14,6 +14,69 @@ const CONSOLIDATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Admission budget per tenant dispatch; a timeout retries next tick. */
 const CONSOLIDATION_SEND_TIMEOUT_MS = 55_000;
 
+function isUniqueViolation(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  if (code === "23505") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate key|unique constraint|already exists/i.test(message);
+}
+
+/**
+ * Atomically claims the consolidation slot for a tenant: re-checks the
+ * weekly cursor inside a transaction (locking the profile row, or winning
+ * the unique insert race when no row exists) and advances the stamp in the
+ * same transaction. Overlapping ticks cannot both win. Returns the stamp on
+ * success, or null when another worker holds/advanced the slot.
+ */
+async function claimConsolidationSlot(tenantId: string): Promise<Date | null> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [profile] = await tx
+        .select({ lastCompactedAt: tenantMemoryProfiles.lastCompactedAt })
+        .from(tenantMemoryProfiles)
+        .where(eq(tenantMemoryProfiles.tenantId, tenantId))
+        .for("update");
+      const last = profile?.lastCompactedAt ?? null;
+      if (last && Date.now() - last.getTime() < CONSOLIDATION_INTERVAL_MS) return null;
+      const stampedAt = new Date();
+      await tx
+        .insert(tenantMemoryProfiles)
+        .values({ tenantId, lastCompactedAt: stampedAt })
+        .onConflictDoUpdate({
+          target: tenantMemoryProfiles.tenantId,
+          set: { lastCompactedAt: stampedAt, updatedAt: stampedAt },
+        });
+      return stampedAt;
+    });
+  } catch (err) {
+    // Lost the unique-insert race to an overlapping tick: no row to lock
+    // existed, both inserted, one violated the tenant unique constraint.
+    if (isUniqueViolation(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Releases a claimed slot after a failed dispatch so the tenant is retried
+ * on the next nightly tick instead of being skipped for a week. Restores
+ * only if our stamp is still current (another tick may have claimed since).
+ */
+async function releaseConsolidationSlot(
+  tenantId: string,
+  stampedAt: Date,
+  previous: Date | null,
+): Promise<void> {
+  await db
+    .update(tenantMemoryProfiles)
+    .set({ lastCompactedAt: previous, updatedAt: new Date() })
+    .where(
+      and(
+        eq(tenantMemoryProfiles.tenantId, tenantId),
+        eq(tenantMemoryProfiles.lastCompactedAt, stampedAt),
+      ),
+    );
+}
+
 function consolidationPrompt(): string {
   return [
     "Nightly memory consolidation for this workspace. Tidy long-term memory using ONLY the list_memories, search_memory, remember, and forget_memory tools. Do not message anyone.",
@@ -70,21 +133,31 @@ export default defineSchedule({
     for (const { tenantId } of counts) {
       try {
         if (pausedTenants.has(tenantId)) continue;
-        const lastCompacted = compactedAtByTenant.get(tenantId);
-        if (lastCompacted && now - lastCompacted.getTime() < CONSOLIDATION_INTERVAL_MS) continue;
         const ownerUserId = ownerByTenant.get(tenantId);
         if (!ownerUserId) continue;
 
-        // LLM spend gate (fail-safe: a check error skips rather than spends).
-        // Note: assertBudget pauses + notifies over-budget tenants itself.
+        // Atomic claim first: re-checks the weekly cursor under lock and
+        // advances the stamp in the same transaction, so overlapping ticks
+        // cannot dispatch duplicate sessions. (The pre-fetched profile map
+        // above is only a fast-path filter; the claim is authoritative.)
+        const lastCompacted = compactedAtByTenant.get(tenantId);
+        if (lastCompacted && now - lastCompacted.getTime() < CONSOLIDATION_INTERVAL_MS) continue;
+        const stampedAt = await claimConsolidationSlot(tenantId);
+        if (!stampedAt) continue;
+
+        // LLM spend gate (fail-safe: a check error releases the slot and
+        // skips rather than spends). Note: assertBudget pauses + notifies
+        // over-budget tenants itself.
         let allowed = false;
         try {
           allowed = (await assertBudget(tenantId)).allowed;
         } catch (err) {
           console.error(`[memory-consolidation] Budget check failed for tenant ${tenantId}; skipping:`, err);
+          await releaseConsolidationSlot(tenantId, stampedAt, lastCompacted ?? null);
           continue;
         }
         if (!allowed) {
+          await releaseConsolidationSlot(tenantId, stampedAt, lastCompacted ?? null);
           await recordAutomationRun({
             kind: "memory_consolidation",
             automationId: tenantId,
@@ -95,10 +168,10 @@ export default defineSchedule({
           continue;
         }
 
-        // Dispatch inside waitUntil and await admission: the weekly cursor
-        // advances only after the send settles. A rejected send records an
-        // error with the cursor untouched, so the tenant is retried on the
-        // next nightly tick instead of being skipped for seven days.
+        // Dispatch inside waitUntil and await admission. The slot stays
+        // claimed on success; on failure the stamp is rolled back so the
+        // tenant is retried on the next nightly tick instead of being
+        // skipped for seven days.
         waitUntil(
           (async () => {
             try {
@@ -114,14 +187,6 @@ export default defineSchedule({
                 CONSOLIDATION_SEND_TIMEOUT_MS,
                 `consolidation send ${tenantId}`,
               );
-              const stampedAt = new Date();
-              await db
-                .insert(tenantMemoryProfiles)
-                .values({ tenantId, lastCompactedAt: stampedAt })
-                .onConflictDoUpdate({
-                  target: tenantMemoryProfiles.tenantId,
-                  set: { lastCompactedAt: stampedAt, updatedAt: stampedAt },
-                });
               await recordAutomationRun({
                 kind: "memory_consolidation",
                 automationId: tenantId,
@@ -130,6 +195,7 @@ export default defineSchedule({
               });
             } catch (err) {
               console.error(`[memory-consolidation] Dispatch failed for tenant ${tenantId}:`, err);
+              await releaseConsolidationSlot(tenantId, stampedAt, lastCompacted ?? null);
               await recordAutomationRun({
                 kind: "memory_consolidation",
                 automationId: tenantId,
