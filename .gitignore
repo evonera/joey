@@ -10,3 +10,4 @@ test-results/
 dist
 .DS_Store
 *.tsbuildinfo
+.neon

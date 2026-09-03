@@ -9,6 +9,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
     exclude: ['**/node_modules/**', '**/.eve/**', '**/.next/**', 'tests/e2e/**', 'repos/**'],
+    env: {
+      ENCRYPTION_KEY: 'MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=',
+    },
   },
   resolve: {
     alias: {

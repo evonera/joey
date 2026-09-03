@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@5/overview/configuration-schema.json",
+  "next": true,
+  "project": ["src/**/*.{js,ts,jsx,tsx}!"],
+  "ignore": ["repos/**", "src/components/ui/**", "src/components/ai-elements/**"],
+  "ignoreDependencies": [
+    "@dnd-kit/*",
+    "@shikijs/*",
+    "@hugeicons/*",
+    "@tauri-apps/*",
+    "vaul",
+    "react-hook-form",
+    "@hookform/resolvers",
+    "@tailwindcss/typography",
+    "@tanstack/react-query",
+    "@tanstack/react-table",
+    "@vercel/connect",
+    "jose",
+    "tailwindcss",
+    "zustand",
+    "prettier"
+  ],
+  "rules": {
+    "files": "error",
+    "dependencies": "warn",
+    "unlisted": "error",
+    "exports": "off",
+    "types": "off",
+    "duplicates": "off"
+  }
+}
