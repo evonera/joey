@@ -6,7 +6,7 @@ vi.mock("@/lib/db", () => ({
     query: {
       apiKeys: {
         findFirst: vi.fn(),
-      },https://github.com/evonera/joey/pull/75/conflict?name=src%252Flib%252Fsearch%252F__tests__%252Fexa-client.test.ts&base_oid=a2086953765b6334dd77e24d85d90c915037be12&head_oid=989b0be7794bfd317a195cbdb990d4e89d40c0f5
+      },
     },
   },
 }));

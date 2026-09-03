@@ -6,7 +6,7 @@ import { eq, and, gte } from "drizzle-orm";
 
 export default defineSchedule({
   cron: "0 8 * * 0",
-  async run({ receive, waitUntil }) {
+  async run({ to, waitUntil }) {
     const activeTenants = await db.select({
       tenantId: agentConfigs.tenantId,
     })
@@ -33,16 +33,17 @@ export default defineSchedule({
         if (!recentPosts) continue;
 
         waitUntil(
-          receive(eveChannel, {
-            message: "Time for your weekly strategy review. Analyze last week's published posts — their content, engagement metrics, and platform performance. Use `get_analytics` to fetch the data, then save your key observations with `remember` (type: strategy_insight). Focus on actionable patterns: best posting times, content themes that resonated, platform trends, and concrete recommendations for the coming week.",
-            target: {},
-            auth: {
-              authenticator: "cron",
-              principalType: "user",
-              principalId: ownerMember.userId,
-              attributes: { tenantId: t.tenantId },
+          to(eveChannel, {}).send(
+            "Time for your weekly strategy review. Analyze last week's published posts — their content, engagement metrics, and platform performance. Use `get_analytics` to fetch the data, then save your key observations with `remember` (type: strategy_insight). Focus on actionable patterns: best posting times, content themes that resonated, platform trends, and concrete recommendations for the coming week.",
+            {
+              auth: {
+                authenticator: "cron",
+                principalType: "user",
+                principalId: ownerMember.userId,
+                attributes: { tenantId: t.tenantId },
+              },
             },
-          })
+          ),
         );
       } catch (err) {
         console.error(`[strategy-review] Failed to process tenant ${t.tenantId}:`, err);

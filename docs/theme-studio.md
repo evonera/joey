@@ -52,7 +52,7 @@ These items are not production-complete and must not be represented as shipped:
 - **Advanced visual editing:** the editor is a constrained form, not Fabric.js. Rendering applies safe template tokens, colors, type sizes, font family, and watermark; it is not a freeform canvas.
 - **Independent fact checking:** Joey retains source claims and provenance, but does not independently verify every claim against authoritative sources. Human review remains mandatory.
 - **Semantic clustering:** vector columns exist, but current clustering uses deterministic term overlap. Embedding generation and pgvector nearest-neighbor clustering are future work.
-- **Learning loop:** the quality scorer and optimizer exist, but package analytics ingestion and scheduled, explainable optimization are not connected yet. Empty metrics never change priorities.
+- **Learning loop:** package analytics ingestion (`processThemeStudioAnalyticsSync`) and scheduled optimization (`processThemeStudioOptimization`) run from `flows-tick`, but optimizer recommendations still require human accept/discard and minimum sample thresholds are not enforced. Empty metrics never change priorities automatically.
 - **Scheduling depth:** the compiled recipe runs daily. Per-slot times, timezone rules, and sub-daily source polling are not implemented.
 - **TikTok production compliance:** editable MP4 previews, consent/disclosure controls, audit-mode restrictions, and status UX must be finished before enabling TikTok publishing.
 - **Asset-rights depth:** generated card backgrounds contain no third-party media. Licensed image/video ingestion, per-asset license records, perceptual similarity, and visible attribution rules remain future work.

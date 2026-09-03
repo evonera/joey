@@ -237,7 +237,9 @@ export async function restartRun(runId: string): Promise<{ runId?: string; error
         return { error: "Run not found or not in a restartable state (failed or succeeded)." };
       }
 
-      const flowRecord = await tx.query.flows.findFirst({ where: eq(flows.id, claimed.flowId) });
+      const flowRecord = await tx.query.flows.findFirst({
+        where: and(eq(flows.id, claimed.flowId), eq(flows.tenantId, tenantId)),
+      });
       if (!flowRecord) {
         return { error: "Flow not found" };
       }

@@ -1,3 +1,7 @@
+---
+description: Use when the user wants content inspired by current events, industry news, or trending topics.
+---
+
 Use when the user wants content inspired by current events, industry news, trending topics, or when they ask you to "curate", "find news", "research trends", or "draft something timely."
 
 1. Use `connection_search` with queries like "news" or "search" or "trends" to discover available Composio tools for finding current information.
