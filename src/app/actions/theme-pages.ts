@@ -158,43 +158,62 @@ export async function createThemePage(data: CreateThemePageInput) {
     const connectedAccounts = await validateConnectedAccounts(tenantId, data.connectedAccounts);
 
     const id = crypto.randomUUID();
+    const isNeonHttp = process.env.DATABASE_PROVIDER === 'neon-http';
 
-    const insertPage = async (runner: any) => {
-      await assertThemePageQuota(tenantId, runner);
-      const [inserted] = await runner
-        .insert(themePages)
-        .values({
-          id,
-          tenantId,
-          name,
-          niche: normalizeText(data.niche, 240),
-          audience: normalizeText(data.audience, 500),
-          voice: normalizeText(data.voice, 2_000),
-          brandKit: sanitizeBrandKit(data.brandKit),
-          connectedAccounts,
-          defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
-          status: 'draft',
-        })
-        .returning();
-      return inserted;
-    };
+    let page: typeof themePages.$inferSelect;
 
-    let page;
-    if (typeof (db as any).transaction === "function") {
-      try {
-        page = await db.transaction(async (tx) => {
-          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
-          return insertPage(tx);
-        });
-      } catch (err: any) {
-        if (err?.message?.includes("transaction") || err?.message?.includes("neon-http")) {
-          page = await insertPage(db);
-        } else {
-          throw err;
-        }
+    if (isNeonHttp) {
+      // neon-http driver has no transaction support. Use an atomic conditional
+      // INSERT...SELECT WHERE count < limit to prevent concurrent over-creation.
+      const { checkUsageLimits } = await import("@/lib/billing");
+      const limits = await checkUsageLimits(tenantId);
+      const limit = limits.themePageLimit;
+      const result = await db.execute(sql`
+        INSERT INTO theme_pages (
+          id, tenant_id, name, niche, audience, voice,
+          brand_kit, connected_accounts, default_rights_policy, status
+        )
+        SELECT
+          ${id}, ${tenantId}, ${name},
+          ${normalizeText(data.niche, 240)},
+          ${normalizeText(data.audience, 500)},
+          ${normalizeText(data.voice, 2_000)},
+          ${JSON.stringify(sanitizeBrandKit(data.brandKit))}::jsonb,
+          ${JSON.stringify(connectedAccounts)}::jsonb,
+          ${data.defaultRightsPolicy || 'strict'}, 'draft'
+        WHERE (
+          SELECT count(*) FROM theme_pages WHERE tenant_id = ${tenantId}
+        ) < ${limit}
+        RETURNING *
+      `);
+      const inserted = (result as any).rows?.[0] ?? (result as any)[0];
+      if (!inserted) {
+        throw new Error("Free workspace limit reached (1 Theme Page). Upgrade to Pro for unlimited theme pages.");
       }
+      page = inserted;
     } else {
-      page = await insertPage(db);
+      // postgres-js and neon-serverless Pool: use advisory lock inside a
+      // transaction so the count check and insert are fully serialized.
+      page = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
+        await assertThemePageQuota(tenantId, tx);
+        const [inserted] = await tx
+          .insert(themePages)
+          .values({
+            id,
+            tenantId,
+            name,
+            niche: normalizeText(data.niche, 240),
+            audience: normalizeText(data.audience, 500),
+            voice: normalizeText(data.voice, 2_000),
+            brandKit: sanitizeBrandKit(data.brandKit),
+            connectedAccounts,
+            defaultRightsPolicy: data.defaultRightsPolicy || 'strict',
+            status: 'draft',
+          })
+          .returning();
+        return inserted;
+      });
     }
 
     return { page };
