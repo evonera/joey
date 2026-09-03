@@ -25,7 +25,10 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -1218,6 +1221,19 @@ export type PromptInputSelectValueProps = ComponentProps<typeof SelectValue>;
 
 export const PromptInputSelectValue = ({ className, ...props }: PromptInputSelectValueProps) => (
   <SelectValue className={cn(className)} {...props} />
+);
+
+export type PromptInputSelectGroupProps = ComponentProps<typeof SelectGroup>;
+export const PromptInputSelectGroup = (props: PromptInputSelectGroupProps) => <SelectGroup {...props} />;
+
+export type PromptInputSelectLabelProps = ComponentProps<typeof SelectLabel>;
+export const PromptInputSelectLabel = ({ className, ...props }: PromptInputSelectLabelProps) => (
+  <SelectLabel className={cn("px-2 py-1 text-xs font-semibold text-muted-foreground", className)} {...props} />
+);
+
+export type PromptInputSelectSeparatorProps = ComponentProps<typeof SelectSeparator>;
+export const PromptInputSelectSeparator = ({ className, ...props }: PromptInputSelectSeparatorProps) => (
+  <SelectSeparator className={cn("-mx-1 my-1 h-px bg-border", className)} {...props} />
 );
 
 export type PromptInputHoverCardProps = ComponentProps<typeof HoverCard>;
