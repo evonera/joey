@@ -9,13 +9,17 @@ import { decrypt, encrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
 import crypto from "crypto";
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 
 export async function getZernioClient() {
     const tenantId = await getActiveTenantId();
 
     const key = await db.query.apiKeys.findFirst({
-        where: eq(apiKeys.tenantId, tenantId)
+        where: and(
+            eq(apiKeys.tenantId, tenantId),
+            eq(apiKeys.provider, 'zernio'),
+            eq(apiKeys.status, 'active'),
+        ),
     });
 
     if (!key || !key.encryptedKey) {
@@ -225,7 +229,7 @@ export async function getConnectedAccounts() {
 
 export async function disconnectAccount(accountId: string) {
     try {
-        const { tenantId } = await getZernioClient();
+        const tenantId = await requireRole(["owner", "admin"]);
         // Here we could also call Zernio API to delete the account from their side if they support it
         // await zernio.accounts.deleteAccount({ accountId });
         
@@ -238,6 +242,6 @@ export async function disconnectAccount(accountId: string) {
         return { success: true };
     } catch (error: any) {
         console.error("Failed to disconnect account:", error);
-        return { error: "Failed to disconnect account" };
+        return { error: error?.message || "Failed to disconnect account" };
     }
 }

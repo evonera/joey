@@ -88,7 +88,13 @@ export async function GET() {
   );
 }
 
-export async function DELETE() {
-  // Stateless mode: no sessions to tear down.
-  return NextResponse.json({ ok: true }, { headers: corsHeaders });
+export async function DELETE(request: Request) {
+  try {
+    await authenticateApiRequest(request);
+    return NextResponse.json({ ok: true }, { headers: corsHeaders });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    const status = message.startsWith("Insufficient scope") ? 403 : 401;
+    return NextResponse.json({ error: message }, { status, headers: corsHeaders });
+  }
 }

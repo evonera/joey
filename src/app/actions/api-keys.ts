@@ -1,6 +1,6 @@
 'use server';
 
-import { auth, getActiveTenantId } from "@/lib/auth";
+import { auth, getActiveTenantId, requireRole } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { apiKeys, tenants } from "@/lib/db/schema";
@@ -73,7 +73,7 @@ export async function saveApiKey(provider: string, key: string) {
             return { error: "Invalid Google API key. Expected Gemini key starting with AIzaSy..." };
         }
 
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
         const encrypted = encrypt(cleanKey, tenantId);
 
         const existing = await db.query.apiKeys.findFirst({
@@ -96,13 +96,13 @@ export async function saveApiKey(provider: string, key: string) {
         return { success: true };
     } catch (error: any) {
         console.error("Failed to save API key:", error?.message);
-        return { error: "Failed to save API key" };
+        return { error: error?.message || "Failed to save API key" };
     }
 }
 
 export async function deleteApiKey(provider: string) {
     try {
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
 
         await db.delete(apiKeys)
             .where(and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, provider)));
@@ -110,6 +110,6 @@ export async function deleteApiKey(provider: string) {
         return { success: true };
     } catch (error: any) {
         console.error("Failed to delete API key:", error);
-        return { error: "Failed to delete API key" };
+        return { error: error?.message || "Failed to delete API key" };
     }
 }

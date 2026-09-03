@@ -10,7 +10,11 @@ const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 // Internal helper for background cron jobs to get Zernio client without an HTTP session
 export async function getZernioClientForTenant(tenantId: string) {
     const key = await db.query.apiKeys.findFirst({
-        where: eq(apiKeys.tenantId, tenantId)
+        where: and(
+            eq(apiKeys.tenantId, tenantId),
+            eq(apiKeys.provider, 'zernio'),
+            eq(apiKeys.status, 'active'),
+        ),
     });
 
     if (!key || !key.encryptedKey) {

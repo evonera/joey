@@ -36,7 +36,13 @@ export const dodoPayments = new DodoPayments({
 async function resolveTenantId(payload: any): Promise<string | null> {
     const meta = payload.data?.metadata ?? {};
 
-    if (meta.tenantId) return meta.tenantId as string;
+    if (meta.tenantId) {
+        const tenant = await db.query.tenants.findFirst({
+            where: eq(schema.tenants.id, meta.tenantId as string),
+            columns: { id: true },
+        });
+        if (tenant) return tenant.id;
+    }
 
     if (meta.userId) {
         const membership = await db.query.member.findFirst({
@@ -50,11 +56,19 @@ async function resolveTenantId(payload: any): Promise<string | null> {
     return null;
 }
 
+const authSecret = process.env.BETTER_AUTH_SECRET || process.env.AUTH_SECRET;
+if (process.env.NODE_ENV === "production" && !authSecret) {
+    throw new Error("BETTER_AUTH_SECRET or AUTH_SECRET is required in production");
+}
 
+const authBaseURL = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || (process.env.NODE_ENV === "production" ? undefined : "http://localhost:3000");
+if (process.env.NODE_ENV === "production" && !authBaseURL) {
+    throw new Error("BETTER_AUTH_URL or NEXT_PUBLIC_APP_URL is required in production");
+}
 
 export const auth = betterAuth({
-    secret: process.env.BETTER_AUTH_SECRET || process.env.AUTH_SECRET,
-    baseURL: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    secret: authSecret,
+    baseURL: authBaseURL,
     database: drizzleAdapter(db, {
         provider: "pg",
         schema: {
@@ -168,7 +182,7 @@ export const auth = betterAuth({
                 portal(),
                 usage(),
                 webhooks({
-                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET!,
+                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET || (process.env.NODE_ENV === "production" ? (() => { throw new Error("DODO_PAYMENTS_WEBHOOK_SECRET is required in production"); })() : "dev_dodo_webhook_secret_placeholder"),
                     onSubscriptionActive: async (payload: any) => {
                         const tenantId = await resolveTenantId(payload);
                         if (!tenantId) return;
@@ -240,6 +254,58 @@ export async function getActiveTenantId(): Promise<string> {
     }
 
     return resolveActiveTenant(session);
+}
+
+export type TenantRole = "owner" | "admin" | "member" | string;
+
+export interface TenantMembership {
+    tenantId: string;
+    userId: string;
+    role: TenantRole;
+}
+
+/**
+ * Resolves the authenticated user's active tenant and their role within that workspace.
+ * Throws if the user is unauthenticated or has no active workspace.
+ * If `allowedRoles` is provided, throws if the user's role is not in the allowed list.
+ */
+export async function getActiveTenantMembership(
+    allowedRoles?: string[]
+): Promise<TenantMembership> {
+    const session = await auth.api.getSession({
+        headers: await headers()
+    });
+
+    if (!session) {
+        throw new Error("Unauthorized");
+    }
+
+    const tenantId = await resolveActiveTenant(session);
+    const membership = await db.query.member.findFirst({
+        where: and(
+            eq(schema.member.userId, session.user.id),
+            eq(schema.member.organizationId, tenantId)
+        )
+    });
+
+    const role = membership?.role || "member";
+    if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+        throw new Error(`Forbidden: Action requires role ${allowedRoles.join(" or ")}`);
+    }
+
+    return { tenantId, userId: session.user.id, role };
+}
+
+/**
+ * Enforces role-based access control for workspace-sensitive actions (e.g. managing API keys,
+ * minting tokens, or disconnecting integrations). Defaults to allowing only "owner" and "admin".
+ * Returns the verified active tenantId.
+ */
+export async function requireRole(
+    allowedRoles: string[] = ["owner", "admin"]
+): Promise<string> {
+    const { tenantId } = await getActiveTenantMembership(allowedRoles);
+    return tenantId;
 }
 
 /**

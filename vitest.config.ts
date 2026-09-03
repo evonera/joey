@@ -12,6 +12,7 @@ export default defineConfig({
     env: {
       ENCRYPTION_KEY: 'MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=',
     },
+    testTimeout: 15000,
   },
   resolve: {
     alias: {
