@@ -1,6 +1,6 @@
 import { and, eq, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { flowRuns, r2CleanupTasks } from "@/lib/db/schema";
+import { assets, flowRuns, r2CleanupTasks } from "@/lib/db/schema";
 import { deleteObject } from "@/lib/storage";
 import { operationalEvent } from "@/lib/operations-log";
 
@@ -79,6 +79,32 @@ export async function processR2CleanupTasks(limit = 25): Promise<void> {
       )
       .returning({ id: r2CleanupTasks.id });
     if (!claimed) continue;
+
+    // Reference guard: a cleanup task that outlives its database delete
+    // (e.g. crash between enqueue and row removal, or a legacy immediately-
+    // actionable task) must resolve in favor of the row. Never delete R2
+    // content still referenced by the assets table — drop the stale intent.
+    const [referenced] = await db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(eq(assets.key, task.key))
+      .limit(1);
+    if (referenced) {
+      await db
+        .delete(r2CleanupTasks)
+        .where(
+          and(
+            eq(r2CleanupTasks.id, task.id),
+            eq(r2CleanupTasks.tenantId, task.tenantId),
+            eq(r2CleanupTasks.nextAttemptAt, leaseUntil),
+          ),
+        );
+      operationalEvent("info", "r2_cleanup.skipped_referenced", {
+        tenantId: task.tenantId,
+        cleanupTaskId: task.id,
+      });
+      continue;
+    }
 
     try {
       await deleteObject(task.key);

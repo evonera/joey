@@ -7,7 +7,7 @@ import { assets, tenants } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { generateUploadUrl, deleteObject, buildPublicUrl, headObject, assertAllowedUpload, R2_MAX_ASSET_BYTES } from "@/lib/storage";
 import { queryAssets } from "@/lib/assets";
-import { cancelR2Cleanup, enqueueR2Cleanup } from "@/lib/storage-cleanup";
+import { cancelR2Cleanup, enqueueR2Cleanup, rearmR2Cleanup } from "@/lib/storage-cleanup";
 
 export async function requestUploadUrl(filename: string, mimeType: string) {
   const tenantId = await getActiveTenantId();
@@ -93,17 +93,36 @@ export async function deleteAsset(id: string) {
 
   if (!asset) throw new Error("Asset not found");
 
-  // Durable intent first (idempotent): a crash between the DB delete and the
-  // R2 delete still leaves a cleanup task instead of an orphaned object.
-  await enqueueR2Cleanup(tenantId, asset.key, "asset deleted from database");
+  // Dormant-first intent (fires no earlier than +1h): a crash between the DB
+  // delete and the R2 delete still leaves a task, but the task can never fire
+  // while the asset row still exists — the cleanup worker drops tasks whose
+  // key is still referenced (reference guard), so ordering resolves in favor
+  // of the row, never the task.
+  await enqueueR2Cleanup(tenantId, asset.key, "asset deleted from database", {
+    notBefore: new Date(Date.now() + 60 * 60_000),
+  });
 
-  await db.delete(assets).where(and(eq(assets.id, id), eq(assets.tenantId, tenantId)));
+  let deleted: { id: string } | undefined;
+  try {
+    [deleted] = await db.delete(assets)
+      .where(and(eq(assets.id, id), eq(assets.tenantId, tenantId)))
+      .returning({ id: assets.id });
+  } catch (err) {
+    await cancelR2Cleanup(asset.key);
+    throw err;
+  }
+  if (!deleted) {
+    // Lost a concurrent delete race: the winner owns R2 teardown.
+    await cancelR2Cleanup(asset.key);
+    throw new Error("Asset not found");
+  }
 
   try {
     await deleteObject(asset.key);
     await cancelR2Cleanup(asset.key);
   } catch (err) {
     console.error(`[assets] Failed to delete R2 object ${asset.key}:`, err);
+    await rearmR2Cleanup(tenantId, asset.key, "asset deleted from database");
   }
 
   return { success: true };
