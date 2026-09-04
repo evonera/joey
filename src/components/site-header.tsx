@@ -14,7 +14,7 @@ export function SiteHeader({ unreadNotificationCount = 0 }: { unreadNotification
           orientation="vertical"
           className="mx-1 data-[orientation=vertical]:h-4 bg-border"
         />
-        <h1 className="text-sm font-semibold tracking-tight text-foreground">Joey Studio</h1>
+        <h1 className="text-sm font-semibold tracking-tight text-foreground">Joey</h1>
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <HelpTutorialDialog />
           <NotificationBell initialUnreadCount={unreadNotificationCount} />

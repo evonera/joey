@@ -150,8 +150,11 @@ export async function runLlm(opts: {
     : undefined;
 
   let effectiveModel = opts.model;
+  if (effectiveModel === "gemini-2.5-flash") {
+    effectiveModel = "gemini-3.6-flash";
+  }
   if (opts.provider === "google" && (!effectiveModel || !effectiveModel.startsWith("gemini-"))) {
-    effectiveModel = "gemini-2.5-flash";
+    effectiveModel = "gemini-3.6-flash";
   } else if (opts.provider === "openai" && (!effectiveModel || effectiveModel.startsWith("claude-") || effectiveModel.startsWith("gemini-"))) {
     effectiveModel = "gpt-4o-mini";
   }
