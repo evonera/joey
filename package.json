@@ -28,7 +28,8 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "node scripts/patch-eve.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.49",
