@@ -79,6 +79,20 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/pricing",
+        destination: "/#pricing",
+        permanent: false,
+      },
+      {
+        source: "/features",
+        destination: "/#features",
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default withEve(withMDX(withAnalyze(nextConfig)));

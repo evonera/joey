@@ -70,7 +70,7 @@ export function LandingHeader() {
               {openDropdown === "features" && (
                 <div className="absolute top-full left-0 mt-3.5 bg-[#161514] border border-white/[0.08] backdrop-blur-2xl rounded-xl shadow-2xl p-2 w-[260px] flex flex-col gap-1 z-50">
                   <Link
-                    href="#chat"
+                    href="/#chat"
                     onClick={() => setOpenDropdown(null)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.06] transition-colors"
                   >
@@ -84,7 +84,7 @@ export function LandingHeader() {
                   </Link>
 
                   <Link
-                    href="#flows"
+                    href="/#flows"
                     onClick={() => setOpenDropdown(null)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.06] transition-colors"
                   >
@@ -98,7 +98,7 @@ export function LandingHeader() {
                   </Link>
 
                   <Link
-                    href="#theme-studio"
+                    href="/#theme-studio"
                     onClick={() => setOpenDropdown(null)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.06] transition-colors"
                   >
@@ -112,7 +112,7 @@ export function LandingHeader() {
                   </Link>
 
                   <Link
-                    href="#telegram"
+                    href="/#telegram"
                     onClick={() => setOpenDropdown(null)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.06] transition-colors"
                   >
@@ -129,7 +129,7 @@ export function LandingHeader() {
                   </Link>
 
                   <Link
-                    href="#inbox"
+                    href="/#inbox"
                     onClick={() => setOpenDropdown(null)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.06] transition-colors"
                   >
@@ -146,7 +146,7 @@ export function LandingHeader() {
             </div>
 
             {/* Pricing Link */}
-            <Link href="#pricing" className="nav-glass-link">
+            <Link href="/#pricing" className="nav-glass-link">
               Pricing
             </Link>
 
@@ -267,28 +267,28 @@ export function LandingHeader() {
                 Features
               </span>
               <Link
-                href="#chat"
+                href="/#chat"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block text-xs font-medium text-white/80 hover:text-white px-2 py-1.5 rounded hover:bg-white/[0.04]"
               >
                 Agent Chat &amp; BYOK Models
               </Link>
               <Link
-                href="#flows"
+                href="/#flows"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block text-xs font-medium text-white/80 hover:text-white px-2 py-1.5 rounded hover:bg-white/[0.04]"
               >
                 Visual Flows Studio
               </Link>
               <Link
-                href="#theme-studio"
+                href="/#theme-studio"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block text-xs font-medium text-white/80 hover:text-white px-2 py-1.5 rounded hover:bg-white/[0.04]"
               >
                 Theme Studio &amp; SVG Carousels
               </Link>
               <Link
-                href="#telegram"
+                href="/#telegram"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block text-xs font-medium text-white/80 hover:text-white px-2 py-1.5 rounded hover:bg-white/[0.04]"
               >
@@ -298,7 +298,7 @@ export function LandingHeader() {
 
             <div className="border-t border-white/[0.06] pt-2 space-y-1">
               <Link
-                href="#pricing"
+                href="/#pricing"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block text-xs font-medium text-white/80 hover:text-white px-2 py-1.5 rounded hover:bg-white/[0.04]"
               >
