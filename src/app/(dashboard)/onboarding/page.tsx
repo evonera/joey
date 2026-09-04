@@ -77,7 +77,7 @@ export default function OnboardingPage() {
       await saveApiKey(selectedProvider, aiKeyInput.trim());
       setAiKeySuccess(true);
       if (typeof window !== "undefined") {
-        if (selectedProvider === "google") localStorage.setItem("joey_preferred_model", "google/gemini-2.5-flash");
+        if (selectedProvider === "google") localStorage.setItem("joey_preferred_model", "google/gemini-3.6-flash");
         if (selectedProvider === "openai") localStorage.setItem("joey_preferred_model", "openai/gpt-5.6-luna");
         if (selectedProvider === "anthropic") localStorage.setItem("joey_preferred_model", "anthropic/claude-haiku-4.5");
       }

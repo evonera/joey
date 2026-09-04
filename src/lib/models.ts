@@ -17,14 +17,14 @@ export interface ModelDefinition {
 export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
   // --- Google Gemini ---
   {
-    id: "google/gemini-2.5-flash",
-    name: "Gemini 2.5 Flash",
+    id: "google/gemini-3.6-flash",
+    name: "Gemini 3.6 Flash",
     provider: "google",
-    providerModelId: "gemini-2.5-flash",
+    providerModelId: "gemini-3.6-flash",
     tier: "recommended",
     recommended: true,
-    badge: "⚡ Fast & Cheap",
-    description: "Ultra-fast response time, highly cost-effective, ideal for social drafting.",
+    badge: "⚡ Fast",
+    description: "Latest high-speed, cost-effective Gemini model for social drafting.",
     contextWindowTokens: 1_048_576,
   },
   {
@@ -69,7 +69,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     providerModelId: "gpt-4o-mini",
     tier: "recommended",
     recommended: true,
-    badge: "⚡ Fast & Cheap",
+    badge: "⚡ Fast",
     description: "Lightweight and reliable for day-to-day social media tasks and fast chat turns.",
     contextWindowTokens: 128_000,
   },
@@ -115,7 +115,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     providerModelId: "claude-haiku-4-5",
     tier: "recommended",
     recommended: true,
-    badge: "⚡ Fast & Cheap",
+    badge: "⚡ Fast",
     description: "Fastest Claude tier with natural conversational fluency at minimal cost.",
     contextWindowTokens: 200_000,
   },
@@ -154,13 +154,18 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
   },
 ] as const;
 
-export const DEFAULT_MODEL_ID = "google/gemini-2.5-flash";
+export const DEFAULT_MODEL_ID = "google/gemini-3.6-flash";
 export const FALLBACK_MODEL_ID = "openai/gpt-4o-mini";
 
 export function getModelById(id: string | null | undefined): ModelDefinition {
   if (!id) {
     return SUPPORTED_MODELS[0];
   }
+  // Legacy aliases
+  if (id === "google/gemini-2.5-flash" || id === "gemini-2.5-flash") {
+    return SUPPORTED_MODELS[0];
+  }
+
   const match = SUPPORTED_MODELS.find((m) => m.id === id);
   if (match) return match;
 

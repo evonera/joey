@@ -59,8 +59,8 @@ describe("agent-model-resolver", () => {
     delete process.env.GEMINI_API_KEY;
 
     await expect(
-      resolveModelForTurn({ preferredModel: "google/gemini-2.5-flash", tenantId: "tenant-empty" })
-    ).rejects.toThrow(/No active API key found for Gemini 2.5 Flash/);
+      resolveModelForTurn({ preferredModel: "google/gemini-3.6-flash", tenantId: "tenant-empty" })
+    ).rejects.toThrow(/No active API key found for Gemini 3.6 Flash/);
   });
 
   it("successfully instantiates the model when an active key is found", async () => {
@@ -78,7 +78,7 @@ describe("agent-model-resolver", () => {
     });
 
     const result = await resolveModelForTurn({
-      preferredModel: "google/gemini-2.5-flash",
+      preferredModel: "google/gemini-3.6-flash",
       tenantId,
     });
 

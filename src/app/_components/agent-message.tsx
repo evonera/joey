@@ -23,6 +23,12 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool";
+import {
+  Sources,
+  SourcesTrigger,
+  SourcesContent,
+  Source,
+} from "@/components/ai-elements/sources";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -101,28 +107,67 @@ function AgentMessagePart({
       return <AttachmentPart part={part} />;
     case "authorization":
       return <AuthorizationPrompt part={part} />;
-    case "dynamic-tool":
+    case "dynamic-tool": {
+      const isSearch = part.toolName === "web_search" || part.toolName === "search";
+      const searchResults =
+        isSearch &&
+        part.output &&
+        typeof part.output === "object" &&
+        "results" in part.output &&
+        Array.isArray((part.output as any).results)
+          ? (part.output as any).results
+          : null;
+
       return (
-        <Tool
-          defaultOpen={part.state === "approval-requested" || part.state === "approval-responded"}
-        >
-          <ToolHeader
-            state={part.state}
-            title={part.toolName}
-            toolName={part.toolName}
-            type="dynamic-tool"
-          />
-          <ToolContent>
-            <ToolInput input={part.input} />
-            <InputRequestActions
-              canRespond={canRespond}
-              part={part}
-              onInputResponses={onInputResponses}
+        <div className="flex flex-col gap-2">
+          {searchResults && searchResults.length > 0 ? (
+            <Sources defaultOpen={false}>
+              <SourcesTrigger count={searchResults.length} />
+              <SourcesContent>
+                {searchResults.map((r: { url: string; title?: string }, idx: number) => (
+                  <Source key={r.url || idx} href={r.url} title={r.title}>
+                    {r.title}
+                  </Source>
+                ))}
+              </SourcesContent>
+            </Sources>
+          ) : null}
+          <Tool
+            defaultOpen={part.state === "approval-requested" || part.state === "approval-responded"}
+          >
+            <ToolHeader
+              state={part.state}
+              title={part.toolName}
+              toolName={part.toolName}
+              type="dynamic-tool"
             />
-            <ToolOutput errorText={part.errorText} output={part.output} />
-          </ToolContent>
-        </Tool>
+            <ToolContent>
+              <ToolInput input={part.input} />
+              <InputRequestActions
+                canRespond={canRespond}
+                part={part}
+                onInputResponses={onInputResponses}
+              />
+              <ToolOutput errorText={part.errorText} output={part.output} />
+            </ToolContent>
+          </Tool>
+        </div>
       );
+    }
+    case "source-url" as any: {
+      const sourceUrl = (part as any).url;
+      const sourceTitle = (part as any).title ?? sourceUrl;
+      return (
+        <Sources defaultOpen={true}>
+          <SourcesTrigger count={1} />
+          <SourcesContent>
+            <Source href={sourceUrl} title={sourceTitle}>
+              {sourceTitle}
+            </Source>
+          </SourcesContent>
+        </Sources>
+      );
+    }
   }
 }
 

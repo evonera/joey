@@ -70,7 +70,7 @@ export const llmTaskConfig = z
     model: z
       .string()
       .default("gpt-4o-mini")
-      .describe("Model id, e.g. gpt-4o-mini, gpt-4o, claude-sonnet-4-5, gemini-2.5-flash"),
+      .describe("Model id, e.g. gpt-4o-mini, gpt-4o, claude-sonnet-4-5, gemini-3.6-flash"),
     systemPrompt: z.string().describe("What this step should do (the system prompt)"),
     userTemplate: z
       .string()
@@ -84,8 +84,11 @@ export const llmTaskConfig = z
   })
   .transform((data) => {
     let model = data.model;
+    if (model === "gemini-2.5-flash") {
+      model = "gemini-3.6-flash";
+    }
     if (data.provider === "google" && !model.startsWith("gemini-")) {
-      model = "gemini-2.5-flash";
+      model = "gemini-3.6-flash";
     } else if (data.provider === "anthropic" && !model.startsWith("claude-")) {
       model = "claude-3-5-haiku-latest";
     } else if (
