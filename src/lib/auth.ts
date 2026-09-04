@@ -71,14 +71,15 @@ if (process.env.NODE_ENV === "production" && !isBuildPhase && !authSecret) {
 const authBaseURL =
     process.env.BETTER_AUTH_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    (isBuildPhase
-        ? "https://joey.evonera.com"
-        : process.env.NODE_ENV === "production"
-          ? undefined
-          : "http://localhost:3000");
-if (process.env.NODE_ENV === "production" && !isBuildPhase && !authBaseURL) {
-    throw new Error("BETTER_AUTH_URL or NEXT_PUBLIC_APP_URL is required in production");
-}
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : isBuildPhase
+            ? "https://joey.evonera.com"
+            : process.env.NODE_ENV === "production"
+              ? "https://joey.evonera.com"
+              : "http://localhost:3000");
 
 export const auth = betterAuth({
     secret: authSecret,

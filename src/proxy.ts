@@ -2,9 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
-	const session = await auth.api.getSession({
-		headers: request.headers
-	});
+	let session = null;
+	try {
+		session = await auth.api.getSession({
+			headers: request.headers
+		});
+	} catch (err) {
+		console.error("[proxy] Session retrieval failed:", err);
+		session = null;
+	}
 
 	const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup');
 	
