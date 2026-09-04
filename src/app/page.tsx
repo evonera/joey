@@ -2,18 +2,18 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowRight01Icon as ArrowRight,
-  BotIcon as Bot,
-  Calendar03Icon as CalendarDays,
-  Analytics01Icon as BarChart3,
-  SecurityCheckIcon as ShieldCheck,
-  LinkSquare01Icon as ExternalLink,
+  BotIcon,
   GitForkIcon,
   SparklesIcon,
   SmartPhone01Icon,
   Comment01Icon,
-  Key01Icon,
+  SecurityCheckIcon as ShieldCheck,
   CheckmarkCircle02Icon as CheckCircle,
+  LinkSquare01Icon as ExternalLink,
+  CpuIcon,
+  Calendar03Icon,
 } from "hugeicons-react";
+import { LandingHeader } from "@/components/landing-header";
 import { JoeyLogo } from "@/components/joey-logo";
 
 function GithubIcon({ className }: { className?: string }) {
@@ -24,217 +24,166 @@ function GithubIcon({ className }: { className?: string }) {
   );
 }
 
-const blogTeasers = [
-  {
-    href: "/blog/how-to-automate-social-media-with-ai",
-    title: "How to Automate Social Media with AI in 2026",
-    description: "What to automate, what to keep human, and how agentic workflows draft high-impact posts.",
-  },
-  {
-    href: "/blog/open-source-social-media-management-joey-vs-buffer-vs-hootsuite",
-    title: "Joey vs Buffer vs Hootsuite",
-    description: "Open-source AI social media management compared with traditional subscription platforms.",
-  },
-  {
-    href: "/blog/what-is-byok-bring-your-own-key-explained",
-    title: "What is BYOK AI?",
-    description: "Why bringing your own API keys cuts costs by up to 90% and keeps your data strictly yours.",
-  },
+const platforms = [
+  "Twitter / X",
+  "LinkedIn",
+  "Facebook Pages",
+  "Pinterest",
+  "Instagram",
+  "Bluesky",
 ];
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 flex flex-col font-sans selection:bg-[#ffe633]/30 selection:text-zinc-900">
-      {/* Navigation */}
-      <header className="sticky top-0 z-50 px-6 py-3.5 border-b border-border/40 bg-background/80 backdrop-blur-xl">
-        <div className="flex items-center justify-between max-w-7xl mx-auto w-full">
-          <JoeyLogo size="md" />
-
-          <nav aria-label="Main navigation" className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
-            <Link href="#features" className="hover:text-foreground transition-colors">Features</Link>
-            <Link href="#flows" className="hover:text-foreground transition-colors">Visual Flows</Link>
-            <Link href="#theme-studio" className="hover:text-foreground transition-colors">Theme Studio</Link>
-            <Link href="#byok" className="hover:text-foreground transition-colors">BYOK Models</Link>
-            <Link href="/docs" className="hover:text-foreground transition-colors">Docs</Link>
-            <Link href="/blog" className="hover:text-foreground transition-colors">Blog</Link>
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <a
-              href="https://github.com/evonera/joey"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Joey on GitHub"
-              className="hidden sm:inline-flex items-center transition-opacity hover:opacity-80"
-            >
-              <img
-                src="https://img.shields.io/github/stars/evonera/joey?style=social&label=Star"
-                alt="GitHub star count for evonera/joey"
-                width={90}
-                height={20}
-                loading="lazy"
-              />
-            </a>
-            <Link
-              href="/login"
-              className="text-sm font-medium hover:text-foreground text-muted-foreground transition-colors px-2 py-1"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/signup"
-              className="text-sm font-medium bg-zinc-900 dark:bg-[#ffe633] text-white dark:text-zinc-950 px-4 py-2 rounded-full hover:opacity-90 transition-opacity shadow-xs"
-            >
-              Get Started Free
-            </Link>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0a0908] text-white flex flex-col font-sans selection:bg-[#ffe633]/30 selection:text-white relative overflow-x-hidden">
+      {/* Floating Header with Features, Pricing, Resources */}
+      <LandingHeader />
 
       {/* Hero Section */}
-      <main className="flex-1 flex flex-col items-center text-center px-6 pt-24 pb-20">
-        <div className="max-w-4xl space-y-7">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#ffe633]/15 border border-[#ffe633]/30 text-amber-900 dark:text-amber-300 text-xs sm:text-sm font-medium">
-            <span className="flex h-2 w-2 rounded-full bg-[#ffe633] animate-pulse" />
-            Autonomous Social Media on Your Terms
+      <main className="flex-1 flex flex-col items-center pt-32 sm:pt-40 pb-20 px-4 sm:px-6">
+        <div className="max-w-[1128px] w-full mx-auto flex flex-col items-center text-center">
+          {/* Mascot Tag */}
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] backdrop-blur-md mb-8">
+            <div className="size-4 rounded-full bg-[#ffe633]/20 flex items-center justify-center">
+              <span className="size-2 rounded-full bg-[#ffe633] animate-pulse" />
+            </div>
+            <span className="text-xs font-medium text-white/80">
+              Meet Joey • Autonomous Social Media on Your Terms
+            </span>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-balance">
-            Your Autonomous Social Agent.{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-orange-500 to-indigo-500">
-              Powered by Any LLM.
-            </span>
+          {/* Hero Heading */}
+          <h1 className="heading-display text-4xl sm:text-6xl md:text-7xl font-semibold tracking-tight text-white max-w-4xl text-balance">
+            Autonomous social media. <br className="hidden sm:inline" />
+            <span className="text-white/40">Side by side.</span>
           </h1>
 
-          <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto text-balance leading-relaxed">
-            Joey analyzes your brand voice, curates live web intelligence, and crafts multi-platform posts on autopilot. Choose Gemini, GPT, or Claude — you maintain 100% human approval via web or Telegram.
+          {/* Hero Subtitle */}
+          <p className="mt-6 text-sm sm:text-base md:text-lg text-white/60 max-w-2xl text-balance leading-relaxed">
+            Joey monitors live industry news, curates breaking research via Exa, and drafts high-impact social posts on autopilot. Bring your own model key — you stay in 100% human control.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-4">
+          {/* CTA Buttons */}
+          <div className="mt-8 flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
             <Link
               href="/signup"
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-zinc-900 dark:bg-[#ffe633] text-white dark:text-zinc-950 px-8 py-3.5 rounded-full text-base font-semibold hover:opacity-90 transition-all shadow-md"
+              className="btn-accent w-full sm:w-auto text-sm px-6 py-3 rounded-lg shadow-lg font-semibold flex items-center justify-center gap-2"
             >
-              Start Automating Free <ArrowRight className="h-4 w-4" />
+              <span>Start Automating Free</span>
+              <ArrowRight className="size-4" />
             </Link>
+
             <Link
               href="/docs"
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-background border border-border px-7 py-3.5 rounded-full text-base font-medium text-foreground hover:bg-muted/60 transition-colors"
+              className="btn-ghost w-full sm:w-auto text-sm px-6 py-3 rounded-lg font-medium flex items-center justify-center gap-2"
             >
-              Explore Docs & API
+              <span>Explore Docs &amp; API</span>
             </Link>
           </div>
 
-          <div className="pt-8 flex flex-wrap items-center justify-center gap-6 text-xs sm:text-sm text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="size-4 text-emerald-500" />
-              <span>Open Source (MIT)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="size-4 text-emerald-500" />
-              <span>BYOK AI (Zero Markup)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="size-4 text-emerald-500" />
-              <span>100% Human Approval Gate</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="size-4 text-emerald-500" />
-              <span>1-Tap Telegram Approvals</span>
-            </div>
+          {/* Supported Platforms ticker */}
+          <div className="mt-16 flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs font-medium text-white/40">
+            <span className="uppercase tracking-wider text-[11px] text-white/30">Connects to</span>
+            {platforms.map((p) => (
+              <span key={p} className="hover:text-white/80 transition-colors">
+                {p}
+              </span>
+            ))}
           </div>
-        </div>
 
-        {/* Hero Interactive App Mockup */}
-        <div className="max-w-5xl w-full mt-14 rounded-2xl border border-border/80 bg-background/50 p-2 shadow-2xl backdrop-blur-md">
-          <div className="rounded-xl border border-border/60 bg-muted/20 overflow-hidden text-left">
-            <div className="flex items-center justify-between border-b border-border/40 px-4 py-3 bg-muted/40">
-              <div className="flex items-center gap-2">
-                <span className="size-3 rounded-full bg-red-500/80 inline-block" />
-                <span className="size-3 rounded-full bg-yellow-500/80 inline-block" />
-                <span className="size-3 rounded-full bg-green-500/80 inline-block" />
-                <span className="text-xs font-mono text-muted-foreground ml-2">joey.ai/dashboard</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <span className="size-2 rounded-full bg-emerald-500" />
-                <span>Agent Active • Gemini 2.5 Flash</span>
-              </div>
-            </div>
+          {/* Hero Mockup Showcase with Glowing Backdrop */}
+          <div className="mt-14 w-full max-w-[1040px] rounded-2xl p-2 sm:p-4 bg-gradient-to-b from-white/[0.08] to-transparent border border-white/[0.08] relative">
+            {/* Glow backdrop behind UI */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/20 via-orange-500/15 to-yellow-500/10 blur-3xl -z-10 rounded-2xl" />
 
-            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-2 space-y-4">
-                <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="size-7 rounded-lg bg-[#ffe633]/20 flex items-center justify-center p-1">
-                        <Image src="/joey-mascot.png" alt="Joey" width={20} height={20} />
-                      </div>
-                      <span className="font-semibold text-sm">Joey Agent</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-medium">Auto-Drafted</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">2 mins ago</span>
-                  </div>
-                  <p className="text-sm text-foreground leading-relaxed">
-                    &ldquo;Most AI tools promise speed. The best ones deliver leverage. By combining node-based web search flows with human-in-the-loop review, your brand voice never compromises.&rdquo;
-                  </p>
-                  <div className="flex items-center gap-2 pt-2">
-                    <button className="text-xs px-3 py-1.5 rounded-md bg-[#ffe633] text-zinc-950 font-semibold shadow-xs">
-                      ✓ Approve Draft
-                    </button>
-                    <button className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:bg-muted">
-                      Edit
-                    </button>
-                    <span className="text-[11px] text-muted-foreground ml-auto">Scheduled: Tomorrow 9:00 AM • Twitter/X</span>
-                  </div>
+            {/* App Window Shell */}
+            <div className="w-full rounded-xl bg-[#121110] border border-white/[0.08] shadow-2xl overflow-hidden text-left">
+              {/* Window Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-[#161514]">
+                <div className="flex items-center gap-2">
+                  <span className="size-3 rounded-full bg-red-500/70 inline-block" />
+                  <span className="size-3 rounded-full bg-yellow-500/70 inline-block" />
+                  <span className="size-3 rounded-full bg-green-500/70 inline-block" />
+                  <span className="text-xs font-mono text-white/40 ml-3">joey.ai / dashboard</span>
                 </div>
-
-                <div className="rounded-xl border border-border/60 bg-card p-4 space-y-2">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Composer Toolbar</span>
-                    <span className="text-emerald-500 font-medium">Model: Gemini 2.5 Flash (Recommended ⚡)</span>
-                  </div>
-                  <div className="h-9 rounded-md border border-border/50 bg-background/60 px-3 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Ask Joey: &ldquo;Run my competitor monitoring flow and summarize findings into 3 post angles…&rdquo;</span>
-                    <span className="px-2 py-0.5 rounded bg-muted text-[10px] font-mono">⌘ + ↵</span>
-                  </div>
+                <div className="flex items-center gap-2 text-xs text-white/50">
+                  <span className="size-2 rounded-full bg-emerald-400" />
+                  <span>Agent Active • Gemini 2.5 Flash</span>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active Pipelines</span>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
+              {/* Window Content */}
+              <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
+                {/* Left: Chat & Composer */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <GitForkIcon className="size-3.5 text-amber-500" />
-                        <span className="font-medium">Tech News Curator</span>
+                        <div className="size-6 rounded-md bg-[#ffe633]/20 flex items-center justify-center p-1">
+                          <Image src="/joey-mascot.png" alt="Joey" width={18} height={18} />
+                        </div>
+                        <span className="font-semibold text-xs text-white">Joey Agent</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 font-medium">
+                          Auto-Drafted
+                        </span>
                       </div>
-                      <span className="size-1.5 rounded-full bg-emerald-500" />
+                      <span className="text-[11px] text-white/40">3 mins ago</span>
                     </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
-                      <div className="flex items-center gap-2">
-                        <SparklesIcon className="size-3.5 text-indigo-500" />
-                        <span className="font-medium">Visual Card Generator</span>
-                      </div>
-                      <span className="size-1.5 rounded-full bg-emerald-500" />
+
+                    <p className="text-xs sm:text-sm text-white/90 leading-relaxed font-normal">
+                      &ldquo;AI automation doesn&apos;t mean spamming feeds. The real unlock is combining semantic web search with your authentic tone, then reviewing drafts in 5 seconds from your phone.&rdquo;
+                    </p>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button className="btn-accent text-[11px] py-1 px-3 rounded">
+                        ✓ Approve &amp; Schedule
+                      </button>
+                      <button className="btn-ghost text-[11px] py-1 px-3 rounded">
+                        Edit Draft
+                      </button>
+                      <span className="text-[11px] text-white/40 ml-auto">Twitter/X • 9:00 AM</span>
                     </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
-                      <div className="flex items-center gap-2">
-                        <SmartPhone01Icon className="size-3.5 text-blue-500" />
-                        <span className="font-medium">Telegram Bot Review</span>
-                      </div>
-                      <span className="size-1.5 rounded-full bg-emerald-500" />
-                    </div>
+                  </div>
+
+                  {/* Input bar preview */}
+                  <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3 flex items-center justify-between text-xs text-white/40">
+                    <span>Ask Joey: &ldquo;Find trending AI agent architectures on Hacker News and draft 2 hot takes…&rdquo;</span>
+                    <span className="px-2 py-0.5 rounded bg-white/[0.06] text-[10px] font-mono">⌘ ↵</span>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-border/60 bg-card p-4 space-y-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Supported Models</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="text-[10px] px-2 py-1 rounded bg-muted font-medium">Gemini 2.5 Flash</span>
-                    <span className="text-[10px] px-2 py-1 rounded bg-muted font-medium">Gemini 3.8 Flash</span>
-                    <span className="text-[10px] px-2 py-1 rounded bg-muted font-medium">GPT-5.6 Luna</span>
-                    <span className="text-[10px] px-2 py-1 rounded bg-muted font-medium">Claude Haiku 4.5</span>
+                {/* Right: Flow & Status */}
+                <div className="lg:col-span-5 space-y-3">
+                  <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 space-y-2.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40">
+                      Active Background Pipelines
+                    </span>
+
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                        <div className="flex items-center gap-2">
+                          <GitForkIcon className="size-3.5 text-amber-400" />
+                          <span className="font-medium text-white/80">Exa Semantic Curator</span>
+                        </div>
+                        <span className="text-[10px] text-emerald-400">Ticking (4h)</span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                        <div className="flex items-center gap-2">
+                          <SparklesIcon className="size-3.5 text-purple-400" />
+                          <span className="font-medium text-white/80">SVG Theme Generator</span>
+                        </div>
+                        <span className="text-[10px] text-white/40">Ready</span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                        <div className="flex items-center gap-2">
+                          <SmartPhone01Icon className="size-3.5 text-blue-400" />
+                          <span className="font-medium text-white/80">Telegram Bot Gate</span>
+                        </div>
+                        <span className="text-[10px] text-emerald-400">Connected</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -242,272 +191,480 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Flagship Features Section */}
-        <section id="features" className="max-w-6xl w-full mt-28 text-left">
-          <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Engineered for Real Leverage
+        {/* ========================================================================= */}
+        {/* Flagship Feature Cards (Matching GetLemonade layout) */}
+        {/* ========================================================================= */}
+        <section id="features" className="max-w-[1128px] w-full mt-36 text-left">
+          <div className="mb-14 space-y-2">
+            <h2 className="heading-section text-3xl sm:text-4xl md:text-5xl font-semibold text-white tracking-tight">
+              AI-powered features <br />
+              <span className="text-white/40">for every workflow.</span>
             </h2>
-            <p className="text-muted-foreground text-sm sm:text-base">
-              Everything modern social creators, founders, and marketing teams need to maintain a continuous, high-signal presence without manual grunt work.
-            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="space-y-8">
             {/* Feature 1: Visual Flows */}
-            <div id="flows" className="rounded-2xl border border-border bg-card p-6 shadow-xs flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="size-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
-                  <GitForkIcon className="size-5" />
-                </div>
-                <h3 className="text-xl font-bold">Visual Flows Studio</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Build automated node-based pipelines. Ingest live industry news via Exa AI semantic search or RSS feeds, filter through customized LLM synthesis, and automatically queue platform-formatted drafts for review.
+            <div
+              id="flows"
+              className="rounded-2xl bg-[#121110] border border-white/[0.08] p-6 sm:p-10 flex flex-col lg:flex-row items-center gap-8 shadow-xl"
+            >
+              {/* Text Side */}
+              <div className="flex-1 space-y-4">
+                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
+                  Visual Flows
+                </h3>
+                <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
+                  Construct autonomous node-based pipelines. Ingest breaking news via Exa AI semantic search or RSS feeds, filter with LLM synthesis, and automatically queue platform-formatted drafts for your review.
                 </p>
+                <div className="pt-2">
+                  <Link
+                    href="/flows"
+                    className="btn-outline-card inline-flex items-center gap-2"
+                  >
+                    <span>Open Flows Studio</span>
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </div>
               </div>
-              <div className="mt-6 pt-4 border-t border-border/40 text-xs font-medium text-amber-600 dark:text-amber-400">
-                Node Pipelines • Exa AI • RSS Crawling
+
+              {/* Image / Graphic Side with Glowing backdrop */}
+              <div className="flex-1 w-full relative rounded-xl overflow-hidden border border-white/[0.06] bg-[#161514] p-6">
+                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 via-orange-500/25 to-yellow-500/10 blur-2xl -z-10" />
+
+                {/* Node Graph Mockup */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-white/40 pb-2 border-b border-white/[0.06]">
+                    <span className="font-mono">pipeline.flow.json</span>
+                    <span className="text-emerald-400">● Active</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/[0.08] flex-1 text-xs">
+                      <div className="text-[10px] text-amber-400 font-semibold uppercase">Trigger</div>
+                      <div className="text-white font-medium mt-0.5">Every 4 hours</div>
+                    </div>
+                    <span className="text-white/20">→</span>
+                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/[0.08] flex-1 text-xs">
+                      <div className="text-[10px] text-blue-400 font-semibold uppercase">Exa Search</div>
+                      <div className="text-white font-medium mt-0.5">Industry Trends</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-center text-white/20 text-xs">↓</div>
+
+                  <div className="p-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] text-purple-400 font-semibold uppercase">Synthesis &amp; Drafting</div>
+                      <span className="text-[10px] text-white/40">Gemini 2.5 Flash</span>
+                    </div>
+                    <div className="text-white font-medium mt-0.5">
+                      Extract key architectural insight &amp; create draft
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Feature 2: Theme Studio */}
-            <div id="theme-studio" className="rounded-2xl border border-border bg-card p-6 shadow-xs flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="size-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                  <SparklesIcon className="size-5" />
-                </div>
-                <h3 className="text-xl font-bold">Theme Studio & Visual Cards</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Design bespoke visual templates and multi-slide carousels rendered via SVG. Joey pairs generated copy with branded graphics, typography, and color palettes for maximum feed engagement.
+            <div
+              id="theme-studio"
+              className="rounded-2xl bg-[#121110] border border-white/[0.08] p-6 sm:p-10 flex flex-col lg:flex-row items-center gap-8 shadow-xl"
+            >
+              {/* Text Side */}
+              <div className="flex-1 space-y-4">
+                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
+                  Theme Studio
+                </h3>
+                <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
+                  Design custom visual templates and multi-slide social carousels rendered via SVG. Joey pairs generated copy with branded graphics, fonts, and colors for maximum feed engagement.
                 </p>
+                <div className="pt-2">
+                  <Link
+                    href="/theme-studio"
+                    className="btn-outline-card inline-flex items-center gap-2"
+                  >
+                    <span>Open Theme Studio</span>
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </div>
               </div>
-              <div className="mt-6 pt-4 border-t border-border/40 text-xs font-medium text-indigo-600 dark:text-indigo-400">
-                SVG Engine • Carousels • Custom Themes
+
+              {/* Image / Graphic Side with Glowing backdrop */}
+              <div className="flex-1 w-full relative rounded-xl overflow-hidden border border-white/[0.06] bg-[#161514] p-6">
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 via-indigo-500/25 to-pink-500/10 blur-2xl -z-10" />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-white/40 pb-2 border-b border-white/[0.06]">
+                    <span className="font-mono">carousel_slide_01.svg</span>
+                    <span className="text-purple-400">Resvg 2x Render</span>
+                  </div>
+
+                  <div className="rounded-lg bg-zinc-950 p-4 border border-white/[0.06] space-y-2">
+                    <div className="size-6 rounded bg-[#ffe633] text-black font-bold flex items-center justify-center text-[10px]">
+                      J
+                    </div>
+                    <p className="text-sm font-semibold text-white leading-snug">
+                      &ldquo;Code that never reaches production is just expensive philosophy.&rdquo;
+                    </p>
+                    <div className="text-[10px] text-white/40 pt-1 flex items-center justify-between">
+                      <span>Brand: Evonera Tech</span>
+                      <span>Slide 1 of 4</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Feature 3: BYOK AI */}
-            <div id="byok" className="rounded-2xl border border-border bg-card p-6 shadow-xs flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="size-11 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <Key01Icon className="size-5" />
-                </div>
-                <h3 className="text-xl font-bold">BYOK Multi-Model Chat</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Bring your own API key for Google Gemini, OpenAI, or Anthropic. Switch seamlessly between cheap fast workhorses (Gemini 2.5 Flash, GPT-5.6 Luna) and frontier reasoning models with zero subscription markup.
+            {/* Feature 3: BYOK Agent Chat */}
+            <div
+              id="chat"
+              className="rounded-2xl bg-[#121110] border border-white/[0.08] p-6 sm:p-10 flex flex-col lg:flex-row items-center gap-8 shadow-xl"
+            >
+              {/* Text Side */}
+              <div className="flex-1 space-y-4">
+                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
+                  BYOK Agent Chat
+                </h3>
+                <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
+                  Bring your own key for Google Gemini (including free-tier Gemini 2.5 Flash), OpenAI GPT-5.6, or Claude Haiku 4.5. Switch models dynamically with zero markup on tokens.
                 </p>
+                <div className="pt-2">
+                  <Link
+                    href="/dashboard"
+                    className="btn-outline-card inline-flex items-center gap-2"
+                  >
+                    <span>Launch Chat Agent</span>
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </div>
               </div>
-              <div className="mt-6 pt-4 border-t border-border/40 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                AES-256-GCM • Google/OpenAI/Claude • No Markup
+
+              {/* Image / Graphic Side with Glowing backdrop */}
+              <div className="flex-1 w-full relative rounded-xl overflow-hidden border border-white/[0.06] bg-[#161514] p-6">
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/20 via-teal-500/20 to-cyan-500/10 blur-2xl -z-10" />
+
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between text-white/40 pb-2 border-b border-white/[0.06]">
+                    <span className="font-mono">model_selector.tsx</span>
+                    <span className="text-emerald-400">AES-256-GCM Encrypted</span>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-white/[0.04] border border-white/[0.06] space-y-1">
+                    <div className="text-[10px] text-amber-400 font-medium">Selected Provider</div>
+                    <div className="text-white font-semibold">Gemini 2.5 Flash (Recommended ⚡)</div>
+                    <div className="text-[11px] text-white/40">Free tier eligible • Sub-second drafting</div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                      GPT-5.6 Luna
+                    </div>
+                    <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                      Claude Haiku 4.5
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Feature 4: Telegram Mobile Approvals */}
-            <div className="rounded-2xl border border-border bg-card p-6 shadow-xs flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="size-11 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <SmartPhone01Icon className="size-5" />
+            <div
+              id="telegram"
+              className="rounded-2xl bg-[#121110] border border-white/[0.08] p-6 sm:p-10 flex flex-col lg:flex-row items-center gap-8 shadow-xl"
+            >
+              {/* Text Side */}
+              <div className="flex-1 space-y-4">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-purple-500/10 text-purple-400 text-xs font-semibold uppercase tracking-wider">
+                  Mobile Workflow
                 </div>
-                <h3 className="text-xl font-bold">1-Tap Telegram Approvals</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Review generated drafts without opening your laptop. Joey sends push alerts to your Telegram chat with full post previews, media, and interactive Approve/Edit/Reject buttons.
+                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
+                  1-Tap Telegram Approvals
+                </h3>
+                <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
+                  Never miss an approval. Joey pings your Telegram with full post previews, image carousels, and interactive Approve/Edit/Reject buttons straight on your phone lock screen.
                 </p>
+                <div className="pt-2">
+                  <Link
+                    href="/settings"
+                    className="btn-outline-card inline-flex items-center gap-2"
+                  >
+                    <span>Configure Telegram</span>
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </div>
               </div>
-              <div className="mt-6 pt-4 border-t border-border/40 text-xs font-medium text-blue-600 dark:text-blue-400">
-                Telegram Bot • Instant Alerts • Mobile Review
-              </div>
-            </div>
 
-            {/* Feature 5: Unified Engagement Inbox */}
-            <div className="rounded-2xl border border-border bg-card p-6 shadow-xs flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="size-11 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                  <Comment01Icon className="size-5" />
-                </div>
-                <h3 className="text-xl font-bold">Unified Engagement Inbox</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Aggregate comments, replies, and direct messages across Twitter/X, LinkedIn, and Facebook in one unified inbox. Joey drafts context-aware responses matching your voice for instant review.
-                </p>
-              </div>
-              <div className="mt-6 pt-4 border-t border-border/40 text-xs font-medium text-purple-600 dark:text-purple-400">
-                Unified Queue • Smart Replies • Sentiment Analysis
-              </div>
-            </div>
+              {/* Image / Graphic Side with Glowing backdrop */}
+              <div className="flex-1 w-full relative rounded-xl overflow-hidden border border-white/[0.06] bg-[#161514] p-6">
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-sky-500/25 to-indigo-500/10 blur-2xl -z-10" />
 
-            {/* Feature 6: Human-in-the-Loop Safeguards */}
-            <div className="rounded-2xl border border-border bg-card p-6 shadow-xs flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="size-11 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400">
-                  <ShieldCheck className="size-5" />
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between text-white/40 pb-2 border-b border-white/[0.06]">
+                    <span className="font-mono">telegram_bot_preview</span>
+                    <span className="text-blue-400">Instant Alert</span>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/[0.08] space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="size-2 rounded-full bg-blue-400" />
+                      <span className="font-semibold text-white">Joey Dispatch Bot</span>
+                    </div>
+                    <p className="text-xs text-white/80 leading-relaxed">
+                      &ldquo;New draft generated from Exa Trend Digest. Target: LinkedIn &amp; Twitter at 09:00 UTC.&rdquo;
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-center py-1.5 rounded font-semibold text-[11px]">
+                        ✓ Approve
+                      </div>
+                      <div className="bg-white/[0.04] text-white/70 border border-white/[0.08] text-center py-1.5 rounded text-[11px]">
+                        Edit
+                      </div>
+                      <div className="bg-red-500/10 text-red-400 border border-red-500/20 text-center py-1.5 rounded text-[11px]">
+                        Reject
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <h3 className="text-xl font-bold">Strict Human-in-the-Loop</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Nothing publishes to your social profiles without explicit approval. Monotonic versioning, SSRF protections, and atomic Postgres claims protect your brand from rogue posts or runaway automations.
-                </p>
-              </div>
-              <div className="mt-6 pt-4 border-t border-border/40 text-xs font-medium text-rose-600 dark:text-rose-400">
-                Fail-Closed • Safe Publishing • Zero Accidents
               </div>
             </div>
           </div>
         </section>
 
-        {/* How Joey Works */}
-        <section className="max-w-4xl w-full mt-28 text-center">
-          <h2 className="text-3xl font-extrabold tracking-tight mb-12">How Joey Works</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
-            <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
-              <div className="size-10 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold flex items-center justify-center text-lg">
-                1
+        {/* ========================================================================= */}
+        {/* Supporting Features 6-Card Grid (Matching GetLemonade) */}
+        {/* ========================================================================= */}
+        <section className="max-w-[1128px] w-full mt-36 text-left">
+          <div className="mb-12 space-y-2">
+            <h2 className="heading-section text-3xl sm:text-4xl font-semibold text-white tracking-tight">
+              Zero compromises. <br />
+              <span className="text-white/40">Built for real leverage.</span>
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="rounded-xl bg-[#121110] border border-white/[0.08] p-6 space-y-3">
+              <div className="size-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center">
+                <ShieldCheck className="size-4" />
               </div>
-              <h3 className="text-lg font-bold">Connect & Configure</h3>
-              <p className="text-sm text-muted-foreground">
-                Link social profiles via Zernio, choose your preferred AI model (Gemini, Claude, or GPT), and define your posting schedule.
+              <h4 className="font-semibold text-base text-white">100% Human in the Loop</h4>
+              <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
+                Nothing publishes to your channels without your approval. Monotonic execution locks protect against duplicate dispatches.
               </p>
             </div>
-            <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
-              <div className="size-10 rounded-xl bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center text-lg">
-                2
+
+            <div className="rounded-xl bg-[#121110] border border-white/[0.08] p-6 space-y-3">
+              <div className="size-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                <CpuIcon className="size-4" />
               </div>
-              <h3 className="text-lg font-bold">Agent Curates & Drafts</h3>
-              <p className="text-sm text-muted-foreground">
-                Joey monitors live news, searches Exa, parses your brand guidelines, and drafts platform-optimized posts with matching visuals.
+              <h4 className="font-semibold text-base text-white">Zero AI Markup (BYOK)</h4>
+              <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
+                Connect your Google, OpenAI, or Anthropic keys directly. You pay only standard provider token costs with 0% extra fees.
               </p>
             </div>
-            <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
-              <div className="size-10 rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold flex items-center justify-center text-lg">
-                3
+
+            <div id="inbox" className="rounded-xl bg-[#121110] border border-white/[0.08] p-6 space-y-3">
+              <div className="size-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center">
+                <Comment01Icon className="size-4" />
               </div>
-              <h3 className="text-lg font-bold">Approve on Web or Phone</h3>
-              <p className="text-sm text-muted-foreground">
-                Review drafts in your dashboard or tap Approve directly inside Telegram. Only approved content ever touches your channels.
+              <h4 className="font-semibold text-base text-white">Unified Engagement Inbox</h4>
+              <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
+                Triage comments and replies across Twitter, LinkedIn, and Facebook in one queue with brand-tuned AI reply suggestions.
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-[#121110] border border-white/[0.08] p-6 space-y-3">
+              <div className="size-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center">
+                <Calendar03Icon className="size-4" />
+              </div>
+              <h4 className="font-semibold text-base text-white">Visual Content Calendar</h4>
+              <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
+                Drag-and-drop scheduling across timezones. Preview scheduled drafts in weekly or monthly visual calendars.
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-[#121110] border border-white/[0.08] p-6 space-y-3">
+              <div className="size-8 rounded-lg bg-indigo-500/15 text-indigo-400 flex items-center justify-center">
+                <SparklesIcon className="size-4" />
+              </div>
+              <h4 className="font-semibold text-base text-white">High-Res Resvg Export</h4>
+              <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
+                Render multi-slide carousels and SVG cards at 2x retina clarity for crisp viewing on Twitter and LinkedIn.
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-[#121110] border border-white/[0.08] p-6 space-y-3">
+              <div className="size-8 rounded-lg bg-white/[0.08] text-white flex items-center justify-center">
+                <GithubIcon className="size-4" />
+              </div>
+              <h4 className="font-semibold text-base text-white">100% Open Source MIT</h4>
+              <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
+                Self-host on Neon and Vercel or your own server. Inspect the code, fork it, and own your social stack completely.
               </p>
             </div>
           </div>
         </section>
 
-        {/* Open Source Banner */}
-        <section className="max-w-3xl w-full mt-28 rounded-2xl border border-border bg-card p-8 text-center shadow-xs">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <GithubIcon className="size-6 text-foreground" />
-            <h2 className="text-2xl font-bold">Open Source. MIT Licensed.</h2>
+        {/* ========================================================================= */}
+        {/* Pricing Section (Matching GetLemonade layout) */}
+        {/* ========================================================================= */}
+        <section id="pricing" className="max-w-[1128px] w-full mt-36 text-left">
+          <div className="mb-12 space-y-2">
+            <h2 className="heading-section text-3xl sm:text-4xl font-semibold text-white tracking-tight">
+              Simple, transparent pricing. <br />
+              <span className="text-white/40">No hidden subscription traps.</span>
+            </h2>
           </div>
-          <p className="text-sm text-muted-foreground max-w-xl mx-auto mb-6 leading-relaxed">
-            Joey is 100% open source. Self-host on your own infrastructure or run it on Vercel and Neon with zero vendor lock-in and complete control of your data.
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Plan 1: Open Source BYOK */}
+            <div className="rounded-2xl bg-[#121110] border border-white/[0.08] p-8 space-y-6 flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.06] text-xs font-semibold text-white/80">
+                  Open Source &amp; Self-Hosted
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl sm:text-5xl font-bold tracking-tight text-white">$0</span>
+                  <span className="text-xs text-white/40 uppercase font-mono">/ Forever</span>
+                </div>
+                <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
+                  Everything you need to automate your social channels. Bring your own keys and run locally or on your cloud.
+                </p>
+
+                <div className="space-y-2.5 pt-2 text-xs text-white/80">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
+                    <span>Bring your own keys (Google, OpenAI, Claude)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
+                    <span>Visual Flows Studio &amp; Exa AI integration</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
+                    <span>Theme Studio &amp; dynamic SVG carousels</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
+                    <span>Telegram Bot mobile alerts &amp; 1-tap approvals</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
+                    <span>Full REST API &amp; WebMCP access</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <Link
+                  href="/signup"
+                  className="btn-accent w-full text-center py-2.5 rounded-lg text-xs font-semibold"
+                >
+                  Start Free Now
+                </Link>
+              </div>
+            </div>
+
+            {/* Plan 2: Hosted Cloud */}
+            <div className="rounded-2xl bg-[#121110] border border-amber-500/30 p-8 space-y-6 flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 px-3 py-1 bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wider rounded-bl-lg">
+                Zero Ops
+              </div>
+
+              <div className="space-y-4">
+                <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-amber-500/15 text-xs font-semibold text-amber-300">
+                  Joey Cloud Managed
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl sm:text-5xl font-bold tracking-tight text-white">$19</span>
+                  <span className="text-xs text-white/40 uppercase font-mono">/ Month</span>
+                </div>
+                <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
+                  For creators and teams who want hands-off automated background schedules without managing infrastructure.
+                </p>
+
+                <div className="space-y-2.5 pt-2 text-xs text-white/80">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-amber-400 shrink-0" />
+                    <span>All Open Source features included</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-amber-400 shrink-0" />
+                    <span>Always-on background workers on Neon Lakebase</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-amber-400 shrink-0" />
+                    <span>Managed media asset storage &amp; CDN</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="size-4 text-amber-400 shrink-0" />
+                    <span>Priority webhook dispatching</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <Link
+                  href="/signup"
+                  className="btn-ghost w-full text-center py-2.5 rounded-lg text-xs font-semibold"
+                >
+                  Get Started with Cloud
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ========================================================================= */}
+        {/* Bottom CTA Glow Banner */}
+        {/* ========================================================================= */}
+        <section className="max-w-[1128px] w-full mt-36 rounded-2xl bg-gradient-to-b from-white/[0.06] to-transparent border border-white/[0.08] p-8 sm:p-14 text-center relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-orange-500/15 to-yellow-500/10 blur-3xl -z-10" />
+
+          <div className="size-16 rounded-2xl bg-[#ffe633]/20 border border-[#ffe633]/40 flex items-center justify-center mx-auto p-2.5 mb-6 shadow-md">
+            <Image src="/joey-mascot.png" alt="Joey" width={48} height={48} className="object-contain" />
+          </div>
+
+          <h3 className="heading-section text-2xl sm:text-4xl font-semibold text-white tracking-tight max-w-xl mx-auto">
+            Ready to put your social channels on autopilot?
+          </h3>
+
+          <p className="mt-4 text-xs sm:text-sm text-white/60 max-w-md mx-auto leading-relaxed">
+            Deploy in under 2 minutes. Bring your own key, connect your channels, and take complete control of your social growth.
           </p>
-          <div className="flex items-center justify-center gap-4">
-            <a
-              href="https://github.com/evonera/joey"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-semibold bg-zinc-900 dark:bg-[#ffe633] text-white dark:text-zinc-950 px-5 py-2.5 rounded-full hover:opacity-90 transition-opacity"
-            >
-              Star on GitHub <ExternalLink className="size-4" />
-            </a>
+
+          <div className="mt-8 flex items-center justify-center gap-3">
             <Link
-              href="/docs"
-              className="inline-flex items-center gap-2 text-sm font-medium border border-border px-5 py-2.5 rounded-full hover:bg-muted/60 transition-colors"
+              href="/signup"
+              className="btn-accent text-sm px-6 py-2.5 rounded-lg font-semibold flex items-center gap-2"
             >
-              Developer Docs
+              <span>Get Started Free</span>
+              <ArrowRight className="size-4" />
             </Link>
-          </div>
-        </section>
-
-        {/* From the Blog */}
-        <section className="max-w-4xl w-full mt-28 text-left">
-          <div className="flex items-baseline justify-between mb-8">
-            <h2 className="text-3xl font-extrabold tracking-tight">From the Blog</h2>
-            <Link href="/blog" className="text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline">
-              View all articles →
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {blogTeasers.map((post) => (
-              <Link
-                key={post.href}
-                href={post.href}
-                className="rounded-2xl border border-border bg-card p-6 shadow-xs transition-all hover:shadow-md hover:border-border/80 flex flex-col justify-between"
-              >
-                <div className="space-y-2">
-                  <h3 className="font-bold text-base leading-snug">{post.title}</h3>
-                  <p className="text-muted-foreground text-xs leading-relaxed">{post.description}</p>
-                </div>
-                <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-4 inline-flex items-center gap-1">
-                  Read article <ArrowRight className="size-3" />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        {/* FAQ */}
-        <section className="max-w-3xl w-full mt-28 text-left space-y-8">
-          <div className="text-center space-y-2">
-            <h2 className="text-3xl font-extrabold tracking-tight">Frequently Asked Questions</h2>
-            <p className="text-sm text-muted-foreground">Everything you need to know about Joey and BYOK automation.</p>
-          </div>
-
-          <div className="space-y-6 pt-4">
-            <div className="rounded-xl border border-border/60 bg-card p-5 space-y-1.5">
-              <h3 className="font-bold text-base">Is Joey truly open source?</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Yes. Joey is licensed under the permissive MIT license. You can inspect every line of code, run it locally, fork it, and deploy it to your own cloud without subscription paywalls.
-              </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-card p-5 space-y-1.5">
-              <h3 className="font-bold text-base">Which AI models can I use?</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                You can bring your own key for Google Gemini (including free-tier Gemini 2.5 Flash and frontier 3.8 Flash), OpenAI (GPT-5.6 Luna, GPT-4o Mini, GPT-4o), and Anthropic (Claude Haiku 4.5, Claude 3.5 Sonnet). You pay only standard provider token rates with zero middleman markup.
-              </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-card p-5 space-y-1.5">
-              <h3 className="font-bold text-base">How do Telegram approvals work?</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Joey includes a Telegram Bot integration with a fail-closed user ID allowlist. When an automated Flow or scheduled agent drafts a post, you receive an instant message on Telegram with preview media and action buttons to approve or reject with one tap.
-              </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-card p-5 space-y-1.5">
-              <h3 className="font-bold text-base">What social platforms are supported?</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Joey connects via Zernio to support Twitter/X, LinkedIn (Profiles and Company Pages), Facebook Pages, and Pinterest, with Instagram and Bluesky integrations currently rolling out.
-              </p>
-            </div>
           </div>
         </section>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border/40 py-12 px-6 bg-background">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
+      <footer className="border-t border-white/[0.06] py-10 px-6 bg-[#0a0908]">
+        <div className="max-w-[1128px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 text-xs text-white/40">
           <JoeyLogo size="sm" />
 
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
-            <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
-            <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
-            <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
-            <Link href="/blog" className="hover:text-foreground transition-colors">Blog</Link>
-            <Link href="/docs" className="hover:text-foreground transition-colors">Docs</Link>
+          <div className="flex flex-wrap items-center justify-center gap-6">
+            <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
+            <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
+            <Link href="/docs" className="hover:text-white transition-colors">Docs</Link>
+            <Link href="/blog" className="hover:text-white transition-colors">Blog</Link>
             <a
               href="https://github.com/evonera/joey"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-foreground transition-colors inline-flex items-center gap-1"
+              className="hover:text-white transition-colors inline-flex items-center gap-1"
             >
-              GitHub <GithubIcon className="size-3.5 inline" />
-            </a>
-            <a
-              href="https://x.com/evonera"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-foreground transition-colors"
-            >
-              X / Twitter
+              GitHub <ExternalLink className="size-3" />
             </a>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} Evonera. MIT Licensed.
-          </p>
+          <p>&copy; {new Date().getFullYear()} Evonera. MIT Licensed.</p>
         </div>
       </footer>
     </div>
