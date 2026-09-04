@@ -3,6 +3,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { NotificationBell } from "@/components/notification-bell"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { UserButton } from "@/components/auth/UserButton"
+import { HelpTutorialDialog } from "@/components/help-tutorial-dialog"
 
 export function SiteHeader({ unreadNotificationCount = 0 }: { unreadNotificationCount?: number }) {
   return (
@@ -14,7 +15,8 @@ export function SiteHeader({ unreadNotificationCount = 0 }: { unreadNotification
           className="mx-1 data-[orientation=vertical]:h-4 bg-border"
         />
         <h1 className="text-sm font-semibold tracking-tight text-foreground">Joey Studio</h1>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <HelpTutorialDialog />
           <NotificationBell initialUnreadCount={unreadNotificationCount} />
           <ThemeToggle />
           <UserButton />

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Script from "next/script";
+import { JoeyLogo } from "@/components/joey-logo";
 
 const siteUrl = "https://joey.evonera.com";
 
@@ -72,12 +73,7 @@ export default function AboutPage() {
       />
 
       <header className="px-6 py-4 flex items-center justify-between max-w-7xl mx-auto w-full">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-bold text-xl">
-            J
-          </div>
-          <span className="text-xl font-bold tracking-tight">Joey.ai</span>
-        </Link>
+        <JoeyLogo size="md" />
         <nav aria-label="Main navigation" className="flex items-center gap-4">
           <Link href="/blog" className="text-sm font-medium hover:text-indigo-600 transition-colors">Blog</Link>
           <Link href="/signup" className="text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-4 py-2 rounded-full hover:opacity-90 transition-opacity">
