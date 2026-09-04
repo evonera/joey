@@ -17,61 +17,159 @@ export default function Image() {
     (
       <div
         style={{
-          background: 'linear-gradient(to bottom right, #eef2ff, #c7d2fe)',
+          background: '#0a0908',
           width: '100%',
           height: '100%',
           display: 'flex',
-          color: '#312e81',
+          color: '#ffffff',
           fontFamily: 'sans-serif',
+          position: 'relative',
         }}
       >
-        {/* Left: brand */}
+        {/* Subtle background ambient glows */}
+        <div
+          style={{
+            position: 'absolute',
+            top: -100,
+            left: 200,
+            width: 500,
+            height: 350,
+            background: 'rgba(255, 230, 51, 0.08)',
+            borderRadius: '50%',
+            filter: 'blur(80px)',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: -50,
+            right: 150,
+            width: 450,
+            height: 300,
+            background: 'rgba(245, 158, 11, 0.06)',
+            borderRadius: '50%',
+            filter: 'blur(80px)',
+          }}
+        />
+
+        {/* Left: Brand lockup */}
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
-            paddingLeft: 72,
-            width: 560,
+            paddingLeft: 64,
+            width: 580,
+            zIndex: 10,
           }}
         >
+          {/* Brand Mascot Lockup */}
           <div
             style={{
-              fontSize: 84,
-              background: '#4f46e5',
-              color: 'white',
-              width: 130,
-              height: 130,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 28,
-              marginBottom: 36,
+              gap: 14,
+              marginBottom: 28,
             }}
           >
-            J
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 16,
+                background: 'rgba(255, 230, 51, 0.15)',
+                border: '1.5px solid rgba(255, 230, 51, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 32,
+              }}
+            >
+              🐱
+            </div>
+            <div
+              style={{
+                fontSize: 36,
+                fontWeight: 800,
+                color: '#ffffff',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              Joey
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#ffe633',
+                background: 'rgba(255, 230, 51, 0.12)',
+                border: '1px solid rgba(255, 230, 51, 0.25)',
+                padding: '4px 10px',
+                borderRadius: 20,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}
+            >
+              Open Source
+            </div>
           </div>
-          <div style={{ fontSize: 88, fontWeight: 800, marginBottom: 16, color: '#1e1b4b' }}>
-            Joey
+
+          <div
+            style={{
+              fontSize: 52,
+              fontWeight: 800,
+              lineHeight: 1.15,
+              marginBottom: 20,
+              letterSpacing: '-0.03em',
+              color: '#ffffff',
+            }}
+          >
+            Autonomous Social Media on Autopilot
           </div>
-          <div style={{ fontSize: 34, color: '#4338ca', fontWeight: 500, lineHeight: 1.3 }}>
-            Your Autonomous
+
+          <div
+            style={{
+              fontSize: 20,
+              color: 'rgba(255, 255, 255, 0.65)',
+              fontWeight: 400,
+              lineHeight: 1.4,
+              marginBottom: 32,
+            }}
+          >
+            Visual Flows · BYOK Models · Telegram 1-Tap Approvals
           </div>
-          <div style={{ fontSize: 34, color: '#4338ca', fontWeight: 500, lineHeight: 1.3 }}>
-            Social Media Agent
-          </div>
-          <div style={{ fontSize: 24, color: '#6366f1', marginTop: 24 }}>
-            Draft. Approve. Publish.
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            {['MIT Licensed', 'Zero Token Markup', 'Human in the Loop'].map(
+              (pill, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    padding: '6px 14px',
+                    borderRadius: 8,
+                  }}
+                >
+                  ✓ {pill}
+                </div>
+              )
+            )}
           </div>
         </div>
 
-        {/* Right: product UI mock */}
+        {/* Right: Modern Dark Product UI window mockup */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 640,
+            width: 620,
+            paddingRight: 48,
+            zIndex: 10,
           }}
         >
           <div
@@ -79,98 +177,156 @@ export default function Image() {
               display: 'flex',
               flexDirection: 'column',
               width: 520,
-              height: 430,
-              background: '#ffffff',
-              borderRadius: 24,
-              border: '2px solid #c7d2fe',
-              boxShadow: '0 20px 50px rgba(49,46,129,0.18)',
-              padding: 32,
+              background: '#131211',
+              borderRadius: 20,
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.6)',
+              padding: 24,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
+            {/* Window title bar */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingBottom: 16,
+                borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                marginBottom: 18,
+              }}
+            >
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    background: '#ef4444',
+                  }}
+                />
+                <div
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    background: '#f59e0b',
+                  }}
+                />
+                <div
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    background: '#10b981',
+                  }}
+                />
+              </div>
               <div
                 style={{
-                  width: 40,
-                  height: 40,
-                  background: '#4f46e5',
-                  borderRadius: 12,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  fontSize: 22,
-                  fontWeight: 800,
-                  marginRight: 14,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'rgba(255, 255, 255, 0.4)',
                 }}
               >
-                J
-              </div>
-              <div style={{ fontSize: 26, fontWeight: 700, color: '#18181b' }}>
-                3 drafts await approval
+                joey-agent · approval-queue
               </div>
             </div>
 
+            {/* Pending items */}
             {[
-              { c: '#4f46e5', w: 380 },
-              { c: '#a78bfa', w: 300 },
-              { c: '#10b981', w: 340 },
-            ].map((row, i) => (
+              {
+                network: 'Twitter / X',
+                badgeBg: 'rgba(56, 189, 248, 0.15)',
+                badgeText: '#38bdf8',
+                preview: 'Excited to announce our visual flow builder is live...',
+              },
+              {
+                network: 'LinkedIn',
+                badgeBg: 'rgba(96, 165, 250, 0.15)',
+                badgeText: '#60a5fa',
+                preview: 'Why BYOK is transforming open-source AI deployment...',
+              },
+            ].map((draft, i) => (
               <div
                 key={i}
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  background: '#f4f4f5',
+                  flexDirection: 'column',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
                   borderRadius: 12,
-                  padding: '14px 16px',
-                  marginBottom: 14,
+                  padding: 14,
+                  marginBottom: 12,
                 }}
               >
                 <div
                   style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 9,
-                    background: row.c,
-                    marginRight: 14,
-                  }}
-                />
-                <div
-                  style={{
-                    width: row.w,
-                    height: 16,
-                    borderRadius: 8,
-                    background: '#d4d4d8',
-                  }}
-                />
-                <div
-                  style={{
-                    marginLeft: 'auto',
-                    width: 64,
-                    height: 30,
-                    borderRadius: 15,
-                    background: '#10b981',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    fontSize: 15,
-                    fontWeight: 700,
+                    justifyContent: 'space-between',
+                    marginBottom: 8,
                   }}
                 >
-                  Approve
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: draft.badgeText,
+                      background: draft.badgeBg,
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                    }}
+                  >
+                    {draft.network}
+                  </div>
+                  <div
+                    style={{
+                      background: '#ffe633',
+                      color: '#0a0908',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '4px 12px',
+                      borderRadius: 6,
+                    }}
+                  >
+                    Approve ✓
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: 'rgba(255, 255, 255, 0.75)',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {draft.preview}
                 </div>
               </div>
             ))}
 
+            {/* Bottom notification */}
             <div
               style={{
-                marginTop: 'auto',
-                fontSize: 19,
-                color: '#71717a',
+                marginTop: 6,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 14px',
+                background: 'rgba(255, 230, 51, 0.08)',
+                border: '1px solid rgba(255, 230, 51, 0.2)',
+                borderRadius: 10,
               }}
             >
-              Nothing goes live without your OK.
+              <div style={{ fontSize: 14 }}>📱</div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: '#ffe633',
+                }}
+              >
+                Telegram Bot: 1 tap to publish or edit on mobile
+              </div>
             </div>
           </div>
         </div>

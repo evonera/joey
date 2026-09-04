@@ -3,10 +3,14 @@
 
 ## Core Features
 
-- **Eve-Powered AI:** Joey uses advanced agentic workflows to understand context, format constraints, and your unique brand persona. It analyzes brand voice, curates content, and drafts high-performing social posts.
-- **Human in the Loop:** Nothing goes live without your approval. Review, tweak, and approve agent-generated drafts before they hit your timeline.
-- **Smart Scheduling:** Visual content calendar with drag-and-drop support. Joey knows when to draft content based on your schedule.
-- **Cross-Platform Sync:** Powered by Zernio. Post to Twitter, LinkedIn, Facebook, and more simultaneously from one dashboard.
+- **Eve-Powered Agentic AI:** Joey uses advanced agentic workflows to understand context, format constraints, and your unique brand persona. It analyzes brand voice, curates content, and drafts high-performing social posts.
+- **Visual Flows Studio:** Node-based automation pipelines connecting Exa AI web search, RSS ingestion, LLM drafting, and multi-platform publishing with cron scheduling.
+- **Theme Studio:** Custom visual social card templates, slide carousels, dynamic SVG-to-PNG export via Resvg, and editorial mix pipelines.
+- **Telegram Mobile Approvals:** Instant notifications on your phone with media previews and 1-tap Approve/Reject buttons via Telegram Bot.
+- **Multi-Model BYOK Chat:** Live model selector supporting Google Gemini 2.5/3.8 Flash, OpenAI GPT-5.6/GPT-4o, and Anthropic Claude Haiku with zero middleman markup.
+- **Unified Engagement Inbox:** Cross-network tracking for comments and direct messages with AI-generated reply suggestions.
+- **Human in the Loop:** Nothing goes live without your explicit approval. Review, tweak, and approve agent-generated drafts before they publish.
+- **Cross-Platform Publishing:** Powered by Zernio. Post to Twitter/X, LinkedIn (Profiles and Company Pages), Facebook Pages, and Pinterest.
 
 ## Key Details
 
