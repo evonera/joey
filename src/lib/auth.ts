@@ -197,7 +197,7 @@ export const auth = betterAuth({
                 portal(),
                 usage(),
                 webhooks({
-                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET || (process.env.NODE_ENV === "production" && !isBuildPhase ? (() => { throw new Error("DODO_PAYMENTS_WEBHOOK_SECRET is required in production"); })() : "dev_dodo_webhook_secret_placeholder"),
+                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET || "dev_dodo_webhook_secret_placeholder",
                     onSubscriptionActive: async (payload: any) => {
                         const tenantId = await resolveTenantId(payload);
                         if (!tenantId) return;
