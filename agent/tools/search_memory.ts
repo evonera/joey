@@ -11,13 +11,33 @@ export default defineTool({
     type: z.enum(["published_post", "brand_guideline"]).optional().describe("Filter to a specific memory type."),
   }),
   execute: async ({ query, limit, type }, ctx) => {
-    const tenantId = ctx.session.auth.current?.attributes?.tenantId;
+    const tenantId = ctx.session?.auth?.current?.attributes?.tenantId;
 
     if (!tenantId) {
-      throw new Error("Unable to identify tenant from session auth.");
+      return { memories: [], message: "No workspace context available." };
     }
 
-    const results = await searchMemories(tenantId as string, query, limit, type);
-    return { memories: results };
+    try {
+      const results = await searchMemories(tenantId as string, query, limit, type);
+      return { memories: results, count: results.length };
+    } catch (err: any) {
+      console.warn("[search_memory] Tool error:", err?.message);
+      return { memories: [], count: 0 };
+    }
+  },
+  toModelOutput(output) {
+    if (!output.memories || output.memories.length === 0) {
+      return {
+        type: "text",
+        value: "No relevant past memories or guidelines found for this query.",
+      };
+    }
+    const formatted = output.memories
+      .map((m: any, i: number) => `[${i + 1}] (${m.type}) ${m.content}`)
+      .join("\n\n");
+    return {
+      type: "text",
+      value: `Found ${output.memories.length} relevant memories:\n\n${formatted}`,
+    };
   },
 });

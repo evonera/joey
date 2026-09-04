@@ -10,16 +10,23 @@ export default defineTool({
     metadata: z.record(z.string(), z.unknown()).optional().describe("Optional structured data (e.g. { source: 'weekly-review', week: '2024-12' })."),
   }),
   execute: async ({ content, type, metadata }, ctx) => {
-    const tenantId = ctx.session.auth.current?.attributes?.tenantId;
-    if (!tenantId) throw new Error("Unable to identify tenant from session auth.");
+    const tenantId = ctx.session?.auth?.current?.attributes?.tenantId;
+    if (!tenantId) {
+      return { message: "Unable to identify workspace to save memory." };
+    }
 
-    const memory = await insertMemory(
-      tenantId as string,
-      content,
-      type,
-      { ...metadata, source: "agent", createdAt: new Date().toISOString() },
-    );
+    try {
+      const memory = await insertMemory(
+        tenantId as string,
+        content,
+        type,
+        { ...metadata, source: "agent", createdAt: new Date().toISOString() },
+      );
 
-    return { id: memory.id, message: "Insight saved to memory." };
+      return { id: memory.id, message: "Insight saved to memory." };
+    } catch (err: any) {
+      console.warn("[remember] Failed to persist memory:", err?.message);
+      return { message: "Could not persist memory right now." };
+    }
   },
 });
