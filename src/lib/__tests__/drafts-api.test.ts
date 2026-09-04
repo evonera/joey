@@ -107,4 +107,41 @@ describe("Drafts API Input Validation & SSRF Guard", () => {
     const data = await response.json();
     expect(data.draft.id).toBe("draft-1");
   });
+
+  it("accepts platform targeting parameter in draft creation", async () => {
+    const { authenticateApiRequest } = await import("@/lib/api-auth");
+    const { db } = await import("@/lib/db");
+
+    (authenticateApiRequest as any).mockResolvedValue({
+      tenantId: "tenant-test",
+      scopes: ["read", "write"],
+      rateLimit: {},
+    });
+
+    const valuesSpy = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ id: "draft-2", content: "Twitter draft" }]),
+    });
+    (db.insert as any).mockReturnValue({
+      values: valuesSpy,
+    });
+
+    const { POST } = await import("@/app/api/v1/drafts/route");
+    const request = new Request("http://localhost/api/v1/drafts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "Twitter draft",
+        platform: "twitter",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    expect(valuesSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Twitter draft",
+        platformOptions: expect.objectContaining({ platform: "twitter" }),
+      })
+    );
+  });
 });

@@ -22,10 +22,13 @@
       </div>
 
       <div class="header-actions">
-        <button class="badge-button" id="pendingBadgeBtn" title="Review pending drafts in browser">
-          <span class="badge-dot"></span>
-          <span id="pendingCountText">0 pending</span>
-        </button>
+        <div class="nav-tabs" id="navTabs">
+          <button class="tab-btn active" id="tabComposeBtn">Compose</button>
+          <button class="tab-btn" id="tabReviewBtn">
+            <span>Review</span>
+            <span class="tab-badge" id="pendingCountBadge">0</span>
+          </button>
+        </div>
         <button class="icon-button" id="openSettingsBtn" title="Settings">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -41,8 +44,8 @@
       </div>
     </header>
 
-    <!-- Main Input Box -->
-    <main class="main-content">
+    <!-- Main Compose Box -->
+    <main class="main-content" id="composeView">
       <div class="input-wrapper">
         <textarea
           id="draftInput"
@@ -64,11 +67,31 @@
       </div>
     </main>
 
-    <!-- Footer Bar -->
-    <footer class="footer">
+    <!-- Review View Box -->
+    <main class="main-content hidden" id="reviewView">
+      <div class="review-empty hidden" id="reviewEmpty">
+        <div class="review-empty-icon">✨</div>
+        <p class="review-empty-title">All caught up!</p>
+        <p class="review-empty-sub">No pending drafts to review.</p>
+      </div>
+
+      <div class="review-card" id="reviewCard">
+        <div class="review-card-header">
+          <div class="review-meta-left">
+            <span class="review-counter" id="reviewCounter">Draft 1 of 1</span>
+            <span class="review-platform-badge" id="reviewPlatformBadge">All Channels</span>
+          </div>
+          <span class="review-date" id="reviewDate"></span>
+        </div>
+        <div class="review-body" id="reviewBody"></div>
+      </div>
+    </main>
+
+    <!-- Compose Footer -->
+    <footer class="footer" id="composeFooter">
       <div class="shortcuts-hint">
-        <span class="key-combo"><kbd>↵</kbd> Draft</span>
-        <span class="key-combo"><kbd>Shift+↵</kbd> New line</span>
+        <span class="key-combo"><kbd>⌘↵</kbd> Draft</span>
+        <span class="key-combo"><kbd>↵</kbd> New line</span>
         <span class="key-combo"><kbd>Esc</kbd> Hide</span>
       </div>
 
@@ -76,6 +99,28 @@
         <button class="btn btn-secondary" id="openWebBtn">Open Web App</button>
         <button class="btn btn-primary" id="submitDraftBtn">
           <span>Draft Post</span>
+          <span class="paw-icon">🐾</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- Review Footer -->
+    <footer class="footer hidden" id="reviewFooter">
+      <div class="shortcuts-hint">
+        <span class="key-combo"><kbd>⌘↵</kbd> Approve</span>
+        <span class="key-combo"><kbd>⌘⌫</kbd> Reject</span>
+        <span class="key-combo"><kbd>←</kbd><kbd>→</kbd> Navigate</span>
+      </div>
+
+      <div class="footer-actions">
+        <button class="btn btn-secondary nav-btn" id="prevDraftBtn" title="Previous Draft (Left Arrow)">←</button>
+        <button class="btn btn-secondary nav-btn" id="nextDraftBtn" title="Next Draft (Right Arrow)">→</button>
+        <button class="btn btn-secondary" id="reviewOpenWebBtn" title="Open in Web Browser">Web</button>
+        <button class="btn btn-danger" id="rejectDraftBtn">
+          <span>✕ Reject</span>
+        </button>
+        <button class="btn btn-success" id="approveDraftBtn">
+          <span>✓ Approve</span>
           <span class="paw-icon">🐾</span>
         </button>
       </div>
