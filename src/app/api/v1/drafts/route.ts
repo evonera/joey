@@ -8,6 +8,7 @@ import { validateSafeUrl } from '@/lib/flows/nodes/ai/transcribe';
 
 const createDraftSchema = z.object({
     content: z.string().min(1, "Draft content cannot be empty").max(50000, "Draft content exceeds maximum length of 50,000 characters"),
+    platform: z.string().max(50).optional(),
     mediaUrls: z.array(z.string().url("Invalid media URL format").max(2048)).max(10, "Maximum 10 media URLs allowed").optional(),
     accountIds: z.array(z.string().max(128)).max(20).optional(),
     scheduledFor: z.string().datetime({ message: "scheduledFor must be a valid ISO 8601 datetime string" }).nullable().optional(),
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
             return withRateLimitHeaders(NextResponse.json({ error: errorMsg }, { status: 400 }), authRateLimit);
         }
 
-        const { content, mediaUrls, accountIds, scheduledFor } = parseResult.data;
+        const { content, platform, mediaUrls, accountIds, scheduledFor } = parseResult.data;
 
         // SSRF guard: Validate that all media URLs are safe external public destinations
         if (mediaUrls && mediaUrls.length > 0) {
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
             content,
             status: "pending_review",
             scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
-            platformOptions: { mediaUrls, accountIds }
+            platformOptions: { mediaUrls, accountIds, platform: platform || undefined }
         }).returning();
 
         return withRateLimitHeaders(NextResponse.json({ draft }), authRateLimit);

@@ -81,6 +81,7 @@ fn toggle_window(app: &tauri::AppHandle) {
             let _ = window.center();
             let _ = window.show();
             let _ = window.set_focus();
+            let _ = window.emit("desktop:window-focused", serde_json::json!({}));
         }
     }
 }
@@ -88,6 +89,34 @@ fn toggle_window(app: &tauri::AppHandle) {
 #[derive(Deserialize)]
 struct DraftsResponse {
     drafts: Option<Vec<serde_json::Value>>,
+}
+
+fn create_tray_menu(app: &tauri::AppHandle, count: usize) -> tauri::Result<Menu<tauri::Wry>> {
+    let header_text = format!("Joey — {} Pending Draft{}", count, if count == 1 { "" } else { "s" });
+    let review_text = format!("Review Drafts ({}) in Browser...", count);
+
+    let header = MenuItem::with_id(app, "header", header_text, false, None::<&str>)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let review = MenuItem::with_id(app, "review", review_text, true, None::<&str>)?;
+    let capture = MenuItem::with_id(
+        app,
+        "capture",
+        "Quick Capture (Cmd+Shift+J)",
+        true,
+        None::<&str>,
+    )?;
+    let dashboard = MenuItem::with_id(app, "dashboard", "Open Web Dashboard", true, None::<&str>)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    let sync = MenuItem::with_id(app, "sync", "Sync Now", true, None::<&str>)?;
+    let sep3 = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Joey", true, None::<&str>)?;
+
+    Menu::with_items(
+        app,
+        &[
+            &header, &sep1, &review, &capture, &dashboard, &sep2, &sync, &sep3, &quit,
+        ],
+    )
 }
 
 async fn sync_drafts(app: &tauri::AppHandle) -> usize {
@@ -101,9 +130,13 @@ async fn sync_drafts(app: &tauri::AppHandle) -> usize {
         return 0;
     }
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
     let url = format!(
-        "{}/api/v1/drafts?status=pending_approval",
+        "{}/api/v1/drafts?status=pending_review",
         api_url.trim_end_matches('/')
     );
     let resp = client
@@ -129,10 +162,13 @@ async fn sync_drafts(app: &tauri::AppHandle) -> usize {
         old
     };
 
-    // Update tray if available
+    // Update tray title and menu if available
     if let Some(tray) = app.tray_by_id("main") {
         let title = format!("Joey ({})", count);
         let _ = tray.set_title(Some(title));
+        if let Ok(new_menu) = create_tray_menu(app, count) {
+            let _ = tray.set_menu(Some(new_menu));
+        }
     }
 
     // Notify if new drafts are waiting
@@ -158,7 +194,7 @@ async fn sync_drafts(app: &tauri::AppHandle) -> usize {
 fn setup_main_window(app: &tauri::App) -> tauri::Result<()> {
     let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Joey Quick Capture")
-        .inner_size(620.0, 270.0)
+        .inner_size(620.0, 310.0)
         .resizable(false)
         .decorations(false)
         .always_on_top(true)
@@ -185,37 +221,11 @@ fn setup_main_window(app: &tauri::App) -> tauri::Result<()> {
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let header = MenuItem::with_id(
-        app,
-        "header",
-        "Joey — 0 Pending Drafts",
-        false,
-        None::<&str>,
-    )?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-    let review = MenuItem::with_id(app, "review", "Review Drafts (0)...", true, None::<&str>)?;
-    let capture = MenuItem::with_id(
-        app,
-        "capture",
-        "Quick Capture (Cmd+Shift+J)",
-        true,
-        None::<&str>,
-    )?;
-    let dashboard = MenuItem::with_id(app, "dashboard", "Open Web Dashboard", true, None::<&str>)?;
-    let sep2 = PredefinedMenuItem::separator(app)?;
-    let sync = MenuItem::with_id(app, "sync", "Sync Now", true, None::<&str>)?;
-    let sep3 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Joey", true, None::<&str>)?;
-
-    let menu = Menu::with_items(
-        app,
-        &[
-            &header, &sep1, &review, &capture, &dashboard, &sep2, &sync, &sep3, &quit,
-        ],
-    )?;
+    let menu = create_tray_menu(app.handle(), 0)?;
 
     TrayIconBuilder::with_id("main")
         .menu(&menu)
+        .show_menu_on_left_click(false)
         .tooltip("Joey — AI Social Media Agent")
         .title("Joey (0)")
         .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -351,8 +361,11 @@ fn setup_event_handlers(app: &tauri::App) {
 
             let h_reply = h5.clone();
             tauri::async_runtime::spawn(async move {
-                let client = reqwest::Client::new();
-                let url = format!("{}/api/v1/drafts?status=pending_approval", api_url.trim_end_matches('/'));
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new());
+                let url = format!("{}/api/v1/drafts?status=pending_review", api_url.trim_end_matches('/'));
                 match client.get(&url).bearer_auth(&api_token).send().await {
                     Ok(res) if res.status().is_success() => {
                         let count = res
@@ -393,6 +406,11 @@ fn setup_event_handlers(app: &tauri::App) {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let platform = payload
+                .get("platform")
+                .and_then(|v| v.as_str())
+                .filter(|p| !p.is_empty() && *p != "all")
+                .map(|p| p.to_string());
 
             let h_submit = h6.clone();
             tauri::async_runtime::spawn(async move {
@@ -413,11 +431,17 @@ fn setup_event_handlers(app: &tauri::App) {
                     return;
                 }
 
-                let client = reqwest::Client::new();
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new());
                 let url = format!("{}/api/v1/drafts", api_url.trim_end_matches('/'));
-                let post_body = serde_json::json!({
+                let mut post_body = serde_json::json!({
                     "content": content
                 });
+                if let Some(ref p) = platform {
+                    post_body["platform"] = serde_json::json!(p);
+                }
 
                 match client
                     .post(&url)
@@ -454,6 +478,165 @@ fn setup_event_handlers(app: &tauri::App) {
             });
         }
     });
+
+    // desktop:fetch-pending-drafts
+    let h7 = app_handle.clone();
+    app.listen("desktop:fetch-pending-drafts", move |_| {
+        let h_fetch = h7.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = h_fetch.state::<Arc<AppState>>();
+            let (api_url, api_token) = {
+                let cfg = state.config.lock().unwrap();
+                (cfg.api_url.clone(), cfg.api_token.clone())
+            };
+
+            if api_token.trim().is_empty() {
+                let _ = h_fetch.emit(
+                    "desktop:pending-drafts-result",
+                    serde_json::json!({ "success": false, "drafts": [] }),
+                );
+                return;
+            }
+
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+            let url = format!("{}/api/v1/drafts?status=pending_review", api_url.trim_end_matches('/'));
+            match client.get(&url).bearer_auth(&api_token).send().await {
+                Ok(res) if res.status().is_success() => {
+                    if let Ok(data) = res.json::<DraftsResponse>().await {
+                        let list = data.drafts.unwrap_or_default();
+                        let _ = h_fetch.emit(
+                            "desktop:pending-drafts-result",
+                            serde_json::json!({ "success": true, "drafts": list }),
+                        );
+                    } else {
+                        let _ = h_fetch.emit(
+                            "desktop:pending-drafts-result",
+                            serde_json::json!({ "success": false, "drafts": [] }),
+                        );
+                    }
+                }
+                _ => {
+                    let _ = h_fetch.emit(
+                        "desktop:pending-drafts-result",
+                        serde_json::json!({ "success": false, "drafts": [] }),
+                    );
+                }
+            }
+        });
+    });
+
+    // desktop:approve-draft
+    let h8 = app_handle.clone();
+    app.listen("desktop:approve-draft", move |event| {
+        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+            let draft_id = payload
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let h_appr = h8.clone();
+            tauri::async_runtime::spawn(async move {
+                let state = h_appr.state::<Arc<AppState>>();
+                let (api_url, api_token) = {
+                    let cfg = state.config.lock().unwrap();
+                    (cfg.api_url.clone(), cfg.api_token.clone())
+                };
+
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new());
+                let url = format!("{}/api/v1/drafts/approve", api_url.trim_end_matches('/'));
+                match client
+                    .post(&url)
+                    .bearer_auth(&api_token)
+                    .json(&serde_json::json!({ "id": draft_id }))
+                    .send()
+                    .await
+                {
+                    Ok(res) if res.status().is_success() => {
+                        let _ = h_appr.emit(
+                            "desktop:approve-result",
+                            serde_json::json!({ "success": true, "id": draft_id }),
+                        );
+                        sync_drafts(&h_appr).await;
+                    }
+                    Ok(res) => {
+                        let msg = res.text().await.unwrap_or_else(|_| "Approval failed".into());
+                        let _ = h_appr.emit(
+                            "desktop:approve-result",
+                            serde_json::json!({ "success": false, "error": msg }),
+                        );
+                    }
+                    Err(err) => {
+                        let _ = h_appr.emit(
+                            "desktop:approve-result",
+                            serde_json::json!({ "success": false, "error": err.to_string() }),
+                        );
+                    }
+                }
+            });
+        }
+    });
+
+    // desktop:reject-draft
+    let h9 = app_handle.clone();
+    app.listen("desktop:reject-draft", move |event| {
+        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+            let draft_id = payload
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let h_rej = h9.clone();
+            tauri::async_runtime::spawn(async move {
+                let state = h_rej.state::<Arc<AppState>>();
+                let (api_url, api_token) = {
+                    let cfg = state.config.lock().unwrap();
+                    (cfg.api_url.clone(), cfg.api_token.clone())
+                };
+
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new());
+                let url = format!("{}/api/v1/drafts/reject", api_url.trim_end_matches('/'));
+                match client
+                    .post(&url)
+                    .bearer_auth(&api_token)
+                    .json(&serde_json::json!({ "id": draft_id }))
+                    .send()
+                    .await
+                {
+                    Ok(res) if res.status().is_success() => {
+                        let _ = h_rej.emit(
+                            "desktop:reject-result",
+                            serde_json::json!({ "success": true, "id": draft_id }),
+                        );
+                        sync_drafts(&h_rej).await;
+                    }
+                    Ok(res) => {
+                        let msg = res.text().await.unwrap_or_else(|_| "Rejection failed".into());
+                        let _ = h_rej.emit(
+                            "desktop:reject-result",
+                            serde_json::json!({ "success": false, "error": msg }),
+                        );
+                    }
+                    Err(err) => {
+                        let _ = h_rej.emit(
+                            "desktop:reject-result",
+                            serde_json::json!({ "success": false, "error": err.to_string() }),
+                        );
+                    }
+                }
+            });
+        }
+    });
 }
 
 fn main() {
@@ -467,6 +650,9 @@ fn main() {
                 pending_count: Mutex::new(0),
             });
             app.manage(app_state);
+
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             setup_main_window(app)?;
             setup_tray(app)?;
