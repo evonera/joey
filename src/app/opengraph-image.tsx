@@ -36,7 +36,6 @@ export default function Image() {
             height: 350,
             background: 'rgba(255, 230, 51, 0.08)',
             borderRadius: '50%',
-            filter: 'blur(80px)',
           }}
         />
         <div
@@ -48,7 +47,6 @@ export default function Image() {
             height: 300,
             background: 'rgba(245, 158, 11, 0.06)',
             borderRadius: '50%',
-            filter: 'blur(80px)',
           }}
         />
 
@@ -60,7 +58,6 @@ export default function Image() {
             justifyContent: 'center',
             paddingLeft: 64,
             width: 580,
-            zIndex: 10,
           }}
         >
           {/* Brand Mascot Lockup */}
@@ -89,6 +86,7 @@ export default function Image() {
             </div>
             <div
               style={{
+                display: 'flex',
                 fontSize: 36,
                 fontWeight: 800,
                 color: '#ffffff',
@@ -99,6 +97,7 @@ export default function Image() {
             </div>
             <div
               style={{
+                display: 'flex',
                 fontSize: 12,
                 fontWeight: 700,
                 color: '#ffe633',
@@ -116,6 +115,7 @@ export default function Image() {
 
           <div
             style={{
+              display: 'flex',
               fontSize: 52,
               fontWeight: 800,
               lineHeight: 1.15,
@@ -129,6 +129,7 @@ export default function Image() {
 
           <div
             style={{
+              display: 'flex',
               fontSize: 20,
               color: 'rgba(255, 255, 255, 0.65)',
               fontWeight: 400,
@@ -145,6 +146,8 @@ export default function Image() {
                 <div
                   key={idx}
                   style={{
+                    display: 'flex',
+                    alignItems: 'center',
                     fontSize: 13,
                     fontWeight: 600,
                     color: 'rgba(255, 255, 255, 0.8)',
@@ -154,7 +157,7 @@ export default function Image() {
                     borderRadius: 8,
                   }}
                 >
-                  ✓ {pill}
+                  {pill}
                 </div>
               )
             )}
@@ -169,7 +172,6 @@ export default function Image() {
             justifyContent: 'center',
             width: 620,
             paddingRight: 48,
-            zIndex: 10,
           }}
         >
           <div
@@ -223,6 +225,7 @@ export default function Image() {
               </div>
               <div
                 style={{
+                  display: 'flex',
                   fontSize: 13,
                   fontWeight: 600,
                   color: 'rgba(255, 255, 255, 0.4)',
@@ -269,6 +272,7 @@ export default function Image() {
                 >
                   <div
                     style={{
+                      display: 'flex',
                       fontSize: 11,
                       fontWeight: 700,
                       color: draft.badgeText,
@@ -281,6 +285,8 @@ export default function Image() {
                   </div>
                   <div
                     style={{
+                      display: 'flex',
+                      alignItems: 'center',
                       background: '#ffe633',
                       color: '#0a0908',
                       fontSize: 11,
@@ -289,11 +295,12 @@ export default function Image() {
                       borderRadius: 6,
                     }}
                   >
-                    Approve ✓
+                    Approve
                   </div>
                 </div>
                 <div
                   style={{
+                    display: 'flex',
                     fontSize: 13,
                     color: 'rgba(255, 255, 255, 0.75)',
                     lineHeight: 1.4,
@@ -317,9 +324,10 @@ export default function Image() {
                 borderRadius: 10,
               }}
             >
-              <div style={{ fontSize: 14 }}>📱</div>
+              <div style={{ display: 'flex', fontSize: 14 }}>📱</div>
               <div
                 style={{
+                  display: 'flex',
                   fontSize: 12,
                   fontWeight: 600,
                   color: '#ffe633',
