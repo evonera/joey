@@ -1,10 +1,22 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Poppins, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+  variable: "--font-poppins",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 const siteUrl = "https://joey.evonera.com";
 
@@ -103,7 +115,7 @@ export default function RootLayout({
           <meta httpEquiv="origin-trial" content={webMcpOriginTrialToken} />
         ) : null}
       </head>
-      <body className={inter.className}>
+      <body className={`${poppins.variable} ${jetbrainsMono.variable} font-sans antialiased bg-[#0a0908] text-white selection:bg-[#ffe633]/30 selection:text-white`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
