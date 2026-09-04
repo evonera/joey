@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Joey Quick Capture</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="window-container" id="windowContainer">
+    <!-- Top Header Bar -->
+    <header class="header">
+      <div class="mascot-section">
+        <div class="mascot-badge" id="mascotBadge">
+          <img src="assets/joey-mascot.png" alt="Joey the Cat" class="mascot-img" id="mascotImg">
+          <span class="mascot-pulse" id="mascotPulse"></span>
+        </div>
+        <div class="mascot-dialogue">
+          <span class="mascot-name">Joey</span>
+          <span class="mascot-status" id="mascotStatus">What should I draft today?</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="badge-button" id="pendingBadgeBtn" title="Review pending drafts in browser">
+          <span class="badge-dot"></span>
+          <span id="pendingCountText">0 pending</span>
+        </button>
+        <button class="icon-button" id="openSettingsBtn" title="Settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+        <button class="icon-button close-button" id="closeBtn" title="Close (Esc)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Input Box -->
+    <main class="main-content">
+      <div class="input-wrapper">
+        <textarea
+          id="draftInput"
+          placeholder="Paste a tweet URL, article link, or describe what to post..."
+          rows="3"
+          autofocus
+        ></textarea>
+      </div>
+
+      <!-- Quick Platform Tags -->
+      <div class="platform-bar">
+        <span class="platform-label">Target:</span>
+        <div class="platform-chips">
+          <button class="chip active" data-platform="all">All Channels</button>
+          <button class="chip" data-platform="twitter">𝕏 Twitter</button>
+          <button class="chip" data-platform="linkedin">LinkedIn</button>
+          <button class="chip" data-platform="facebook">Facebook</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer Bar -->
+    <footer class="footer">
+      <div class="shortcuts-hint">
+        <span class="key-combo"><kbd>↵</kbd> Draft</span>
+        <span class="key-combo"><kbd>Shift+↵</kbd> New line</span>
+        <span class="key-combo"><kbd>Esc</kbd> Hide</span>
+      </div>
+
+      <div class="footer-actions">
+        <button class="btn btn-secondary" id="openWebBtn">Open Web App</button>
+        <button class="btn btn-primary" id="submitDraftBtn">
+          <span>Draft Post</span>
+          <span class="paw-icon">🐾</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- Settings Modal Overlay -->
+    <div class="settings-overlay hidden" id="settingsOverlay">
+      <div class="settings-card">
+        <div class="settings-header">
+          <h3>Companion Settings</h3>
+          <button class="icon-button" id="closeSettingsBtn">✕</button>
+        </div>
+        <div class="settings-body">
+          <div class="form-group">
+            <label for="apiUrlInput">Joey Web URL</label>
+            <input type="url" id="apiUrlInput" placeholder="https://joey.evonera.com">
+          </div>
+          <div class="form-group">
+            <label for="apiTokenInput">Public API Token</label>
+            <input type="password" id="apiTokenInput" placeholder="joey_pat_...">
+            <span class="hint">Generated in Joey Web -> Settings -> API Tokens</span>
+          </div>
+          <div class="form-group">
+            <label>Global Hotkey</label>
+            <div class="hotkey-display">
+              <kbd id="hotkeyLabel">Cmd + Shift + J</kbd>
+            </div>
+          </div>
+          <div id="settingsFeedback" class="settings-feedback"></div>
+        </div>
+        <div class="settings-footer">
+          <button class="btn btn-secondary" id="testConnectionBtn">Test Connection</button>
+          <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

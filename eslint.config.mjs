@@ -12,6 +12,8 @@ const eslintConfig = [
       "src/lib/db/migrations/**",
       "playwright-report/**",
       "test-results/**",
+      "src-tauri/target/**",
+      "src-tauri/ui/**",
     ],
   },
   ...nextConfig,
