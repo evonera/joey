@@ -19,6 +19,25 @@ export function assertEmbeddingDimensions(embedding: unknown): asserts embedding
   }
 }
 
+export async function hasOpenAIKey(tenantId?: string): Promise<boolean> {
+  if (tenantId) {
+    try {
+      const tenantKey = await db.query.apiKeys.findFirst({
+        where: and(
+          eq(apiKeys.tenantId, tenantId),
+          eq(apiKeys.provider, "openai"),
+        ),
+      });
+      if (tenantKey && tenantKey.status === "active") {
+        return true;
+      }
+    } catch {
+      // ignore db error and fallback to env
+    }
+  }
+  return Boolean(process.env.OPENAI_API_KEY);
+}
+
 async function getOpenAIClient(tenantId?: string): Promise<OpenAI> {
   if (tenantId) {
     const tenantKey = await db.query.apiKeys.findFirst({

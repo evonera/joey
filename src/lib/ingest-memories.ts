@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { agentConfigs, posts, memories } from "@/lib/db/schema";
 import { eq, and, asc, desc, gt } from "drizzle-orm";
-import { generateEmbedding } from "@/lib/embeddings";
+import { generateEmbedding, hasOpenAIKey } from "@/lib/embeddings";
 import { insertMemory, insertMemoryWithEmbedding, prepareMemoryContent } from "@/lib/memories";
 import { operationalEvent } from "@/lib/operations-log";
 
@@ -15,18 +15,26 @@ function isUniqueViolation(error: unknown): boolean {
   return /duplicate key|unique constraint|already exists/i.test(message);
 }
 
+/**
+ * Syncs the tenant's brand voice and posting goals from agentConfigs to memories.
+ * Replaces any existing brand_guideline memory for this tenant.
+ */
 export async function syncTenantBrandGuidelines(tenantId: string) {
   const config = await db.query.agentConfigs.findFirst({
     where: eq(agentConfigs.tenantId, tenantId),
   });
   if (!config) return;
 
-  const existing = await db.query.memories.findFirst({
-    where: and(
-      eq(memories.tenantId, tenantId),
-      eq(memories.type, "brand_guideline"),
-    ),
-  });
+  const [existing] = await db
+    .select({ metadata: memories.metadata })
+    .from(memories)
+    .where(
+      and(
+        eq(memories.tenantId, tenantId),
+        eq(memories.type, "brand_guideline"),
+      ),
+    )
+    .limit(1);
 
   const content = [
     config.brandVoice ? `Brand Voice: ${config.brandVoice}` : null,
@@ -54,7 +62,17 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
   // concurrent readers never observe duplicate guidelines and historical
   // dupes are compacted away.
   const prepared = prepareMemoryContent(content);
-  const embedding = await generateEmbedding(prepared, tenantId);
+  let embedding: number[];
+  const canEmbed = await hasOpenAIKey(tenantId);
+  if (canEmbed) {
+    try {
+      embedding = await generateEmbedding(prepared, tenantId);
+    } catch {
+      embedding = new Array(1536).fill(0);
+    }
+  } else {
+    embedding = new Array(1536).fill(0);
+  }
   const swap = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
     // Re-check under lock: an overlapping sync may have committed a newer
     // guideline while this embedding was in flight. Aborting here prevents

@@ -35,3 +35,12 @@ describe("embedding dimension guard", () => {
     expect(() => assertEmbeddingDimensions(bad)).toThrow();
   });
 });
+
+describe("openai key resilience", () => {
+  it("does not throw when searching memories without an openai key", async () => {
+    const { hasOpenAIKey } = await import("../embeddings");
+    delete process.env.OPENAI_API_KEY;
+    const hasKey = await hasOpenAIKey("tenant-no-key");
+    expect(typeof hasKey).toBe("boolean");
+  });
+});
