@@ -56,13 +56,27 @@ async function resolveTenantId(payload: any): Promise<string | null> {
     return null;
 }
 
-const authSecret = process.env.BETTER_AUTH_SECRET || process.env.AUTH_SECRET;
-if (process.env.NODE_ENV === "production" && !authSecret) {
+const isBuildPhase =
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.npm_lifecycle_event === "build";
+
+const authSecret =
+    process.env.BETTER_AUTH_SECRET ||
+    process.env.AUTH_SECRET ||
+    (isBuildPhase ? "build_time_auth_secret_placeholder_value" : undefined);
+if (process.env.NODE_ENV === "production" && !isBuildPhase && !authSecret) {
     throw new Error("BETTER_AUTH_SECRET or AUTH_SECRET is required in production");
 }
 
-const authBaseURL = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || (process.env.NODE_ENV === "production" ? undefined : "http://localhost:3000");
-if (process.env.NODE_ENV === "production" && !authBaseURL) {
+const authBaseURL =
+    process.env.BETTER_AUTH_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (isBuildPhase
+        ? "https://joey.evonera.com"
+        : process.env.NODE_ENV === "production"
+          ? undefined
+          : "http://localhost:3000");
+if (process.env.NODE_ENV === "production" && !isBuildPhase && !authBaseURL) {
     throw new Error("BETTER_AUTH_URL or NEXT_PUBLIC_APP_URL is required in production");
 }
 
@@ -182,7 +196,7 @@ export const auth = betterAuth({
                 portal(),
                 usage(),
                 webhooks({
-                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET || (process.env.NODE_ENV === "production" ? (() => { throw new Error("DODO_PAYMENTS_WEBHOOK_SECRET is required in production"); })() : "dev_dodo_webhook_secret_placeholder"),
+                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET || (process.env.NODE_ENV === "production" && !isBuildPhase ? (() => { throw new Error("DODO_PAYMENTS_WEBHOOK_SECRET is required in production"); })() : "dev_dodo_webhook_secret_placeholder"),
                     onSubscriptionActive: async (payload: any) => {
                         const tenantId = await resolveTenantId(payload);
                         if (!tenantId) return;
