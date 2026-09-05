@@ -21,12 +21,16 @@ export function AuthProviderClient({ children }: { children: React.ReactNode }) 
         }
       }}
       socialProviders={["google"]}
+      basePaths={{
+        auth: "",
+      }}
       viewPaths={{
         auth: {
           signIn: "login",
           signUp: "signup",
           forgotPassword: "forgot-password",
           resetPassword: "reset-password",
+          resetLinkSent: "reset-link-sent",
         },
       }}
     >

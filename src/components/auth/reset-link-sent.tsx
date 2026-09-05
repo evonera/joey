@@ -9,6 +9,7 @@ import { FieldDescription } from "@/components/ui/field"
 import { cn } from "@/lib/utils"
 import { OpenEmailButton } from "./open-email-button"
 import { useIsHydrated } from "./use-is-hydrated"
+import { resolveAuthPath } from "./paths"
 
 /** `sessionStorage` key the forgot-password form stores the submitted email under. */
 export const RESET_LINK_SENT_STORAGE_KEY = "better-auth-ui.reset-link-sent"
@@ -64,7 +65,7 @@ export function ResetLinkSent({ className }: ResetLinkSentProps) {
             {localization.auth.rememberYourPassword}{" "}
             <Link
               href={getAuthLinkURL(
-                `${basePaths.auth}/${viewPaths.auth.signIn}`,
+                resolveAuthPath(basePaths.auth, viewPaths.auth.signIn),
                 redirectTo
               )}
               className="underline underline-offset-4"

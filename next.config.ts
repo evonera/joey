@@ -82,6 +82,41 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/auth/login",
+        destination: "/login",
+        permanent: true,
+      },
+      {
+        source: "/auth/sign-in",
+        destination: "/login",
+        permanent: true,
+      },
+      {
+        source: "/auth/signup",
+        destination: "/signup",
+        permanent: true,
+      },
+      {
+        source: "/auth/sign-up",
+        destination: "/signup",
+        permanent: true,
+      },
+      {
+        source: "/auth/forgot-password",
+        destination: "/forgot-password",
+        permanent: true,
+      },
+      {
+        source: "/auth/reset-password",
+        destination: "/reset-password",
+        permanent: true,
+      },
+      {
+        source: "/auth/reset-link-sent",
+        destination: "/reset-link-sent",
+        permanent: true,
+      },
+      {
         source: "/pricing",
         destination: "/#pricing",
         permanent: false,

@@ -44,6 +44,7 @@ import {
 } from "./auth-form"
 import { PasswordStrengthMeter } from "./password-strength-meter"
 import { ProviderButtons, type SocialLayout } from "./provider-buttons"
+import { resolveAuthPath } from "./paths"
 
 export type SignUpProps = {
   className?: string
@@ -114,7 +115,7 @@ export function SignUp({
         sessionStorage.setItem("better-auth-ui.verify-email", email)
         navigate({
           to: getAuthLinkURL(
-            `${basePaths.auth}/${viewPaths.auth.verifyEmail}`,
+            resolveAuthPath(basePaths.auth, viewPaths.auth.verifyEmail),
             redirectTo
           )
         })
@@ -577,7 +578,7 @@ export function SignUp({
               {localization.auth.alreadyHaveAnAccount}{" "}
               <Link
                 href={getAuthLinkURL(
-                  `${basePaths.auth}/${viewPaths.auth.signIn}`,
+                  resolveAuthPath(basePaths.auth, viewPaths.auth.signIn),
                   redirectTo
                 )}
                 className="underline underline-offset-4"

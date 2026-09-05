@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { OpenEmailButton } from "./open-email-button"
 import { useIsHydrated } from "./use-is-hydrated"
+import { resolveAuthPath } from "./paths"
 
 export type VerifyEmailProps = {
   className?: string
@@ -120,7 +121,7 @@ export function VerifyEmail({ className }: VerifyEmailProps) {
           <FieldDescription className="text-center">
             {localization.auth.alreadyVerifiedYourEmail}{" "}
             <Link
-              href={`${basePaths.auth}/${viewPaths.auth.signIn}`}
+              href={resolveAuthPath(basePaths.auth, viewPaths.auth.signIn)}
               className="underline underline-offset-4"
             >
               {localization.auth.signIn}
