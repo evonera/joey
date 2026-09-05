@@ -71,13 +71,13 @@ export function ChatSidepanel({
         }
       }
 
-      // Match markdown code blocks: ```lang ... ```
-      const codeRegex = /```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g;
+      // Match markdown code blocks: ```lang ... ``` with optional trailing whitespace and special chars (e.g. c++, c#, .env)
+      const codeRegex = /```([a-zA-Z0-9_+#.-]+)?[ \t]*\r?\n([\s\S]*?)```/g;
       let match: RegExpExecArray | null;
 
       while ((match = codeRegex.exec(text)) !== null) {
         count += 1;
-        const lang = match[1]?.trim() || "text";
+        const lang = match[1]?.trim().toLowerCase() || "text";
         const code = match[2]?.trim() || "";
 
         // Attempt to find a heading preceding this code block
@@ -88,7 +88,7 @@ export function ChatSidepanel({
           : `${lang.toUpperCase()} snippet #${count}`;
 
         let type: ArtifactType = "code";
-        if (lang === "svg" || lang === "xml") type = "svg";
+        if (lang === "svg" || lang === "xml" || code.trim().startsWith("<svg")) type = "svg";
         else if (lang === "html") type = "preview";
         else if (lang === "markdown" || lang === "md") type = "markdown";
 
@@ -105,6 +105,42 @@ export function ChatSidepanel({
 
     return results;
   }, [messages]);
+
+  const renderPreview = React.useCallback((art: ExtractedArtifact) => {
+    if (art.type === "svg") {
+      const svgDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:16px;box-sizing:border-box;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0d0c0b;overflow:auto;}svg{max-width:100%;max-height:100%;height:auto;}</style></head><body>${art.code || ""}</body></html>`;
+      return (
+        <div className="rounded-lg overflow-hidden border border-border/30 bg-[#0d0c0b]">
+          <iframe
+            title={art.title}
+            srcDoc={svgDoc}
+            sandbox=""
+            className="w-full h-64 border-0"
+          />
+        </div>
+      );
+    }
+    if (art.type === "preview" || art.language === "html") {
+      return (
+        <div className="rounded-lg overflow-hidden border border-border/40 bg-white dark:bg-zinc-950">
+          <iframe
+            title={art.title}
+            srcDoc={art.code}
+            sandbox="allow-scripts"
+            className="w-full h-72 border-0 bg-white"
+          />
+        </div>
+      );
+    }
+    if (art.type === "markdown") {
+      return (
+        <div className="p-4 rounded-lg bg-muted/20 border border-border/30 text-xs leading-relaxed whitespace-pre-wrap font-sans text-foreground">
+          {art.code}
+        </div>
+      );
+    }
+    return undefined;
+  }, []);
 
   if (!isOpen) return null;
 
@@ -187,6 +223,7 @@ export function ChatSidepanel({
                   type={art.type}
                   language={art.language}
                   code={art.code}
+                  preview={renderPreview(art)}
                   className="my-0 border-border/50 bg-muted/10 shadow-xs"
                 />
               ))}

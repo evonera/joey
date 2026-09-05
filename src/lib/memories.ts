@@ -132,15 +132,24 @@ export async function searchMemories(
 
   const cleanQuery = query.trim();
   if (cleanQuery) {
-    const terms = cleanQuery
+    const rawTerms = cleanQuery
       .split(/\s+/)
       .map((w) => w.replace(/[^\w]/g, ""))
-      .filter((w) => w.length > 2)
-      .slice(0, 5);
+      .filter(Boolean);
+
+    // Prefer terms longer than 2 characters, but fall back to shorter terms if all terms are short (e.g. "AI", "X")
+    const terms = (
+      rawTerms.filter((w) => w.length > 2).length > 0
+        ? rawTerms.filter((w) => w.length > 2)
+        : rawTerms
+    ).slice(0, 5);
 
     if (terms.length > 0) {
       const termConditions = terms.map((t) => sql`${memories.content} ILIKE ${"%" + t + "%"}`);
       conditions.push(sql`(${sql.join(termConditions, sql` OR `)})`);
+    } else {
+      // Query contained only symbols/punctuation with no searchable alphanumeric terms
+      return [];
     }
   }
 

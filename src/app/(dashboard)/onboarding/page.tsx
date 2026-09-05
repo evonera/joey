@@ -58,6 +58,7 @@ export default function OnboardingPage() {
   const [aiKeyInput, setAiKeyInput] = useState("");
   const [savingAiKey, setSavingAiKey] = useState(false);
   const [aiKeySuccess, setAiKeySuccess] = useState(false);
+  const [aiKeyError, setAiKeyError] = useState("");
 
   // Step 3: Brand Voice state
   const [selectedVoice, setSelectedVoice] = useState<string>("bold");
@@ -73,16 +74,21 @@ export default function OnboardingPage() {
   const handleSaveAiKey = async () => {
     if (!aiKeyInput.trim()) return;
     setSavingAiKey(true);
+    setAiKeyError("");
     try {
-      await saveApiKey(selectedProvider, aiKeyInput.trim());
+      const res = await saveApiKey(selectedProvider, aiKeyInput.trim());
+      if (res && "error" in res && res.error) {
+        setAiKeyError(res.error);
+        return;
+      }
       setAiKeySuccess(true);
       if (typeof window !== "undefined") {
         if (selectedProvider === "google") localStorage.setItem("joey_preferred_model", "google/gemini-3.6-flash");
         if (selectedProvider === "openai") localStorage.setItem("joey_preferred_model", "openai/gpt-5.6-luna");
         if (selectedProvider === "anthropic") localStorage.setItem("joey_preferred_model", "anthropic/claude-haiku-4.5");
       }
-    } catch {
-      // Allow proceeding even if key save failed in test/local
+    } catch (err: any) {
+      setAiKeyError(err?.message || "Failed to save API key");
     } finally {
       setSavingAiKey(false);
     }
@@ -321,6 +327,9 @@ export default function OnboardingPage() {
                   {savingAiKey ? "Saving..." : aiKeySuccess ? "Saved ✓" : "Save Key"}
                 </button>
               </div>
+              {aiKeyError ? (
+                <p className="text-xs text-red-500">{aiKeyError}</p>
+              ) : null}
               <p className="text-xs text-muted-foreground">
                 You can also configure this later in <strong>Settings → API Keys</strong>.
               </p>

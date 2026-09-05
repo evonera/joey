@@ -75,11 +75,19 @@ const authBaseURL =
         ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
         : process.env.VERCEL_URL
           ? `https://${process.env.VERCEL_URL}`
-          : isBuildPhase
-            ? "https://joey.evonera.com"
-            : process.env.NODE_ENV === "production"
-              ? "https://joey.evonera.com"
-              : "http://localhost:3000");
+          : process.env.URL
+            ? process.env.URL
+            : process.env.DEPLOY_PRIME_URL
+              ? process.env.DEPLOY_PRIME_URL
+              : isBuildPhase
+                ? "https://joey.evonera.com"
+                : process.env.NODE_ENV === "production"
+                  ? "https://joey.evonera.com"
+                  : "http://localhost:3000");
+
+const dodoWebhookKey =
+    process.env.DODO_PAYMENTS_WEBHOOK_SECRET ||
+    "dev_dodo_webhook_secret_placeholder";
 
 export const auth = betterAuth({
     secret: authSecret,
@@ -197,7 +205,7 @@ export const auth = betterAuth({
                 portal(),
                 usage(),
                 webhooks({
-                    webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET || "dev_dodo_webhook_secret_placeholder",
+                    webhookKey: dodoWebhookKey,
                     onSubscriptionActive: async (payload: any) => {
                         const tenantId = await resolveTenantId(payload);
                         if (!tenantId) return;

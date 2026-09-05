@@ -29,7 +29,7 @@ export function OpenInChatButton({
         "joey_seed_prompt",
         JSON.stringify({ prompt, autoSend })
       );
-      router.push("/");
+      router.push("/dashboard");
     }
   };
 

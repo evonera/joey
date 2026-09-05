@@ -4,10 +4,11 @@ import type { UserContent } from "ai";
 import { useEveAgent } from "eve/react";
 import {
   AlertCircleIcon,
-  Clock01Icon as HistoryIcon,
   PlusSignIcon as PlusIcon,
   CpuIcon as BrainIcon,
   File02Icon as ArtifactIcon,
+  ArrowDown01Icon,
+  Book02Icon as LibraryIcon,
 } from "hugeicons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -32,6 +33,12 @@ import {
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { registerAsset, requestUploadUrl } from "@/app/actions/assets";
 import { getConfiguredProviders } from "@/app/actions/models";
 import {
@@ -53,7 +60,8 @@ import {
   deriveTitleFromMessages,
   type SavedChatSession,
 } from "@/lib/chat-sessions";
-import { ChatHistoryDrawer } from "@/components/chat/chat-history-drawer";
+import { ChatLibraryView } from "@/components/chat/chat-library-view";
+import { SocialPlatformSelector } from "@/components/chat/social-platform-selector";
 import { ChatSidepanel } from "@/components/chat/chat-sidepanel";
 
 const SUGGESTION_PROMPTS = [
@@ -90,7 +98,7 @@ type CancellationState = "idle" | "cancelling";
 export function AgentChat() {
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
   const [sessionKey, setSessionKey] = useState<string>(() => `chat_${Date.now()}`);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [activeView, setActiveView] = useState<"chat" | "library">("chat");
   const [isSidepanelOpen, setIsSidepanelOpen] = useState(false);
   const [sidepanelTab, setSidepanelTab] = useState<"artifacts" | "context">("artifacts");
 
@@ -103,12 +111,68 @@ export function AgentChat() {
   const handleSelectSession = (session: SavedChatSession) => {
     setActiveSessionId(session.id);
     setSessionKey(`session_${session.id}`);
+    setActiveView("chat");
   };
 
   const handleNewChat = () => {
     setActiveSessionId(undefined);
     setSessionKey(`chat_${Date.now()}`);
+    setActiveView("chat");
   };
+
+  const handleToggleSidepanel = (tab?: "artifacts" | "context") => {
+    if (!tab) {
+      setIsSidepanelOpen((prev) => !prev);
+      return;
+    }
+    setIsSidepanelOpen((prev) => (prev && sidepanelTab === tab ? false : true));
+    setSidepanelTab(tab);
+  };
+
+  if (activeView === "library") {
+    return (
+      <div className="flex flex-col h-dvh w-full overflow-hidden bg-background text-foreground">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-4 sm:px-6">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2.5 text-xs font-semibold gap-1.5 hover:bg-muted/40"
+              >
+                <LibraryIcon className="size-3.5 text-primary" />
+                <span>Search Library</span>
+                <ArrowDown01Icon className="size-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48 p-1 text-xs">
+              <DropdownMenuItem
+                onClick={handleNewChat}
+                className="gap-2 text-xs cursor-pointer"
+              >
+                <PlusIcon className="size-3.5 text-primary" />
+                <span>New Chat</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setActiveView("library")}
+                className="gap-2 text-xs cursor-pointer font-medium bg-muted/40"
+              >
+                <LibraryIcon className="size-3.5 text-primary" />
+                <span>Search Library</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
+
+        <div className="flex-1 overflow-y-auto">
+          <ChatLibraryView
+            onSelectThread={handleSelectSession}
+            onNewThread={handleNewChat}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
@@ -116,24 +180,13 @@ export function AgentChat() {
         key={sessionKey}
         initialSavedSession={activeSavedSession}
         onSessionCreated={(newId) => setActiveSessionId(newId)}
-        onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenLibrary={() => setActiveView("library")}
         onNewChat={handleNewChat}
         isSidepanelOpen={isSidepanelOpen}
-        onToggleSidepanel={(tab) => {
-          if (tab) setSidepanelTab(tab);
-          setIsSidepanelOpen((prev) => (tab && !prev ? true : !prev));
-        }}
+        onToggleSidepanel={handleToggleSidepanel}
         sidepanelTab={sidepanelTab}
         onSidepanelTabChange={setSidepanelTab}
         onCloseSidepanel={() => setIsSidepanelOpen(false)}
-      />
-
-      <ChatHistoryDrawer
-        open={isHistoryOpen}
-        onOpenChange={setIsHistoryOpen}
-        activeSessionId={activeSessionId}
-        onSelectSession={handleSelectSession}
-        onNewChat={handleNewChat}
       />
     </div>
   );
@@ -142,7 +195,7 @@ export function AgentChat() {
 interface AgentChatInnerProps {
   initialSavedSession?: SavedChatSession | null;
   onSessionCreated: (id: string) => void;
-  onOpenHistory: () => void;
+  onOpenLibrary: () => void;
   onNewChat: () => void;
   isSidepanelOpen: boolean;
   onToggleSidepanel: (tab?: "artifacts" | "context") => void;
@@ -154,7 +207,7 @@ interface AgentChatInnerProps {
 function AgentChatInner({
   initialSavedSession,
   onSessionCreated,
-  onOpenHistory,
+  onOpenLibrary,
   onNewChat,
   isSidepanelOpen,
   onToggleSidepanel,
@@ -231,7 +284,8 @@ function AgentChatInner({
           snapshot.data.messages,
           selectedModel
         );
-        const title = deriveTitleFromMessages(snapshot.data.messages);
+        const existingSession = getStoredSession(snapshot.session.sessionId);
+        const title = existingSession?.title || deriveTitleFromMessages(snapshot.data.messages);
         sessionUpdatedAtRef.current = new Date().toISOString();
 
         saveStoredSession({
@@ -251,6 +305,22 @@ function AgentChatInner({
     },
   });
 
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Record<string, string[]>>({});
+
+  const handleTogglePlatform = (platformId: string) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(platformId) ? prev.filter((p) => p !== platformId) : [...prev, platformId]
+    );
+  };
+
+  const handleSelectAccounts = (platformId: string, accountIds: string[]) => {
+    setSelectedAccountIds((prev) => ({
+      ...prev,
+      [platformId]: accountIds,
+    }));
+  };
+
   const isBusy = agent.status === "submitted" || agent.status === "streaming";
   const isEmpty = agent.data.messages.length === 0;
   const errorMessage = cancellationError ?? agent.error?.message;
@@ -258,6 +328,25 @@ function AgentChatInner({
     agent.status === "resuming" || (isBusy && cancellationState !== "idle")
       ? "submitted"
       : agent.status;
+
+  // Consume seed prompt if placed by open-in-chat buttons
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = sessionStorage.getItem("joey_seed_prompt");
+    if (raw) {
+      sessionStorage.removeItem("joey_seed_prompt");
+      try {
+        const { prompt, autoSend } = JSON.parse(raw);
+        if (prompt && autoSend) {
+          prepareTurn();
+          void agent.send(prompt);
+        }
+      } catch (err) {
+        console.warn("Failed to parse seed prompt:", err);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Live token metrics and cost calculated from current active messages
   const liveMetrics = useMemo(() => {
@@ -268,6 +357,22 @@ function AgentChatInner({
     if (initialSavedSession?.title) return initialSavedSession.title;
     return deriveTitleFromMessages(agent.data.messages);
   }, [initialSavedSession, agent.data.messages]);
+
+  const hasArtifacts = useMemo(() => {
+    for (const msg of agent.data.messages as readonly any[]) {
+      if (msg.role !== "assistant") continue;
+      let text = typeof msg.content === "string" ? msg.content : "";
+      if (Array.isArray(msg.parts)) {
+        for (const part of msg.parts) {
+          if (part.type === "text" && typeof part.text === "string") {
+            text += `\n${part.text}`;
+          }
+        }
+      }
+      if (/```([a-zA-Z0-9_+#.-]+)?[ \t]*\r?\n([\s\S]*?)```/.test(text)) return true;
+    }
+    return false;
+  }, [agent.data.messages]);
 
   const prepareTurn = () => {
     setCancellationError(undefined);
@@ -293,14 +398,29 @@ function AgentChatInner({
 
     prepareTurn();
 
+    const targetPreamble =
+      selectedPlatforms.length > 0
+        ? `[Target Channels: ${selectedPlatforms
+            .map((p) => {
+              const accs = selectedAccountIds[p];
+              if (accs !== undefined) {
+                return `${p} (accounts: ${accs.length > 0 ? accs.join(",") : "none"})`;
+              }
+              return p;
+            })
+            .join("; ")}]\n\n`
+        : "";
+
+    const fullText = `${targetPreamble}${text}`.trim();
+
     if (message.files.length === 0) {
-      await agent.send(text);
+      await agent.send(fullText);
       return;
     }
 
     const parts: UserContent = [];
-    if (text.length > 0) {
-      parts.push({ text, type: "text" });
+    if (fullText.length > 0) {
+      parts.push({ text: fullText, type: "text" });
     }
     for (const file of message.files) {
       parts.push({
@@ -319,7 +439,14 @@ function AgentChatInner({
   const composer = (
     <PromptInput onSubmit={handleSubmit}>
       <PromptInputBody>
-        <PromptInputTextarea placeholder="Send a message…" />
+        <PromptInputTextarea placeholder="Ask Joey to research topics, draft posts, or automate flows…" />
+        <SocialPlatformSelector
+          selectedPlatforms={selectedPlatforms}
+          onTogglePlatform={handleTogglePlatform}
+          selectedAccountIds={selectedAccountIds}
+          onSelectAccounts={handleSelectAccounts}
+          className="px-1 pb-1"
+        />
       </PromptInputBody>
       <PromptInputFooter>
         <PromptInputTools>
@@ -442,6 +569,7 @@ function AgentChatInner({
           </PromptInputSelect>
           <SpeechInput
             onTranscription={(text) => {
+              if (isBusy) return;
               prepareTurn();
               void agent.send(text);
             }}
@@ -455,56 +583,59 @@ function AgentChatInner({
   return (
     <>
       <main className="flex flex-1 flex-col min-w-0 h-full overflow-hidden bg-background text-foreground relative">
-        {/* Top Header */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-3 sm:px-4">
-          {/* Left Actions: History & New Chat */}
-          <div className="flex items-center gap-1 sm:gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onOpenHistory}
-              className="h-8 px-2 sm:px-2.5 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
-              title="Recent Chats (Cmd+H)"
-            >
-              <HistoryIcon className="size-3.5" />
-              <span className="hidden sm:inline">Recent Chats</span>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onNewChat}
-              className="h-8 px-2 sm:px-2.5 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
-              title="Start New Chat"
-            >
-              <PlusIcon className="size-3.5" />
-              <span className="hidden sm:inline">New Chat</span>
-            </Button>
-          </div>
+        {/* Top Minimal Navigation Bar */}
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-3 sm:px-6 bg-background/50 backdrop-blur-xs">
+          {/* Left View Switcher Dropdown */}
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2.5 text-xs font-semibold gap-1.5 hover:bg-muted/40 max-w-[220px] sm:max-w-xs truncate"
+                >
+                  <span className="truncate">
+                    {sessionTitle || "New Chat"}
+                  </span>
+                  <ArrowDown01Icon className="size-3 opacity-60 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56 p-1 text-xs">
+                <DropdownMenuItem
+                  onClick={onNewChat}
+                  className="gap-2 text-xs cursor-pointer font-medium"
+                >
+                  <PlusIcon className="size-3.5 text-primary" />
+                  <span>New Chat</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={onOpenLibrary}
+                  className="gap-2 text-xs cursor-pointer"
+                >
+                  <LibraryIcon className="size-3.5" />
+                  <span>Search Library</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          {/* Center Title & Live Model */}
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="truncate font-semibold text-sm text-foreground">Joey</span>
-            <span className="hidden sm:inline text-xs text-muted-foreground font-mono">
-              ({currentModelDef.name})
-            </span>
             <StatusDot status={agent.status} />
           </div>
 
-          {/* Right Actions: Context / Artifacts Sidepanel Toggle */}
+          {/* Right Minimal Controls: Sidepanel Toggle */}
           <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant={isSidepanelOpen && sidepanelTab === "artifacts" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => onToggleSidepanel("artifacts")}
-              className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
-              title="Toggle Artifacts"
-            >
-              <ArtifactIcon className="size-3.5" />
-              <span className="hidden md:inline">Artifacts</span>
-            </Button>
+            {hasArtifacts && (
+              <Button
+                type="button"
+                variant={isSidepanelOpen && sidepanelTab === "artifacts" ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => onToggleSidepanel("artifacts")}
+                className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                title="View Artifacts"
+              >
+                <ArtifactIcon className="size-3.5 text-primary" />
+                <span className="hidden sm:inline">Artifacts</span>
+              </Button>
+            )}
 
             <Button
               type="button"
@@ -600,6 +731,7 @@ function AgentChatInner({
                     key={item.label}
                     suggestion={item.prompt}
                     onClick={(prompt) => {
+                      if (isBusy) return;
                       prepareTurn();
                       void agent.send(prompt);
                     }}
