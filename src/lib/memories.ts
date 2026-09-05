@@ -80,57 +80,17 @@ export type MemoryResult = {
   similarity: number;
 };
 
-export async function searchMemories(
+async function searchTextMemories(
   tenantId: string,
-  query: string,
-  limit: number = 5,
+  cleanQuery: string,
+  limit: number,
   type?: MemoryType,
 ): Promise<MemoryResult[]> {
-  const canEmbed = await hasOpenAIKey(tenantId);
-  if (canEmbed) {
-    try {
-      const embedding = await generateEmbedding(query, tenantId);
-      const embeddingStr = `[${embedding.join(",")}]`;
-
-      const conditions = [sql`${memories.tenantId} = ${tenantId}`];
-      if (type) {
-        conditions.push(sql`${memories.type} = ${type}`);
-      }
-
-      const results = await db.execute(
-        sql`
-          SELECT
-            id, tenant_id, content, type, metadata, created_at,
-            1 - (embedding <=> ${embeddingStr}::vector) AS similarity
-          FROM ${memories}
-          WHERE ${sql.join(conditions, sql` AND `)}
-          ORDER BY embedding <=> ${embeddingStr}::vector
-          LIMIT ${limit}
-        `,
-      );
-
-      const rawRows = (results as any).rows ?? results;
-      return rawRows.map((row: any) => ({
-        id: row.id,
-        tenantId: row.tenant_id,
-        content: row.content,
-        type: row.type,
-        metadata: row.metadata,
-        createdAt: new Date(row.created_at),
-        similarity: Number(row.similarity),
-      }));
-    } catch (err) {
-      console.warn("[memories] Vector similarity search failed, falling back to text match:", err);
-    }
-  }
-
-  // Graceful fallback to text keyword search when OpenAI embedding is not available
   const conditions = [sql`${memories.tenantId} = ${tenantId}`];
   if (type) {
     conditions.push(sql`${memories.type} = ${type}`);
   }
 
-  const cleanQuery = query.trim();
   if (cleanQuery) {
     const rawTerms = cleanQuery
       .split(/\s+/)
@@ -177,7 +137,78 @@ export async function searchMemories(
       similarity: 0.5,
     }));
   } catch (err) {
-    console.error("[memories] Text fallback search failed:", err);
+    console.error("[memories] Text search failed:", err);
     return [];
   }
+}
+
+export async function searchMemories(
+  tenantId: string,
+  query: string,
+  limit: number = 5,
+  type?: MemoryType,
+): Promise<MemoryResult[]> {
+  const cleanQuery = query.trim();
+  const canEmbed = await hasOpenAIKey(tenantId);
+  if (canEmbed) {
+    try {
+      const embedding = await generateEmbedding(query, tenantId);
+      const embeddingStr = `[${embedding.join(",")}]`;
+
+      const conditions = [sql`${memories.tenantId} = ${tenantId}`];
+      if (type) {
+        conditions.push(sql`${memories.type} = ${type}`);
+      }
+
+      const results = await db.execute(
+        sql`
+          SELECT
+            id, tenant_id, content, type, metadata, created_at,
+            1 - (embedding <=> ${embeddingStr}::vector) AS similarity
+          FROM ${memories}
+          WHERE ${sql.join(conditions, sql` AND `)}
+          ORDER BY embedding <=> ${embeddingStr}::vector
+          LIMIT ${limit}
+        `,
+      );
+
+      const rawRows = (results as any).rows ?? results;
+      const vectorResults: MemoryResult[] = (rawRows || []).map((row: any) => ({
+        id: row.id,
+        tenantId: row.tenant_id,
+        content: row.content,
+        type: row.type,
+        metadata: row.metadata,
+        createdAt: new Date(row.created_at),
+        similarity: Number(row.similarity),
+      }));
+
+      // Rescue any zero-vector memories (saved when embeddings were offline) that match query terms
+      if (vectorResults.length < limit && cleanQuery) {
+        const textFallback = await searchTextMemories(tenantId, cleanQuery, limit - vectorResults.length, type);
+        const existingIds = new Set(vectorResults.map((r) => r.id));
+        for (const item of textFallback) {
+          if (!existingIds.has(item.id)) {
+            vectorResults.push(item);
+            existingIds.add(item.id);
+            // Asynchronously backfill vector embedding for this un-embedded memory
+            void generateEmbedding(item.content, tenantId)
+              .then(async (newEmb) => {
+                await db.update(memories)
+                  .set({ embedding: sql`${JSON.stringify(newEmb)}::vector` })
+                  .where(eq(memories.id, item.id));
+              })
+              .catch(() => {});
+          }
+        }
+      }
+
+      return vectorResults;
+    } catch (err) {
+      console.warn("[memories] Vector similarity search failed, falling back to text match:", err);
+    }
+  }
+
+  // Graceful fallback to text keyword search when OpenAI embedding is not available
+  return searchTextMemories(tenantId, cleanQuery, limit, type);
 }

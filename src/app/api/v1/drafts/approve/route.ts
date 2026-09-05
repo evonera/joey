@@ -28,7 +28,7 @@ export async function POST(request: Request) {
         // can never report success.
         const existing = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
-            columns: { content: true }
+            columns: { content: true, variants: true }
         });
         if (!existing) {
             return withRateLimitHeaders(
@@ -37,10 +37,31 @@ export async function POST(request: Request) {
             );
         }
         if (!variantName && !existing.content) {
-            return withRateLimitHeaders(
-                NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 }),
-                rateLimit
-            );
+            let autoVariantName: string | undefined;
+            let autoContent: string | undefined;
+
+            if (Array.isArray(existing.variants) && existing.variants.length > 0) {
+                const first = existing.variants[0] as any;
+                autoVariantName = first.variantName || first.name || "default";
+                autoContent = first.content || first.text || "";
+            } else if (existing.variants && typeof existing.variants === "object") {
+                const keys = Object.keys(existing.variants);
+                if (keys.length > 0) {
+                    autoVariantName = keys[0];
+                    const val = (existing.variants as any)[keys[0]];
+                    autoContent = typeof val === "string" ? val : (val?.content || val?.text || "");
+                }
+            }
+
+            if (autoVariantName && autoContent) {
+                updateData.selectedVariantId = autoVariantName;
+                updateData.content = autoContent;
+            } else {
+                return withRateLimitHeaders(
+                    NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 }),
+                    rateLimit
+                );
+            }
         }
 
         const updated = await db.update(drafts)
