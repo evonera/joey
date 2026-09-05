@@ -38,6 +38,7 @@ import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentMessage } from "./agent-message";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
+import { SpeechInput } from "@/components/ai-elements/speech-input";
 
 const SUGGESTION_PROMPTS = [
   {
@@ -292,6 +293,12 @@ export function AgentChat() {
               </PromptInputSelectGroup>
             </PromptInputSelectContent>
           </PromptInputSelect>
+          <SpeechInput
+            onTranscription={(text) => {
+              prepareTurn();
+              void agent.send(text);
+            }}
+          />
         </PromptInputTools>
         <PromptInputSubmit onStop={requestCancellation} status={submitStatus} />
       </PromptInputFooter>
