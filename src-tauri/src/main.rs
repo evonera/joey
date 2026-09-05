@@ -92,7 +92,11 @@ struct DraftsResponse {
 }
 
 fn create_tray_menu(app: &tauri::AppHandle, count: usize) -> tauri::Result<Menu<tauri::Wry>> {
-    let header_text = format!("Joey — {} Pending Draft{}", count, if count == 1 { "" } else { "s" });
+    let header_text = format!(
+        "Joey — {} Pending Draft{}",
+        count,
+        if count == 1 { "" } else { "s" }
+    );
     let review_text = format!("Review Drafts ({}) in Browser...", count);
 
     let header = MenuItem::with_id(app, "header", header_text, false, None::<&str>)?;
@@ -502,7 +506,10 @@ fn setup_event_handlers(app: &tauri::App) {
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
-            let url = format!("{}/api/v1/drafts?status=pending_review", api_url.trim_end_matches('/'));
+            let url = format!(
+                "{}/api/v1/drafts?status=pending_review",
+                api_url.trim_end_matches('/')
+            );
             match client.get(&url).bearer_auth(&api_token).send().await {
                 Ok(res) if res.status().is_success() => {
                     if let Ok(data) = res.json::<DraftsResponse>().await {
@@ -566,7 +573,10 @@ fn setup_event_handlers(app: &tauri::App) {
                         sync_drafts(&h_appr).await;
                     }
                     Ok(res) => {
-                        let msg = res.text().await.unwrap_or_else(|_| "Approval failed".into());
+                        let msg = res
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Approval failed".into());
                         let _ = h_appr.emit(
                             "desktop:approve-result",
                             serde_json::json!({ "success": false, "error": msg }),
@@ -621,7 +631,10 @@ fn setup_event_handlers(app: &tauri::App) {
                         sync_drafts(&h_rej).await;
                     }
                     Ok(res) => {
-                        let msg = res.text().await.unwrap_or_else(|_| "Rejection failed".into());
+                        let msg = res
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Rejection failed".into());
                         let _ = h_rej.emit(
                             "desktop:reject-result",
                             serde_json::json!({ "success": false, "error": msg }),
