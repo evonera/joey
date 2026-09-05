@@ -12,6 +12,10 @@ export interface ModelDefinition {
   badge: string;
   description: string;
   contextWindowTokens: number;
+  costPerMillionTokens: {
+    input: number;
+    output: number;
+  };
 }
 
 export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
@@ -26,6 +30,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "⚡ Fast",
     description: "Latest high-speed, cost-effective Gemini model for social drafting.",
     contextWindowTokens: 1_048_576,
+    costPerMillionTokens: { input: 0.075, output: 0.3 },
   },
   {
     id: "google/gemini-3.8-flash",
@@ -37,6 +42,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "⚡ Frontier Agentic",
     description: "Latest 2026 frontier agentic Flash model with enhanced reasoning and speed.",
     contextWindowTokens: 1_048_576,
+    costPerMillionTokens: { input: 0.1, output: 0.4 },
   },
   {
     id: "google/gemini-2.5-pro",
@@ -48,6 +54,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "🧠 Deep Reasoning",
     description: "Complex creative thinking, deep content critique, and multi-modal synthesis.",
     contextWindowTokens: 2_097_152,
+    costPerMillionTokens: { input: 1.25, output: 5.0 },
   },
   {
     id: "google/gemini-3.1-pro",
@@ -59,6 +66,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "🧠 Frontier Pro",
     description: "Highest capability Google model for long-horizon planning and complex reasoning.",
     contextWindowTokens: 2_097_152,
+    costPerMillionTokens: { input: 1.25, output: 5.0 },
   },
 
   // --- OpenAI ---
@@ -72,6 +80,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "⚡ Fast",
     description: "Lightweight and reliable for day-to-day social media tasks and fast chat turns.",
     contextWindowTokens: 128_000,
+    costPerMillionTokens: { input: 0.15, output: 0.6 },
   },
   {
     id: "openai/gpt-5.6-luna",
@@ -83,6 +92,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "⚡ High Efficiency",
     description: "Production-optimized GPT-5.6 variant offering high intelligence at low cost.",
     contextWindowTokens: 128_000,
+    costPerMillionTokens: { input: 0.2, output: 0.8 },
   },
   {
     id: "openai/gpt-4o",
@@ -94,6 +104,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "Versatile Standard",
     description: "Standard multimodal workhorse model with strong text and image understanding.",
     contextWindowTokens: 128_000,
+    costPerMillionTokens: { input: 2.5, output: 10.0 },
   },
   {
     id: "openai/gpt-5.6-sol",
@@ -105,6 +116,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "🧠 Flagship Reasoning",
     description: "Flagship frontier model for deep reasoning, complex instructions, and coding.",
     contextWindowTokens: 200_000,
+    costPerMillionTokens: { input: 3.0, output: 12.0 },
   },
 
   // --- Anthropic ---
@@ -118,6 +130,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "⚡ Fast",
     description: "Fastest Claude tier with natural conversational fluency at minimal cost.",
     contextWindowTokens: 200_000,
+    costPerMillionTokens: { input: 0.8, output: 4.0 },
   },
   {
     id: "anthropic/claude-3-5-sonnet",
@@ -129,6 +142,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "Creative Voice",
     description: "Exceptional nuance, tone modulation, and brand voice adherence.",
     contextWindowTokens: 200_000,
+    costPerMillionTokens: { input: 3.0, output: 15.0 },
   },
   {
     id: "anthropic/claude-sonnet-5",
@@ -140,6 +154,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "🧠 Balanced Frontier",
     description: "State-of-the-art agentic reasoning and nuanced content creation.",
     contextWindowTokens: 200_000,
+    costPerMillionTokens: { input: 3.0, output: 15.0 },
   },
   {
     id: "anthropic/claude-opus-5",
@@ -151,6 +166,7 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     badge: "🧠 Deep Synthesis",
     description: "Highest level of comprehension and strategic synthesis for enterprise brand strategy.",
     contextWindowTokens: 200_000,
+    costPerMillionTokens: { input: 15.0, output: 75.0 },
   },
 ] as const;
 
@@ -182,4 +198,15 @@ export function getRecommendedModels(): ModelDefinition[] {
 
 export function getModelsByProvider(provider: ModelProvider): ModelDefinition[] {
   return SUPPORTED_MODELS.filter((m) => m.provider === provider);
+}
+
+export function getModelCost(
+  modelId: string,
+  inputTokens: number,
+  outputTokens: number
+): number {
+  const model = getModelById(modelId);
+  const inputCost = (inputTokens / 1_000_000) * model.costPerMillionTokens.input;
+  const outputCost = (outputTokens / 1_000_000) * model.costPerMillionTokens.output;
+  return Number((inputCost + outputCost).toFixed(6));
 }

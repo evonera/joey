@@ -6,6 +6,7 @@ import {
   getModelById,
   getRecommendedModels,
   getModelsByProvider,
+  getModelCost,
 } from "@/lib/models";
 
 describe("models catalog", () => {
@@ -56,5 +57,15 @@ describe("models catalog", () => {
     const anthropicModels = getModelsByProvider("anthropic");
     expect(anthropicModels.every((m) => m.provider === "anthropic")).toBe(true);
     expect(anthropicModels.some((m) => m.id === "anthropic/claude-haiku-4.5")).toBe(true);
+  });
+
+  it("calculates model token costs correctly", () => {
+    // Gemini 3.6 Flash: $0.075 / 1M in, $0.30 / 1M out
+    const cost = getModelCost("google/gemini-3.6-flash", 1_000_000, 1_000_000);
+    expect(cost).toBeCloseTo(0.375, 4);
+
+    const smallCost = getModelCost("google/gemini-3.6-flash", 10_000, 2_000);
+    expect(smallCost).toBeGreaterThan(0);
+    expect(smallCost).toBeLessThan(0.01);
   });
 });
