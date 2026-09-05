@@ -15,10 +15,10 @@ test('landing page loads successfully', async ({ page }) => {
 test('landing page has feature cards', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.locator('text=Visual Flows')).toBeVisible();
-  await expect(page.locator('text=Theme Studio')).toBeVisible();
-  await expect(page.locator('text=BYOK Agent Chat')).toBeVisible();
-  await expect(page.locator('text=1-Tap Telegram Approvals')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Visual Flows' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Theme Studio' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'BYOK Agent Chat' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '1-Tap Telegram Approvals' })).toBeVisible();
 });
 
 test('clicking hero CTA navigates to signup', async ({ page }) => {
