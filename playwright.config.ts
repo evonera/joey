@@ -20,6 +20,7 @@ export default defineConfig({
   webServer: {
     command: 'npm run build && npm run start',
     url: 'http://localhost:3000',
+    timeout: 180 * 1000,
     reuseExistingServer: !process.env.CI,
     env: {
       ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || 'MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=',

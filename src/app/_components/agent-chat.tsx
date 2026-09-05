@@ -2,8 +2,14 @@
 
 import type { UserContent } from "ai";
 import { useEveAgent } from "eve/react";
-import { AlertCircleIcon } from "hugeicons-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  AlertCircleIcon,
+  Clock01Icon as HistoryIcon,
+  PlusSignIcon as PlusIcon,
+  CpuIcon as BrainIcon,
+  File02Icon as ArtifactIcon,
+} from "hugeicons-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -25,6 +31,7 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
+import { Button } from "@/components/ui/button";
 import { registerAsset, requestUploadUrl } from "@/app/actions/assets";
 import { getConfiguredProviders } from "@/app/actions/models";
 import {
@@ -39,6 +46,15 @@ import { cn } from "@/lib/utils";
 import { AgentMessage } from "./agent-message";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
+import {
+  getStoredSession,
+  saveStoredSession,
+  calculateSessionTokensAndCost,
+  deriveTitleFromMessages,
+  type SavedChatSession,
+} from "@/lib/chat-sessions";
+import { ChatHistoryDrawer } from "@/components/chat/chat-history-drawer";
+import { ChatSidepanel } from "@/components/chat/chat-sidepanel";
 
 const SUGGESTION_PROMPTS = [
   {
@@ -72,17 +88,104 @@ type AgentStatus = ReturnType<typeof useEveAgent>["status"];
 type CancellationState = "idle" | "cancelling";
 
 export function AgentChat() {
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
+  const [sessionKey, setSessionKey] = useState<string>(() => `chat_${Date.now()}`);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isSidepanelOpen, setIsSidepanelOpen] = useState(false);
+  const [sidepanelTab, setSidepanelTab] = useState<"artifacts" | "context">("artifacts");
+
+  // Load saved session data when activeSessionId changes
+  const activeSavedSession = useMemo(() => {
+    if (!activeSessionId) return null;
+    return getStoredSession(activeSessionId);
+  }, [activeSessionId]);
+
+  const handleSelectSession = (session: SavedChatSession) => {
+    setActiveSessionId(session.id);
+    setSessionKey(`session_${session.id}`);
+  };
+
+  const handleNewChat = () => {
+    setActiveSessionId(undefined);
+    setSessionKey(`chat_${Date.now()}`);
+  };
+
+  return (
+    <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
+      <AgentChatInner
+        key={sessionKey}
+        initialSavedSession={activeSavedSession}
+        onSessionCreated={(newId) => setActiveSessionId(newId)}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        onNewChat={handleNewChat}
+        isSidepanelOpen={isSidepanelOpen}
+        onToggleSidepanel={(tab) => {
+          if (tab) setSidepanelTab(tab);
+          setIsSidepanelOpen((prev) => (tab && !prev ? true : !prev));
+        }}
+        sidepanelTab={sidepanelTab}
+        onSidepanelTabChange={setSidepanelTab}
+        onCloseSidepanel={() => setIsSidepanelOpen(false)}
+      />
+
+      <ChatHistoryDrawer
+        open={isHistoryOpen}
+        onOpenChange={setIsHistoryOpen}
+        activeSessionId={activeSessionId}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleNewChat}
+      />
+    </div>
+  );
+}
+
+interface AgentChatInnerProps {
+  initialSavedSession?: SavedChatSession | null;
+  onSessionCreated: (id: string) => void;
+  onOpenHistory: () => void;
+  onNewChat: () => void;
+  isSidepanelOpen: boolean;
+  onToggleSidepanel: (tab?: "artifacts" | "context") => void;
+  sidepanelTab: "artifacts" | "context";
+  onSidepanelTabChange: (tab: "artifacts" | "context") => void;
+  onCloseSidepanel: () => void;
+}
+
+function AgentChatInner({
+  initialSavedSession,
+  onSessionCreated,
+  onOpenHistory,
+  onNewChat,
+  isSidepanelOpen,
+  onToggleSidepanel,
+  sidepanelTab,
+  onSidepanelTabChange,
+  onCloseSidepanel,
+}: AgentChatInnerProps) {
   const [cancellationError, setCancellationError] = useState<string>();
   const [cancellationState, setCancellationState] = useState<CancellationState>("idle");
   const [selectedModel, setSelectedModel] = useState<string>(() => {
+    if (initialSavedSession?.model) return initialSavedSession.model;
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("joey_preferred_model");
       if (saved) return saved;
     }
     return DEFAULT_MODEL_ID;
   });
+
+  const sessionCreatedAtRef = useRef<string>(
+    initialSavedSession?.createdAt || new Date().toISOString()
+  );
+  const sessionUpdatedAtRef = useRef<string>(
+    initialSavedSession?.updatedAt || new Date().toISOString()
+  );
+
   const [configuredProviders, setConfiguredProviders] = useState<string[]>([]);
-  const [hasEnvKeys, setHasEnvKeys] = useState<{ google: boolean; openai: boolean; anthropic: boolean }>({
+  const [hasEnvKeys, setHasEnvKeys] = useState<{
+    google: boolean;
+    openai: boolean;
+    anthropic: boolean;
+  }>({
     google: false,
     openai: false,
     anthropic: false,
@@ -92,12 +195,16 @@ export function AgentChat() {
     getConfiguredProviders().then((res) => {
       setConfiguredProviders(res.configuredProviders);
       setHasEnvKeys(res.hasEnvKeys);
-      // If user has a google key configured and hasn't explicitly chosen another, default to Gemini 3.6 Flash
-      if (typeof window !== "undefined" && !localStorage.getItem("joey_preferred_model") && res.configuredProviders.includes("google")) {
+      if (
+        typeof window !== "undefined" &&
+        !localStorage.getItem("joey_preferred_model") &&
+        !initialSavedSession?.model &&
+        res.configuredProviders.includes("google")
+      ) {
         setSelectedModel(DEFAULT_MODEL_ID);
       }
     });
-  }, []);
+  }, [initialSavedSession]);
 
   const handleModelChange = (modelId: string) => {
     setSelectedModel(modelId);
@@ -110,7 +217,40 @@ export function AgentChat() {
     headers: async () => ({
       "x-joey-model": selectedModel,
     }),
+    initialEvents: initialSavedSession?.events ?? [],
+    initialSession: initialSavedSession?.session,
+    resume: initialSavedSession?.session !== undefined,
+    onSessionChange(session) {
+      if (session?.sessionId) {
+        onSessionCreated(session.sessionId);
+      }
+    },
+    onFinish(snapshot) {
+      if (snapshot.session?.sessionId && snapshot.data.messages.length > 0) {
+        const { tokenMetrics, estimatedCostUsd } = calculateSessionTokensAndCost(
+          snapshot.data.messages,
+          selectedModel
+        );
+        const title = deriveTitleFromMessages(snapshot.data.messages);
+        sessionUpdatedAtRef.current = new Date().toISOString();
+
+        saveStoredSession({
+          id: snapshot.session.sessionId,
+          title,
+          model: selectedModel,
+          createdAt: sessionCreatedAtRef.current,
+          updatedAt: sessionUpdatedAtRef.current,
+          messageCount: snapshot.data.messages.length,
+          tokenMetrics,
+          estimatedCostUsd,
+          session: snapshot.session,
+          events: snapshot.events,
+          messages: snapshot.data.messages as any[],
+        });
+      }
+    },
   });
+
   const isBusy = agent.status === "submitted" || agent.status === "streaming";
   const isEmpty = agent.data.messages.length === 0;
   const errorMessage = cancellationError ?? agent.error?.message;
@@ -118,6 +258,16 @@ export function AgentChat() {
     agent.status === "resuming" || (isBusy && cancellationState !== "idle")
       ? "submitted"
       : agent.status;
+
+  // Live token metrics and cost calculated from current active messages
+  const liveMetrics = useMemo(() => {
+    return calculateSessionTokensAndCost(agent.data.messages, selectedModel);
+  }, [agent.data.messages, selectedModel]);
+
+  const sessionTitle = useMemo(() => {
+    if (initialSavedSession?.title) return initialSavedSession.title;
+    return deriveTitleFromMessages(agent.data.messages);
+  }, [initialSavedSession, agent.data.messages]);
 
   const prepareTurn = () => {
     setCancellationError(undefined);
@@ -128,12 +278,9 @@ export function AgentChat() {
     if (!isBusy || cancellationState !== "idle") {
       return;
     }
-
     setCancellationError(undefined);
     setCancellationState("cancelling");
 
-    // The hook waits for the active response to identify its turn when
-    // necessary and sends one guarded cancellation request.
     void agent.cancel().catch((error: unknown) => {
       setCancellationError(toErrorMessage(error));
       setCancellationState("idle");
@@ -306,103 +453,184 @@ export function AgentChat() {
   );
 
   return (
-    <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
-      {isEmpty ? null : (
-        <header className="flex h-14 shrink-0 items-center justify-center gap-3 pl-4 pr-2">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate font-semibold text-sm text-foreground">Joey Agent</span>
-            <span className="text-xs text-muted-foreground">({currentModelDef.name})</span>
+    <>
+      <main className="flex flex-1 flex-col min-w-0 h-full overflow-hidden bg-background text-foreground relative">
+        {/* Top Header */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/40 px-3 sm:px-4">
+          {/* Left Actions: History & New Chat */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onOpenHistory}
+              className="h-8 px-2 sm:px-2.5 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+              title="Recent Chats (Cmd+H)"
+            >
+              <HistoryIcon className="size-3.5" />
+              <span className="hidden sm:inline">Recent Chats</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onNewChat}
+              className="h-8 px-2 sm:px-2.5 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+              title="Start New Chat"
+            >
+              <PlusIcon className="size-3.5" />
+              <span className="hidden sm:inline">New Chat</span>
+            </Button>
+          </div>
+
+          {/* Center Title & Live Model */}
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="truncate font-semibold text-sm text-foreground">Joey</span>
+            <span className="hidden sm:inline text-xs text-muted-foreground font-mono">
+              ({currentModelDef.name})
+            </span>
             <StatusDot status={agent.status} />
-          </span>
+          </div>
+
+          {/* Right Actions: Context / Artifacts Sidepanel Toggle */}
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant={isSidepanelOpen && sidepanelTab === "artifacts" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => onToggleSidepanel("artifacts")}
+              className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+              title="Toggle Artifacts"
+            >
+              <ArtifactIcon className="size-3.5" />
+              <span className="hidden md:inline">Artifacts</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant={isSidepanelOpen && sidepanelTab === "context" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => onToggleSidepanel("context")}
+              className="h-8 px-2 text-xs gap-1.5 font-mono text-muted-foreground hover:text-foreground"
+              title="Context & Cost Inspector (OpenCode)"
+            >
+              <BrainIcon className="size-3.5 text-primary" />
+              <span className="text-[11px]">
+                {liveMetrics.tokenMetrics.totalTokens > 0
+                  ? `${(liveMetrics.tokenMetrics.totalTokens / 1000).toFixed(1)}k`
+                  : "Context"}
+              </span>
+            </Button>
+          </div>
         </header>
-      )}
 
-      {errorMessage ? (
-        <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 sm:px-6">
-          <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm">
-            <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
-            <div>
-              <p className="font-medium">Request failed</p>
-              <p className="mt-0.5 text-muted-foreground">{errorMessage}</p>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {isEmpty ? null : (
-        <Conversation className="min-h-0 flex-1">
-          <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-6 sm:px-6">
-            {agent.data.messages.map((message, index) => (
-              <AgentMessage
-                canRespond={!isBusy}
-                isStreaming={
-                  agent.status === "streaming" && index === agent.data.messages.length - 1
-                }
-                key={message.id}
-                message={message}
-                onInputResponses={(inputResponses) => {
-                  prepareTurn();
-                  return agent.respond(inputResponses);
-                }}
-              />
-            ))}
-          </ConversationContent>
-          <ConversationScrollButton />
-        </Conversation>
-      )}
-
-      <div
-        className={cn(
-          "mx-auto w-full px-4 sm:px-6",
-          isEmpty
-            ? "flex max-w-xl flex-1 flex-col items-center justify-center gap-8 pb-[10vh]"
-            : "max-w-3xl shrink-0 pb-6",
-        )}
-      >
-        {isEmpty ? (
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div className="size-16 rounded-2xl bg-[#ffe633]/15 border border-[#ffe633]/30 flex items-center justify-center p-2.5 shadow-sm">
-              <Image
-                src="/joey-mascot.png"
-                alt="Joey"
-                width={52}
-                height={52}
-                className="object-contain"
-                priority
-              />
-            </div>
-            <div className="space-y-1.5">
-              <h1 className="font-semibold text-2xl sm:text-3xl tracking-tight text-foreground">
-                What are we creating today?
-              </h1>
-              <p className="text-sm text-muted-foreground max-w-sm">
-                Ask Joey to draft social posts, research trending angles, review engagement, or automate flows.
-              </p>
+        {/* Error Notification */}
+        {errorMessage ? (
+          <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 sm:px-6">
+            <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm">
+              <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+              <div>
+                <p className="font-medium">Request failed</p>
+                <p className="mt-0.5 text-muted-foreground">{errorMessage}</p>
+              </div>
             </div>
           </div>
         ) : null}
-        {isEmpty ? (
-          <div className="w-full">
-            <Suggestions className="justify-center flex-wrap gap-2">
-              {SUGGESTION_PROMPTS.map((item) => (
-                <Suggestion
-                  key={item.label}
-                  suggestion={item.prompt}
-                  onClick={(prompt) => {
+
+        {/* Chat Conversation Scroll Area */}
+        {isEmpty ? null : (
+          <Conversation className="min-h-0 flex-1">
+            <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-6 sm:px-6">
+              {agent.data.messages.map((message, index) => (
+                <AgentMessage
+                  canRespond={!isBusy}
+                  isStreaming={
+                    agent.status === "streaming" && index === agent.data.messages.length - 1
+                  }
+                  key={message.id}
+                  message={message}
+                  onInputResponses={(inputResponses) => {
                     prepareTurn();
-                    void agent.send(prompt);
+                    return agent.respond(inputResponses);
                   }}
-                >
-                  <span className="text-sm mr-1">{item.icon}</span>
-                  <span>{item.label}</span>
-                </Suggestion>
+                />
               ))}
-            </Suggestions>
-          </div>
-        ) : null}
-        <div className="w-full">{composer}</div>
-      </div>
-    </main>
+            </ConversationContent>
+            <ConversationScrollButton />
+          </Conversation>
+        )}
+
+        {/* Bottom Composer and Empty State */}
+        <div
+          className={cn(
+            "mx-auto w-full px-4 sm:px-6",
+            isEmpty
+              ? "flex max-w-xl flex-1 flex-col items-center justify-center gap-8 pb-[10vh]"
+              : "max-w-3xl shrink-0 pb-6"
+          )}
+        >
+          {isEmpty ? (
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="size-16 rounded-2xl bg-[#ffe633]/15 border border-[#ffe633]/30 flex items-center justify-center p-2.5 shadow-sm">
+                <Image
+                  src="/joey-mascot.png"
+                  alt="Joey"
+                  width={52}
+                  height={52}
+                  className="object-contain"
+                  priority
+                />
+              </div>
+              <div className="space-y-1.5">
+                <h1 className="font-semibold text-2xl sm:text-3xl tracking-tight text-foreground">
+                  What are we creating today?
+                </h1>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Ask Joey to draft social posts, research trending angles, review engagement, or automate flows.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {isEmpty ? (
+            <div className="w-full">
+              <Suggestions className="justify-center flex-wrap gap-2">
+                {SUGGESTION_PROMPTS.map((item) => (
+                  <Suggestion
+                    key={item.label}
+                    suggestion={item.prompt}
+                    onClick={(prompt) => {
+                      prepareTurn();
+                      void agent.send(prompt);
+                    }}
+                  >
+                    <span className="text-sm mr-1">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </Suggestion>
+                ))}
+              </Suggestions>
+            </div>
+          ) : null}
+
+          <div className="w-full">{composer}</div>
+        </div>
+      </main>
+
+      {/* Scira / Claude-style Right Sidepanel */}
+      <ChatSidepanel
+        isOpen={isSidepanelOpen}
+        onClose={onCloseSidepanel}
+        activeTab={sidepanelTab}
+        onTabChange={onSidepanelTabChange}
+        sessionTitle={sessionTitle}
+        modelId={selectedModel}
+        messages={agent.data.messages}
+        tokenMetrics={liveMetrics.tokenMetrics}
+        estimatedCostUsd={liveMetrics.estimatedCostUsd}
+        createdAt={sessionCreatedAtRef.current}
+        updatedAt={sessionUpdatedAtRef.current}
+      />
+    </>
   );
 }
 
@@ -449,16 +677,16 @@ function StatusDot({ status }: { readonly status: AgentStatus }) {
           : "bg-muted-foreground/50";
 
   return (
-    <span className="relative flex size-1">
+    <span className="relative flex size-1.5">
       {isLive ? (
         <span
           className={cn(
             "absolute inline-flex size-full animate-ping rounded-full opacity-75",
-            tone,
+            tone
           )}
         />
       ) : null}
-      <span className={cn("relative inline-flex size-1 rounded-full transition-colors", tone)} />
+      <span className={cn("relative inline-flex size-1.5 rounded-full transition-colors", tone)} />
     </span>
   );
 }
