@@ -198,8 +198,13 @@ function AnalyticsDashboard() {
                 </div>
               )}
 
-              <SectionCards summary={snapshot.summary} />
-              <AnalyticsCharts series={snapshot.series} byPlatform={snapshot.byPlatform} />
+              <SectionCards summary={snapshot.summary} days={days} />
+              <AnalyticsCharts
+                series={snapshot.series}
+                byPlatform={snapshot.byPlatform}
+                days={days}
+                onDaysChange={setDays}
+              />
 
               {!error && snapshot.success && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">

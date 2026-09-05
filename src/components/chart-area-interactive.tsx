@@ -146,23 +146,48 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
+export interface ChartAreaInteractiveProps {
+  series?: ChartSeriesPoint[];
+  title?: string;
+  subtitle?: string;
+  timeRange?: string;
+  onTimeRangeChange?: (range: string) => void;
+}
+
 export function ChartAreaInteractive({
   series,
   title = "Engagement Over Time",
   subtitle = "Daily impressions, likes, comments, and shares across channels",
-}: {
-  series?: ChartSeriesPoint[];
-  title?: string;
-  subtitle?: string;
-}) {
+  timeRange: controlledTimeRange,
+  onTimeRangeChange,
+}: ChartAreaInteractiveProps) {
   const isMobile = useIsMobile()
-  const [timeRange, setTimeRange] = React.useState("30d")
+  const [internalTimeRange, setInternalTimeRange] = React.useState(() => {
+    if (series && series.length > 0) {
+      return series.length <= 7 ? "7d" : series.length <= 30 ? "30d" : "90d"
+    }
+    return "30d"
+  })
 
   React.useEffect(() => {
-    if (isMobile) {
-      setTimeRange("7d")
+    if (controlledTimeRange === undefined && series && series.length > 0) {
+      setInternalTimeRange(series.length <= 7 ? "7d" : series.length <= 30 ? "30d" : "90d")
     }
-  }, [isMobile])
+  }, [series, controlledTimeRange])
+
+  React.useEffect(() => {
+    if (isMobile && controlledTimeRange === undefined) {
+      setInternalTimeRange("7d")
+    }
+  }, [isMobile, controlledTimeRange])
+
+  const timeRange = controlledTimeRange ?? internalTimeRange
+
+  const handleTimeRangeChange = (value: string) => {
+    if (!value) return
+    setInternalTimeRange(value)
+    onTimeRangeChange?.(value)
+  }
 
   const chartPoints = React.useMemo(() => {
     if (series && series.length > 0) {
@@ -205,7 +230,7 @@ export function ChartAreaInteractive({
           <ToggleGroup
             type="single"
             value={timeRange}
-            onValueChange={setTimeRange}
+            onValueChange={handleTimeRangeChange}
             variant="outline"
             className="hidden *:data-[slot=toggle-group-item]:px-4! @[767px]/card:flex"
           >
@@ -213,7 +238,7 @@ export function ChartAreaInteractive({
             <ToggleGroupItem value="30d">Last 30 days</ToggleGroupItem>
             <ToggleGroupItem value="7d">Last 7 days</ToggleGroupItem>
           </ToggleGroup>
-          <Select value={timeRange} onValueChange={setTimeRange}>
+          <Select value={timeRange} onValueChange={handleTimeRangeChange}>
             <SelectTrigger
               className="flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden"
               size="sm"

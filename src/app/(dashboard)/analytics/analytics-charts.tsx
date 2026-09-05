@@ -25,10 +25,29 @@ type PlatformPoint = { platform: string; label: string; impressions: number; lik
 export default function AnalyticsCharts({
   series,
   byPlatform,
+  days,
+  onDaysChange,
 }: {
   series: SeriesPoint[];
   byPlatform: PlatformPoint[];
+  days?: number;
+  onDaysChange?: (days: number) => void;
 }) {
+  const timeRange =
+    days !== undefined
+      ? days <= 7
+        ? "7d"
+        : days <= 30
+          ? "30d"
+          : "90d"
+      : undefined;
+
+  const handleTimeRangeChange = (range: string) => {
+    if (!onDaysChange) return;
+    const targetDays = range === "7d" ? 7 : range === "90d" ? 90 : 30;
+    onDaysChange(targetDays);
+  };
+
   return (
     <>
       {series.length > 0 && (
@@ -36,6 +55,8 @@ export default function AnalyticsCharts({
           series={series}
           title="Engagement Velocity"
           subtitle="Daily impressions and audience interaction trends across channels"
+          timeRange={timeRange}
+          onTimeRangeChange={handleTimeRangeChange}
         />
       )}
 
