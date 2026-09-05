@@ -31,5 +31,5 @@
 - **What is Joey?** Joey is an autonomous social media agent that analyzes your brand voice, curates relevant content, and drafts high-performing social posts on autopilot. You just review and approve.
 - **Is Joey open source?** Yes, Joey is open source under the MIT license. Source code is available on GitHub.
 - **How does Human in the Loop work?** Joey generates posts based on your brand voice and scheduling preferences, but nothing publishes without your manual approval. You can edit any draft before it goes live.
-- **What platforms are supported?** Twitter/X, LinkedIn, Facebook are supported via the Zernio cross-platform publishing engine.
+- **What platforms are supported?** Twitter/X, LinkedIn (Profiles & Company Pages), Facebook Pages, Pinterest, and Instagram are supported via the Zernio cross-platform publishing engine.
 - **How is Joey different from Buffer/Hootsuite?** Joey uses AI agentic workflows to autonomously create content, not just schedule it. It learns your brand voice and generates platform-specific posts.

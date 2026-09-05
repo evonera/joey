@@ -79,12 +79,16 @@ export async function POST(request: Request) {
             }
         }
 
+        const canonicalPlatform = platform
+            ? (platform.trim().toLowerCase() === "twitter" ? "x" : platform.trim().toLowerCase())
+            : undefined;
+
         const [draft] = await db.insert(drafts).values({
             tenantId,
             content,
             status: "pending_review",
             scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
-            platformOptions: { mediaUrls, accountIds, platform: platform || undefined }
+            platformOptions: { mediaUrls, accountIds, platform: canonicalPlatform }
         }).returning();
 
         return withRateLimitHeaders(NextResponse.json({ draft }), authRateLimit);

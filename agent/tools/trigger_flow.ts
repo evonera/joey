@@ -35,13 +35,21 @@ export default defineTool({
     });
 
     if (!flow) {
-      // Try substring match on name
-      flow = await db.query.flows.findFirst({
+      // Try substring match on name, ensuring it is not ambiguous
+      const matching = await db.query.flows.findMany({
         where: and(
           eq(flows.tenantId, tenantId),
           ilike(flows.name, `%${trimmed}%`)
         ),
+        limit: 3,
       });
+
+      if (matching.length > 1) {
+        return {
+          error: `Multiple flows matched "${flowIdOrName}": ${matching.map((f) => `"${f.name}" (${f.id})`).join(", ")}. Please specify the exact flow ID or exact name.`,
+        };
+      }
+      flow = matching[0] ?? null;
     }
 
     if (!flow) {

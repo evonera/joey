@@ -66,19 +66,38 @@ export type SourceProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
 
 export function Source({ href, title, children, className, ...props }: SourceProps) {
   let hostname = "";
+  let safeHref: string | undefined = undefined;
+
   if (href) {
     try {
-      hostname = new URL(href).hostname.replace(/^www\./, "");
+      const parsed = new URL(href);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        safeHref = href;
+        hostname = parsed.hostname.replace(/^www\./, "");
+      }
     } catch {
-      hostname = href;
+      // Invalid URL
     }
   }
 
   const displayTitle = title || children || hostname || href;
 
+  if (!safeHref) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground max-w-xs truncate",
+          className,
+        )}
+      >
+        <span className="truncate">{displayTitle}</span>
+      </span>
+    );
+  }
+
   return (
     <a
-      href={href}
+      href={safeHref}
       target="_blank"
       rel="noreferrer noopener"
       className={cn(

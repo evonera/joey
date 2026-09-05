@@ -140,7 +140,7 @@ describe("Drafts API Input Validation & SSRF Guard", () => {
     expect(valuesSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         content: "Twitter draft",
-        platformOptions: expect.objectContaining({ platform: "twitter" }),
+        platformOptions: expect.objectContaining({ platform: "x" }),
       })
     );
   });

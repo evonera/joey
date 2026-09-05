@@ -221,7 +221,9 @@ export async function syncConnectedAccounts() {
                 where: eq(socialAccounts.tenantId, tenantId),
             });
 
-            const fetchedAccountIds = new Set(data.accounts.map((a: any) => String(a.id)));
+            const fetchedPlatformAccounts = new Set(
+                data.accounts.map((a: any) => `${a.platform}:${String(a.id)}`)
+            );
 
             for (const account of data.accounts) {
                 const existing = existingAccounts.find(
@@ -251,7 +253,8 @@ export async function syncConnectedAccounts() {
 
             // Deactivate accounts that no longer exist on Zernio without destroying rows or cascade-deleting child entities
             for (const existing of existingAccounts) {
-                if (!fetchedAccountIds.has(existing.platformAccountId) && existing.isActive) {
+                const accountKey = `${existing.platform}:${existing.platformAccountId}`;
+                if (!fetchedPlatformAccounts.has(accountKey) && existing.isActive) {
                     await tx
                         .update(socialAccounts)
                         .set({ isActive: false })
