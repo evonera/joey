@@ -3,6 +3,16 @@
 import { useState, useEffect } from "react";
 import { generateConnectUrl, getConnectedAccounts, disconnectAccount } from "@/app/actions/zernio";
 import { Loading03Icon as Loader2, PlusSignIcon as Plus, Delete02Icon as Trash2 } from "hugeicons-react";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 const PLATFORMS = [
   { id: "twitter", name: "X (Twitter)" },
@@ -20,6 +30,7 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [accountToDisconnect, setAccountToDisconnect] = useState<any | null>(null);
 
   useEffect(() => {
     fetchAccounts();
@@ -44,23 +55,23 @@ export default function AccountsPage() {
     if (url) {
       window.location.assign(url);
     } else {
-      alert(error || "Failed to initiate connection");
+      toast.error(error || "Failed to initiate connection");
       setConnecting(null);
     }
   };
 
   const handleDisconnect = async (accountId: string) => {
-    if (!confirm("Are you sure you want to disconnect this account?")) return;
     setDisconnectingId(accountId);
     try {
       const res = await disconnectAccount(accountId);
       if (res.error) {
-        alert(res.error);
+        toast.error(res.error);
       } else {
         setAccounts(prev => prev.filter(a => a.id !== accountId));
+        toast.success("Account disconnected");
       }
     } catch (e) {
-      alert("Failed to disconnect account");
+      toast.error("Failed to disconnect account");
     } finally {
       setDisconnectingId(null);
     }
@@ -125,9 +136,10 @@ export default function AccountsPage() {
                     <p className="text-xs text-zinc-500 capitalize">{acc.platform}</p>
                   </div>
                   <button 
-                    onClick={() => handleDisconnect(acc.id)}
+                    onClick={() => setAccountToDisconnect(acc)}
                     disabled={disconnectingId === acc.id}
-                    className="p-2 text-zinc-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                    className="p-2 text-zinc-400 hover:text-red-500 transition-colors disabled:opacity-50 cursor-pointer"
+                    aria-label={`Disconnect ${acc.accountName || acc.platform}`}
                   >
                     {disconnectingId === acc.id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -141,6 +153,35 @@ export default function AccountsPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={!!accountToDisconnect} onOpenChange={(open) => !open && setAccountToDisconnect(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Disconnect Account</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to disconnect {accountToDisconnect?.accountName || accountToDisconnect?.platform}? Joey will no longer be able to publish or engage with this account.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setAccountToDisconnect(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!!disconnectingId}
+              onClick={() => {
+                if (accountToDisconnect) {
+                  const id = accountToDisconnect.id;
+                  setAccountToDisconnect(null);
+                  handleDisconnect(id);
+                }
+              }}
+            >
+              Disconnect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

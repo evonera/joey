@@ -7,6 +7,7 @@ import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "./ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { toast } from "sonner";
 
 export function DraftCard({ draft, onActionComplete }: { draft: any, onActionComplete: () => void }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -35,8 +36,9 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
         const res = await publishDraft(draft.id);
         setLoading(false);
         if (res.error) {
-            alert(res.error);
+            toast.error(res.error);
         } else {
+            toast.success("Draft published successfully!");
             onActionComplete();
         }
     };

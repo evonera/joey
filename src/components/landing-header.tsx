@@ -17,6 +17,7 @@ import {
   Cancel01Icon as CloseIcon,
 } from "hugeicons-react";
 import { JoeyLogo } from "@/components/joey-logo";
+import { authClient } from "@/lib/auth-client";
 
 function GithubIcon({ className }: { className?: string }) {
   return (
@@ -27,6 +28,7 @@ function GithubIcon({ className }: { className?: string }) {
 }
 
 export function LandingHeader() {
+  const { data: session } = authClient.useSession();
   const [openDropdown, setOpenDropdown] = useState<"features" | "resources" | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
@@ -233,19 +235,31 @@ export function LandingHeader() {
 
           {/* Right Actions */}
           <div className="flex items-center gap-2.5 shrink-0">
-            <Link
-              href="/login"
-              className="text-xs font-medium text-white/60 hover:text-white px-2.5 py-1.5 transition-colors hidden sm:inline-block"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/signup"
-              className="btn-accent text-xs font-semibold py-1.5 px-3.5 rounded-lg shadow-sm flex items-center gap-1.5"
-            >
-              <span>Get Joey Free</span>
-              <ArrowRight className="size-3.5" />
-            </Link>
+            {session?.user ? (
+              <Link
+                href="/dashboard"
+                className="btn-accent text-xs font-semibold py-1.5 px-3.5 rounded-lg shadow-sm flex items-center gap-1.5"
+              >
+                <span>Dashboard</span>
+                <ArrowRight className="size-3.5" />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="text-xs font-medium text-white/60 hover:text-white px-2.5 py-1.5 transition-colors hidden sm:inline-block"
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/signup"
+                  className="btn-accent text-xs font-semibold py-1.5 px-3.5 rounded-lg shadow-sm flex items-center gap-1.5"
+                >
+                  <span>Get Joey Free</span>
+                  <ArrowRight className="size-3.5" />
+                </Link>
+              </>
+            )}
 
             {/* Mobile menu trigger */}
             <button

@@ -160,7 +160,11 @@ function FlowNode({ data, selected }: NodeProps) {
   const outputs = def?.outputs ?? [];
   return (
     <div
-      className={`min-w-[155px] rounded-xl border-2 bg-card px-3 py-2 text-card-foreground shadow-md transition-all ${accent} ${selected ? "ring-2 ring-primary" : ""}`}
+      tabIndex={0}
+      role="button"
+      aria-pressed={Boolean(selected)}
+      aria-label={`${d.label} node (${d.category})`}
+      className={`min-w-[155px] rounded-xl border-2 bg-card px-3 py-2 text-card-foreground shadow-md transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background ${accent} ${selected ? "ring-2 ring-primary" : ""}`}
     >
       {(def?.inputs.length ?? 0) > 0 && <Handle type="target" position={Position.Left} />}
       <div className="flex items-center gap-2">

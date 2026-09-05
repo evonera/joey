@@ -13,7 +13,9 @@ import {
   YAxis,
 } from "recharts";
 
-type SeriesPoint = { label: string; impressions: number; likes: number; comments: number; shares: number };
+import { ChartAreaInteractive } from "@/components/chart-area-interactive";
+
+type SeriesPoint = { label: string; impressions: number; likes: number; comments: number; shares: number; views?: number };
 type PlatformPoint = { platform: string; label: string; impressions: number; likes: number; comments: number; shares: number; views: number };
 
 /**
@@ -30,22 +32,11 @@ export default function AnalyticsCharts({
   return (
     <>
       {series.length > 0 && (
-        <Section title="Engagement Over Time" subtitle="Daily impressions, likes, comments, and shares">
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
-                <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#888" />
-                <YAxis tick={{ fontSize: 12 }} stroke="#888" />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="impressions" name="Impressions" stroke="#6366f1" strokeWidth={2} />
-                <Line type="monotone" dataKey="likes" name="Likes" stroke="#10b981" strokeWidth={2} />
-                <Line type="monotone" dataKey="comments" name="Comments" stroke="#f59e0b" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Section>
+        <ChartAreaInteractive
+          series={series}
+          title="Engagement Velocity"
+          subtitle="Daily impressions and audience interaction trends across channels"
+        />
       )}
 
       {byPlatform.length > 0 && (
