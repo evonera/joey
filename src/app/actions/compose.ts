@@ -34,6 +34,14 @@ export async function createManualPost(data: {
                 }
             }
         }
+        if (data.scheduleType === "scheduled") {
+            if (!data.scheduledFor || isNaN(Date.parse(data.scheduledFor))) {
+                return { error: "Please select a valid future date and time for scheduled posting" };
+            }
+            if (new Date(data.scheduledFor).getTime() < Date.now() - 60000) {
+                return { error: "Scheduled time cannot be in the past" };
+            }
+        }
 
         const tenantId = await getActiveTenantId(); // auth check
         

@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { listRuns, resumeRun, restartRun } from "@/app/actions/flows";
 import type { FlowRunRow } from "@/app/actions/flows";
 import type { FlowStep } from "@/lib/flows/types";
+import { Terminal } from "@/components/ai-elements/terminal";
+import { Plan, type PlanStepState } from "@/components/ai-elements/plan";
 
 const STATUS_STYLE: Record<string, string> = {
   succeeded: "text-emerald-600",
@@ -112,21 +114,36 @@ export function RunsPanel({
         )}
 
         {selectedRun && (
-          <div className="space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Steps</p>
+          <Plan
+            title={`Run Steps (${steps.length})`}
+            steps={steps.map((s, idx) => ({
+              id: s.nodeId + idx,
+              title: `${s.type} (${s.status})`,
+              description: s.error ? s.error : (s.cached ? "cached" : undefined),
+              status: (s.status === "succeeded"
+                ? "completed"
+                : s.status === "failed"
+                ? "failed"
+                : s.status === "working" || s.status === "waiting_approval"
+                ? "in_progress"
+                : "pending") as PlanStepState,
+            }))}
+            defaultOpen={true}
+          >
             {steps.map((step) => (
-              <div key={step.nodeId} className="rounded-lg border">
+              <div key={step.nodeId} className="rounded-lg border bg-card/40">
                 <button
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs"
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs cursor-pointer hover:bg-muted/30 transition-colors"
                   onClick={() => setExpandedStep(expandedStep === step.nodeId + step.status ? null : step.nodeId + step.status)}
                 >
                   <span className={`font-mono font-semibold ${STATUS_STYLE[step.status] ?? ""}`}>{step.status}</span>
-                  <span>{step.type}</span>
+                  <span className="font-medium text-foreground">{step.type}</span>
                   {step.cached ? <Badge variant="secondary" className="ml-auto text-[9px]">cached</Badge> : null}
                 </button>
                 {expandedStep === step.nodeId + step.status && (
-                  <div className="border-t px-3 py-2 space-y-2 text-[11px]">
-                    {step.error && <p className="font-mono text-red-500">{step.error}</p>}
+                  <div className="border-t border-border/40 px-3 py-2 space-y-2 text-[11px]">
+                    {step.error && <p className="font-mono text-destructive font-medium">{step.error}</p>}
                     {"output" in step && step.output !== undefined && (
                       <JsonBlock label="output" value={step.output} />
                     )}
@@ -137,7 +154,7 @@ export function RunsPanel({
                 )}
               </div>
             ))}
-          </div>
+          </Plan>
         )}
       </div>
     </div>
@@ -145,12 +162,13 @@ export function RunsPanel({
 }
 
 function JsonBlock({ label, value }: { label: string; value: unknown }) {
+  const text = JSON.stringify(value, null, 2) ?? "";
+  const lines = text.slice(0, 3000).split("\n");
   return (
-    <div>
-      <p className="mb-0.5 font-semibold text-muted-foreground">{label}</p>
-      <pre className="max-h-40 overflow-auto rounded-md bg-muted p-2 font-mono leading-snug">
-        {JSON.stringify(value, null, 2)?.slice(0, 2000)}
-      </pre>
-    </div>
+    <Terminal
+      title={label}
+      lines={lines}
+      className="my-1 border-border/40"
+    />
   );
 }

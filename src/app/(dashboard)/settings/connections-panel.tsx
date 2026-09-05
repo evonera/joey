@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { LinkSquare02Icon as Plug, FlashIcon as PlugZap, Loading03Icon as Loader2, LinkSquare01Icon as ExternalLink, Delete02Icon as Trash2, PlusSignIcon as Plus } from "hugeicons-react";
+import { toast } from "sonner";
 
 interface ConnectionItem {
   toolkit: string;
@@ -55,7 +56,7 @@ export function ConnectionsPanel() {
         window.open(url, "_blank", "noopener");
       })
       .catch((error: unknown) => {
-        alert(error instanceof Error ? error.message : "Connect failed");
+        toast.error(error instanceof Error ? error.message : "Connect failed");
       })
       .finally(() => setPendingToolkit(null));
   }

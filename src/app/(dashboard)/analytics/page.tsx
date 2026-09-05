@@ -17,6 +17,9 @@ import {
   ArrowRight01Icon as ArrowRight
 } from "hugeicons-react";
 
+import { SectionCards } from "@/components/section-cards";
+import { PostPerformanceTable } from "@/components/post-performance-table";
+
 // recharts is large; keep it off the initial dashboard bundle.
 const AnalyticsCharts = dynamic(() => import("./analytics-charts"), {
   ssr: false,
@@ -195,7 +198,7 @@ function AnalyticsDashboard() {
                 </div>
               )}
 
-              <SummaryCards summary={snapshot.summary} />
+              <SectionCards summary={snapshot.summary} />
               <AnalyticsCharts series={snapshot.series} byPlatform={snapshot.byPlatform} />
 
               {!error && snapshot.success && (
@@ -218,59 +221,7 @@ function AnalyticsDashboard() {
               {error}
             </div>
           ) : snapshot && snapshot.posts.length > 0 ? (
-            <Section title="Per-Post Performance" subtitle="Individual posts and engagement across platforms">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <th className="py-2.5 pr-4 font-medium">Post Content</th>
-                      <th className="py-2.5 pr-4 font-medium">Published</th>
-                      <th className="py-2.5 pr-4 text-right font-medium">Impressions</th>
-                      <th className="py-2.5 pr-4 text-right font-medium">Likes</th>
-                      <th className="py-2.5 pr-4 text-right font-medium">Comments</th>
-                      <th className="py-2.5 text-right font-medium">Shares</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {snapshot.posts.slice(0, 50).map((post) => {
-                      const totals = post.platforms.reduce(
-                        (acc, pl) => {
-                          const a = pl.analytics;
-                          if (!a) return acc;
-                          acc.impressions += a.impressions || 0;
-                          acc.likes += a.likes || 0;
-                          acc.comments += a.comments || 0;
-                          acc.shares += a.shares || 0;
-                          return acc;
-                        },
-                        { impressions: 0, likes: 0, comments: 0, shares: 0 }
-                      );
-                      return (
-                        <tr key={post.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                          <td className="py-3 pr-4">
-                            <p className="line-clamp-1 max-w-md font-medium text-foreground">
-                              {post.content || "No caption"}
-                            </p>
-                            {post.platforms.some((pl) => pl.platform) && (
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {Array.from(new Set(post.platforms.map((pl) => pl.platform).filter(Boolean))).join(", ")}
-                              </p>
-                            )}
-                          </td>
-                          <td className="py-3 pr-4 whitespace-nowrap text-xs text-muted-foreground">
-                            {post.publishedAt ? new Date(post.publishedAt).toLocaleDateString() : "—"}
-                          </td>
-                          <td className="py-3 pr-4 text-right tabular-nums text-foreground">{totals.impressions.toLocaleString()}</td>
-                          <td className="py-3 pr-4 text-right tabular-nums text-foreground">{totals.likes.toLocaleString()}</td>
-                          <td className="py-3 pr-4 text-right tabular-nums text-foreground">{totals.comments.toLocaleString()}</td>
-                          <td className="py-3 text-right tabular-nums text-foreground">{totals.shares.toLocaleString()}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Section>
+            <PostPerformanceTable posts={snapshot.posts} />
           ) : (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-12 text-center">
               <TrendingUp className="h-12 w-12 text-muted-foreground/40" />
@@ -362,27 +313,6 @@ function AnalyticsDashboard() {
   );
 }
 
-function SummaryCards({ summary }: { summary: { totalPosts: number; impressions: number; likes: number; comments: number; shares: number; views: number; engagementRate: number } }) {
-  const cards = [
-    { label: "Total Posts", value: summary.totalPosts },
-    { label: "Impressions", value: summary.impressions.toLocaleString() },
-    { label: "Views", value: summary.views.toLocaleString() },
-    { label: "Likes", value: summary.likes.toLocaleString() },
-    { label: "Comments", value: summary.comments.toLocaleString() },
-    { label: "Shares", value: summary.shares.toLocaleString() },
-    { label: "Engagement Rate", value: `${summary.engagementRate.toFixed(2)}%` },
-  ];
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-      {cards.map((c) => (
-        <div key={c.label} className="rounded-xl border border-border bg-card p-4 shadow-xs">
-          <p className="text-xs text-muted-foreground">{c.label}</p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{c.value}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function Section({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (

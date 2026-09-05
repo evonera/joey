@@ -16,6 +16,15 @@ import {
 import { toast } from "sonner";
 import { getConnectedAccounts } from "@/app/actions/zernio";
 import Link from "next/link";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface ConnectedAccount {
   id: string;
@@ -38,6 +47,7 @@ export default function ThemePageSettingsRoute() {
   const [rightsPolicy, setRightsPolicy] = React.useState("strict");
   const [accounts, setAccounts] = React.useState<ConnectedAccount[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = React.useState<string[]>([]);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
 
   React.useEffect(() => {
     async function load() {
@@ -90,10 +100,6 @@ export default function ThemePageSettingsRoute() {
   }
 
   async function handleDelete() {
-    if (!confirm("Are you sure you want to delete this theme page? All sources, mix slots, and templates will be removed.")) {
-      return;
-    }
-
     try {
       const res = await deleteThemePage(params.id);
       if (res.error) throw new Error(res.error);
@@ -245,13 +251,38 @@ export default function ThemePageSettingsRoute() {
 
           <button
             type="button"
-            onClick={handleDelete}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
+            onClick={() => setConfirmDeleteOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-xl transition-colors cursor-pointer"
           >
             <IconTrash className="w-4 h-4" /> Delete Page
           </button>
         </div>
       </form>
+
+      <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Theme Page</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this theme page? All sources, mix slots, and templates will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirmDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmDeleteOpen(false);
+                handleDelete();
+              }}
+            >
+              Delete Page
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

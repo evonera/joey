@@ -13,6 +13,8 @@ import { PlatformPreviews } from "@/components/compose/platform-previews";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { Loading03Icon as Loader2, SentIcon as Send, NoteEditIcon as PenSquare, UserMultiple02Icon as Users, Calendar03Icon as Calendar, Image01Icon as ImageIcon, Cancel01Icon as X } from "hugeicons-react";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { fromZonedTime } from "date-fns-tz";
 
 export default function ComposePage() {
   const router = useRouter();
@@ -60,10 +62,12 @@ export default function ComposePage() {
 
     let scheduledFor: string | undefined;
     if (scheduleType === "scheduled" && scheduledDate) {
+      const [year, month, day] = scheduledDate.split("-").map(Number);
       const [hours, minutes] = scheduledTime.split(":").map(Number);
-      const date = new Date(scheduledDate);
-      date.setHours(hours, minutes, 0, 0);
-      scheduledFor = date.toISOString();
+      const tz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC";
+      const localDate = new Date(year, month - 1, day, hours, minutes, 0);
+      const utcDate = fromZonedTime(localDate, tz);
+      scheduledFor = utcDate.toISOString();
     }
 
     const res = await createManualPost({
@@ -77,13 +81,14 @@ export default function ComposePage() {
     setIsSubmitting(false);
 
     if (res.error) {
-      alert(res.error);
+      toast.error(res.error);
     } else {
-      alert(scheduleType === "now" ? "Posts published successfully!" : "Posts scheduled successfully!");
+      toast.success(scheduleType === "now" ? "Posts published successfully!" : "Posts scheduled successfully!");
       setContent("");
       setMediaUrls([]);
       setExternalUrl("");
       setSelectedAccountIds([]);
+      router.push(scheduleType === "now" ? "/dashboard" : "/calendar");
     }
   };
 

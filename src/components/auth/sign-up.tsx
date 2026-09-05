@@ -18,6 +18,7 @@ import {
 } from "@better-auth-ui/react"
 import { useIsMutating } from "@tanstack/react-query"
 import { Eye, EyeOff } from "lucide-react"
+import { SparklesIcon, AlertCircleIcon } from "hugeicons-react"
 import { useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -93,8 +94,10 @@ export function SignUp({
 
   const { fetchOptions, resetFetchOptions } = useFetchOptions()
 
+  const [authError, setAuthError] = useState<string | null>(null)
   const { mutateAsync: signUpEmail } = useSignUpEmail(authClient, {
     onError: (error) => {
+      setAuthError(error.error?.message || "Failed to create account.")
       // The haveIBeenPwned plugin rejects on the password itself,
       // so it belongs against the field rather than in a toast.
       if (isPasswordCompromisedError(error)) {
@@ -106,6 +109,7 @@ export function SignUp({
       resetFetchOptions()
     },
     onSuccess: (_data, { email }) => {
+      setAuthError(null)
       if (emailAndPassword?.requireEmailVerification) {
         sessionStorage.setItem("better-auth-ui.verify-email", email)
         navigate({
@@ -152,6 +156,7 @@ export function SignUp({
       password: ""
     },
     onSubmit: async ({ value }) => {
+      setAuthError(null)
       try {
         await signUpEmail({
           name: emailAndPassword?.name === false ? "" : value.name,
@@ -173,12 +178,18 @@ export function SignUp({
     emailAndPassword?.enabled && socialProviders && socialProviders.length > 0
 
   return (
-    <Card className={cn("w-full max-w-sm", className)}>
+    <Card className={cn("w-full max-w-sm bg-[#131211] border-white/[0.08] text-white", className)}>
       <AuthPrompts view="signUp" />
-      <CardHeader>
-        <CardTitle className="text-xl font-semibold">
-          {localization.auth.signUp}
-        </CardTitle>
+      <CardHeader className="text-center space-y-1.5 pb-2">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-[#ffe633]/10 text-[#ffe633] mb-2 mx-auto border border-[#ffe633]/20">
+          <SparklesIcon size={20} strokeWidth={1.5} />
+        </div>
+        <h1 className="text-2xl font-semibold tracking-tight text-white">
+          Create your Joey Workspace
+        </h1>
+        <p className="text-xs text-white/50">
+          Start automating your social brand with autonomous agents
+        </p>
       </CardHeader>
 
       <CardContent>
@@ -201,6 +212,13 @@ export function SignUp({
             <form.AppForm>
               <form.AuthFormRoot>
                 <FieldGroup>
+                  {authError && (
+                    <div className="flex items-center gap-2 p-3 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg">
+                      <AlertCircleIcon size={16} className="shrink-0" />
+                      <span>{authError}</span>
+                    </div>
+                  )}
+
                   {emailAndPassword.name !== false && (
                     <form.AppField
                       name="name"
@@ -521,7 +539,7 @@ export function SignUp({
 
                   <div className="flex flex-col gap-3">
                     <form.AuthFormSubmitButton disabled={isPending}>
-                      {localization.auth.signUp}
+                      Create Workspace
                     </form.AuthFormSubmitButton>
 
                     {plugins.flatMap((plugin) =>
