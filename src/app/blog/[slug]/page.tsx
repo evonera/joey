@@ -123,7 +123,7 @@ export default async function BlogPostPage({
       <header className="px-6 py-4 flex items-center justify-between max-w-7xl mx-auto w-full">
         <JoeyLogo size="md" />
         <nav aria-label="Main navigation" className="flex items-center gap-4">
-          <Link href="/blog" className="text-sm font-medium hover:text-indigo-600 transition-colors">Blog</Link>
+          <Link href="/blog" className="text-sm font-medium hover:text-primary transition-colors">Blog</Link>
           <Link href="/signup" className="text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-4 py-2 rounded-full hover:opacity-90 transition-opacity">
             Get Started
           </Link>
@@ -133,9 +133,9 @@ export default async function BlogPostPage({
       <main className="max-w-3xl mx-auto px-6 py-16">
         <nav aria-label="Breadcrumb" className="text-sm text-zinc-500 dark:text-zinc-400 mb-8">
           <ol className="flex items-center gap-2">
-            <li><Link href="/" className="hover:text-indigo-600 transition-colors">Home</Link></li>
+            <li><Link href="/" className="hover:text-primary transition-colors">Home</Link></li>
             <li aria-hidden="true">/</li>
-            <li><Link href="/blog" className="hover:text-indigo-600 transition-colors">Blog</Link></li>
+            <li><Link href="/blog" className="hover:text-primary transition-colors">Blog</Link></li>
             <li aria-hidden="true">/</li>
             <li aria-current="page" className="truncate max-w-[16rem]">{post.title}</li>
           </ol>
@@ -158,7 +158,7 @@ export default async function BlogPostPage({
             className="
               prose prose-zinc dark:prose-invert max-w-none
               prose-headings:tracking-tight
-              prose-a:text-indigo-600 dark:prose-a:text-indigo-400
+              prose-a:text-primary hover:prose-a:underline
               prose-table:block prose-table:overflow-x-auto
             "
           >
@@ -166,14 +166,14 @@ export default async function BlogPostPage({
           </div>
         </article>
 
-        <aside className="mt-16 p-8 rounded-2xl bg-indigo-600 text-white text-center">
-          <h2 className="text-2xl font-bold mb-2">Put it on autopilot</h2>
-          <p className="mb-6 text-indigo-100">
+        <aside className="mt-16 p-8 rounded-2xl bg-card border border-border text-center shadow-xs">
+          <h2 className="text-2xl font-bold mb-2 text-foreground">Put it on autopilot</h2>
+          <p className="mb-6 text-muted-foreground">
             Joey drafts on-brand posts for every platform. You just approve.
           </p>
           <Link
             href="/signup"
-            className="inline-flex items-center gap-2 bg-white text-indigo-700 px-6 py-3 rounded-full font-medium hover:bg-indigo-50 transition-colors"
+            className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-full font-semibold hover:bg-primary/90 transition-colors shadow-xs"
           >
             Get Started Free
           </Link>

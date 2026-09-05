@@ -131,7 +131,7 @@ export function AgentChat() {
 
   if (activeView === "library") {
     return (
-      <div className="flex flex-col h-dvh w-full overflow-hidden bg-background text-foreground">
+      <div className="flex flex-col h-[calc(100dvh-var(--header-height)-3.5rem)] w-full overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs">
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-4 sm:px-6">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -175,7 +175,7 @@ export function AgentChat() {
   }
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
+    <div className="flex h-[calc(100dvh-var(--header-height)-3.5rem)] w-full overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs">
       <AgentChatInner
         key={sessionKey}
         initialSavedSession={activeSavedSession}
