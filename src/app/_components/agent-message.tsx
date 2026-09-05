@@ -29,6 +29,14 @@ import {
   SourcesContent,
   Source,
 } from "@/components/ai-elements/sources";
+import {
+  Confirmation,
+  ConfirmationTitle,
+  ConfirmationDescription,
+  ConfirmationActions,
+  ConfirmationAction,
+} from "@/components/ai-elements/confirmation";
+import { Attachment } from "@/components/ai-elements/attachments";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -172,33 +180,24 @@ function AgentMessagePart({
 }
 
 function AttachmentPart({ part }: { readonly part: EveFilePart }) {
-  const label = part.filename ?? "Attachment";
-  const detail = [part.mediaType, formatBytes(part.size)].filter(Boolean).join(" - ");
-  const isImage = part.mediaType.startsWith("image/") && part.url !== undefined;
-  const Icon = isImage ? ImageIcon : FileIcon;
-  const body = (
-    <span className="flex max-w-sm items-center gap-3 rounded-md border bg-background/60 p-2 text-sm">
-      {isImage ? (
-        <img alt={label} className="size-12 shrink-0 rounded-sm object-cover" src={part.url} />
-      ) : (
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-sm bg-muted text-muted-foreground">
-          <Icon className="size-4" />
-        </span>
-      )}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium">{label}</span>
-        {detail ? <span className="block truncate text-muted-foreground">{detail}</span> : null}
-      </span>
-      {part.url ? <ExternalLinkIcon className="size-4 shrink-0 text-muted-foreground" /> : null}
-    </span>
-  );
+  const item = {
+    name: part.filename ?? "Attachment",
+    size: part.size,
+    type: part.mediaType,
+    url: part.url,
+    status: "ready" as const,
+  };
 
-  return part.url ? (
-    <a href={part.url} rel="noreferrer" target="_blank">
-      {body}
-    </a>
-  ) : (
-    body
+  return (
+    <div className="my-1.5">
+      {part.url ? (
+        <a href={part.url} rel="noreferrer" target="_blank" className="block max-w-xs">
+          <Attachment attachment={item} canRemove={false} />
+        </a>
+      ) : (
+        <Attachment attachment={item} canRemove={false} />
+      )}
+    </div>
   );
 }
 
@@ -327,17 +326,30 @@ function InputRequestActions({
     (option) => option.id === inputResponse?.optionId,
   );
 
+  const isApproved = selectedOption?.style !== "danger" && Boolean(inputResponse);
+  const isRejected = selectedOption?.style === "danger" && Boolean(inputResponse);
+  const status = isApproved ? "approved" : isRejected ? "rejected" : "pending";
+  const hasDanger = inputRequest.options?.some((o) => o.style === "danger");
+  const severity = hasDanger ? "warning" : "info";
+
   return (
-    <div className="space-y-3 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
-      <p className="text-muted-foreground text-sm">{inputRequest.prompt}</p>
+    <Confirmation severity={severity} status={status}>
+      <ConfirmationTitle severity={severity} status={status}>
+        {status === "approved"
+          ? "Action Approved"
+          : status === "rejected"
+          ? "Action Rejected"
+          : "Approval Required"}
+      </ConfirmationTitle>
+      <ConfirmationDescription>{inputRequest.prompt}</ConfirmationDescription>
       {inputResponse ? (
-        <p className="font-medium text-sm">
-          Responded: {selectedOption?.label ?? inputResponse.text ?? inputResponse.optionId}
-        </p>
+        <div className="ml-8 text-[11px] font-medium text-foreground">
+          Selected: {selectedOption?.label ?? inputResponse.text ?? inputResponse.optionId}
+        </div>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <ConfirmationActions>
           {inputRequest.options?.map((option) => (
-            <Button
+            <ConfirmationAction
               disabled={!canRespond}
               key={option.id}
               onClick={() => {
@@ -348,16 +360,14 @@ function InputRequestActions({
                   },
                 ]);
               }}
-              size="sm"
-              type="button"
               variant={option.style === "danger" ? "destructive" : "default"}
             >
               {option.label}
-            </Button>
+            </ConfirmationAction>
           ))}
-        </div>
+        </ConfirmationActions>
       )}
-    </div>
+    </Confirmation>
   );
 }
 
