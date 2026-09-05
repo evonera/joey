@@ -87,9 +87,7 @@ const authBaseURL =
 
 const dodoWebhookKey =
     process.env.DODO_PAYMENTS_WEBHOOK_SECRET ||
-    (process.env.NODE_ENV === "production" && !isBuildPhase
-        ? crypto.randomUUID()
-        : "dev_dodo_webhook_secret_placeholder");
+    "dev_dodo_webhook_secret_placeholder";
 
 export const auth = betterAuth({
     secret: authSecret,

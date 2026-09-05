@@ -163,11 +163,13 @@ export function SocialPlatformSelector({
         const isSelected = selectedPlatforms.includes(platform.id);
         const matchingAccounts = getAccountsForPlatform(platform);
         const hasAccounts = matchingAccounts.length > 0;
-        const activeAccountIds = selectedAccountIds[platform.id] || [];
+        const isExplicitSelection = selectedAccountIds[platform.id] !== undefined;
+        const activeAccountIds = isExplicitSelection
+          ? selectedAccountIds[platform.id]!
+          : matchingAccounts.map((a) => a.id);
 
-        // If no specific accounts selected yet, all matching accounts are targeted
-        const targetedCount =
-          activeAccountIds.length > 0 ? activeAccountIds.length : matchingAccounts.length;
+        // Targeted count matches active selection
+        const targetedCount = activeAccountIds.length;
 
         const Icon = platform.icon;
 
@@ -219,25 +221,16 @@ export function SocialPlatformSelector({
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       {matchingAccounts.map((acc) => {
-                        const checked =
-                          activeAccountIds.length === 0 || activeAccountIds.includes(acc.id);
+                        const checked = activeAccountIds.includes(acc.id);
 
                         return (
                           <DropdownMenuCheckboxItem
                             key={acc.id}
                             checked={checked}
                             onCheckedChange={(shouldCheck) => {
-                              let next: string[];
-                              if (activeAccountIds.length === 0) {
-                                // If previously targeting all, and user unchecks one, select all except this one
-                                next = shouldCheck
-                                  ? matchingAccounts.map((a) => a.id)
-                                  : matchingAccounts.filter((a) => a.id !== acc.id).map((a) => a.id);
-                              } else {
-                                next = shouldCheck
-                                  ? [...activeAccountIds, acc.id]
-                                  : activeAccountIds.filter((id) => id !== acc.id);
-                              }
+                              const next = shouldCheck
+                                ? [...activeAccountIds, acc.id]
+                                : activeAccountIds.filter((id) => id !== acc.id);
                               onSelectAccounts(platform.id, next);
                             }}
                             className="text-xs cursor-pointer"

@@ -403,7 +403,10 @@ function AgentChatInner({
         ? `[Target Channels: ${selectedPlatforms
             .map((p) => {
               const accs = selectedAccountIds[p];
-              return `${p}${accs && accs.length ? ` (accounts: ${accs.join(",")})` : ""}`;
+              if (accs !== undefined) {
+                return `${p} (accounts: ${accs.length > 0 ? accs.join(",") : "none"})`;
+              }
+              return p;
             })
             .join("; ")}]\n\n`
         : "";

@@ -108,11 +108,16 @@ export function ChatSidepanel({
 
   const renderPreview = React.useCallback((art: ExtractedArtifact) => {
     if (art.type === "svg") {
+      const svgDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:16px;box-sizing:border-box;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0d0c0b;overflow:auto;}svg{max-width:100%;max-height:100%;height:auto;}</style></head><body>${art.code || ""}</body></html>`;
       return (
-        <div
-          className="p-4 flex items-center justify-center bg-[#0d0c0b] rounded-lg overflow-auto max-h-80 border border-border/30 [&>svg]:max-w-full [&>svg]:h-auto"
-          dangerouslySetInnerHTML={{ __html: art.code || "" }}
-        />
+        <div className="rounded-lg overflow-hidden border border-border/30 bg-[#0d0c0b]">
+          <iframe
+            title={art.title}
+            srcDoc={svgDoc}
+            sandbox=""
+            className="w-full h-64 border-0"
+          />
+        </div>
       );
     }
     if (art.type === "preview" || art.language === "html") {
