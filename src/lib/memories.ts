@@ -183,15 +183,35 @@ export async function searchMemories(
         similarity: Number(row.similarity),
       }));
 
-      // Rescue any zero-vector memories (saved when embeddings were offline) that match query terms
-      if (vectorResults.length < limit && cleanQuery) {
-        const textFallback = await searchTextMemories(tenantId, cleanQuery, limit - vectorResults.length, type);
-        const existingIds = new Set(vectorResults.map((r) => r.id));
-        for (const item of textFallback) {
-          if (!existingIds.has(item.id)) {
-            vectorResults.push(item);
-            existingIds.add(item.id);
-            // Asynchronously backfill vector embedding for this un-embedded memory
+      // Backfill any returned vector rows that have zero vectors / invalid similarity
+      for (const row of vectorResults) {
+        if (!Number.isFinite(row.similarity) || row.similarity <= 0) {
+          void generateEmbedding(row.content, tenantId)
+            .then(async (newEmb) => {
+              await db.update(memories)
+                .set({ embedding: sql`${JSON.stringify(newEmb)}::vector` })
+                .where(eq(memories.id, row.id));
+            })
+            .catch(() => {});
+        }
+      }
+
+      // Also rescue keyword-matching memories that may have zero vectors and missed vector ranking
+      if (cleanQuery) {
+        const textMatches = await searchTextMemories(tenantId, cleanQuery, limit, type);
+        for (const item of textMatches) {
+          const existing = vectorResults.find((r) => r.id === item.id);
+          if (!existing) {
+            // If vector results have room or contain zero-vector/low-similarity entries, promote the text match
+            const lowQualityIdx = vectorResults.findIndex(
+              (r) => !Number.isFinite(r.similarity) || r.similarity < 0.3
+            );
+            if (lowQualityIdx >= 0) {
+              vectorResults[lowQualityIdx] = item;
+            } else if (vectorResults.length < limit) {
+              vectorResults.push(item);
+            }
+            // Schedule embedding backfill for the rescued item
             void generateEmbedding(item.content, tenantId)
               .then(async (newEmb) => {
                 await db.update(memories)
@@ -199,11 +219,21 @@ export async function searchMemories(
                   .where(eq(memories.id, item.id));
               })
               .catch(() => {});
+          } else if (!Number.isFinite(existing.similarity) || existing.similarity <= 0) {
+            // Was returned by vector search but with a zero vector; upgrade its similarity and backfill
+            existing.similarity = 0.5;
+            void generateEmbedding(existing.content, tenantId)
+              .then(async (newEmb) => {
+                await db.update(memories)
+                  .set({ embedding: sql`${JSON.stringify(newEmb)}::vector` })
+                  .where(eq(memories.id, existing.id));
+              })
+              .catch(() => {});
           }
         }
       }
 
-      return vectorResults;
+      return vectorResults.slice(0, limit);
     } catch (err) {
       console.warn("[memories] Vector similarity search failed, falling back to text match:", err);
     }
