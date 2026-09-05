@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -37,7 +37,9 @@ import {
   Clock01Icon as Clock3,
   Copy01Icon as Copy,
   Time04Icon as History,
+  Delete02Icon as Trash2,
 } from "hugeicons-react";
+
 import {
   Play as PlayLucide,
   Clock as ClockLucide,
@@ -230,6 +232,8 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   );
 
   const [name, setName] = useState(flow.name);
+  const [status, setStatus] = useState<"draft" | "active" | "paused" | "archived">(flow.status as any);
+  const [isDirty, setIsDirty] = useState(false);
   const { resolvedTheme } = useTheme();
   const colorMode = (resolvedTheme === "dark" ? "dark" : "light") as "dark" | "light";
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -253,6 +257,18 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   graphRef.current = builderStateToGraphDoc(rfNodes, rfEdges);
   nameRef.current = name;
 
+  // Unsaved changes beforeunload protection
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
   const selectedNode = useMemo(() => rfNodes.find((n) => n.id === selectedId), [rfNodes, selectedId]);
   const selectedDef = selectedNode ? getNode((selectedNode.data as { nodeType: string }).nodeType) : undefined;
 
@@ -268,6 +284,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
     setSelectedId(selectedNodeId);
     setAgentChangeCount((count) => count + 1);
     setLastAgentChange(summary);
+    setIsDirty(true);
     requestAnimationFrame(() => {
       void reactFlowRef.current?.fitView({ padding: 0.25, duration: 300 });
     });
@@ -279,6 +296,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
     setName(nextName);
     setAgentChangeCount((count) => count + 1);
     setLastAgentChange(summary);
+    setIsDirty(true);
   }, []);
 
   const nextWebMcpNodeId = useCallback(() => {
@@ -300,34 +318,39 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
     getState: () => ({
       id: flow.id,
       name: nameRef.current,
-      status: flow.status,
+      status: status,
       graph: graphRef.current,
     }),
     stageGraph: stageAgentGraph,
     stageName: stageAgentName,
     nextNodeId: nextWebMcpNodeId,
     validate: validateStagedGraph,
-  }), [flow.id, flow.status, nextWebMcpNodeId, stageAgentGraph, stageAgentName, validateStagedGraph]);
+  }), [flow.id, status, nextWebMcpNodeId, stageAgentGraph, stageAgentName, validateStagedGraph]);
   const webMcpAvailable = useWebMcpTools(webMcpTools);
 
   const onConnect = useCallback(
-    (connection: Connection) =>
-      setRfEdges((eds) => addEdge({ ...connection, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, eds)),
+    (connection: Connection) => {
+      setRfEdges((eds) => addEdge({ ...connection, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, eds));
+      setIsDirty(true);
+    },
     [setRfEdges],
   );
 
-  function addNodeType(type: string, screenPos: { x: number; y: number }) {
+  function addNodeType(type: string, screenPos?: { x: number; y: number }) {
     const def = getNode(type);
     if (!def) return;
-    const position = reactFlowRef.current
-      ? reactFlowRef.current.screenToFlowPosition({ x: screenPos.x, y: screenPos.y })
-      : (() => {
-          const rect = wrapperRef.current?.getBoundingClientRect();
-          return {
-            x: rect ? screenPos.x - rect.left : screenPos.x,
-            y: rect ? screenPos.y - rect.top : screenPos.y,
-          };
-        })();
+    let position: { x: number; y: number };
+    if (screenPos && reactFlowRef.current) {
+      position = reactFlowRef.current.screenToFlowPosition({ x: screenPos.x, y: screenPos.y });
+    } else if (reactFlowRef.current && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      position = reactFlowRef.current.screenToFlowPosition({
+        x: rect.left + rect.width / 2 + (Math.random() * 40 - 20),
+        y: rect.top + rect.height / 3 + (Math.random() * 40 - 20),
+      });
+    } else {
+      position = { x: 250 + Math.random() * 50, y: 150 + Math.random() * 50 };
+    }
     const id = `n${Date.now()}${idCounter.current++}`;
     setRfNodes((nds) => [
       ...nds,
@@ -338,7 +361,9 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
       } as Node,
     ]);
     setSelectedId(id);
+    setIsDirty(true);
   }
+
 
   async function handleValidate() {
     setBusy(true);
@@ -366,6 +391,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
       } else {
         if (isAgentReviewSnapshotCurrent(reviewedAgentRevision, agentChangeRevisionRef.current)) {
           toast.success("Saved");
+          setIsDirty(false);
           setAgentChangeCount(0);
           setLastAgentChange(null);
         } else {
@@ -404,12 +430,12 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   }
 
   async function handleToggleActive() {
-    const next = flow.status === "active" ? "paused" : "active";
+    const next = status === "active" ? "paused" : "active";
     setBusy(true);
     try {
       const res = await setFlowStatus(flow.id, next);
       if (res.ok) {
-        flow.status = next;
+        setStatus(next);
         toast.success(next === "active" ? "Flow activated" : "Flow paused");
         router.refresh();
       } else {
@@ -455,6 +481,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
   function updateSelectedConfig(config: Record<string, unknown>) {
     if (!selectedId) return;
     setRfNodes((nds) => nds.map((n) => (n.id === selectedId ? { ...n, data: { ...n.data, config } } : n)));
+    setIsDirty(true);
   }
 
   const grouped = useMemo(() => {
@@ -462,7 +489,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
     for (const entry of catalog()) (groups[entry.category] ??= []).push(entry);
     return groups;
   }, []);
-  const activationBlockedByAgentChanges = flow.status !== "active" && agentChangeCount > 0;
+  const activationBlockedByAgentChanges = status !== "active" && agentChangeCount > 0;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
@@ -484,7 +511,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
                     title={entry.description}
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData("application/flow-node", entry.type)}
-                    onClick={() => addNodeType(entry.type, { x: 120 + Math.random()*200, y: 120 + Math.random()*160 })}
+                    onClick={() => addNodeType(entry.type)}
                     className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-left text-xs font-medium hover:border-primary/50 hover:bg-accent/50 transition-all cursor-grab active:cursor-grabbing shadow-xs"
                   >
                     <span className={`flex h-5 w-5 items-center justify-center rounded-md ${visuals.bgClass} ${visuals.colorClass} shrink-0`}>
@@ -503,7 +530,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b px-4 py-2.5">
           <Input value={name} onChange={(e)=>setName(e.target.value)} className="h-8 w-56 text-sm font-semibold border-none shadow-none px-1" />
-          <Badge variant={flow.status === "active" ? "default" : "secondary"} className="text-[10px]">{flow.status}</Badge>
+          <Badge variant={status === "active" ? "default" : "secondary"} className="text-[10px]">{status}</Badge>
           {webMcpAvailable && (
             <Badge variant="outline" className="gap-1 border-indigo-300 text-[10px] text-indigo-700 dark:border-indigo-800 dark:text-indigo-300">
               <Sparkles className="h-3 w-3" />WebMCP ready
@@ -511,16 +538,19 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
           )}
           <div className="ml-auto flex items-center gap-1.5">
             <Button size="sm" variant="outline" disabled={busy} onClick={handleValidate}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>Validate</Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={handleSave}><Save className="mr-1 h-3.5 w-3.5"/>Save</Button>
+            <Button size="sm" variant={isDirty ? "default" : "outline"} disabled={busy} onClick={handleSave}>
+              <Save className="mr-1 h-3.5 w-3.5"/>
+              Save{isDirty ? " *" : ""}
+            </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={handleTestRun}><Play className="mr-1 h-3.5 w-3.5"/>Test run</Button>
             <Button
               size="sm"
-              variant={flow.status === "active" ? "secondary" : "default"}
+              variant={status === "active" ? "secondary" : "default"}
               disabled={busy || activationBlockedByAgentChanges}
               title={activationBlockedByAgentChanges ? "Save the staged agent changes before activation" : undefined}
               onClick={handleToggleActive}
             >
-              {flow.status === "active" ? <><Pause className="mr-1 h-3.5 w-3.5"/>Pause</> : <><Rocket className="mr-1 h-3.5 w-3.5"/>Activate</>}
+              {status === "active" ? <><Pause className="mr-1 h-3.5 w-3.5"/>Pause</> : <><Rocket className="mr-1 h-3.5 w-3.5"/>Activate</>}
             </Button>
             <Dialog open={webhookOpen} onOpenChange={(open) => { setWebhookOpen(open); if (!open) setRevealedWebhookSecret(null); }}>
               <DialogTrigger asChild>
@@ -667,6 +697,23 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
                   onChange={updateSelectedConfig}
                 />
               )}
+              <div className="pt-3 border-t flex justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs text-destructive hover:bg-destructive/10 gap-1.5"
+                  onClick={() => {
+                    if (!selectedId) return;
+                    setRfNodes((nds) => nds.filter((n) => n.id !== selectedId));
+                    setRfEdges((eds) => eds.filter((e) => e.source !== selectedId && e.target !== selectedId));
+                    setSelectedId(null);
+                    setIsDirty(true);
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete Node
+                </Button>
+              </div>
             </div>
           )}
         </div>

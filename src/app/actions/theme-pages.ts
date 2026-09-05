@@ -106,8 +106,13 @@ export async function getThemePageById(id: string) {
 
     const formats = await db.query.themeContentFormats.findMany({
       where: eq(themeContentFormats.tenantId, tenantId),
-      columns: { id: true, platform: true },
     });
+
+    const formatMap = new Map(formats.map(f => [f.id, f]));
+    const populatedSlots = slots.map(slot => ({
+      ...slot,
+      format: formatMap.get(slot.formatId) || null,
+    }));
 
     const recentPackages = await db.query.contentPackages.findMany({
       where: and(eq(contentPackages.themePageId, id), eq(contentPackages.tenantId, tenantId)),
@@ -131,7 +136,7 @@ export async function getThemePageById(id: string) {
     return {
       page,
       sources,
-      slots,
+      slots: populatedSlots,
       templates,
       formats,
       recentPackages,

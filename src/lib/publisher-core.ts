@@ -91,8 +91,9 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     }
 
     // 3. Format media items if they exist
+    const isVideo = (url: string) => /\.(mp4|mov|webm|m4v|mkv|avi)(\?.*)?$/i.test(url);
     const mediaItems = platformOpts?.mediaUrls?.map((url: string) => ({
-        type: "image", // Basic implementation, would need logic for video vs image
+        type: isVideo(url) ? "video" : "image",
         url
     })) || [];
 
@@ -360,7 +361,7 @@ export async function publishDueDrafts(options: { limit?: number; staleAfterMs?:
     .from(drafts)
     .where(
         and(
-            eq(drafts.status, "approved"),
+            inArray(drafts.status, ["approved", "scheduled"]),
             isNotNull(drafts.scheduledFor),
             lte(drafts.scheduledFor, now)
         )

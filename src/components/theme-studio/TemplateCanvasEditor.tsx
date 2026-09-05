@@ -59,6 +59,19 @@ interface TemplateCanvasEditorProps {
   }>;
 }
 
+function interpolateTemplate(template: string | undefined, data: Record<string, string>): string {
+  if (!template) return "";
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => data[key] ?? `{{${key}}}`);
+}
+
+const GRADIENT_PRESETS = [
+  { name: "Deep Indigo", value: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)" },
+  { name: "Emerald Glow", value: "linear-gradient(135deg, #064e3b 0%, #022c22 100%)" },
+  { name: "Violet Twilight", value: "linear-gradient(135deg, #3b0764 0%, #1e1b4b 100%)" },
+  { name: "Rose Midnight", value: "linear-gradient(135deg, #4c0519 0%, #0f172a 100%)" },
+  { name: "Amber Dark", value: "linear-gradient(135deg, #451a03 0%, #18181b 100%)" },
+];
+
 export function TemplateCanvasEditor({
   themePageId,
   initialTemplate,
@@ -85,12 +98,17 @@ export function TemplateCanvasEditor({
     bodyTemplate: "{{summary}}",
   });
 
+  const [bgMode, setBgMode] = React.useState<"solid" | "gradient">(
+    spec.backgroundGradient ? "gradient" : "solid"
+  );
+
   const [previewSample, setPreviewSample] = React.useState({
     title: "LeBron James Surpasses 40,000 Career Points in Historic Performance",
     summary: "A breakdown of the milestones, shooting percentages, and impact on the Lakers' playoff seeding heading into the final stretch.",
     source_name: "ESPN NBA",
     author: "Dave McMenamin",
     tag: "BREAKING NEWS",
+    date: new Date().toLocaleDateString(),
   });
 
   const [activeTab, setActiveTab] = React.useState<"design" | "content">("design");
@@ -102,13 +120,17 @@ export function TemplateCanvasEditor({
 
   async function handleSave() {
     setSaving(true);
+    const finalSpec = {
+      ...spec,
+      backgroundGradient: bgMode === "gradient" ? spec.backgroundGradient : undefined,
+    };
     try {
       if (initialTemplate.id) {
         const res = await updateThemeTemplate(initialTemplate.id, {
           name,
           formatId,
           renderer: selectedFormat?.mediaType === "video" ? "remotion" : "puppeteer",
-          componentSpec: spec,
+          componentSpec: finalSpec,
         });
         if (res.error) throw new Error(res.error);
         toast.success("Template updated");
@@ -118,7 +140,7 @@ export function TemplateCanvasEditor({
           name,
           formatId,
           renderer: selectedFormat?.mediaType === "video" ? "remotion" : "puppeteer",
-          componentSpec: spec,
+          componentSpec: finalSpec,
         });
         if (res.error) throw new Error(res.error);
         toast.success("New template saved");
@@ -216,41 +238,95 @@ export function TemplateCanvasEditor({
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-muted-foreground mb-1">Background Color</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={spec.backgroundColor || "#0f172a"}
-                      onChange={(e) => setSpec({ ...spec, backgroundColor: e.target.value })}
-                      className="w-8 h-8 rounded border cursor-pointer shrink-0"
-                    />
-                    <input
-                      type="text"
-                      value={spec.backgroundColor || "#0f172a"}
-                      onChange={(e) => setSpec({ ...spec, backgroundColor: e.target.value })}
-                      className="w-full px-2 py-1.5 text-xs border rounded font-mono"
-                    />
+              {/* Background Mode Toggle */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-medium text-muted-foreground">Background Style</label>
+                  <div className="inline-flex rounded-md border p-0.5 bg-muted/30 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBgMode("solid");
+                        setSpec((prev) => ({ ...prev, backgroundGradient: undefined }));
+                      }}
+                      className={`px-2.5 py-0.5 rounded font-medium transition-colors ${
+                        bgMode === "solid" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                      }`}
+                    >
+                      Solid Color
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBgMode("gradient");
+                        setSpec((prev) => ({
+                          ...prev,
+                          backgroundGradient: prev.backgroundGradient || GRADIENT_PRESETS[0].value,
+                        }));
+                      }}
+                      className={`px-2.5 py-0.5 rounded font-medium transition-colors ${
+                        bgMode === "gradient" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                      }`}
+                    >
+                      Gradient
+                    </button>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block font-medium text-muted-foreground mb-1">Accent / Highlight</label>
+                {bgMode === "solid" ? (
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={spec.accentColor || "#38bdf8"}
-                      onChange={(e) => setSpec({ ...spec, accentColor: e.target.value })}
+                      value={spec.backgroundColor || "#0f172a"}
+                      onChange={(e) => setSpec({ ...spec, backgroundColor: e.target.value })}
                       className="w-8 h-8 rounded border cursor-pointer shrink-0"
                     />
                     <input
                       type="text"
-                      value={spec.accentColor || "#38bdf8"}
-                      onChange={(e) => setSpec({ ...spec, accentColor: e.target.value })}
+                      value={spec.backgroundColor || "#0f172a"}
+                      onChange={(e) => setSpec({ ...spec, backgroundColor: e.target.value })}
                       className="w-full px-2 py-1.5 text-xs border rounded font-mono"
                     />
                   </div>
+                ) : (
+                  <div className="space-y-2">
+                    <select
+                      value={spec.backgroundGradient || GRADIENT_PRESETS[0].value}
+                      onChange={(e) => setSpec({ ...spec, backgroundGradient: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs border rounded-lg bg-background"
+                    >
+                      {GRADIENT_PRESETS.map((p) => (
+                        <option key={p.name} value={p.value}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={spec.backgroundGradient || ""}
+                      onChange={(e) => setSpec({ ...spec, backgroundGradient: e.target.value })}
+                      placeholder="linear-gradient(...)"
+                      className="w-full px-2 py-1 text-[11px] border rounded font-mono text-muted-foreground"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block font-medium text-muted-foreground mb-1">Accent / Highlight</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={spec.accentColor || "#38bdf8"}
+                    onChange={(e) => setSpec({ ...spec, accentColor: e.target.value })}
+                    className="w-8 h-8 rounded border cursor-pointer shrink-0"
+                  />
+                  <input
+                    type="text"
+                    value={spec.accentColor || "#38bdf8"}
+                    onChange={(e) => setSpec({ ...spec, accentColor: e.target.value })}
+                    className="w-full px-2 py-1.5 text-xs border rounded font-mono"
+                  />
                 </div>
               </div>
 
@@ -313,25 +389,25 @@ export function TemplateCanvasEditor({
               </div>
             </div>
           ) : (
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="block font-medium text-muted-foreground mb-1.5">Available Dynamic Tokens</label>
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {["title", "summary", "source_name", "author", "tag", "date"].map((tok) => (
+            <div className="space-y-5 text-xs">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block font-medium text-muted-foreground">Title Template</label>
+                  <span className="text-[10px] text-muted-foreground">Interpolates in live preview</span>
+                </div>
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {["title", "tag", "source_name", "author"].map((tok) => (
                     <button
                       key={tok}
                       type="button"
                       onClick={() => insertToken(tok, "title")}
-                      className="px-2 py-1 bg-secondary text-secondary-foreground font-mono text-[11px] rounded-md hover:bg-primary/20 transition-colors"
+                      className="px-2 py-0.5 bg-secondary hover:bg-primary/20 text-secondary-foreground font-mono text-[10px] rounded transition-colors"
+                      title={`Insert {{${tok}}} into title`}
                     >
                       + {`{{${tok}}}`}
                     </button>
                   ))}
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-medium text-muted-foreground mb-1">Title Template</label>
                 <textarea
                   rows={2}
                   value={spec.titleTemplate || "{{title}}"}
@@ -340,8 +416,24 @@ export function TemplateCanvasEditor({
                 />
               </div>
 
-              <div>
-                <label className="block font-medium text-muted-foreground mb-1">Body Text Template</label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block font-medium text-muted-foreground">Body Text Template</label>
+                  <span className="text-[10px] text-muted-foreground">Interpolates in live preview</span>
+                </div>
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {["summary", "source_name", "author", "date"].map((tok) => (
+                    <button
+                      key={tok}
+                      type="button"
+                      onClick={() => insertToken(tok, "body")}
+                      className="px-2 py-0.5 bg-secondary hover:bg-primary/20 text-secondary-foreground font-mono text-[10px] rounded transition-colors"
+                      title={`Insert {{${tok}}} into body`}
+                    >
+                      + {`{{${tok}}}`}
+                    </button>
+                  ))}
+                </div>
                 <textarea
                   rows={3}
                   value={spec.bodyTemplate || "{{summary}}"}
@@ -361,7 +453,7 @@ export function TemplateCanvasEditor({
 
           <div
             style={{
-              background: spec.backgroundGradient || spec.backgroundColor || "#0f172a",
+              background: bgMode === "gradient" && spec.backgroundGradient ? spec.backgroundGradient : (spec.backgroundColor || "#0f172a"),
               color: spec.textColor || "#f8fafc",
               padding: `${spec.padding || 32}px`,
               borderRadius: `${spec.borderRadius || 16}px`,
@@ -397,7 +489,7 @@ export function TemplateCanvasEditor({
                 }}
                 className="tracking-tight"
               >
-                {previewSample.title}
+                {interpolateTemplate(spec.titleTemplate || "{{title}}", previewSample)}
               </h2>
               <p
                 style={{
@@ -407,7 +499,7 @@ export function TemplateCanvasEditor({
                   fontFamily: spec.fontFamily,
                 }}
               >
-                {previewSample.summary}
+                {interpolateTemplate(spec.bodyTemplate || "{{summary}}", previewSample)}
               </p>
             </div>
 

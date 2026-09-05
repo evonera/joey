@@ -38,6 +38,17 @@ export function RunsPanel({
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (!open) return;
+    const hasActiveRun = runs.some((r) => r.status === "working" || r.status === "waiting_approval");
+    if (!hasActiveRun) return;
+
+    const interval = setInterval(() => {
+      void load();
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [open, load, runs]);
+
   async function handleResume(approve: boolean) {
     if (!selectedRun) return;
     const res = await resumeRun(selectedRun.id, approve);
@@ -117,7 +128,7 @@ export function RunsPanel({
           <Plan
             title={`Run Steps (${steps.length})`}
             steps={steps.map((s, idx) => ({
-              id: s.nodeId + idx,
+              id: `${s.nodeId}-${idx}`,
               title: `${s.type} (${s.status})`,
               description: s.error ? s.error : (s.cached ? "cached" : undefined),
               status: (s.status === "succeeded"
@@ -130,30 +141,33 @@ export function RunsPanel({
             }))}
             defaultOpen={true}
           >
-            {steps.map((step) => (
-              <div key={step.nodeId} className="rounded-lg border bg-card/40">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs cursor-pointer hover:bg-muted/30 transition-colors"
-                  onClick={() => setExpandedStep(expandedStep === step.nodeId + step.status ? null : step.nodeId + step.status)}
-                >
-                  <span className={`font-mono font-semibold ${STATUS_STYLE[step.status] ?? ""}`}>{step.status}</span>
-                  <span className="font-medium text-foreground">{step.type}</span>
-                  {step.cached ? <Badge variant="secondary" className="ml-auto text-[9px]">cached</Badge> : null}
-                </button>
-                {expandedStep === step.nodeId + step.status && (
-                  <div className="border-t border-border/40 px-3 py-2 space-y-2 text-[11px]">
-                    {step.error && <p className="font-mono text-destructive font-medium">{step.error}</p>}
-                    {"output" in step && step.output !== undefined && (
-                      <JsonBlock label="output" value={step.output} />
-                    )}
-                    {"input" in step && step.input !== undefined && (
-                      <JsonBlock label="input" value={step.input} />
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+            {steps.map((step, idx) => {
+              const stepKey = `${step.nodeId}-${idx}`;
+              return (
+                <div key={stepKey} className="rounded-lg border bg-card/40">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs cursor-pointer hover:bg-muted/30 transition-colors"
+                    onClick={() => setExpandedStep(expandedStep === stepKey ? null : stepKey)}
+                  >
+                    <span className={`font-mono font-semibold ${STATUS_STYLE[step.status] ?? ""}`}>{step.status}</span>
+                    <span className="font-medium text-foreground">{step.type}</span>
+                    {step.cached ? <Badge variant="secondary" className="ml-auto text-[9px]">cached</Badge> : null}
+                  </button>
+                  {expandedStep === stepKey && (
+                    <div className="border-t border-border/40 px-3 py-2 space-y-2 text-[11px]">
+                      {step.error && <p className="font-mono text-destructive font-medium">{step.error}</p>}
+                      {"output" in step && step.output !== undefined && (
+                        <JsonBlock label="output" value={step.output} />
+                      )}
+                      {"input" in step && step.input !== undefined && (
+                        <JsonBlock label="input" value={step.input} />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </Plan>
         )}
       </div>
