@@ -21,15 +21,6 @@ export function SectionCards({
   const totalInteractions = (summary?.likes ?? 0) + (summary?.comments ?? 0) + (summary?.shares ?? 0)
   const totalPosts = summary?.totalPosts ?? 0
 
-  const engagementStatus =
-    engagementRate >= 3.0
-      ? { label: "High", className: "text-emerald-500 border-emerald-500/20" }
-      : engagementRate >= 1.0
-        ? { label: "Good", className: "text-blue-500 border-blue-500/20" }
-        : engagementRate > 0
-          ? { label: "Developing", className: "text-amber-500 border-amber-500/20" }
-          : { label: "No activity", className: "text-muted-foreground border-border" }
-
   return (
     <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
       <Card className="@container/card">
@@ -61,8 +52,8 @@ export function SectionCards({
             {engagementRate.toFixed(2)}%
           </CardTitle>
           <CardAction>
-            <Badge variant="outline" className={`gap-1 ${engagementStatus.className}`}>
-              {engagementStatus.label}
+            <Badge variant="outline" className="text-muted-foreground border-border text-[11px] font-normal">
+              {days ? `${days}d average` : "Period rate"}
             </Badge>
           </CardAction>
         </CardHeader>
@@ -85,13 +76,9 @@ export function SectionCards({
           <CardAction>
             <Badge
               variant="outline"
-              className={`gap-1 ${
-                totalInteractions > 0
-                  ? "text-amber-500 border-amber-500/20"
-                  : "text-muted-foreground border-border"
-              }`}
+              className="text-muted-foreground border-border text-[11px] font-normal"
             >
-              {totalInteractions > 0 ? "Active" : "No activity"}
+              {days ? `${days}d total` : "Total"}
             </Badge>
           </CardAction>
         </CardHeader>
@@ -114,13 +101,9 @@ export function SectionCards({
           <CardAction>
             <Badge
               variant="outline"
-              className={`gap-1 ${
-                totalPosts > 0
-                  ? "text-primary border-primary/20"
-                  : "text-muted-foreground border-border"
-              }`}
+              className="text-muted-foreground border-border text-[11px] font-normal"
             >
-              {totalPosts > 0 ? `${totalPosts} live` : "No posts"}
+              {totalPosts > 0 ? `${totalPosts.toLocaleString()} published` : "No posts"}
             </Badge>
           </CardAction>
         </CardHeader>
