@@ -80,57 +80,17 @@ export type MemoryResult = {
   similarity: number;
 };
 
-export async function searchMemories(
+async function searchTextMemories(
   tenantId: string,
-  query: string,
-  limit: number = 5,
+  cleanQuery: string,
+  limit: number,
   type?: MemoryType,
 ): Promise<MemoryResult[]> {
-  const canEmbed = await hasOpenAIKey(tenantId);
-  if (canEmbed) {
-    try {
-      const embedding = await generateEmbedding(query, tenantId);
-      const embeddingStr = `[${embedding.join(",")}]`;
-
-      const conditions = [sql`${memories.tenantId} = ${tenantId}`];
-      if (type) {
-        conditions.push(sql`${memories.type} = ${type}`);
-      }
-
-      const results = await db.execute(
-        sql`
-          SELECT
-            id, tenant_id, content, type, metadata, created_at,
-            1 - (embedding <=> ${embeddingStr}::vector) AS similarity
-          FROM ${memories}
-          WHERE ${sql.join(conditions, sql` AND `)}
-          ORDER BY embedding <=> ${embeddingStr}::vector
-          LIMIT ${limit}
-        `,
-      );
-
-      const rawRows = (results as any).rows ?? results;
-      return rawRows.map((row: any) => ({
-        id: row.id,
-        tenantId: row.tenant_id,
-        content: row.content,
-        type: row.type,
-        metadata: row.metadata,
-        createdAt: new Date(row.created_at),
-        similarity: Number(row.similarity),
-      }));
-    } catch (err) {
-      console.warn("[memories] Vector similarity search failed, falling back to text match:", err);
-    }
-  }
-
-  // Graceful fallback to text keyword search when OpenAI embedding is not available
   const conditions = [sql`${memories.tenantId} = ${tenantId}`];
   if (type) {
     conditions.push(sql`${memories.type} = ${type}`);
   }
 
-  const cleanQuery = query.trim();
   if (cleanQuery) {
     const rawTerms = cleanQuery
       .split(/\s+/)
@@ -177,7 +137,108 @@ export async function searchMemories(
       similarity: 0.5,
     }));
   } catch (err) {
-    console.error("[memories] Text fallback search failed:", err);
+    console.error("[memories] Text search failed:", err);
     return [];
   }
+}
+
+export async function searchMemories(
+  tenantId: string,
+  query: string,
+  limit: number = 5,
+  type?: MemoryType,
+): Promise<MemoryResult[]> {
+  const cleanQuery = query.trim();
+  const canEmbed = await hasOpenAIKey(tenantId);
+  if (canEmbed) {
+    try {
+      const embedding = await generateEmbedding(query, tenantId);
+      const embeddingStr = `[${embedding.join(",")}]`;
+
+      const conditions = [sql`${memories.tenantId} = ${tenantId}`];
+      if (type) {
+        conditions.push(sql`${memories.type} = ${type}`);
+      }
+
+      const results = await db.execute(
+        sql`
+          SELECT
+            id, tenant_id, content, type, metadata, created_at,
+            1 - (embedding <=> ${embeddingStr}::vector) AS similarity
+          FROM ${memories}
+          WHERE ${sql.join(conditions, sql` AND `)}
+          ORDER BY embedding <=> ${embeddingStr}::vector
+          LIMIT ${limit}
+        `,
+      );
+
+      const rawRows = (results as any).rows ?? results;
+      const vectorResults: MemoryResult[] = (rawRows || []).map((row: any) => ({
+        id: row.id,
+        tenantId: row.tenant_id,
+        content: row.content,
+        type: row.type,
+        metadata: row.metadata,
+        createdAt: new Date(row.created_at),
+        similarity: Number(row.similarity),
+      }));
+
+      // Backfill any returned vector rows that have zero vectors / invalid similarity
+      for (const row of vectorResults) {
+        if (!Number.isFinite(row.similarity) || row.similarity <= 0) {
+          void generateEmbedding(row.content, tenantId)
+            .then(async (newEmb) => {
+              await db.update(memories)
+                .set({ embedding: sql`${JSON.stringify(newEmb)}::vector` })
+                .where(eq(memories.id, row.id));
+            })
+            .catch(() => {});
+        }
+      }
+
+      // Also rescue keyword-matching memories that may have zero vectors and missed vector ranking
+      if (cleanQuery) {
+        const textMatches = await searchTextMemories(tenantId, cleanQuery, limit, type);
+        for (const item of textMatches) {
+          const existing = vectorResults.find((r) => r.id === item.id);
+          if (!existing) {
+            // If vector results have room or contain zero-vector/low-similarity entries, promote the text match
+            const lowQualityIdx = vectorResults.findIndex(
+              (r) => !Number.isFinite(r.similarity) || r.similarity < 0.3
+            );
+            if (lowQualityIdx >= 0) {
+              vectorResults[lowQualityIdx] = item;
+            } else if (vectorResults.length < limit) {
+              vectorResults.push(item);
+            }
+            // Schedule embedding backfill for the rescued item
+            void generateEmbedding(item.content, tenantId)
+              .then(async (newEmb) => {
+                await db.update(memories)
+                  .set({ embedding: sql`${JSON.stringify(newEmb)}::vector` })
+                  .where(eq(memories.id, item.id));
+              })
+              .catch(() => {});
+          } else if (!Number.isFinite(existing.similarity) || existing.similarity <= 0) {
+            // Was returned by vector search but with a zero vector; upgrade its similarity and backfill
+            existing.similarity = 0.5;
+            void generateEmbedding(existing.content, tenantId)
+              .then(async (newEmb) => {
+                await db.update(memories)
+                  .set({ embedding: sql`${JSON.stringify(newEmb)}::vector` })
+                  .where(eq(memories.id, existing.id));
+              })
+              .catch(() => {});
+          }
+        }
+      }
+
+      return vectorResults.slice(0, limit);
+    } catch (err) {
+      console.warn("[memories] Vector similarity search failed, falling back to text match:", err);
+    }
+  }
+
+  // Graceful fallback to text keyword search when OpenAI embedding is not available
+  return searchTextMemories(tenantId, cleanQuery, limit, type);
 }

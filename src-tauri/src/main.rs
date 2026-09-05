@@ -544,6 +544,14 @@ fn setup_event_handlers(app: &tauri::App) {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let variant_name = payload
+                .get("variantName")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let content = payload
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             let h_appr = h8.clone();
             tauri::async_runtime::spawn(async move {
@@ -558,10 +566,18 @@ fn setup_event_handlers(app: &tauri::App) {
                     .build()
                     .unwrap_or_else(|_| reqwest::Client::new());
                 let url = format!("{}/api/v1/drafts/approve", api_url.trim_end_matches('/'));
+                let mut body = serde_json::json!({ "id": draft_id });
+                if let Some(v) = variant_name {
+                    body["variantName"] = serde_json::json!(v);
+                }
+                if let Some(c) = content {
+                    body["content"] = serde_json::json!(c);
+                }
+
                 match client
                     .post(&url)
                     .bearer_auth(&api_token)
-                    .json(&serde_json::json!({ "id": draft_id }))
+                    .json(&body)
                     .send()
                     .await
                 {

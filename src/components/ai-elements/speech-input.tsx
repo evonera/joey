@@ -37,7 +37,7 @@ export function SpeechInput({
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = "en-US";
 
@@ -52,6 +52,7 @@ export function SpeechInput({
           }
         }
         if (final && onTranscription) {
+          stopListening();
           onTranscription(final);
         }
         if (interim && onInterimResult) {

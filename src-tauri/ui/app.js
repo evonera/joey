@@ -47,6 +47,7 @@
   let pendingDrafts = [];
   let currentDraftIndex = 0;
   let isActionInProgress = false;
+  const handledDraftIds = new Set();
 
   // Helper for Tauri Events
   function getTauriEvent() {
@@ -143,9 +144,10 @@
     setMascot('thinking', 'Drafting with Eve agent...');
     submitDraftBtn.disabled = true;
 
+    const plat = selectedPlatform === 'twitter' ? 'x' : selectedPlatform;
     await emitEvent('desktop:submit-draft', {
       content: text,
-      platform: selectedPlatform,
+      platform: plat,
     });
   }
 
@@ -206,6 +208,7 @@
       'all'
     ).toLowerCase();
     const platLabels = {
+      x: '𝕏 Twitter',
       twitter: '𝕏 Twitter',
       linkedin: 'LinkedIn',
       facebook: 'Facebook',
@@ -213,7 +216,20 @@
     };
     reviewPlatformBadge.textContent = platLabels[plat] || plat.toUpperCase();
 
-    reviewBody.textContent = draft.content || '';
+    let displayContent = draft.content || '';
+    if (!displayContent && draft.variants) {
+      if (Array.isArray(draft.variants) && draft.variants.length > 0) {
+        const v = draft.variants[0];
+        displayContent = v.content || v.text || '';
+      } else if (typeof draft.variants === 'object') {
+        const keys = Object.keys(draft.variants);
+        if (keys.length > 0) {
+          const val = draft.variants[keys[0]];
+          displayContent = typeof val === 'string' ? val : (val?.content || val?.text || '');
+        }
+      }
+    }
+    reviewBody.textContent = displayContent;
 
     if (draft.createdAt) {
       const d = new Date(draft.createdAt);
@@ -259,7 +275,23 @@
     approveDraftBtn.disabled = true;
     rejectDraftBtn.disabled = true;
 
-    await emitEvent('desktop:approve-draft', { id: draft.id });
+    const payload = { id: draft.id };
+    if (!draft.content && draft.variants) {
+      if (Array.isArray(draft.variants) && draft.variants.length > 0) {
+        const v = draft.variants[0];
+        payload.variantName = v.variantName || v.name || 'default';
+        payload.content = v.content || v.text || '';
+      } else if (typeof draft.variants === 'object') {
+        const keys = Object.keys(draft.variants);
+        if (keys.length > 0) {
+          payload.variantName = keys[0];
+          const val = draft.variants[keys[0]];
+          payload.content = typeof val === 'string' ? val : (val?.content || val?.text || '');
+        }
+      }
+    }
+
+    await emitEvent('desktop:approve-draft', payload);
   }
 
   async function handleReject() {
@@ -404,7 +436,7 @@
     // Listen for pending drafts query result
     await listenEvent('desktop:pending-drafts-result', (payload) => {
       if (payload?.success && Array.isArray(payload.drafts)) {
-        pendingDrafts = payload.drafts;
+        pendingDrafts = payload.drafts.filter((d) => !handledDraftIds.has(d.id));
       } else {
         pendingDrafts = [];
       }
@@ -416,6 +448,7 @@
       isActionInProgress = false;
       if (payload?.success) {
         setMascot('success', 'Purrfect! Draft approved 🐾');
+        if (payload.id) handledDraftIds.add(payload.id);
         pendingDrafts = pendingDrafts.filter((d) => d.id !== payload.id);
         renderDrafts();
       } else {
@@ -430,6 +463,7 @@
       isActionInProgress = false;
       if (payload?.success) {
         setMascot('idle', 'Draft rejected.');
+        if (payload.id) handledDraftIds.add(payload.id);
         pendingDrafts = pendingDrafts.filter((d) => d.id !== payload.id);
         renderDrafts();
       } else {
