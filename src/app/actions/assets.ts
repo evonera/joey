@@ -5,9 +5,13 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { assets, tenants } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { generateUploadUrl, deleteObject, buildPublicUrl, headObject, assertAllowedUpload, R2_MAX_ASSET_BYTES } from "@/lib/storage";
+import { generateUploadUrl, deleteObject, buildPublicUrl, headObject, assertAllowedUpload, R2_MAX_ASSET_BYTES, isR2Configured } from "@/lib/storage";
 import { queryAssets } from "@/lib/assets";
 import { cancelR2Cleanup, enqueueR2Cleanup, rearmR2Cleanup } from "@/lib/storage-cleanup";
+
+export async function checkR2Status() {
+  return { isConfigured: isR2Configured() };
+}
 
 export async function requestUploadUrl(filename: string, mimeType: string) {
   const tenantId = await getActiveTenantId();

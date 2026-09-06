@@ -20,6 +20,15 @@ function getS3Client() {
   });
 }
 
+export function isR2Configured(): boolean {
+  return Boolean(
+    process.env.CLOUDFLARE_ACCOUNT_ID &&
+    process.env.R2_ACCESS_KEY_ID &&
+    process.env.R2_SECRET_ACCESS_KEY &&
+    process.env.R2_BUCKET_NAME
+  );
+}
+
 function getBucketName() {
   const bucket = process.env.R2_BUCKET_NAME;
   if (!bucket) throw new Error("Missing R2_BUCKET_NAME");

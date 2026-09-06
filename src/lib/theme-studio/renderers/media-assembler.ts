@@ -138,6 +138,18 @@ export async function renderPackageMedia(
     return registered.publicUrl;
   }
 
+  const heroImage = (
+    (typeof templateSpec.imageUrl === "string" && templateSpec.imageUrl) ||
+    (typeof firstSource.heroImage === "string" && firstSource.heroImage) ||
+    (typeof (provenance as any).heroImage === "string" && (provenance as any).heroImage) ||
+    (typeof (pkg as any).metadata?.heroImage === "string" && (pkg as any).metadata?.heroImage) ||
+    undefined
+  );
+
+  const highlightWords = Array.isArray(templateSpec.highlightKeywords)
+    ? (templateSpec.highlightKeywords as string[])
+    : undefined;
+
   try {
     if (format?.mediaType === "carousel") {
       const cluster = pkg.clusterId ? await db.query.storyClusters.findFirst({
@@ -149,12 +161,29 @@ export async function renderPackageMedia(
           )).slice(0, 3)
         : [];
       const slides = [
-        { title: renderedTitle, body: renderedBody.slice(0, 200), tag: "COVER" },
+        { 
+          title: renderedTitle, 
+          body: renderedBody.slice(0, 200), 
+          tag: "COVER", 
+          imageUrl: heroImage,
+          highlightWords,
+        },
         ...facts.map((fact, index) => ({
-          title: `Sourced point ${index + 1}`,
+          title: `Key takeaway #${index + 1}`,
           body: fact.claim,
           tag: `POINT ${index + 1}`,
+          imageUrl: heroImage,
+          pipInsetUrl: typeof templateSpec.pipInsetUrl === "string" ? templateSpec.pipInsetUrl : undefined,
+          highlightWords,
         })),
+        {
+          title: `Follow for daily updates`,
+          body: `Turn on notifications for more content like this.`,
+          tag: "FOLLOW",
+          imageUrl: heroImage,
+          isOutroSlide: true,
+          outroWatermarkText: typeof brandKit.watermark === "string" ? brandKit.watermark : undefined,
+        }
       ];
 
       const svgSlides = renderCarouselSlideSvgs(slides, brandKit);
@@ -191,6 +220,11 @@ export async function renderPackageMedia(
         tag: "UPDATE",
         sourceName,
         brandKit,
+        imageUrl: heroImage,
+        topBadge: typeof templateSpec.topBadge === "string" ? (templateSpec.topBadge as any) : undefined,
+        showDividerMark: typeof templateSpec.showDividerMark === "boolean" ? templateSpec.showDividerMark : undefined,
+        pipInsetUrl: typeof templateSpec.pipInsetUrl === "string" ? templateSpec.pipInsetUrl : undefined,
+        highlightWords,
         aspectRatio: (format?.aspectRatio as any) || "1:1",
       });
 

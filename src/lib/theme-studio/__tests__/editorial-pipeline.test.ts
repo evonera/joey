@@ -5,7 +5,7 @@ import {
   normalizeContentBody, 
   hashContentBody 
 } from "@/lib/theme-studio/pipeline/deduplicator";
-import { fallbackItemUrl, parseRssXml } from "@/lib/theme-studio/pipeline/source-poller";
+import { fallbackItemUrl, parseRssXml, extractCleanDomain } from "@/lib/theme-studio/pipeline/source-poller";
 import { verifyRightsAndProvenance } from "@/lib/theme-studio/pipeline/fact-rights-verifier";
 import { calculateTopicOverlap } from "@/lib/theme-studio/pipeline/story-clusterer";
 
@@ -165,6 +165,15 @@ describe("Theme Studio Editorial Pipeline", () => {
 
       expect(overlapAB).toBeGreaterThanOrEqual(0.3);
       expect(overlapAC).toBe(0);
+    });
+  });
+
+  describe("Domain Extraction", () => {
+    it("extracts clean domain from various URL formats and strings", () => {
+      expect(extractCleanDomain("https://www.cricinfo.com/")).toBe("cricinfo.com");
+      expect(extractCleanDomain("https://espncricinfo.com/cricket/news/1234")).toBe("espncricinfo.com");
+      expect(extractCleanDomain("www.theverge.com")).toBe("theverge.com");
+      expect(extractCleanDomain("techcrunch.com")).toBe("techcrunch.com");
     });
   });
 });

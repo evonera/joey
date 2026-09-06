@@ -40,9 +40,13 @@ function sanitizeBrandKit(value: Record<string, unknown> | undefined): Record<st
     return typeof candidate === "string" && /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : fallback;
   };
   return {
-    primaryColor: color("primaryColor", "#0f172a"),
-    accentColor: color("accentColor", "#38bdf8"),
+    ...value,
+    primaryColor: color("primaryColor", "#0a0908"),
+    accentColor: color("accentColor", "#ffe633"),
     watermark: normalizeText(typeof value.watermark === "string" ? value.watermark : undefined, 80),
+    brandInitial: typeof value.brandInitial === "string" ? value.brandInitial.slice(0, 5) : "🅟",
+    topBadge: typeof value.topBadge === "string" ? value.topBadge : "yellow_logo",
+    showDivider: typeof value.showDivider === "boolean" ? value.showDivider : true,
   };
 }
 
