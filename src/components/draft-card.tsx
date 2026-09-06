@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from "react";
+import Link from "next/link";
 import { updateDraft, approveDraft, rejectDraft, deleteDraft } from "@/app/actions/drafts";
 import { publishDraft } from "@/app/actions/publisher";
 import { Textarea } from "./ui/textarea";
@@ -159,9 +160,24 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                             className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
                         />
                     )}
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md">
-                        {platform}
-                    </span>
+                    {platformOpts?.isThemePackage ? (
+                        <Link 
+                            href={`/theme-studio/${platformOpts.themePageId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium bg-[#ffe633]/15 text-[#ffe633] border border-[#ffe633]/30 px-2.5 py-1 rounded-md hover:bg-[#ffe633]/25 transition-colors cursor-pointer"
+                            title="View Theme Page in Theme Studio"
+                        >
+                            <span>🎨 Theme: {platformOpts.themePageName || "Theme Channel"}</span>
+                        </Link>
+                    ) : platformOpts?.source === "flows" || platformOpts?.flowRunId ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-md">
+                            <span>⚡ Flow Automation</span>
+                        </span>
+                    ) : (
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md">
+                            {platform}
+                        </span>
+                    )}
                     {isScheduled && draft.scheduledFor && (
                         <Badge variant="outline" className="text-[11px] gap-1 font-normal text-muted-foreground">
                             <Calendar className="h-3 w-3" />

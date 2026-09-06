@@ -117,10 +117,19 @@ export default async function ThemePageOverview({
 
           <div className="p-6 border rounded-2xl bg-card space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold">Recent Packages Staged</h2>
+              <div>
+                <h2 className="text-base font-bold">Recent Packages Staged</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Generated packages automatically flow into your global{" "}
+                  <Link href="/drafts" className="text-primary font-medium hover:underline">
+                    Drafts Queue
+                  </Link>{" "}
+                  for 1-tap approval.
+                </p>
+              </div>
               <Link
                 href={`/theme-studio/${page.id}/preview-day`}
-                className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1"
+                className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1 shrink-0"
               >
                 <IconEye className="w-3.5 h-3.5" /> Simulate Next Run
               </Link>

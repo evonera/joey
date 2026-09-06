@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getConnectedAccounts } from "@/app/actions/zernio";
 import { createManualPost, getDraftForCompose } from "@/app/actions/compose";
@@ -268,6 +269,22 @@ export default function ComposePage() {
           {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save as Draft
         </Button>
+      </div>
+
+      {/* Autopilot Discovery Banner */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-primary/20 bg-primary/5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span className="text-base">💡</span>
+          <span>
+            <strong className="text-foreground">Manual Composer:</strong> For ad-hoc posts right now. Want Joey to draft posts on autopilot every day?
+          </span>
+        </div>
+        <Link
+          href="/theme-studio"
+          className="font-medium text-primary hover:underline shrink-0 inline-flex items-center gap-1"
+        >
+          Configure a Theme Page →
+        </Link>
       </div>
 
       {/* 1. Accounts */}
