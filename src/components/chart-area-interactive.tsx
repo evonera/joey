@@ -332,7 +332,6 @@ export function ChartAreaInteractive({
               type="natural"
               fill="url(#fillMobile)"
               stroke="#ffe633"
-              stackId="a"
             />
             <Area
               dataKey="impressions"
@@ -340,7 +339,6 @@ export function ChartAreaInteractive({
               type="natural"
               fill="url(#fillDesktop)"
               stroke="#6366f1"
-              stackId="a"
             />
           </AreaChart>
         </ChartContainer>

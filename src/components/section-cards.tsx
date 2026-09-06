@@ -40,7 +40,7 @@ export function SectionCards({
             Reach across channels
           </div>
           <div className="text-muted-foreground text-xs">
-            Aggregated cross-platform views
+            Aggregated cross-platform impressions
           </div>
         </CardFooter>
       </Card>
