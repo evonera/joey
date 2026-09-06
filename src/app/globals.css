@@ -254,3 +254,48 @@ textarea {
   color: #ffffff;
 }
 
+/* --- Liveblocks Theme Styling --- */
+.lb-root,
+:is(.dark, [data-theme="dark"]) .lb-root,
+.joey-collaboration-root {
+  --lb-accent: #ffe633;
+  --lb-accent-foreground: #0a0908;
+  --lb-background: #141312;
+  --lb-foreground: #f4f4f5;
+  --lb-radius: 0.75rem;
+  --lb-destructive: #ef4444;
+  --lb-elevation-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --lb-inset-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  font-family: inherit;
+}
+
+.lb-button[data-variant="primary"] {
+  --lb-accent: #ffe633;
+  background-color: #ffe633 !important;
+  color: #0a0908 !important;
+  font-weight: 600 !important;
+}
+
+.lb-composer {
+  background: #141312 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.75rem !important;
+}
+
+.lb-thread {
+  background: transparent !important;
+}
+
+.lb-comment {
+  border-radius: 0.75rem;
+}
+
+.lb-inbox-notification {
+  background: transparent !important;
+  transition: background-color 0.15s ease;
+}
+
+.lb-inbox-notification:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+

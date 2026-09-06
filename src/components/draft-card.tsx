@@ -20,9 +20,10 @@ import {
   Cancel01Icon as X,
   Comment01Icon as MessageSquare
 } from "hugeicons-react";
-import { DraftReviewRoom } from "@/components/drafts/draft-review-room";
+import { DraftReviewRoom, useDraftCollaboration } from "@/components/drafts/draft-review-room";
 import { DraftComments } from "@/components/drafts/draft-comments";
 import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
+import { useThreads, useIsInsideRoom } from "@liveblocks/react";
 
 interface DraftCardProps {
   draft: any;
@@ -32,8 +33,29 @@ interface DraftCardProps {
   onToggleSelect?: () => void;
 }
 
-export function DraftCard({ draft, onActionComplete, selectable, selected, onToggleSelect }: DraftCardProps) {
+function InnerDraftCommentBadge({ draftId }: { draftId: string }) {
+  const { threads } = useThreads();
+  const count = (threads || []).filter(
+    (t) => !t.metadata?.draftId || t.metadata.draftId === draftId
+  ).length;
+  if (count === 0) return null;
+  return (
+    <span className="ml-1 px-1.5 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-bold">
+      {count}
+    </span>
+  );
+}
+
+function DraftCommentBadge({ draftId }: { draftId: string }) {
+  const { isConfigured } = useLiveblocksConfig();
+  const isInside = useIsInsideRoom();
+  if (!isConfigured || !isInside) return null;
+  return <InnerDraftCommentBadge draftId={draftId} />;
+}
+
+function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggleSelect }: DraftCardProps) {
     const { isConfigured } = useLiveblocksConfig();
+    const { broadcastApproval, broadcastRejection, broadcastUpdate } = useDraftCollaboration();
     const [isEditing, setIsEditing] = useState(false);
     const [content, setContent] = useState(draft.content || "");
     const [isRejecting, setIsRejecting] = useState(false);
@@ -62,6 +84,7 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
             toast.error(res.error);
         } else {
             toast.success("Draft approved");
+            broadcastApproval(variantName);
             onActionComplete();
         }
     };
@@ -88,6 +111,7 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
             toast.error(res.error);
         } else {
             toast.success("Draft rejected with feedback");
+            broadcastRejection(feedback);
             onActionComplete();
         }
     };
@@ -101,6 +125,7 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
             toast.error(res.error);
         } else {
             toast.success("Draft updated");
+            broadcastUpdate();
             onActionComplete();
         }
     };
@@ -342,6 +367,7 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                     >
                         <MessageSquare className="h-3.5 w-3.5" />
                         Comments
+                        <DraftCommentBadge draftId={draft.id} />
                     </Button>
                     {(!hasVariants || draft.content) && (
                         <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} disabled={loading} className="text-xs">
@@ -404,11 +430,17 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                             Real-time feedback, revision requests, and team discussion.
                         </SheetDescription>
                     </SheetHeader>
-                    <DraftReviewRoom draftId={draft.id} onActionComplete={onActionComplete}>
-                        <DraftComments draftId={draft.id} />
-                    </DraftReviewRoom>
+                    <DraftComments draftId={draft.id} />
                 </SheetContent>
             </Sheet>
         </div>
+    );
+}
+
+export function DraftCard(props: DraftCardProps) {
+    return (
+        <DraftReviewRoom draftId={props.draft.id} onActionComplete={props.onActionComplete}>
+            <InnerDraftCard {...props} />
+        </DraftReviewRoom>
     );
 }
