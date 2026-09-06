@@ -48,10 +48,9 @@ import {
   DEFAULT_MODEL_ID,
 } from "@/lib/models";
 import Image from "next/image";
-import { Lock } from "lucide-react";
+import { Lock, ArrowLeft, RotateCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentMessage } from "./agent-message";
-import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   getStoredSession,
@@ -90,6 +89,11 @@ const SUGGESTION_PROMPTS = [
     prompt: "Draft an engaging LinkedIn thought leadership post about building in public with AI, featuring a strong hook and clear takeaway.",
     icon: "💼",
   },
+  {
+    label: "Repurpose longform content into multi-platform hooks",
+    prompt: "Help me repurpose my latest article into 3 punchy X hooks, an Instagram carousel outline, and a LinkedIn post.",
+    icon: "🎯",
+  },
 ];
 
 type AgentStatus = ReturnType<typeof useEveAgent>["status"];
@@ -98,6 +102,7 @@ type CancellationState = "idle" | "cancelling";
 export function AgentChat() {
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
   const [sessionKey, setSessionKey] = useState<string>(() => `chat_${Date.now()}`);
+  const [initialPrompt, setInitialPrompt] = useState<string | undefined>(undefined);
   const [activeView, setActiveView] = useState<"chat" | "library">("chat");
   const [isSidepanelOpen, setIsSidepanelOpen] = useState(false);
   const [sidepanelTab, setSidepanelTab] = useState<"artifacts" | "context">("artifacts");
@@ -110,12 +115,14 @@ export function AgentChat() {
 
   const handleSelectSession = (session: SavedChatSession) => {
     setActiveSessionId(session.id);
+    setInitialPrompt(undefined);
     setSessionKey(`session_${session.id}`);
     setActiveView("chat");
   };
 
-  const handleNewChat = () => {
+  const handleNewChat = (prompt?: string) => {
     setActiveSessionId(undefined);
+    setInitialPrompt(prompt);
     setSessionKey(`chat_${Date.now()}`);
     setActiveView("chat");
   };
@@ -132,42 +139,40 @@ export function AgentChat() {
   if (activeView === "library") {
     return (
       <div className="flex flex-col h-[calc(100dvh-var(--header-height)-3.5rem)] w-full overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-4 sm:px-6">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2.5 text-xs font-semibold gap-1.5 hover:bg-muted/40"
-              >
-                <LibraryIcon className="size-3.5 text-primary" />
-                <span>Search Library</span>
-                <ArrowDown01Icon className="size-3 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48 p-1 text-xs">
-              <DropdownMenuItem
-                onClick={handleNewChat}
-                className="gap-2 text-xs cursor-pointer"
-              >
-                <PlusIcon className="size-3.5 text-primary" />
-                <span>New Chat</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setActiveView("library")}
-                className="gap-2 text-xs cursor-pointer font-medium bg-muted/40"
-              >
-                <LibraryIcon className="size-3.5 text-primary" />
-                <span>Search Library</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-4 sm:px-6 bg-background/50 backdrop-blur-xs">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveView("chat")}
+              className="h-8 px-2.5 text-xs font-semibold gap-1.5 hover:bg-muted/50 text-foreground cursor-pointer"
+            >
+              <ArrowLeft className="size-3.5" />
+              <span>Back to Chat</span>
+            </Button>
+            <span className="text-border/60">/</span>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <LibraryIcon className="size-3.5 text-primary" />
+              <span>Thread Library</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => handleNewChat()}
+            className="h-8 rounded-full bg-[#ffe633] text-black hover:bg-[#ffe633]/90 font-medium px-3 text-xs gap-1.5 cursor-pointer shadow-xs"
+          >
+            <PlusIcon className="size-3.5 stroke-[2.5]" />
+            <span>New Chat</span>
+          </Button>
         </header>
 
         <div className="flex-1 overflow-y-auto">
           <ChatLibraryView
             onSelectThread={handleSelectSession}
             onNewThread={handleNewChat}
+            onBackToChat={() => setActiveView("chat")}
           />
         </div>
       </div>
@@ -179,6 +184,7 @@ export function AgentChat() {
       <AgentChatInner
         key={sessionKey}
         initialSavedSession={activeSavedSession}
+        initialPrompt={initialPrompt}
         onSessionCreated={(newId) => setActiveSessionId(newId)}
         onOpenLibrary={() => setActiveView("library")}
         onNewChat={handleNewChat}
@@ -194,9 +200,10 @@ export function AgentChat() {
 
 interface AgentChatInnerProps {
   initialSavedSession?: SavedChatSession | null;
+  initialPrompt?: string;
   onSessionCreated: (id: string) => void;
   onOpenLibrary: () => void;
-  onNewChat: () => void;
+  onNewChat: (prompt?: string) => void;
   isSidepanelOpen: boolean;
   onToggleSidepanel: (tab?: "artifacts" | "context") => void;
   sidepanelTab: "artifacts" | "context";
@@ -206,6 +213,7 @@ interface AgentChatInnerProps {
 
 function AgentChatInner({
   initialSavedSession,
+  initialPrompt,
   onSessionCreated,
   onOpenLibrary,
   onNewChat,
@@ -323,6 +331,26 @@ function AgentChatInner({
 
   const isBusy = agent.status === "submitted" || agent.status === "streaming";
   const isEmpty = agent.data.messages.length === 0;
+  const [suggestionOffset, setSuggestionOffset] = useState(0);
+
+  // Auto-cycle through suggestions when chat is empty
+  useEffect(() => {
+    if (!isEmpty) return;
+    const timer = setInterval(() => {
+      setSuggestionOffset((prev) => (prev + 1) % SUGGESTION_PROMPTS.length);
+    }, 7000);
+    return () => clearInterval(timer);
+  }, [isEmpty]);
+
+  const visibleSuggestions = useMemo(() => {
+    const len = SUGGESTION_PROMPTS.length;
+    return [
+      SUGGESTION_PROMPTS[suggestionOffset % len],
+      SUGGESTION_PROMPTS[(suggestionOffset + 1) % len],
+      SUGGESTION_PROMPTS[(suggestionOffset + 2) % len],
+    ];
+  }, [suggestionOffset]);
+
   const errorMessage = cancellationError ?? agent.error?.message;
   const submitStatus =
     agent.status === "resuming" || (isBusy && cancellationState !== "idle")
@@ -439,7 +467,10 @@ function AgentChatInner({
   const composer = (
     <PromptInput onSubmit={handleSubmit}>
       <PromptInputBody>
-        <PromptInputTextarea placeholder="Ask Joey to research topics, draft posts, or automate flows…" />
+        <PromptInputTextarea
+          defaultValue={initialPrompt}
+          placeholder="Ask Joey to research topics, draft posts, or automate flows…"
+        />
         <SocialPlatformSelector
           selectedPlatforms={selectedPlatforms}
           onTogglePlatform={handleTogglePlatform}
@@ -602,7 +633,7 @@ function AgentChatInner({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56 p-1 text-xs">
                 <DropdownMenuItem
-                  onClick={onNewChat}
+                  onClick={() => onNewChat()}
                   className="gap-2 text-xs cursor-pointer font-medium"
                 >
                   <PlusIcon className="size-3.5 text-primary" />
@@ -696,55 +727,84 @@ function AgentChatInner({
           className={cn(
             "mx-auto w-full px-4 sm:px-6",
             isEmpty
-              ? "flex max-w-xl flex-1 flex-col items-center justify-center gap-8 pb-[10vh]"
+              ? "flex max-w-xl flex-1 flex-col items-center justify-center gap-6 pb-[6vh]"
               : "max-w-3xl shrink-0 pb-6"
           )}
         >
           {isEmpty ? (
-            <div className="flex flex-col items-center gap-4 text-center">
-              <div className="size-16 rounded-2xl bg-[#ffe633]/15 border border-[#ffe633]/30 flex items-center justify-center p-2.5 shadow-sm">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="relative flex items-center justify-center py-1">
                 <Image
                   src="/joey-mascot.png"
-                  alt="Joey"
-                  width={52}
-                  height={52}
-                  className="object-contain"
+                  alt="Joey the Cat"
+                  width={56}
+                  height={56}
+                  className="object-contain drop-shadow-[0_4px_16px_rgba(255,230,51,0.25)] transition-transform hover:scale-105"
                   priority
                 />
               </div>
               <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-[11px] font-medium text-[#ffe633]">
+                  <span>🐱</span>
+                  <span>Meet Joey • The Autonomous Cat Co-Pilot</span>
+                </div>
                 <h1 className="font-semibold text-2xl sm:text-3xl tracking-tight text-foreground">
                   What are we creating today?
                 </h1>
-                <p className="text-sm text-muted-foreground max-w-sm">
-                  Ask Joey to draft social posts, research trending angles, review engagement, or automate flows.
+                <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+                  Joey watches social trends, crafts purr-fect hooks, and automates your cross-platform publishing.
                 </p>
               </div>
             </div>
           ) : null}
 
+          <div className="w-full">{composer}</div>
+
+          {/* Clean rotating suggestions (3 at a time) anchored neatly below composer */}
           {isEmpty ? (
-            <div className="w-full">
-              <Suggestions className="justify-center flex-wrap gap-2">
-                {SUGGESTION_PROMPTS.map((item) => (
-                  <Suggestion
+            <div className="w-full pt-1">
+              <div className="flex items-center justify-between px-1 mb-2">
+                <span className="text-[11px] text-muted-foreground/60 font-medium flex items-center gap-1.5">
+                  <span>Suggested angles</span>
+                  <span className="size-1 rounded-full bg-[#ffe633]/60 animate-pulse" />
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSuggestionOffset((prev) => (prev + 1) % SUGGESTION_PROMPTS.length)
+                  }
+                  className="text-[11px] text-muted-foreground/70 hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Cycle to next prompts"
+                >
+                  <RotateCw className="size-2.5" />
+                  <span>Shuffle</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {visibleSuggestions.map((item) => (
+                  <button
                     key={item.label}
-                    suggestion={item.prompt}
-                    onClick={(prompt) => {
+                    type="button"
+                    onClick={() => {
                       if (isBusy) return;
                       prepareTurn();
-                      void agent.send(prompt);
+                      void agent.send(item.prompt);
                     }}
+                    className="flex flex-col items-start p-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] hover:border-primary/40 text-left transition-all group cursor-pointer"
                   >
-                    <span className="text-sm mr-1">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Suggestion>
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-foreground group-hover:text-primary transition-colors w-full">
+                      <span>{item.icon}</span>
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-relaxed">
+                      {item.prompt}
+                    </p>
+                  </button>
                 ))}
-              </Suggestions>
+              </div>
             </div>
           ) : null}
-
-          <div className="w-full">{composer}</div>
         </div>
       </main>
 

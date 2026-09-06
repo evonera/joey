@@ -3,6 +3,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { getConnectedAccounts } from "@/app/actions/zernio";
+import { getThemePages } from "@/app/actions/theme-pages";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +12,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowDown01Icon, CheckmarkCircle02Icon as CheckIcon } from "hugeicons-react";
+import {
+  ArrowDown01Icon,
+  Cancel01Icon as XIcon,
+  Globe02Icon as ChannelIcon,
+  Layers01Icon as ThemeIcon,
+} from "hugeicons-react";
 
 export interface ConnectedAccount {
   id: string;
@@ -116,23 +122,45 @@ export function SocialPlatformSelector({
   className,
 }: SocialPlatformSelectorProps) {
   const [accounts, setAccounts] = React.useState<ConnectedAccount[]>([]);
+  const [accountThemeMap, setAccountThemeMap] = React.useState<Record<string, string>>({});
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     let mounted = true;
-    async function loadAccounts() {
+    async function loadData() {
       try {
-        const res = await getConnectedAccounts();
-        if (mounted && res && "accounts" in res && Array.isArray(res.accounts)) {
-          setAccounts(res.accounts as ConnectedAccount[]);
+        const [accRes, themesRes] = await Promise.all([
+          getConnectedAccounts(),
+          getThemePages().catch(() => ({ pages: [] })),
+        ]);
+
+        if (!mounted) return;
+
+        if (accRes && "accounts" in accRes && Array.isArray(accRes.accounts)) {
+          setAccounts(accRes.accounts as ConnectedAccount[]);
         }
+
+        // Build accountId -> themePageName map
+        const map: Record<string, string> = {};
+        if (themesRes && "pages" in themesRes && Array.isArray(themesRes.pages)) {
+          for (const page of themesRes.pages) {
+            const rawConnected = (page as any).connectedAccounts;
+            const connectedArr = Array.isArray(rawConnected) ? rawConnected : [];
+            for (const accId of connectedArr) {
+              if (typeof accId === "string") {
+                map[accId] = page.name;
+              }
+            }
+          }
+        }
+        setAccountThemeMap(map);
       } catch (err) {
-        console.warn("Could not load connected accounts:", err);
+        console.warn("Could not load connected accounts or themes:", err);
       } finally {
         if (mounted) setLoading(false);
       }
     }
-    void loadAccounts();
+    void loadData();
     return () => {
       mounted = false;
     };
@@ -148,125 +176,213 @@ export function SocialPlatformSelector({
     [accounts]
   );
 
+  // Compute total selected items count
+  const totalSelectedCount = React.useMemo(() => {
+    let count = 0;
+    for (const p of selectedPlatforms) {
+      const accs = selectedAccountIds[p];
+      if (accs && accs.length > 0) {
+        count += accs.length;
+      } else {
+        count += 1;
+      }
+    }
+    return count;
+  }, [selectedPlatforms, selectedAccountIds]);
+
+  // Handle removing a specific account or platform
+  const handleRemoveAccount = (platformId: string, accountId?: string) => {
+    if (!accountId) {
+      onTogglePlatform(platformId);
+      return;
+    }
+    const current = selectedAccountIds[platformId] || [];
+    const next = current.filter((id) => id !== accountId);
+    if (next.length === 0) {
+      onTogglePlatform(platformId);
+    } else {
+      onSelectAccounts(platformId, next);
+    }
+  };
+
+  // Clear all selections
+  const handleClearAll = () => {
+    for (const p of selectedPlatforms) {
+      onTogglePlatform(p);
+    }
+  };
+
   return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 flex-wrap pt-1.5 text-xs select-none",
-        className
-      )}
-    >
-      <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground/60 mr-1 hidden sm:inline">
-        Target:
-      </span>
+    <div className={cn("flex items-center gap-1.5 flex-wrap pt-1 text-xs select-none", className)}>
+      {/* Account / Channel Dropdown Trigger */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer",
+              totalSelectedCount > 0
+                ? "border-[#ffe633]/60 bg-[#ffe633]/15 text-foreground hover:bg-[#ffe633]/25"
+                : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+            )}
+            title="Choose specific social media accounts or theme pages to target"
+          >
+            <ChannelIcon className="size-3 text-[#ffe633]" />
+            <span>
+              {totalSelectedCount > 0 ? `Target Channels (${totalSelectedCount})` : "Target Channels"}
+            </span>
+            <ArrowDown01Icon className="size-2.5 opacity-60 ml-0.5" />
+          </button>
+        </DropdownMenuTrigger>
 
-      {PLATFORMS.map((platform) => {
-        const isSelected = selectedPlatforms.includes(platform.id);
-        const matchingAccounts = getAccountsForPlatform(platform);
-        const hasAccounts = matchingAccounts.length > 0;
-        const isExplicitSelection = selectedAccountIds[platform.id] !== undefined;
-        const activeAccountIds = isExplicitSelection
-          ? selectedAccountIds[platform.id]!
-          : matchingAccounts.map((a) => a.id);
-
-        // Targeted count matches active selection
-        const targetedCount = activeAccountIds.length;
-
-        const Icon = platform.icon;
-
-        return (
-          <div key={platform.id} className="inline-flex items-center">
-            {hasAccounts ? (
-              <div
-                className={cn(
-                  "inline-flex items-center rounded-full border transition-all duration-150 text-xs",
-                  isSelected
-                    ? "border-[#ffe633]/60 bg-[#ffe633]/15 text-foreground font-medium shadow-xs"
-                    : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
-                )}
-              >
-                {/* Platform Toggle Button */}
-                <button
-                  type="button"
-                  onClick={() => onTogglePlatform(platform.id)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 cursor-pointer"
-                  title={`Target ${platform.name} for research & publishing`}
-                >
-                  <Icon className="size-3.5 shrink-0" />
-                  <span>{platform.name}</span>
-                  {isSelected && (
-                    <span className="size-1.5 rounded-full bg-[#ffe633] animate-pulse" />
-                  )}
-                </button>
-
-                {/* Account Picker Dropdown */}
-                {isSelected && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        className="px-1.5 py-1 border-l border-white/[0.1] hover:bg-white/[0.08] rounded-r-full text-[10px] flex items-center gap-1 text-muted-foreground hover:text-foreground"
-                        title="Select connected accounts"
-                      >
-                        <span>
-                          {targetedCount === 1 && matchingAccounts.length === 1
-                            ? matchingAccounts[0].accountName || "1 acc"
-                            : `${targetedCount} acc`}
-                        </span>
-                        <ArrowDown01Icon className="size-3 opacity-60" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-56 p-1 text-xs">
-                      <DropdownMenuLabel className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                        {platform.name} Accounts
-                      </DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {matchingAccounts.map((acc) => {
-                        const checked = activeAccountIds.includes(acc.id);
-
-                        return (
-                          <DropdownMenuCheckboxItem
-                            key={acc.id}
-                            checked={checked}
-                            onCheckedChange={(shouldCheck) => {
-                              const next = shouldCheck
-                                ? [...activeAccountIds, acc.id]
-                                : activeAccountIds.filter((id) => id !== acc.id);
-                              onSelectAccounts(platform.id, next);
-                            }}
-                            className="text-xs cursor-pointer"
-                          >
-                            <span className="truncate font-medium">
-                              {acc.accountName || "Connected Account"}
-                            </span>
-                          </DropdownMenuCheckboxItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-            ) : (
-              /* If no connected accounts, can still toggle platform to tell Joey to draft for it */
+        <DropdownMenuContent align="start" className="w-72 p-1.5 text-xs max-h-80 overflow-y-auto">
+          <div className="flex items-center justify-between px-2 py-1">
+            <DropdownMenuLabel className="p-0 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+              Publishing Accounts
+            </DropdownMenuLabel>
+            {totalSelectedCount > 0 && (
               <button
                 type="button"
-                onClick={() => onTogglePlatform(platform.id)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-all duration-150 text-xs cursor-pointer",
-                  isSelected
-                    ? "border-[#ffe633]/60 bg-[#ffe633]/15 text-foreground font-medium shadow-xs"
-                    : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
-                )}
-                title={`Target ${platform.name} format`}
+                onClick={handleClearAll}
+                className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
               >
-                <Icon className="size-3.5 shrink-0" />
-                <span>{platform.name}</span>
-                {isSelected && (
-                  <span className="size-1.5 rounded-full bg-[#ffe633]" />
-                )}
+                Clear all
               </button>
             )}
           </div>
-        );
+          <DropdownMenuSeparator />
+
+          {PLATFORMS.map((platform) => {
+            const isPlatformSelected = selectedPlatforms.includes(platform.id);
+            const matchingAccounts = getAccountsForPlatform(platform);
+            const activeAccountIds = selectedAccountIds[platform.id] !== undefined
+              ? selectedAccountIds[platform.id]!
+              : (isPlatformSelected ? matchingAccounts.map((a) => a.id) : []);
+
+            const Icon = platform.icon;
+
+            return (
+              <div key={platform.id} className="py-1">
+                <div className="px-2 py-0.5 text-[10px] font-semibold text-muted-foreground/80 flex items-center gap-1.5">
+                  <Icon className="size-3" />
+                  <span>{platform.name}</span>
+                </div>
+
+                {matchingAccounts.length === 0 ? (
+                  /* No connected accounts yet — allow targeting format */
+                  <DropdownMenuCheckboxItem
+                    checked={isPlatformSelected}
+                    onCheckedChange={() => onTogglePlatform(platform.id)}
+                    className="text-xs cursor-pointer ml-1 py-1"
+                  >
+                    <span className="text-muted-foreground text-[11px]">
+                      Target {platform.name} format
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                ) : (
+                  /* Show each connected account with its handle and theme page */
+                  matchingAccounts.map((acc) => {
+                    const isChecked = activeAccountIds.includes(acc.id);
+                    const themeName = accountThemeMap[acc.id];
+
+                    return (
+                      <DropdownMenuCheckboxItem
+                        key={acc.id}
+                        checked={isChecked}
+                        onCheckedChange={(shouldCheck) => {
+                          const next = shouldCheck
+                            ? [...activeAccountIds, acc.id]
+                            : activeAccountIds.filter((id) => id !== acc.id);
+
+                          if (next.length > 0 && !isPlatformSelected) {
+                            onTogglePlatform(platform.id);
+                          } else if (next.length === 0 && isPlatformSelected) {
+                            onTogglePlatform(platform.id);
+                          }
+                          onSelectAccounts(platform.id, next);
+                        }}
+                        className="text-xs cursor-pointer ml-1 py-1.5 flex flex-col items-start gap-0.5"
+                      >
+                        <div className="flex items-center gap-1.5 w-full">
+                          <span className="font-medium text-foreground truncate">
+                            {acc.accountName || "Connected Account"}
+                          </span>
+                        </div>
+                        {themeName && (
+                          <div className="flex items-center gap-1 text-[10px] text-[#ffe633]/80">
+                            <ThemeIcon className="size-2.5" />
+                            <span className="truncate">Theme: {themeName}</span>
+                          </div>
+                        )}
+                      </DropdownMenuCheckboxItem>
+                    );
+                  })
+                )}
+              </div>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Selected Account Removable Chips */}
+      {selectedPlatforms.map((platformId) => {
+        const platform = PLATFORMS.find((p) => p.id === platformId);
+        if (!platform) return null;
+        const Icon = platform.icon;
+        const matchingAccounts = getAccountsForPlatform(platform);
+        const activeAccountIds = selectedAccountIds[platformId] !== undefined
+          ? selectedAccountIds[platformId]!
+          : matchingAccounts.map((a) => a.id);
+
+        if (activeAccountIds.length === 0 || matchingAccounts.length === 0) {
+          return (
+            <span
+              key={platformId}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.1] text-[11px] text-foreground"
+            >
+              <Icon className="size-3 text-[#ffe633]" />
+              <span>{platform.name}</span>
+              <button
+                type="button"
+                onClick={() => handleRemoveAccount(platformId)}
+                className="text-muted-foreground hover:text-foreground cursor-pointer ml-0.5"
+                title="Remove channel"
+              >
+                <XIcon className="size-2.5" />
+              </button>
+            </span>
+          );
+        }
+
+        return activeAccountIds.map((accId) => {
+          const acc = matchingAccounts.find((a) => a.id === accId);
+          const themeName = accountThemeMap[accId];
+
+          return (
+            <span
+              key={accId}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#ffe633]/10 border border-[#ffe633]/25 text-[11px] text-foreground"
+            >
+              <Icon className="size-3 text-[#ffe633]" />
+              <span className="font-medium truncate max-w-[130px]">
+                {acc?.accountName || platform.name}
+              </span>
+              {themeName && (
+                <span className="text-[10px] text-[#ffe633]/80 truncate max-w-[90px]">
+                  ({themeName})
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => handleRemoveAccount(platformId, accId)}
+                className="text-muted-foreground hover:text-foreground cursor-pointer ml-0.5"
+                title="Remove account"
+              >
+                <XIcon className="size-2.5" />
+              </button>
+            </span>
+          );
+        });
       })}
     </div>
   );
