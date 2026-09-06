@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils"
 import { isAuthFormFieldInvalid, useAuthForm } from "./auth-form"
 import { PasswordStrengthMeter } from "./password-strength-meter"
+import { resolveAuthPath } from "./paths"
 
 export type ResetPasswordProps = {
   className?: string
@@ -52,7 +53,7 @@ export function ResetPassword({ className }: ResetPasswordProps) {
     Link
   } = useAuth()
   const signInURL = getAuthLinkURL(
-    `${basePaths.auth}/${viewPaths.auth.signIn}`,
+    resolveAuthPath(basePaths.auth, viewPaths.auth.signIn),
     redirectTo
   )
 
@@ -308,7 +309,7 @@ export function ResetPassword({ className }: ResetPasswordProps) {
             {localization.auth.rememberYourPassword}{" "}
             <Link
               href={getAuthLinkURL(
-                `${basePaths.auth}/${viewPaths.auth.signIn}`,
+                resolveAuthPath(basePaths.auth, viewPaths.auth.signIn),
                 redirectTo
               )}
               className="underline underline-offset-4"

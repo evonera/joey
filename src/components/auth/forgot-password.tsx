@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { isAuthFormFieldInvalid, useAuthForm } from "./auth-form"
 import { RESET_LINK_SENT_STORAGE_KEY } from "./reset-link-sent"
+import { resolveAuthPath } from "./paths"
 
 export type ForgotPasswordProps = {
   className?: string
@@ -57,7 +58,7 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
       },
       onSuccess: (_data, { email }) => {
         sessionStorage.setItem(RESET_LINK_SENT_STORAGE_KEY, email)
-        navigate({ to: `${basePaths.auth}/${viewPaths.auth.resetLinkSent}` })
+        navigate({ to: resolveAuthPath(basePaths.auth, viewPaths.auth.resetLinkSent) })
       }
     }
   )
@@ -69,7 +70,7 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
         email: value.email,
         redirectTo: getViewURL(
           baseURL,
-          basePaths.auth,
+          basePaths.auth ?? "",
           viewPaths.auth.resetPassword
         ),
         fetchOptions
@@ -146,7 +147,7 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
           <FieldDescription className="text-center">
             {localization.auth.rememberYourPassword}{" "}
             <Link
-              href={`${basePaths.auth}/${viewPaths.auth.signIn}`}
+              href={resolveAuthPath(basePaths.auth, viewPaths.auth.signIn)}
               className="underline underline-offset-4"
             >
               {localization.auth.signIn}

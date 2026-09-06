@@ -29,7 +29,7 @@ export default function BlogIndex() {
       <header className="px-6 py-4 flex items-center justify-between max-w-7xl mx-auto w-full">
         <JoeyLogo size="md" />
         <nav aria-label="Main navigation" className="flex items-center gap-4">
-          <Link href="/" className="text-sm font-medium hover:text-indigo-600 transition-colors">Home</Link>
+          <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Home</Link>
           <Link href="/signup" className="text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-4 py-2 rounded-full hover:opacity-90 transition-opacity">
             Get Started
           </Link>
@@ -45,16 +45,16 @@ export default function BlogIndex() {
         <div className="space-y-8">
           {posts.map((post) => (
             <article key={post.slug} className="group">
-              <Link href={`/blog/${post.slug}`} className="block rounded-2xl border bg-white dark:bg-zinc-900 p-8 shadow-sm transition-shadow hover:shadow-md">
-                <div className="flex items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400 mb-2">
+              <Link href={`/blog/${post.slug}`} className="block rounded-2xl border border-border bg-card p-8 shadow-xs transition-shadow hover:shadow-md">
+                <div className="flex items-center gap-3 text-sm text-muted-foreground mb-2">
                   <time dateTime={post.date}>{dateFmt.format(new Date(post.date))}</time>
                   <span aria-hidden="true">·</span>
                   <span>{post.readingTime}</span>
                 </div>
-                <h2 className="text-2xl font-bold tracking-tight mb-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                <h2 className="text-2xl font-bold tracking-tight mb-2 group-hover:text-primary transition-colors text-foreground">
                   {post.title}
                 </h2>
-                <p className="text-zinc-500 dark:text-zinc-400">{post.description}</p>
+                <p className="text-muted-foreground">{post.description}</p>
               </Link>
             </article>
           ))}

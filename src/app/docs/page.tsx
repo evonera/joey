@@ -34,8 +34,8 @@ const ENDPOINTS = [
 ];
 
 const methodColor: Record<string, string> = {
-  GET: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  POST: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
+  GET: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+  POST: "bg-primary/10 text-primary border border-primary/20",
 };
 
 export default function DocsPage() {
@@ -44,10 +44,10 @@ export default function DocsPage() {
       <header className="px-6 py-4 flex items-center justify-between max-w-7xl mx-auto w-full">
         <JoeyLogo size="md" />
         <nav aria-label="Main navigation" className="flex items-center gap-4">
-          <Link href="/blog" className="text-sm font-medium hover:text-indigo-600 transition-colors">Blog</Link>
+          <Link href="/blog" className="text-sm font-medium hover:text-primary transition-colors">Blog</Link>
           <a
             href="/api/openapi.json"
-            className="text-sm font-medium hover:text-indigo-600 transition-colors"
+            className="text-sm font-medium hover:text-primary transition-colors"
           >
             OpenAPI spec
           </a>
@@ -140,7 +140,7 @@ export default function DocsPage() {
           </div>
           <p className="text-sm text-zinc-500 mb-4">
             Machine-readable schema:{" "}
-            <a href="/api/openapi.json" className="text-indigo-600 dark:text-indigo-400 hover:underline font-mono">
+            <a href="/api/openapi.json" className="text-primary hover:underline font-mono">
               /api/openapi.json
             </a>{" "}
             (paste into Swagger UI, Insomnia, or Postman).
@@ -201,14 +201,14 @@ export default function DocsPage() {
           </div>
         </section>
 
-        <aside className="p-8 rounded-2xl bg-indigo-600 text-white text-center">
-          <h2 className="text-xl font-bold mb-2">Ready to build?</h2>
-          <p className="mb-5 text-indigo-100 text-sm">
+        <aside className="p-8 rounded-2xl bg-card border border-border text-center shadow-xs">
+          <h2 className="text-xl font-bold mb-2 text-foreground">Ready to build?</h2>
+          <p className="mb-5 text-muted-foreground text-sm">
             Generate a token in Settings → Developer API and make your first call in under a minute.
           </p>
           <Link
             href="/dashboard"
-            className="inline-flex items-center gap-2 bg-white text-indigo-700 px-6 py-3 rounded-full font-medium hover:bg-indigo-50 transition-colors"
+            className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-primary/90 transition-colors shadow-xs"
           >
             Open dashboard
           </Link>

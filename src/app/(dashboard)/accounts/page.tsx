@@ -78,67 +78,70 @@ export default function AccountsPage() {
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Connected Accounts</h1>
-          <p className="text-muted-foreground mt-1">Manage your connected social media profiles</p>
-        </div>
+    <div className="max-w-5xl mx-auto space-y-6 pb-24">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Connected Accounts</h1>
+        <p className="text-muted-foreground mt-1">Manage your connected social media profiles</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="col-span-1 border rounded-xl p-6 bg-white dark:bg-zinc-900 shadow-sm">
-          <h2 className="font-semibold mb-4">Connect a Platform</h2>
+        <div className="col-span-1 border border-border rounded-xl p-6 bg-card shadow-xs">
+          <h2 className="font-semibold mb-4 text-foreground">Connect a Platform</h2>
           <div className="space-y-3">
             {PLATFORMS.map((platform) => (
               <button
                 key={platform.id}
                 onClick={() => handleConnect(platform.id)}
                 disabled={connecting !== null}
-                className="flex w-full items-center justify-between p-3 border rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                className="flex w-full items-center justify-between p-3 border border-border rounded-lg hover:bg-muted/50 transition-colors disabled:opacity-50 text-foreground cursor-pointer"
               >
-                <span className="font-medium">{platform.name}</span>
+                <span className="font-medium text-sm">{platform.name}</span>
                 {connecting === platform.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
-                  <Plus className="h-4 w-4 text-zinc-500" />
+                  <Plus className="h-4 w-4 text-muted-foreground" />
                 )}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="col-span-1 md:col-span-2 border rounded-xl p-6 bg-white dark:bg-zinc-900 shadow-sm">
-          <h2 className="font-semibold mb-4">Your Accounts</h2>
+        <div className="col-span-1 md:col-span-2 border border-border rounded-xl p-6 bg-card shadow-xs">
+          <h2 className="font-semibold mb-4 text-foreground">Your Accounts</h2>
           
           {isLoading ? (
             <div className="flex justify-center items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : accounts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed rounded-lg bg-zinc-50 dark:bg-zinc-900/50">
-              <p className="text-zinc-500 mb-2">No accounts connected yet</p>
-              <p className="text-sm text-zinc-400">Select a platform on the left to get started</p>
+            <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed border-border rounded-xl bg-muted/20">
+              <p className="text-muted-foreground font-medium mb-1">No accounts connected yet</p>
+              <p className="text-xs text-muted-foreground">Select a platform on the left to get started</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {accounts.map((acc) => (
-                <div key={acc.id} className="flex items-center gap-4 p-4 border rounded-lg">
+                <div key={acc.id} className="flex items-center gap-3 p-4 border border-border rounded-lg bg-background/50 hover:bg-muted/30 transition-colors">
                   {acc.avatarUrl ? (
-                    <img src={acc.avatarUrl} alt={acc.accountName} className="h-12 w-12 rounded-full object-cover" />
+                    <img src={acc.avatarUrl} alt={acc.accountName || ""} className="h-10 w-10 rounded-full object-cover shrink-0" />
                   ) : (
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 capitalize">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground capitalize text-sm font-semibold">
                       {acc.platform.charAt(0)}
                     </div>
                   )}
-                  <div className="flex-1 overflow-hidden">
-                    <p className="font-medium truncate capitalize">{acc.accountName}</p>
-                    <p className="text-xs text-zinc-500 capitalize">{acc.platform}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-sm truncate capitalize text-foreground">{acc.accountName}</p>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        Connected
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground capitalize">{acc.platform}</p>
                   </div>
                   <button 
                     onClick={() => setAccountToDisconnect(acc)}
                     disabled={disconnectingId === acc.id}
-                    className="p-2 text-zinc-400 hover:text-red-500 transition-colors disabled:opacity-50 cursor-pointer"
+                    className="p-2 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50 cursor-pointer rounded-md hover:bg-muted"
                     aria-label={`Disconnect ${acc.accountName || acc.platform}`}
                   >
                     {disconnectingId === acc.id ? (

@@ -16,8 +16,19 @@ const PostCalendar = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full min-h-[700px] items-center justify-center rounded-xl border bg-white dark:bg-zinc-900">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-indigo-600" />
+      <div className="flex flex-col h-full min-h-[640px] rounded-xl border border-border bg-card p-4 space-y-4 animate-pulse">
+        <div className="flex items-center justify-between pb-2 border-b border-border">
+          <div className="h-6 w-32 bg-muted rounded" />
+          <div className="flex gap-2">
+            <div className="h-8 w-20 bg-muted rounded" />
+            <div className="h-8 w-20 bg-muted rounded" />
+          </div>
+        </div>
+        <div className="grid grid-cols-7 gap-2 flex-1">
+          {Array.from({ length: 35 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-border/40 bg-muted/20 min-h-[90px] p-2" />
+          ))}
+        </div>
       </div>
     ),
   },
@@ -89,21 +100,19 @@ export function CalendarView() {
   }, [currentDate]);
 
   return (
-    <div className="flex flex-col overflow-hidden bg-background h-full">
-      <div className="flex-1 p-6 h-[calc(100vh-100px)]">
-        <PostCalendar
-          posts={posts}
-          isPending={isPending}
-          currentDate={currentDate}
-          view={view as CalendarViewMode}
-          onViewChange={(v) => setView(v as CalendarViewMode)}
-          onDateChange={setCurrentDate}
-          onPostClick={setSelectedPost}
-          onCreatePost={handleCreatePost}
-          onReschedule={handleReschedule}
-          onReload={handleReload}
-        />
-      </div>
+    <div className="flex flex-col w-full min-h-[640px] rounded-xl border border-border bg-card p-2 sm:p-4 shadow-xs">
+      <PostCalendar
+        posts={posts}
+        isPending={isPending}
+        currentDate={currentDate}
+        view={view as CalendarViewMode}
+        onViewChange={(v) => setView(v as CalendarViewMode)}
+        onDateChange={setCurrentDate}
+        onPostClick={setSelectedPost}
+        onCreatePost={handleCreatePost}
+        onReschedule={handleReschedule}
+        onReload={handleReload}
+      />
 
       <PostDetailsDialog
         open={selectedPost !== null}

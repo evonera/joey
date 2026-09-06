@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils"
 import { isAuthFormFieldInvalid, useAuthForm } from "./auth-form"
 import { LastUsedBadge } from "./last-login-method/last-used-badge"
 import { ProviderButtons, type SocialLayout } from "./provider-buttons"
+import { resolveAuthPath } from "./paths"
 
 export type SignInProps = {
   className?: string
@@ -88,7 +89,7 @@ export function SignIn({
         if (error.error?.code === "EMAIL_NOT_VERIFIED") {
           sessionStorage.setItem("better-auth-ui.verify-email", email)
           navigate({
-            to: `${basePaths.auth}/${viewPaths.auth.verifyEmail}`
+            to: resolveAuthPath(basePaths.auth, viewPaths.auth.verifyEmail)
           })
         }
 
@@ -372,7 +373,7 @@ export function SignIn({
         <div className="flex flex-col gap-3 items-center w-full mt-4">
           {emailAndPassword?.enabled && emailAndPassword?.forgotPassword && (
             <Link
-              href={`${basePaths.auth}/${viewPaths.auth.forgotPassword}`}
+              href={resolveAuthPath(basePaths.auth, viewPaths.auth.forgotPassword)}
               className="self-center text-sm underline-offset-4 hover:underline"
             >
               {localization.auth.forgotPasswordLink}
@@ -383,7 +384,7 @@ export function SignIn({
             <FieldDescription className="text-center">
               {localization.auth.needToCreateAnAccount}{" "}
               <Link
-                href={`${basePaths.auth}/${viewPaths.auth.signUp}`}
+                href={resolveAuthPath(basePaths.auth, viewPaths.auth.signUp)}
                 className="underline underline-offset-4"
               >
                 {localization.auth.signUp}

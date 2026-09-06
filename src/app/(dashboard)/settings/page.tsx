@@ -1,17 +1,72 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { getAgentConfig, saveAgentConfig } from "@/app/actions/agent";
 import { getConnectedAccounts } from "@/app/actions/zernio";
 import { getUsage } from "@/app/actions/usage";
 import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
 import { getNotificationPreferences, saveNotificationPreferences } from "@/app/actions/notifications";
-import { Loading03Icon as Loader2, FloppyDiskIcon as Save, CheckmarkCircle02Icon as CheckCircle2, ChartAverageIcon as TrendingUp, Alert02Icon as AlertTriangle, SparklesIcon as Sparkles, ViewIcon as Eye, ViewOffSlashIcon as EyeOff, Delete02Icon as Trash2, FlashIcon as PlugZap, Notification01Icon as Bell } from "hugeicons-react";
+import {
+  Loading03Icon as Loader2,
+  FloppyDiskIcon as Save,
+  CheckmarkCircle02Icon as CheckCircle2,
+  ChartAverageIcon as TrendingUp,
+  Alert02Icon as AlertTriangle,
+  SparklesIcon as Sparkles,
+  ViewIcon as Eye,
+  ViewOffSlashIcon as EyeOff,
+  Delete02Icon as Trash2,
+  FlashIcon as PlugZap,
+  Notification01Icon as Bell,
+  UserMultiple02Icon as UserIcon,
+  Activity01Icon as KeyIcon,
+} from "hugeicons-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ConnectionsPanel } from "./connections-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
 import { IntegrationsPanel } from "./integrations-panel";
 import { TelegramPanel } from "./telegram-panel";
 import { toast } from "sonner";
+
+const AI_PROVIDERS = [
+  {
+    id: "google",
+    name: "Google Gemini",
+    models: "Gemini 2.5 Flash, 1.5 Pro",
+    placeholder: "AIzaSy...",
+    docsUrl: "https://aistudio.google.com",
+    docsName: "Google AI Studio",
+    note: "Stored AES-256-GCM encrypted.",
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    models: "GPT-4o, DALL-E 3",
+    placeholder: "sk-...",
+    docsUrl: "https://platform.openai.com",
+    docsName: "platform.openai.com",
+    note: "Stored AES-256-GCM encrypted.",
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    models: "Claude 3.7 Sonnet, 3.5 Haiku",
+    placeholder: "sk-ant-...",
+    docsUrl: "https://console.anthropic.com",
+    docsName: "console.anthropic.com",
+    note: "Stored AES-256-GCM encrypted.",
+  },
+  {
+    id: "fal",
+    name: "fal.ai",
+    models: "Flux",
+    placeholder: "FAL_KEY",
+    docsUrl: "https://fal.ai/dashboard",
+    docsName: "fal.ai/dashboard",
+    note: "Stored AES-256-GCM encrypted.",
+  },
+];
 
 const DAYS_OF_WEEK = [
   { id: "mon", label: "Monday" },
@@ -23,7 +78,11 @@ const DAYS_OF_WEEK = [
   { id: "sun", label: "Sunday" },
 ];
 
-export default function SettingsPage() {
+function SettingsContent() {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") || "persona";
+  const [activeTab, setActiveTab] = useState(initialTab);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -46,25 +105,10 @@ export default function SettingsPage() {
   } | null>(null);
   
   const [apiKeys, setApiKeys] = useState<Record<string, { id: string; provider: string; status: string; maskedKey?: string }>>({});
-  const [openaiKeyInput, setOpenaiKeyInput] = useState("");
-  const [anthropicKeyInput, setAnthropicKeyInput] = useState("");
-  const [googleKeyInput, setGoogleKeyInput] = useState("");
-  const [falKeyInput, setFalKeyInput] = useState("");
-
-  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
-  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
-  const [showGoogleKey, setShowGoogleKey] = useState(false);
-  const [showFalKey, setShowFalKey] = useState(false);
-
-  const [savingOpenai, setSavingOpenai] = useState(false);
-  const [savingAnthropic, setSavingAnthropic] = useState(false);
-  const [savingGoogle, setSavingGoogle] = useState(false);
-  const [savingFal, setSavingFal] = useState(false);
-
-  const [openaiSaved, setOpenaiSaved] = useState(false);
-  const [anthropicSaved, setAnthropicSaved] = useState(false);
-  const [googleSaved, setGoogleSaved] = useState(false);
-  const [falSaved, setFalSaved] = useState(false);
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const [savingKey, setSavingKey] = useState<Record<string, boolean>>({});
+  const [savedKey, setSavedKey] = useState<Record<string, boolean>>({});
 
   const [notificationPrefs, setNotificationPrefs] = useState<any>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
@@ -166,107 +210,30 @@ export default function SettingsPage() {
     await submitSave();
   };
 
-  const handleSaveOpenaiKey = async () => {
-    if (!openaiKeyInput.trim()) return;
-    setSavingOpenai(true);
-    setOpenaiSaved(false);
+  const handleSaveApiKey = async (provider: string) => {
+    const val = (keyInputs[provider] || "").trim();
+    if (!val) return;
+    setSavingKey(prev => ({ ...prev, [provider]: true }));
+    setSavedKey(prev => ({ ...prev, [provider]: false }));
     try {
-      const res = await saveApiKey("openai", openaiKeyInput.trim());
+      const res = await saveApiKey(provider, val);
       if (res?.error) {
         toast.error(res.error);
         return;
       }
-      const updated = await getApiKey("openai");
+      const updated = await getApiKey(provider);
       setApiKeys((prev) => ({
         ...prev,
-        openai: updated || { id: "saved", provider: "openai", status: "active" },
+        [provider]: updated || { id: "saved", provider, status: "active" },
       }));
-      setOpenaiKeyInput("");
-      setOpenaiSaved(true);
-      toast.success("OpenAI key saved");
-      setTimeout(() => setOpenaiSaved(false), 3000);
+      setKeyInputs(prev => ({ ...prev, [provider]: "" }));
+      setSavedKey(prev => ({ ...prev, [provider]: true }));
+      toast.success(`${provider} API key saved`);
+      setTimeout(() => setSavedKey(prev => ({ ...prev, [provider]: false })), 3000);
     } catch {
-      toast.error("Failed to save OpenAI key");
+      toast.error(`Failed to save ${provider} API key`);
     } finally {
-      setSavingOpenai(false);
-    }
-  };
-
-  const handleSaveAnthropicKey = async () => {
-    if (!anthropicKeyInput.trim()) return;
-    setSavingAnthropic(true);
-    setAnthropicSaved(false);
-    try {
-      const res = await saveApiKey("anthropic", anthropicKeyInput.trim());
-      if (res?.error) {
-        toast.error(res.error);
-        return;
-      }
-      const updated = await getApiKey("anthropic");
-      setApiKeys((prev) => ({
-        ...prev,
-        anthropic: updated || { id: "saved", provider: "anthropic", status: "active" },
-      }));
-      setAnthropicKeyInput("");
-      setAnthropicSaved(true);
-      toast.success("Anthropic key saved");
-      setTimeout(() => setAnthropicSaved(false), 3000);
-    } catch {
-      toast.error("Failed to save Anthropic key");
-    } finally {
-      setSavingAnthropic(false);
-    }
-  };
-
-  const handleSaveGoogleKey = async () => {
-    if (!googleKeyInput.trim()) return;
-    setSavingGoogle(true);
-    setGoogleSaved(false);
-    try {
-      const res = await saveApiKey("google", googleKeyInput.trim());
-      if (res?.error) {
-        toast.error(res.error);
-        return;
-      }
-      const updated = await getApiKey("google");
-      setApiKeys((prev) => ({
-        ...prev,
-        google: updated || { id: "saved", provider: "google", status: "active" },
-      }));
-      setGoogleKeyInput("");
-      setGoogleSaved(true);
-      toast.success("Google API key saved");
-      setTimeout(() => setGoogleSaved(false), 3000);
-    } catch {
-      toast.error("Failed to save Google API key");
-    } finally {
-      setSavingGoogle(false);
-    }
-  };
-
-  const handleSaveFalKey = async () => {
-    if (!falKeyInput.trim()) return;
-    setSavingFal(true);
-    setFalSaved(false);
-    try {
-      const res = await saveApiKey("fal", falKeyInput.trim());
-      if (res?.error) {
-        toast.error(res.error);
-        return;
-      }
-      const updated = await getApiKey("fal");
-      setApiKeys((prev) => ({
-        ...prev,
-        fal: updated || { id: "saved", provider: "fal", status: "active" },
-      }));
-      setFalKeyInput("");
-      setFalSaved(true);
-      toast.success("fal.ai key saved");
-      setTimeout(() => setFalSaved(false), 3000);
-    } catch {
-      toast.error("Failed to save fal.ai key");
-    } finally {
-      setSavingFal(false);
+      setSavingKey(prev => ({ ...prev, [provider]: false }));
     }
   };
 
@@ -319,609 +286,511 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-[calc(100vh-100px)] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto pb-24">
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-5xl mx-auto space-y-6 pb-24">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Agent Configuration</h1>
-          <p className="text-muted-foreground mt-1">Teach Joey how to sound and when to post</p>
+          <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+          <p className="text-muted-foreground mt-1">Configure your agent, integrations, API keys, and workspace preferences.</p>
         </div>
-        
-        <button
-          type="button"
-          onClick={() => submitSave()}
-          disabled={isSaving}
-          className="flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50"
-        >
-          {isSaving ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : saveSuccess ? (
-            <CheckCircle2 className="mr-2 h-4 w-4 text-green-300" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          {saveSuccess ? "Saved!" : "Save Changes"}
-        </button>
+
+        {activeTab === "persona" && (
+          <button
+            type="button"
+            onClick={() => submitSave()}
+            disabled={isSaving}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {isSaving ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : saveSuccess ? (
+              <CheckCircle2 className="mr-2 h-4 w-4 text-emerald-400" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            {saveSuccess ? "Saved!" : "Save Changes"}
+          </button>
+        )}
       </div>
 
-      <form onSubmit={handleSaveForm} className="space-y-8">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
+        <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-muted/60 border border-border">
+          <TabsTrigger value="persona" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
+            <UserIcon className="h-4 w-4" />
+            <span>Persona & Schedule</span>
+          </TabsTrigger>
+          <TabsTrigger value="byok" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
+            <Sparkles className="h-4 w-4" />
+            <span>AI Models (BYOK)</span>
+          </TabsTrigger>
+          <TabsTrigger value="apps" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
+            <PlugZap className="h-4 w-4" />
+            <span>Integrations</span>
+          </TabsTrigger>
+          <TabsTrigger value="api" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
+            <KeyIcon className="h-4 w-4" />
+            <span>API Tokens</span>
+          </TabsTrigger>
+          <TabsTrigger value="notifications" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
+            <Bell className="h-4 w-4" />
+            <span>Notifications</span>
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Tab 1: Persona & Schedule */}
+        <TabsContent value="persona">
+          <form onSubmit={handleSaveForm} className="space-y-6">
         
-        {/* Persona Section */}
-        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b">
-            <h2 className="font-semibold text-zinc-900 dark:text-white">Persona & Voice</h2>
-          </div>
-          <div className="p-6 space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                Brand Voice
-              </label>
-              <textarea
-                value={brandVoice}
-                onChange={(e) => setBrandVoice(e.target.value)}
-                placeholder="e.g. Professional yet conversational. We use emojis sparingly. We always focus on providing actionable value to developers."
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white min-h-[120px]"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                Posting Goals & Content Strategy
-              </label>
-              <textarea
-                value={postingGoals}
-                onChange={(e) => setPostingGoals(e.target.value)}
-                placeholder="e.g. Our main goal is to drive signups for our SaaS. We want to share 1 technical tip, 1 industry news piece, and 1 product update per week."
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white min-h-[120px]"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Schedule Section */}
-        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b">
-            <h2 className="font-semibold text-zinc-900 dark:text-white">Schedule</h2>
-          </div>
-          <div className="p-6 space-y-6">
-            
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                Timezone
-              </label>
-              <select
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                className="w-full max-w-sm rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-              >
-                {/* A small subset for MVP. Normally we'd use Intl.supportedValuesOf('timeZone') */}
-                <option value="UTC">UTC</option>
-                <option value="America/New_York">America/New_York (EST/EDT)</option>
-                <option value="America/Chicago">America/Chicago (CST/CDT)</option>
-                <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
-                <option value="Europe/London">Europe/London (GMT/BST)</option>
-                <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
-                <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-                <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
-                Days to Post
-              </label>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Days to post">
-                {DAYS_OF_WEEK.map(day => (
-                  <button
-                    key={day.id}
-                    type="button"
-                    onClick={() => toggleDay(day.id)}
-                    aria-pressed={activeDays.includes(day.id)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
-                      activeDays.includes(day.id)
-                        ? "bg-primary border-primary text-primary-foreground font-semibold shadow-xs"
-                        : "bg-card border-border text-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {day.label}
-                  </button>
-                ))}
+            {/* Persona Section */}
+            <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+              <div className="bg-muted/40 px-6 py-4 border-b border-border">
+                <h2 className="font-semibold text-foreground">Persona & Voice</h2>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                Times to Post (24h format, comma separated)
-              </label>
-              <input
-                type="text"
-                value={timesText}
-                onChange={(e) => setTimesText(e.target.value)}
-                placeholder="09:00, 14:30, 18:00"
-                className="w-full max-w-md rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-              />
-              <p className="text-xs text-zinc-500 mt-2">The agent will attempt to generate and post content at these specific times on the days selected above.</p>
-            </div>
-
-          </div>
-        </section>
-
-        {/* Platforms Section */}
-        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b">
-            <h2 className="font-semibold text-zinc-900 dark:text-white">Active Platforms</h2>
-            <p className="text-xs text-zinc-500 mt-1">Select which connected accounts Joey should post to.</p>
-          </div>
-          <div className="p-6">
-            {accounts.length === 0 ? (
-              <div className="text-sm text-zinc-500 py-4">
-                No accounts connected. Go to the <a href="/accounts" className="text-indigo-600 hover:underline">Accounts</a> page to connect them.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {accounts.map(acc => (
-                  <label key={acc.id} className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={selectedAccountIds.includes(acc.id)}
-                      onChange={() => toggleAccount(acc.id)}
-                      className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-600"
-                    />
-                    {acc.avatarUrl ? (
-                      <img src={acc.avatarUrl} alt={acc.accountName || ""} className="h-8 w-8 rounded-full object-cover" />
-                    ) : (
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 capitalize text-xs">
-                        {acc.platform.charAt(0)}
-                      </div>
-                    )}
-                    <div className="flex-1 overflow-hidden">
-                      <p className="font-medium text-sm truncate capitalize">{acc.accountName}</p>
-                      <p className="text-xs text-zinc-500 capitalize">{acc.platform}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Usage & Billing Section */}
-        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
-            <div>
-              <h2 className="font-semibold text-zinc-900 dark:text-white">Usage & Billing</h2>
-              <p className="text-xs text-zinc-500 mt-1">Track your LLM token usage for the current billing period.</p>
-            </div>
-            <TrendingUp className="h-5 w-5 text-zinc-400" />
-          </div>
-          <div className="p-6">
-            {usageStats ? (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
-                    <p className="text-sm text-zinc-500 mb-1">Input Tokens</p>
-                    <p className="text-2xl font-bold">{(usageStats.inputTokensUsed ?? 0).toLocaleString()}</p>
-                  </div>
-                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
-                    <p className="text-sm text-zinc-500 mb-1">Output Tokens</p>
-                    <p className="text-2xl font-bold">{(usageStats.outputTokensUsed ?? 0).toLocaleString()}</p>
-                  </div>
-                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg border">
-                    <p className="text-sm text-zinc-500 mb-1">Estimated Cost</p>
-                    <p className="text-2xl font-bold">${Number(usageStats.estimatedCostUsd ?? 0).toFixed(4)}</p>
-                  </div>
-                </div>
-
-                {usageStats.budgetLimitUsd && (
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="font-medium text-zinc-700 dark:text-zinc-300">Monthly Budget</span>
-                      <span className="text-zinc-500">${Number(usageStats.estimatedCostUsd).toFixed(2)} / ${Number(usageStats.budgetLimitUsd).toFixed(2)}</span>
-                    </div>
-                    <div className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2.5">
-                      <div 
-                        className={`h-2.5 rounded-full ${
-                          Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.9 
-                            ? 'bg-red-500' 
-                            : Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.7 
-                              ? 'bg-yellow-500' 
-                              : 'bg-primary'
-                        }`}
-                        style={{ width: `${Math.min(100, (Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd)) * 100)}%` }}
-                      ></div>
-                    </div>
-                    {Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.9 && (
-                      <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3" />
-                        You are approaching your monthly budget limit. Agent activity will be paused if you exceed this limit.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-sm text-zinc-500 py-4 flex items-center justify-center">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Loading usage stats...
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Notifications Section */}
-        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
-            <div>
-              <h2 className="font-semibold text-zinc-900 dark:text-white">Notifications</h2>
-              <p className="text-xs text-zinc-500 mt-1">Manage how and when you receive updates.</p>
-            </div>
-            <Bell className="h-5 w-5 text-zinc-400" />
-          </div>
-          <div className="p-6 space-y-6">
-            {notificationPrefs ? (
-              <div className="space-y-6">
+              <div className="p-6 space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                    Email Address
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Brand Voice
+                  </label>
+                  <textarea
+                    value={brandVoice}
+                    onChange={(e) => setBrandVoice(e.target.value)}
+                    placeholder="e.g. Professional yet conversational. We use emojis sparingly. We always focus on providing actionable value to developers."
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[120px]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Posting Goals & Content Strategy
+                  </label>
+                  <textarea
+                    value={postingGoals}
+                    onChange={(e) => setPostingGoals(e.target.value)}
+                    placeholder="e.g. Our main goal is to drive signups for our SaaS. We want to share 1 technical tip, 1 industry news piece, and 1 product update per week."
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[120px]"
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* Schedule Section */}
+            <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+              <div className="bg-muted/40 px-6 py-4 border-b border-border">
+                <h2 className="font-semibold text-foreground">Schedule</h2>
+              </div>
+              <div className="p-6 space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Timezone
+                  </label>
+                  <select
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    className="w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="UTC">UTC</option>
+                    <option value="America/New_York">America/New_York (EST/EDT)</option>
+                    <option value="America/Chicago">America/Chicago (CST/CDT)</option>
+                    <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                    <option value="Europe/London">Europe/London (GMT/BST)</option>
+                    <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                    <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                    <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-3">
+                    Days to Post
+                  </label>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="Days to post">
+                    {DAYS_OF_WEEK.map(day => (
+                      <button
+                        key={day.id}
+                        type="button"
+                        onClick={() => toggleDay(day.id)}
+                        aria-pressed={activeDays.includes(day.id)}
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
+                          activeDays.includes(day.id)
+                            ? "bg-primary border-primary text-primary-foreground font-semibold shadow-xs"
+                            : "bg-card border-border text-foreground hover:bg-muted"
+                        }`}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Times to Post (24h format, comma separated)
                   </label>
                   <input
-                    type="email"
-                    value={notificationPrefs.emailAddress || ""}
-                    onChange={(e) => setNotificationPrefs({ ...notificationPrefs, emailAddress: e.target.value })}
-                    placeholder="you@example.com"
-                    className="w-full max-w-md rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    type="text"
+                    value={timesText}
+                    onChange={(e) => setTimesText(e.target.value)}
+                    placeholder="09:00, 14:30, 18:00"
+                    className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
-                  <p className="text-xs text-zinc-500 mt-1">Where we should send email notifications.</p>
+                  <p className="text-xs text-muted-foreground mt-2">The agent will attempt to generate and post content at these specific times on the days selected above.</p>
                 </div>
-                
-                <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden flex overflow-x-auto">
-                  <table className="w-full text-sm text-left min-w-[600px]">
-                    <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Event</th>
-                        <th className="px-4 py-3 font-medium text-center">In-App</th>
-                        <th className="px-4 py-3 font-medium text-center">Email</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                      {[
-                        { key: "DraftReady", label: "New Draft Ready" },
-                        { key: "EngagementReply", label: "Comment Needs Reply" },
-                        { key: "PublishSuccess", label: "Post Published Successfully" },
-                        { key: "PublishFailed", label: "Post Failed to Publish" },
-                        { key: "ApiFailure", label: "API Connection Failure" },
-                      ].map((item) => (
-                        <tr key={item.key} className="bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                          <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.label}</td>
-                          <td className="px-4 py-3 text-center">
-                            <input
-                              type="checkbox"
-                              checked={notificationPrefs[`inApp${item.key}`]}
-                              onChange={(e) => setNotificationPrefs({ ...notificationPrefs, [`inApp${item.key}`]: e.target.checked })}
-                              className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-600"
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <input
-                              type="checkbox"
-                              checked={notificationPrefs[`email${item.key}`]}
-                              onChange={(e) => setNotificationPrefs({ ...notificationPrefs, [`email${item.key}`]: e.target.checked })}
-                              className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-600"
-                            />
-                          </td>
+              </div>
+            </section>
+
+            {/* Platforms Section */}
+            <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+              <div className="bg-muted/40 px-6 py-4 border-b border-border">
+                <h2 className="font-semibold text-foreground">Active Platforms</h2>
+                <p className="text-xs text-muted-foreground mt-1">Select which connected accounts Joey should post to.</p>
+              </div>
+              <div className="p-6">
+                {accounts.length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-4">
+                    No accounts connected. Go to the <a href="/accounts" className="text-primary hover:underline font-medium">Accounts</a> page to connect them.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {accounts.map(acc => (
+                      <label key={acc.id} className="flex items-center gap-3 p-4 border border-border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={selectedAccountIds.includes(acc.id)}
+                          onChange={() => toggleAccount(acc.id)}
+                          className="h-4 w-4 rounded border-input text-primary focus-visible:ring-1 focus-visible:ring-ring"
+                        />
+                        {acc.avatarUrl ? (
+                          <img src={acc.avatarUrl} alt={acc.accountName || ""} className="h-8 w-8 rounded-full object-cover" />
+                        ) : (
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground capitalize text-xs">
+                            {acc.platform.charAt(0)}
+                          </div>
+                        )}
+                        <div className="flex-1 overflow-hidden">
+                          <p className="font-medium text-sm truncate capitalize">{acc.accountName}</p>
+                          <p className="text-xs text-muted-foreground capitalize">{acc.platform}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </form>
+        </TabsContent>
+
+        {/* Tab 2: AI Models (BYOK) */}
+        <TabsContent value="byok" className="space-y-6">
+          {/* Usage & Billing Section */}
+          <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+            <div className="bg-muted/40 px-6 py-4 border-b border-border flex justify-between items-center">
+              <div>
+                <h2 className="font-semibold text-foreground">Usage & Billing</h2>
+                <p className="text-xs text-muted-foreground mt-1">Track your LLM token usage for the current billing period.</p>
+              </div>
+              <TrendingUp className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="p-6">
+              {usageStats ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-muted/30 p-4 rounded-lg border border-border">
+                      <p className="text-sm text-muted-foreground mb-1">Input Tokens</p>
+                      <p className="text-2xl font-bold">{(usageStats.inputTokensUsed ?? 0).toLocaleString()}</p>
+                    </div>
+                    <div className="bg-muted/30 p-4 rounded-lg border border-border">
+                      <p className="text-sm text-muted-foreground mb-1">Output Tokens</p>
+                      <p className="text-2xl font-bold">{(usageStats.outputTokensUsed ?? 0).toLocaleString()}</p>
+                    </div>
+                    <div className="bg-muted/30 p-4 rounded-lg border border-border">
+                      <p className="text-sm text-muted-foreground mb-1">Estimated Cost</p>
+                      <p className="text-2xl font-bold">${Number(usageStats.estimatedCostUsd ?? 0).toFixed(4)}</p>
+                    </div>
+                  </div>
+
+                  {usageStats.budgetLimitUsd && (
+                    <div>
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="font-medium text-foreground">Monthly Budget</span>
+                        <span className="text-muted-foreground">${Number(usageStats.estimatedCostUsd).toFixed(2)} / ${Number(usageStats.budgetLimitUsd).toFixed(2)}</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2.5">
+                        <div
+                          className={`h-2.5 rounded-full ${
+                            Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.9
+                              ? 'bg-destructive'
+                              : Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.7
+                                ? 'bg-amber-500'
+                                : 'bg-primary'
+                          }`}
+                          style={{ width: `${Math.min(100, (Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd)) * 100)}%` }}
+                        ></div>
+                      </div>
+                      {Number(usageStats.estimatedCostUsd) / Number(usageStats.budgetLimitUsd) > 0.9 && (
+                        <p className="text-xs text-destructive mt-2 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          You are approaching your monthly budget limit. Agent activity will be paused if you exceed this limit.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground py-4 flex items-center justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Loading usage stats...
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* AI & Model Provider Keys (BYOK) */}
+          <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+            <div className="bg-muted/40 px-6 py-4 border-b border-border flex justify-between items-center">
+              <div>
+                <h2 className="font-semibold text-foreground">AI & Model Provider Keys (BYOK)</h2>
+                <p className="text-xs text-muted-foreground mt-1">Bring your own API keys for agent reasoning, text generation, and image generation. All keys are encrypted at rest with AES-256-GCM and cryptographically isolated to your workspace.</p>
+              </div>
+              <Sparkles className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="p-6 space-y-6">
+              {AI_PROVIDERS.map((provider) => {
+                const currentConfig = apiKeys[provider.id];
+                const inputValue = keyInputs[provider.id] || "";
+                const isVisible = !!showKeys[provider.id];
+                const isSavingThis = !!savingKey[provider.id];
+                const isSavedThis = !!savedKey[provider.id];
+
+                return (
+                  <div key={provider.id} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-foreground">
+                        {provider.name} ({provider.models})
+                      </label>
+                      {currentConfig && (
+                        <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-mono">
+                          <CheckCircle2 className="h-3 w-3" />
+                          {currentConfig.maskedKey || "Configured"}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteKey(provider.id)}
+                            className="ml-2 text-muted-foreground hover:text-destructive transition-colors"
+                            title={`Remove ${provider.name} key`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type={isVisible ? "text" : "password"}
+                          value={inputValue}
+                          onChange={(e) => setKeyInputs(prev => ({ ...prev, [provider.id]: e.target.value }))}
+                          placeholder={currentConfig ? `${provider.placeholder} (replace existing)` : provider.placeholder}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowKeys(prev => ({ ...prev, [provider.id]: !prev[provider.id] }))}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          aria-label={isVisible ? "Hide key" : "Show key"}
+                        >
+                          {isVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveApiKey(provider.id)}
+                        disabled={!inputValue.trim() || isSavingThis}
+                        className="flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                      >
+                        {isSavingThis ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : isSavedThis ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                        ) : (
+                          "Save"
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Your {provider.name} API key from{" "}
+                      <a href={provider.docsUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
+                        {provider.docsName}
+                      </a>
+                      . {provider.note}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </TabsContent>
+
+        {/* Tab 3: Integrations */}
+        <TabsContent value="apps" className="space-y-6">
+          <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+            <div className="bg-muted/40 px-6 py-4 border-b border-border flex justify-between items-center">
+              <div>
+                <h2 className="font-semibold text-foreground">Connected Apps</h2>
+                <p className="text-xs text-muted-foreground mt-1">Connect external services for news, search, email, calendar, and more. Joey can use these to research and curate content.</p>
+              </div>
+              <PlugZap className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="p-6">
+              <ConnectionsPanel />
+            </div>
+          </section>
+
+          <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+            <div className="bg-muted/40 px-6 py-4 border-b border-border">
+              <h2 className="font-semibold text-foreground">Flow Integrations & Webhooks</h2>
+              <p className="text-xs text-muted-foreground mt-1">API keys and credentials used by automated flow builder nodes. Stored encrypted per workspace.</p>
+            </div>
+            <div className="p-6 space-y-6">
+              <IntegrationsPanel />
+              <TelegramPanel />
+            </div>
+          </section>
+        </TabsContent>
+
+        {/* Tab 4: API Tokens */}
+        <TabsContent value="api" className="space-y-6">
+          <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+            <div className="bg-muted/40 px-6 py-4 border-b border-border">
+              <h2 className="font-semibold text-foreground">Developer API Tokens</h2>
+              <p className="text-xs text-muted-foreground mt-1 mb-2">
+                Bearer tokens for the Joey public REST API (<code className="font-mono text-primary">/api/v1</code>).{" "}
+                <a href="/docs" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
+                  Read the docs →
+                </a>
+              </p>
+            </div>
+            <div className="p-6">
+              <ApiTokensPanel />
+            </div>
+          </section>
+        </TabsContent>
+
+        {/* Tab 5: Notifications */}
+        <TabsContent value="notifications" className="space-y-6">
+          <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+            <div className="bg-muted/40 px-6 py-4 border-b border-border flex justify-between items-center">
+              <div>
+                <h2 className="font-semibold text-foreground">Notification Preferences</h2>
+                <p className="text-xs text-muted-foreground mt-1">Manage how and when you receive updates.</p>
+              </div>
+              <Bell className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="p-6 space-y-6">
+              {notificationPrefs ? (
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={notificationPrefs.emailAddress || ""}
+                      onChange={(e) => setNotificationPrefs({ ...notificationPrefs, emailAddress: e.target.value })}
+                      placeholder="you@example.com"
+                      className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Where we should send email notifications.</p>
+                  </div>
+
+                  <div className="border border-border rounded-lg overflow-hidden flex overflow-x-auto">
+                    <table className="w-full text-sm text-left min-w-[600px]">
+                      <thead className="bg-muted/50 text-muted-foreground border-b border-border">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Event</th>
+                          <th className="px-4 py-3 font-medium text-center">In-App</th>
+                          <th className="px-4 py-3 font-medium text-center">Email</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {[
+                          { key: "DraftReady", label: "New Draft Ready" },
+                          { key: "EngagementReply", label: "Comment Needs Reply" },
+                          { key: "PublishSuccess", label: "Post Published Successfully" },
+                          { key: "PublishFailed", label: "Post Failed to Publish" },
+                          { key: "ApiFailure", label: "API Connection Failure" },
+                        ].map((item) => (
+                          <tr key={item.key} className="bg-card hover:bg-muted/50 transition-colors">
+                            <td className="px-4 py-3 font-medium text-foreground">{item.label}</td>
+                            <td className="px-4 py-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={notificationPrefs[`inApp${item.key}`]}
+                                onChange={(e) => setNotificationPrefs({ ...notificationPrefs, [`inApp${item.key}`]: e.target.checked })}
+                                className="h-4 w-4 rounded border-input text-primary focus-visible:ring-1 focus-visible:ring-ring"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={notificationPrefs[`email${item.key}`]}
+                                onChange={(e) => setNotificationPrefs({ ...notificationPrefs, [`email${item.key}`]: e.target.checked })}
+                                className="h-4 w-4 rounded border-input text-primary focus-visible:ring-1 focus-visible:ring-ring"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={handleSaveNotifications}
-                    disabled={savingNotifications}
-                    className="flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {savingNotifications ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : notificationsSaved ? (
-                      <CheckCircle2 className="mr-2 h-4 w-4 text-green-300" />
-                    ) : (
-                      <Save className="mr-2 h-4 w-4" />
-                    )}
-                    {notificationsSaved ? "Saved!" : "Save Preferences"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-zinc-500 py-4 flex items-center justify-center">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Loading preferences...
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Connected Apps (Composio) Section */}
-        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
-            <div>
-              <h2 className="font-semibold text-zinc-900 dark:text-white">Connected Apps</h2>
-              <p className="text-xs text-zinc-500 mt-1">Connect external services for news, search, email, calendar, and more. Joey can use these to research and curate content.</p>
-            </div>
-            <PlugZap className="h-5 w-5 text-zinc-400" />
-          </div>
-          <div className="p-6">
-            <ConnectionsPanel />
-          </div>
-        </section>
-
-        {/* AI & Model Provider Keys (BYOK) Section */}
-        <section className="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-zinc-50 dark:bg-zinc-950/50 px-6 py-4 border-b flex justify-between items-center">
-            <div>
-              <h2 className="font-semibold text-zinc-900 dark:text-white">AI & Model Provider Keys (BYOK)</h2>
-              <p className="text-xs text-zinc-500 mt-1">Bring your own API keys for agent reasoning, text generation, and image generation. All keys are encrypted at rest with AES-256-GCM and cryptographically isolated to your workspace.</p>
-            </div>
-            <Sparkles className="h-5 w-5 text-zinc-400" />
-          </div>
-          <div className="p-6 space-y-6">
-            {/* Google Gemini */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Google Gemini (Gemini 2.5 Flash, 1.5 Pro)
-                </label>
-                {apiKeys["google"] && (
-                  <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-mono">
-                    <CheckCircle2 className="h-3 w-3" />
-                    {apiKeys["google"].maskedKey || "Configured"}
+                  <div className="pt-2">
                     <button
                       type="button"
-                      onClick={() => handleDeleteKey("google")}
-                      className="ml-2 text-zinc-400 hover:text-red-500"
-                      title="Remove Google key"
+                      onClick={handleSaveNotifications}
+                      disabled={savingNotifications}
+                      className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 transition-colors"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      {savingNotifications ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : notificationsSaved ? (
+                        <CheckCircle2 className="mr-2 h-4 w-4 text-emerald-300" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      {notificationsSaved ? "Saved!" : "Save Preferences"}
                     </button>
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showGoogleKey ? "text" : "password"}
-                    value={googleKeyInput}
-                    onChange={(e) => setGoogleKeyInput(e.target.value)}
-                    placeholder={apiKeys["google"] ? "AIzaSy... (replace existing)" : "AIzaSy..."}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowGoogleKey(!showGoogleKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-                  >
-                    {showGoogleKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleSaveGoogleKey}
-                  disabled={!googleKeyInput.trim() || savingGoogle}
-                  className="flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {savingGoogle ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : googleSaved ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-300" />
-                  ) : (
-                    "Save"
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500">Your Google Gemini API key from <a href="https://aistudio.google.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Google AI Studio</a>. Stored AES-256-GCM encrypted.</p>
-            </div>
-
-            {/* OpenAI */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  OpenAI (GPT-4o, DALL-E 3)
-                </label>
-                {apiKeys["openai"] && (
-                  <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-mono">
-                    <CheckCircle2 className="h-3 w-3" />
-                    {apiKeys["openai"].maskedKey || "Configured"}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteKey("openai")}
-                      className="ml-2 text-zinc-400 hover:text-red-500"
-                      title="Remove OpenAI key"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showOpenaiKey ? "text" : "password"}
-                    value={openaiKeyInput}
-                    onChange={(e) => setOpenaiKeyInput(e.target.value)}
-                    placeholder={apiKeys["openai"] ? "sk-... (replace existing)" : "sk-..."}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowOpenaiKey(!showOpenaiKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-                  >
-                    {showOpenaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+              ) : (
+                <div className="text-sm text-muted-foreground py-4 flex items-center justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Loading preferences...
                 </div>
-                <button
-                  type="button"
-                  onClick={handleSaveOpenaiKey}
-                  disabled={!openaiKeyInput.trim() || savingOpenai}
-                  className="flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {savingOpenai ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : openaiSaved ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-300" />
-                  ) : (
-                    "Save"
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500">Your OpenAI API key with access to GPT-4o and DALL-E 3. Stored AES-256-GCM encrypted.</p>
+              )}
             </div>
-
-            {/* Anthropic */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Anthropic (Claude 3.7 Sonnet, 3.5 Haiku)
-                </label>
-                {apiKeys["anthropic"] && (
-                  <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-mono">
-                    <CheckCircle2 className="h-3 w-3" />
-                    {apiKeys["anthropic"].maskedKey || "Configured"}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteKey("anthropic")}
-                      className="ml-2 text-zinc-400 hover:text-red-500"
-                      title="Remove Anthropic key"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showAnthropicKey ? "text" : "password"}
-                    value={anthropicKeyInput}
-                    onChange={(e) => setAnthropicKeyInput(e.target.value)}
-                    placeholder={apiKeys["anthropic"] ? "sk-ant-... (replace existing)" : "sk-ant-..."}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowAnthropicKey(!showAnthropicKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-                  >
-                    {showAnthropicKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSaveAnthropicKey}
-                  disabled={!anthropicKeyInput.trim() || savingAnthropic}
-                  className="flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {savingAnthropic ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : anthropicSaved ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-300" />
-                  ) : (
-                    "Save"
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500">Your Anthropic API key from <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">console.anthropic.com</a>. Stored AES-256-GCM encrypted.</p>
-            </div>
-
-            {/* fal.ai */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  fal.ai (Flux)
-                </label>
-                {apiKeys["fal"] && (
-                  <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-mono">
-                    <CheckCircle2 className="h-3 w-3" />
-                    {apiKeys["fal"].maskedKey || "Configured"}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteKey("fal")}
-                      className="ml-2 text-zinc-400 hover:text-red-500"
-                      title="Remove fal key"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showFalKey ? "text" : "password"}
-                    value={falKeyInput}
-                    onChange={(e) => setFalKeyInput(e.target.value)}
-                    placeholder={apiKeys["fal"] ? "FAL_KEY (replace existing)" : "FAL_KEY"}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowFalKey(!showFalKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-                  >
-                    {showFalKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSaveFalKey}
-                  disabled={!falKeyInput.trim() || savingFal}
-                  className="flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {savingFal ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : falSaved ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-300" />
-                  ) : (
-                    "Save"
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500">Your fal.ai API key (FAL_KEY). Get one at <a href="https://fal.ai/dashboard" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">fal.ai/dashboard</a>. Stored AES-256-GCM encrypted.</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Developer API */}
-        <section className="mb-8 rounded-2xl bg-zinc-800/50 p-6">
-          <h2 className="font-semibold text-zinc-900 dark:text-white">Developer API</h2>
-          <p className="text-xs text-zinc-500 mt-1 mb-5">
-            Bearer tokens for the public REST API (<code className="font-mono">/api/v1</code>).{" "}
-            <a href="/docs" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
-              Read the docs →
-            </a>
-          </p>
-          <ApiTokensPanel />
-        </section>
-
-        {/* Flow integrations */}
-        <section className="mb-8 rounded-2xl bg-zinc-800/50 p-6">
-          <h2 className="font-semibold text-zinc-900 dark:text-white">Flow integrations</h2>
-          <p className="text-xs text-zinc-500 mt-1 mb-5">
-            API keys used by Flow Builder nodes. Stored encrypted per workspace.
-          </p>
-          <IntegrationsPanel />
-          <TelegramPanel />
-        </section>
-
-      </form>
+          </section>
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <SettingsContent />
+    </Suspense>
   );
 }

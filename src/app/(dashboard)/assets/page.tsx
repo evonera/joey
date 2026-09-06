@@ -6,6 +6,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   Upload01Icon as Upload,
@@ -48,6 +56,8 @@ export default function AssetsPage() {
   const [search, setSearch] = useState("");
   const [filterMime, setFilterMime] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [assetToDelete, setAssetToDelete] = useState<Asset | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -119,13 +129,18 @@ export default function AssetsPage() {
     }
   }
 
-  async function handleDelete(id: string, filename: string) {
+  async function confirmDelete() {
+    if (!assetToDelete) return;
+    setIsDeleting(true);
     try {
-      await deleteAsset(id);
-      toast.success(`${filename} deleted`);
-      setAssets((prev) => prev.filter((a) => a.id !== id));
+      await deleteAsset(assetToDelete.id);
+      toast.success(`${assetToDelete.filename} deleted`);
+      setAssets((prev) => prev.filter((a) => a.id !== assetToDelete.id));
+      setAssetToDelete(null);
     } catch (err: any) {
       toast.error(err.message || "Delete failed");
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -196,7 +211,7 @@ export default function AssetsPage() {
       </div>
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 text-sm text-red-700 dark:text-red-400">
+        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -204,8 +219,8 @@ export default function AssetsPage() {
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <div className="aspect-square bg-muted rounded-t-lg" />
+            <Card key={i} className="animate-pulse overflow-hidden">
+              <div className="aspect-square bg-muted/60" />
               <CardContent className="p-3 space-y-2">
                 <div className="h-3 bg-muted rounded w-3/4" />
                 <div className="h-2 bg-muted rounded w-1/2" />
@@ -241,8 +256,9 @@ export default function AssetsPage() {
                   <Button
                     variant="destructive"
                     size="icon"
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8"
-                    onClick={() => handleDelete(asset.id, asset.filename)}
+                    className="absolute top-2 right-2 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity h-8 w-8 shadow-xs"
+                    onClick={() => setAssetToDelete(asset)}
+                    aria-label={`Delete ${asset.filename}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -269,6 +285,30 @@ export default function AssetsPage() {
           })}
         </div>
       )}
+
+      <Dialog open={!!assetToDelete} onOpenChange={(open) => !open && !isDeleting && setAssetToDelete(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Asset</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to permanently delete <span className="font-semibold text-foreground">{assetToDelete?.filename}</span>? This action cannot be undone and may break posts or drafts referencing this media.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" disabled={isDeleting} onClick={() => setAssetToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={confirmDelete}
+            >
+              {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              {isDeleting ? "Deleting..." : "Delete Asset"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
