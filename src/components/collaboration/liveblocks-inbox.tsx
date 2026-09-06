@@ -21,6 +21,23 @@ function InnerInboxCount() {
   );
 }
 
+export function LiveblocksUnreadDot() {
+  const { isConfigured } = useLiveblocksConfig();
+  if (!isConfigured) return null;
+  return <InnerUnreadDot />;
+}
+
+function InnerUnreadDot() {
+  const { count } = useUnreadInboxNotificationsCount();
+  if (!count || count <= 0) return null;
+  return (
+    <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ffe633] opacity-75"></span>
+      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ffe633]"></span>
+    </span>
+  );
+}
+
 export function LiveblocksInboxList({ onNotificationClick }: { onNotificationClick?: () => void }) {
   const { isConfigured } = useLiveblocksConfig();
   if (!isConfigured) return null;

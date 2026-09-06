@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { getNotifications, markAsRead, markAllAsRead } from '@/app/actions/notifications';
 import Link from 'next/link';
 import { useLiveblocksConfig } from '@/components/collaboration/liveblocks-provider';
-import { LiveblocksInboxList, LiveblocksInboxCount } from '@/components/collaboration/liveblocks-inbox';
+import { LiveblocksInboxList, LiveblocksInboxCount, LiveblocksUnreadDot } from '@/components/collaboration/liveblocks-inbox';
 
 export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCount?: number }) {
   const { isConfigured } = useLiveblocksConfig();
@@ -108,11 +108,13 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
         className="relative p-2 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       >
         <IconBell className="h-5 w-5" />
-        {unreadCount > 0 && (
+        {unreadCount > 0 ? (
           <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ffe633] opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ffe633]"></span>
           </span>
+        ) : (
+          <LiveblocksUnreadDot />
         )}
       </button>
 

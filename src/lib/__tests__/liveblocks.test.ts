@@ -42,6 +42,12 @@ vi.mock("@/lib/db", () => ({
       member: {
         findMany: vi.fn(),
       },
+      drafts: {
+        findMany: vi.fn(),
+      },
+      flows: {
+        findMany: vi.fn(),
+      },
     },
   },
 }));
@@ -231,6 +237,75 @@ describe("Liveblocks Integration & Auth Scoping", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.userIds).toEqual(["usr_2"]);
+    });
+  });
+
+  describe("POST /api/liveblocks-rooms (Room Metadata Resolution)", () => {
+    it("resolves draft, flow, and presence room IDs to human-readable names and URLs", async () => {
+      const { auth, getActiveTenantMembership } = await import("@/lib/auth");
+      const { db } = await import("@/lib/db");
+
+      (auth.api.getSession as any).mockResolvedValue({
+        user: { id: "usr_1", name: "Alice" },
+      });
+
+      (getActiveTenantMembership as any).mockResolvedValue({
+        tenantId: "org_alpha",
+        userId: "usr_1",
+        role: "admin",
+      });
+
+      (db.query.drafts.findMany as any).mockResolvedValue([
+        {
+          id: "draft_123",
+          tenantId: "org_alpha",
+          content: "Excited to launch our new automated growth tool for creators!",
+        },
+      ]);
+
+      (db.query.flows.findMany as any).mockResolvedValue([
+        {
+          id: "flow_456",
+          tenantId: "org_alpha",
+          name: "Daily RSS to LinkedIn Pipeline",
+        },
+      ]);
+
+      const { POST } = await import("@/app/api/liveblocks-rooms/route");
+      const req = new Request("http://localhost:3000/api/liveblocks-rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomIds: [
+            "workspace:org_alpha:presence",
+            "workspace:org_alpha:draft:draft_123",
+            "workspace:org_alpha:flow:flow_456",
+            "workspace:org_alpha:draft:draft_missing",
+          ],
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+
+      expect(data).toHaveLength(4);
+      expect(data[0]).toEqual({
+        name: "Workspace Team Presence",
+        url: "/dashboard",
+      });
+      expect(data[1]).toEqual({
+        name: "Excited to launch our new automated grow…",
+        url: "/drafts",
+      });
+      expect(data[2]).toEqual({
+        name: "Daily RSS to LinkedIn Pipeline",
+        url: "/flows/flow_456",
+      });
+      expect(data[3]).toEqual({
+        name: "Draft #draft_mi",
+        url: "/drafts",
+      });
     });
   });
 });
