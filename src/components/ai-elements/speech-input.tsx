@@ -4,6 +4,7 @@ import * as React from "react";
 import { Mic01Icon as MicIcon, StopIcon } from "hugeicons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export type SpeechInputProps = {
   onTranscription?: (text: string) => void;
@@ -31,7 +32,7 @@ export function SpeechInput({
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser.");
+      toast.error("Speech recognition is not supported in this browser.");
       return;
     }
 

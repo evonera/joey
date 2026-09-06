@@ -14,14 +14,25 @@ import {
   IconBulb,
   IconCheck,
   IconX,
+  IconChevronUp,
+  IconChevronDown,
 } from "@tabler/icons-react";
-import { createThemeSlot, deleteThemeSlot } from "@/app/actions/theme-slots";
+import { createThemeSlot, deleteThemeSlot, reorderThemeSlots } from "@/app/actions/theme-slots";
 import {
   getMixRecommendations,
   acceptRecommendation,
   discardRecommendation,
 } from "@/app/actions/mix-recommendations";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface SlotItem {
   id: string;
@@ -64,6 +75,8 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
   const [selectedFormatId, setSelectedFormatId] = React.useState(supportedFormats[0]?.id || "");
   const [slotLabel, setSlotLabel] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [slotToDelete, setSlotToDelete] = React.useState<SlotItem | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
   const [recommendation, setRecommendation] = React.useState<{ id: string; formatScores: Record<string, { averageScore: number; sampleCount: number }>; adjustments: Array<{ slotId: string; formatId: string; previousPriority: number; newPriority: number; formatName: string; score: number }> } | null>(null);
   const [recLoading, setRecLoading] = React.useState(false);
 
@@ -128,16 +141,41 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
     }
   }
 
-  async function handleDeleteSlot(slotId: string) {
+  async function confirmDeleteSlot() {
+    if (!slotToDelete) return;
+    setIsDeleting(true);
     try {
-      const res = await deleteThemeSlot(slotId);
+      const res = await deleteThemeSlot(slotToDelete.id);
       if (res.error) throw new Error(res.error);
-      setSlots((prev) => prev.filter((s) => s.id !== slotId));
+      setSlots((prev) => prev.filter((s) => s.id !== slotToDelete.id));
       toast.success("Slot removed");
+      setSlotToDelete(null);
     } catch (err: any) {
       toast.error(err.message || "Failed to delete slot");
+    } finally {
+      setIsDeleting(false);
     }
   }
+
+  async function handleMoveSlot(index: number, direction: "up" | "down") {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= slots.length) return;
+
+    const newSlots = [...slots];
+    const [moved] = newSlots.splice(index, 1);
+    newSlots.splice(targetIndex, 0, moved);
+
+    setSlots(newSlots);
+    try {
+      const res = await reorderThemeSlots(themePageId, newSlots.map((s) => s.id));
+      if (res.error) throw new Error(res.error);
+      toast.success("Slot order updated");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to reorder slots");
+      setSlots(slots);
+    }
+  }
+
 
   function renderMediaIcon(type?: string) {
     if (type === "video") return <IconVideo className="w-4 h-4 text-purple-500" />;
@@ -258,14 +296,34 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
                       <span className="capitalize">{slot.format?.platform || "Universal"}</span>
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteSlot(slot.id)}
-                    className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                    title="Remove slot"
-                  >
-                    <IconTrash className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => handleMoveSlot(index, "up")}
+                      className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
+                      title="Move earlier in rotation"
+                    >
+                      <IconChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === slots.length - 1}
+                      onClick={() => handleMoveSlot(index, "down")}
+                      className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
+                      title="Move later in rotation"
+                    >
+                      <IconChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlotToDelete(slot)}
+                      className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                      title="Remove slot"
+                    >
+                      <IconTrash className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <h4 className="font-semibold text-sm leading-tight text-foreground">
@@ -342,6 +400,26 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
           </div>
         </div>
       )}
+
+      {/* Delete Slot Confirmation Dialog */}
+      <Dialog open={Boolean(slotToDelete)} onOpenChange={(open) => !open && setSlotToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Slot from Daily Mix?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove &ldquo;{slotToDelete?.label || slotToDelete?.format?.name || "Content Slot"}&rdquo;? Joey will no longer generate content for this slot during daily automation runs.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setSlotToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteSlot} disabled={isDeleting}>
+              {isDeleting ? "Removing..." : "Remove Slot"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

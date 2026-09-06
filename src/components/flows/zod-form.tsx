@@ -47,17 +47,16 @@ export function ZodForm({
 type FieldDef = {
   key: string;
   label: string;
-  kind: "string" | "text" | "number" | "boolean" | "enum";
+  kind: "string" | "text" | "number" | "boolean" | "enum" | "array";
   options?: string[];
   required: boolean;
 };
 
 export function extractFields(schema: AnySchema): FieldDef[] {
   const obj = unwrapSchema(schema);
-  const def = (obj as any)?._def ?? (obj as any)?.def;
   const shape = typeof (obj as { shape?: unknown })?.shape === "function"
     ? (obj as unknown as { shape: () => Record<string, AnySchema> }).shape()
-      : ((obj as { shape?: Record<string, AnySchema> })?.shape);
+    : ((obj as { shape?: Record<string, AnySchema> })?.shape);
 
   if (!shape) return [];
 
@@ -78,6 +77,7 @@ export function extractFields(schema: AnySchema): FieldDef[] {
     if (typeName === "number") return "number";
     if (typeName === "boolean") return "boolean";
     if (typeName === "enum") return "enum";
+    if (typeName === "array") return "array";
     return "string";
   }
 
@@ -107,7 +107,7 @@ function renderControl(
           type="checkbox"
           checked={Boolean(current)}
           onChange={(e) => onChange(e.target.checked)}
-          className="h-4 w-4 accent-indigo-600"
+          className="h-4 w-4 rounded border-zinc-700 accent-primary"
         />
         <span className="text-xs text-zinc-500">{current ? "On" : "Off"}</span>
       </div>
@@ -142,7 +142,30 @@ function renderControl(
     );
   }
 
-  const isLong = /prompt|template|json|payload|input/i.test(field.key);
+  if (field.kind === "array") {
+    const arrayVal = Array.isArray(current) 
+      ? current.join(", ") 
+      : typeof current === "string" 
+      ? current 
+      : "";
+    return (
+      <div className="space-y-1">
+        <Input
+          value={arrayVal}
+          placeholder="item1, item2, item3"
+          onChange={(e) => {
+            const raw = e.target.value;
+            const parsed = raw.split(",").map(s => s.trim()).filter(Boolean);
+            onChange(parsed);
+          }}
+          className="h-9 text-sm"
+        />
+        <span className="text-[10px] text-muted-foreground">Separate items with commas</span>
+      </div>
+    );
+  }
+
+  const isLong = /prompt|template|json|payload|input|system/i.test(field.key);
   return isLong ? (
     <Textarea
       rows={5}
@@ -161,9 +184,9 @@ function unwrapSchema(schema: any): any {
   let guard = 0;
   while (s && guard < 10) {
     const d = s._def ?? s.def;
-    const typeName = d?.typeName ?? d?.type;
-    if (typeName === "optional" || typeName === "default" || typeName === "nullable") {
-      s = d.innerType ?? d.schema;
+    const tn = String(d?.typeName ?? d?.type ?? "").replace(/^Zod/, "").toLowerCase();
+    if (tn === "optional" || tn === "default" || tn === "nullable" || tn === "effects" || tn === "pipeline") {
+      s = d.innerType ?? d.schema ?? d.in;
       guard++;
       continue;
     }
@@ -179,11 +202,12 @@ function typeNameOf(schema: any): string {
 
 function isOptional(schema: any): boolean {
   const d = schema?._def ?? schema?.def;
-  const typeName = String(d?.typeName ?? d?.type ?? "").toLowerCase();
-  return typeName === "optional" || typeName === "default" || schema.isOptional?.() === true;
+  const tn = String(d?.typeName ?? d?.type ?? "").replace(/^Zod/, "").toLowerCase();
+  return tn === "optional" || tn === "default" || schema.isOptional?.() === true;
 }
 
 function prettify(key: string): string {
   const spaced = key.replace(/([A-Z])/g, " $1").replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
+

@@ -11,6 +11,7 @@ import { ConnectionsPanel } from "./connections-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
 import { IntegrationsPanel } from "./integrations-panel";
 import { TelegramPanel } from "./telegram-panel";
+import { toast } from "sonner";
 
 const DAYS_OF_WEEK = [
   { id: "mon", label: "Monday" },
@@ -148,12 +149,13 @@ export default function SettingsPage() {
 
       if (res.success) {
         setSaveSuccess(true);
+        toast.success("Settings saved successfully");
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
-        alert(res.error || "Failed to save configuration");
+        toast.error(res.error || "Failed to save configuration");
       }
     } catch (err) {
-      alert("Failed to save configuration");
+      toast.error("Failed to save configuration");
     } finally {
       setIsSaving(false);
     }
@@ -171,7 +173,7 @@ export default function SettingsPage() {
     try {
       const res = await saveApiKey("openai", openaiKeyInput.trim());
       if (res?.error) {
-        alert(res.error);
+        toast.error(res.error);
         return;
       }
       const updated = await getApiKey("openai");
@@ -181,9 +183,10 @@ export default function SettingsPage() {
       }));
       setOpenaiKeyInput("");
       setOpenaiSaved(true);
+      toast.success("OpenAI key saved");
       setTimeout(() => setOpenaiSaved(false), 3000);
     } catch {
-      alert("Failed to save OpenAI key");
+      toast.error("Failed to save OpenAI key");
     } finally {
       setSavingOpenai(false);
     }
@@ -196,7 +199,7 @@ export default function SettingsPage() {
     try {
       const res = await saveApiKey("anthropic", anthropicKeyInput.trim());
       if (res?.error) {
-        alert(res.error);
+        toast.error(res.error);
         return;
       }
       const updated = await getApiKey("anthropic");
@@ -206,9 +209,10 @@ export default function SettingsPage() {
       }));
       setAnthropicKeyInput("");
       setAnthropicSaved(true);
+      toast.success("Anthropic key saved");
       setTimeout(() => setAnthropicSaved(false), 3000);
     } catch {
-      alert("Failed to save Anthropic key");
+      toast.error("Failed to save Anthropic key");
     } finally {
       setSavingAnthropic(false);
     }
@@ -221,7 +225,7 @@ export default function SettingsPage() {
     try {
       const res = await saveApiKey("google", googleKeyInput.trim());
       if (res?.error) {
-        alert(res.error);
+        toast.error(res.error);
         return;
       }
       const updated = await getApiKey("google");
@@ -231,9 +235,10 @@ export default function SettingsPage() {
       }));
       setGoogleKeyInput("");
       setGoogleSaved(true);
+      toast.success("Google API key saved");
       setTimeout(() => setGoogleSaved(false), 3000);
     } catch {
-      alert("Failed to save Google API key");
+      toast.error("Failed to save Google API key");
     } finally {
       setSavingGoogle(false);
     }
@@ -246,7 +251,7 @@ export default function SettingsPage() {
     try {
       const res = await saveApiKey("fal", falKeyInput.trim());
       if (res?.error) {
-        alert(res.error);
+        toast.error(res.error);
         return;
       }
       const updated = await getApiKey("fal");
@@ -256,9 +261,10 @@ export default function SettingsPage() {
       }));
       setFalKeyInput("");
       setFalSaved(true);
+      toast.success("fal.ai key saved");
       setTimeout(() => setFalSaved(false), 3000);
     } catch {
-      alert("Failed to save fal.ai key");
+      toast.error("Failed to save fal.ai key");
     } finally {
       setSavingFal(false);
     }
@@ -273,12 +279,13 @@ export default function SettingsPage() {
       if (res.preferences) {
         setNotificationPrefs(res.preferences);
         setNotificationsSaved(true);
+        toast.success("Notification preferences saved");
         setTimeout(() => setNotificationsSaved(false), 3000);
       } else {
-        alert(res.error || "Failed to save notification preferences");
+        toast.error(res.error || "Failed to save notification preferences");
       }
     } catch (err) {
-      alert("Failed to save notification preferences");
+      toast.error("Failed to save notification preferences");
     } finally {
       setSavingNotifications(false);
     }
@@ -292,8 +299,9 @@ export default function SettingsPage() {
         delete next[provider];
         return next;
       });
+      toast.success(`Removed ${provider} API key`);
     } catch {
-      alert("Failed to delete key");
+      toast.error("Failed to delete key");
     }
   };
 
@@ -409,12 +417,13 @@ export default function SettingsPage() {
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
                 Days to Post
               </label>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Days to post">
                 {DAYS_OF_WEEK.map(day => (
                   <button
                     key={day.id}
                     type="button"
                     onClick={() => toggleDay(day.id)}
+                    aria-pressed={activeDays.includes(day.id)}
                     className={`px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
                       activeDays.includes(day.id)
                         ? "bg-primary border-primary text-primary-foreground font-semibold shadow-xs"

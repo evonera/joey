@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { createEngagementWebMcpTools, type EngagementWebMcpItem } from "@/lib/engagement-webmcp";
 import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
 import { IconArrowLeft, IconChevronDown, IconInbox, IconMessageCircle, IconRefresh, IconSearch, IconSparkles, IconStar } from "@tabler/icons-react";
+import { toast } from "sonner";
 
 type InboxResult = Awaited<ReturnType<typeof getUnifiedInbox>>;
 
@@ -225,7 +226,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
           selectedConversationIdRef.current = previousSelectedId;
           setSelectedId(previousSelectedId);
         }
-        window.alert(error instanceof Error ? error.message : "Failed to load conversation");
+        toast.error(error instanceof Error ? error.message : "Failed to load conversation");
         return;
       }
       if (!loaded) {
@@ -246,8 +247,12 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
     setSyncing(true);
     const response = await syncUnifiedInbox();
     setSyncing(false);
-    if (response.error) window.alert(response.error);
-    else await load();
+    if (response.error) {
+      toast.error(response.error);
+    } else {
+      toast.success("Inbox synced");
+      await load();
+    }
   };
 
   return (

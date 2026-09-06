@@ -17,6 +17,7 @@ import {
 } from "@better-auth-ui/react"
 import { useIsMutating } from "@tanstack/react-query"
 import { Eye, EyeOff } from "lucide-react"
+import { SecurityLockIcon, AlertCircleIcon } from "hugeicons-react"
 import { useState } from "react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -76,11 +77,13 @@ export function SignIn({
   const { fetchOptions, resetFetchOptions } = useFetchOptions()
   const continueSignIn = useSignInContinuation()
 
+  const [authError, setAuthError] = useState<string | null>(null)
   const { mutate: signInEmail, isPending: signInEmailPending } = useSignInEmail(
     authClient,
     {
       onError: (error, { email }) => {
         form.setFieldValue("password", "")
+        setAuthError(error.error?.message || "Failed to sign in. Please check your credentials.")
 
         if (error.error?.code === "EMAIL_NOT_VERIFIED") {
           sessionStorage.setItem("better-auth-ui.verify-email", email)
@@ -91,7 +94,10 @@ export function SignIn({
 
         resetFetchOptions()
       },
-      onSuccess: (data) => continueSignIn(data)
+      onSuccess: (data) => {
+        setAuthError(null)
+        continueSignIn(data)
+      }
     }
   )
 
@@ -112,7 +118,8 @@ export function SignIn({
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const form = useAuthForm({
     defaultValues: { email: "", password: "", rememberMe: false },
-    onSubmit: ({ value }) =>
+    onSubmit: ({ value }) => {
+      setAuthError(null)
       signInEmail({
         email: value.email,
         password: value.password,
@@ -121,18 +128,25 @@ export function SignIn({
           : {}),
         fetchOptions
       })
+    }
   })
 
   const showSeparator =
     emailAndPassword?.enabled && socialProviders && socialProviders.length > 0
 
   return (
-    <Card className={cn("w-full max-w-sm", className)}>
+    <Card className={cn("w-full max-w-sm bg-[#131211] border-white/[0.08] text-white", className)}>
       <AuthPrompts view="signIn" />
-      <CardHeader>
-        <CardTitle className="text-xl font-semibold">
-          {localization.auth.signIn}
-        </CardTitle>
+      <CardHeader className="text-center space-y-1.5 pb-2">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-[#ffe633]/10 text-[#ffe633] mb-2 mx-auto border border-[#ffe633]/20">
+          <SecurityLockIcon size={20} strokeWidth={1.5} />
+        </div>
+        <h1 className="text-2xl font-semibold tracking-tight text-white">
+          Welcome to Joey
+        </h1>
+        <p className="text-xs text-white/50">
+          Autonomous social media agent &amp; editorial studio
+        </p>
       </CardHeader>
 
       <CardContent>
@@ -155,6 +169,13 @@ export function SignIn({
             <form.AppForm>
               <form.AuthFormRoot>
                 <FieldGroup>
+                  {authError && (
+                    <div className="flex items-center gap-2 p-3 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg">
+                      <AlertCircleIcon size={16} className="shrink-0" />
+                      <span>{authError}</span>
+                    </div>
+                  )}
+
                   <form.AppField
                     name="email"
                     validators={{

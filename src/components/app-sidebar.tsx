@@ -19,11 +19,21 @@ import {
   NoteEditIcon,
   Calendar03Icon,
 } from "hugeicons-react"
+import {
+  IconBook,
+  IconCode,
+  IconLifebuoy,
+  IconBrandGithub,
+} from "@tabler/icons-react"
 
+import { authClient } from "@/lib/auth-client"
 import { NavMain, type NavSection } from "@/components/nav-main"
+import { NavSecondary } from "@/components/nav-secondary"
+import { NavUser } from "@/components/nav-user"
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -129,6 +139,36 @@ export function AppSidebar({
     },
   ]
 
+  const secondaryItems = [
+    {
+      title: "Documentation",
+      url: "/docs",
+      icon: IconBook,
+    },
+    {
+      title: "API Reference",
+      url: "/api/openapi.json",
+      icon: IconCode,
+    },
+    {
+      title: "Support",
+      url: "https://github.com/shakthivel/joey/issues",
+      icon: IconLifebuoy,
+    },
+    {
+      title: "GitHub",
+      url: "https://github.com/shakthivel/joey",
+      icon: IconBrandGithub,
+    },
+  ]
+
+  const { data: session } = authClient.useSession()
+  const user = {
+    name: session?.user?.name || "Joey Creator",
+    email: session?.user?.email || "creator@joey.ai",
+    avatar: session?.user?.image || "",
+  }
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader className="p-3">
@@ -165,6 +205,10 @@ export function AppSidebar({
       <SidebarContent className="px-1">
         <NavMain sections={navSections} />
       </SidebarContent>
+      <SidebarFooter>
+        <NavSecondary items={secondaryItems} className="mt-auto" />
+        <NavUser user={user} />
+      </SidebarFooter>
     </Sidebar>
   )
 }

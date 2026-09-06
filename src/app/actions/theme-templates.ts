@@ -18,10 +18,11 @@ function sanitizeComponentSpec(input: Record<string, unknown>): Record<string, u
       output[field] = value.trim();
     }
   }
-  if (input.backgroundGradient !== undefined) {
+  if (input.backgroundGradient !== undefined && input.backgroundGradient !== null && input.backgroundGradient !== "") {
     if (typeof input.backgroundGradient !== "string" || !GRADIENT.test(input.backgroundGradient.trim())) return null;
     output.backgroundGradient = input.backgroundGradient.trim();
   }
+
   if (input.fontFamily !== undefined) {
     if (typeof input.fontFamily !== "string" || !/^[\w\s,'-]{1,100}$/.test(input.fontFamily)) return null;
     output.fontFamily = input.fontFamily;

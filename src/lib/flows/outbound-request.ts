@@ -1,4 +1,3 @@
-import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
@@ -75,10 +74,14 @@ export async function resolveOutboundTarget(input: string, signal?: AbortSignal,
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only HTTP and HTTPS URLs are allowed.");
   if (url.username || url.password) throw new Error("Credentials in outbound URLs are forbidden.");
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (!allowPrivateHosts && (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".lan"))) {
+  if (!allowPrivateHosts && (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".lan") || hostname === "0.0.0.0")) {
     throw new Error("Private outbound hostname is forbidden.");
   }
-  const lookup = dnsLookup(hostname, { all: true, verbatim: true });
+  if (isIP(hostname) !== 0 && !allowPrivateHosts && isPrivateAddress(hostname)) {
+    throw new Error("Private or link-local destination IP address is forbidden.");
+  }
+  const dns = await import("dns/promises");
+  const lookup = dns.lookup(hostname, { all: true, verbatim: true });
   let abortLookup: (() => void) | undefined;
   const aborted = signal && new Promise<never>((_resolve, reject) => {
     abortLookup = () => reject(signal.reason ?? new Error("Request aborted."));
@@ -89,7 +92,7 @@ export async function resolveOutboundTarget(input: string, signal?: AbortSignal,
   finally { if (abortLookup) signal?.removeEventListener("abort", abortLookup); }
   if (!records.length) throw new Error("Outbound hostname resolved to no addresses.");
   if (!allowPrivateHosts && records.some(({ address }) => isPrivateAddress(address))) {
-    throw new Error("Outbound hostname resolves to a private, link-local, or reserved address.");
+    throw new Error("Outbound hostname resolves to private IP, link-local, or reserved address.");
   }
   return { url, address: records.find(({ family }) => family === 4)?.address ?? records[0].address };
 }

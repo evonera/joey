@@ -37,6 +37,14 @@ import {
   ConfirmationAction,
 } from "@/components/ai-elements/confirmation";
 import { Attachment } from "@/components/ai-elements/attachments";
+import {
+  ChainOfThought,
+  ChainOfThoughtHeader,
+  ChainOfThoughtContent,
+  ChainOfThoughtSearchResults,
+  ChainOfThoughtSearchResult,
+} from "@/components/ai-elements/chain-of-thought";
+import { Task } from "@/components/ai-elements/task";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -129,16 +137,27 @@ function AgentMessagePart({
       return (
         <div className="flex flex-col gap-2">
           {searchResults && searchResults.length > 0 ? (
-            <Sources defaultOpen={false}>
-              <SourcesTrigger count={searchResults.length} />
-              <SourcesContent>
-                {searchResults.map((r: { url: string; title?: string }, idx: number) => (
-                  <Source key={r.url || idx} href={r.url} title={r.title}>
-                    {r.title}
-                  </Source>
-                ))}
-              </SourcesContent>
-            </Sources>
+            <ChainOfThought defaultOpen={false}>
+              <ChainOfThoughtHeader>
+                Search Sources ({searchResults.length})
+              </ChainOfThoughtHeader>
+              <ChainOfThoughtContent>
+                <ChainOfThoughtSearchResults>
+                  {searchResults.map((r: { url: string; title?: string }, idx: number) => (
+                    <ChainOfThoughtSearchResult key={r.url || idx}>
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline flex items-center gap-1 max-w-[280px] truncate"
+                      >
+                        {r.title || r.url}
+                      </a>
+                    </ChainOfThoughtSearchResult>
+                  ))}
+                </ChainOfThoughtSearchResults>
+              </ChainOfThoughtContent>
+            </ChainOfThought>
           ) : null}
           <Tool
             defaultOpen={part.state === "approval-requested" || part.state === "approval-responded"}

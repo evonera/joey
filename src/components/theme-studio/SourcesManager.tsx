@@ -16,6 +16,15 @@ import {
 } from "@tabler/icons-react";
 import { createThemeSource, deleteThemeSource, toggleThemeSource } from "@/app/actions/theme-sources";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface SourceItem {
   id: string;
@@ -44,6 +53,8 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
   const [freshnessHours, setFreshnessHours] = React.useState(24);
   const [rightsCategory, setRightsCategory] = React.useState("unknown");
   const [loading, setLoading] = React.useState(false);
+  const [sourceToDelete, setSourceToDelete] = React.useState<SourceItem | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
 
   async function handleAddSource(e: React.FormEvent) {
     e.preventDefault();
@@ -88,16 +99,22 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
     }
   }
 
-  async function handleDelete(sourceId: string) {
+  async function confirmDeleteSource() {
+    if (!sourceToDelete) return;
+    setIsDeleting(true);
     try {
-      const res = await deleteThemeSource(sourceId);
+      const res = await deleteThemeSource(sourceToDelete.id);
       if (res.error) throw new Error(res.error);
-      setSources((prev) => prev.filter((s) => s.id !== sourceId));
+      setSources((prev) => prev.filter((s) => s.id !== sourceToDelete.id));
       toast.success("Source removed");
+      setSourceToDelete(null);
     } catch (err: any) {
       toast.error(err.message || "Failed to delete source");
+    } finally {
+      setIsDeleting(false);
     }
   }
+
 
   function renderSourceIcon(type: string) {
     if (type === "reddit") return <IconBrandReddit className="w-4 h-4 text-orange-500" />;
@@ -285,7 +302,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
                   </button>
 
                   <button
-                    onClick={() => handleDelete(source.id)}
+                    onClick={() => setSourceToDelete(source)}
                     className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
                     title="Remove source"
                   >
@@ -297,6 +314,27 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
           ))}
         </div>
       )}
+
+      {/* Delete Source Confirmation Dialog */}
+      <Dialog open={Boolean(sourceToDelete)} onOpenChange={(open) => !open && setSourceToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Feed Source?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove &ldquo;{sourceToDelete?.name}&rdquo;? Joey will stop polling this feed for news, story angles, and daily recipe generation.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setSourceToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteSource} disabled={isDeleting}>
+              {isDeleting ? "Removing..." : "Remove Source"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

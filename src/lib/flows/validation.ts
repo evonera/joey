@@ -121,6 +121,35 @@ export function validateGraph(doc: FlowGraphDoc): ValidationResult {
     }
   }
 
+  // Warnings: disconnected / unreachable non-trigger nodes.
+  for (const node of doc.nodes) {
+    const def = getNode(node.type);
+    if (def && !def.isTrigger) {
+      const hasIncoming = doc.edges.some((e) => e.to === node.id);
+      if (!hasIncoming) {
+        issues.push({
+          nodeId: node.id,
+          message: `"${def.label}" has no incoming connections and will not be reached.`,
+          severity: "warning",
+        });
+      }
+    }
+  }
+
+  // Warnings: condition node branching handles
+  for (const node of doc.nodes) {
+    if (node.type === "logic.condition") {
+      const outgoing = doc.edges.filter((e) => e.from === node.id);
+      if (outgoing.length > 0 && outgoing.some((e) => !e.branch)) {
+        issues.push({
+          nodeId: node.id,
+          message: `Condition node has outgoing connections without a designated 'true' or 'false' branch.`,
+          severity: "warning",
+        });
+      }
+    }
+  }
+
   // Warnings: dead ends that aren't terminal actions.
   for (const node of doc.nodes) {
     const hasOutgoing = doc.edges.some((e) => e.from === node.id);

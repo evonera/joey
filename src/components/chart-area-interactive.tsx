@@ -126,59 +126,111 @@ const chartData = [
   { date: "2024-06-30", desktop: 446, mobile: 400 },
 ]
 
+export interface ChartSeriesPoint {
+  label: string;
+  impressions: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  views?: number;
+}
+
 const chartConfig = {
-  visitors: {
-    label: "Visitors",
+  impressions: {
+    label: "Impressions",
+    color: "#6366f1",
   },
-  desktop: {
-    label: "Desktop",
-    color: "var(--primary)",
-  },
-  mobile: {
-    label: "Mobile",
-    color: "var(--primary)",
+  engagements: {
+    label: "Engagements",
+    color: "#ffe633",
   },
 } satisfies ChartConfig
 
-export function ChartAreaInteractive() {
+export interface ChartAreaInteractiveProps {
+  series?: ChartSeriesPoint[];
+  title?: string;
+  subtitle?: string;
+  timeRange?: string;
+  onTimeRangeChange?: (range: string) => void;
+}
+
+export function ChartAreaInteractive({
+  series,
+  title = "Engagement Over Time",
+  subtitle = "Daily impressions, likes, comments, and shares across channels",
+  timeRange: controlledTimeRange,
+  onTimeRangeChange,
+}: ChartAreaInteractiveProps) {
   const isMobile = useIsMobile()
-  const [timeRange, setTimeRange] = React.useState("90d")
-
-  React.useEffect(() => {
-    if (isMobile) {
-      setTimeRange("7d")
+  const [internalTimeRange, setInternalTimeRange] = React.useState(() => {
+    if (series && series.length > 0) {
+      return series.length <= 7 ? "7d" : series.length <= 30 ? "30d" : "90d"
     }
-  }, [isMobile])
-
-  const filteredData = chartData.filter((item) => {
-    const date = new Date(item.date)
-    const referenceDate = new Date("2024-06-30")
-    let daysToSubtract = 90
-    if (timeRange === "30d") {
-      daysToSubtract = 30
-    } else if (timeRange === "7d") {
-      daysToSubtract = 7
-    }
-    const startDate = new Date(referenceDate)
-    startDate.setDate(startDate.getDate() - daysToSubtract)
-    return date >= startDate
+    return "30d"
   })
 
+  React.useEffect(() => {
+    if (controlledTimeRange === undefined && series && series.length > 0) {
+      setInternalTimeRange(series.length <= 7 ? "7d" : series.length <= 30 ? "30d" : "90d")
+    }
+  }, [series, controlledTimeRange])
+
+  React.useEffect(() => {
+    if (isMobile && controlledTimeRange === undefined) {
+      setInternalTimeRange("7d")
+    }
+  }, [isMobile, controlledTimeRange])
+
+  const timeRange = controlledTimeRange ?? internalTimeRange
+
+  const handleTimeRangeChange = (value: string) => {
+    if (!value) return
+    setInternalTimeRange(value)
+    onTimeRangeChange?.(value)
+  }
+
+  const chartPoints = React.useMemo(() => {
+    if (series && series.length > 0) {
+      const mapped = series.map((s) => ({
+        date: s.label,
+        impressions: s.impressions,
+        engagements: s.likes + s.comments + s.shares,
+      }))
+      const sliceCount = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90
+      return mapped.slice(-sliceCount)
+    }
+
+    return chartData.filter((item) => {
+      const date = new Date(item.date)
+      const referenceDate = new Date("2024-06-30")
+      let daysToSubtract = 90
+      if (timeRange === "30d") {
+        daysToSubtract = 30
+      } else if (timeRange === "7d") {
+        daysToSubtract = 7
+      }
+      const startDate = new Date(referenceDate)
+      startDate.setDate(startDate.getDate() - daysToSubtract)
+      return date >= startDate
+    }).map((item) => ({
+      date: item.date,
+      impressions: item.desktop,
+      engagements: item.mobile,
+    }))
+  }, [series, timeRange])
+
   return (
-    <Card className="@container/card">
+    <Card className="@container/card bg-card border-border">
       <CardHeader>
-        <CardTitle>Total Visitors</CardTitle>
-        <CardDescription>
-          <span className="hidden @[540px]/card:block">
-            Total for the last 3 months
-          </span>
-          <span className="@[540px]/card:hidden">Last 3 months</span>
+        <CardTitle className="text-base font-semibold text-foreground">{title}</CardTitle>
+        <CardDescription className="text-xs text-muted-foreground">
+          {subtitle}
         </CardDescription>
         <CardAction>
           <ToggleGroup
             type="single"
             value={timeRange}
-            onValueChange={setTimeRange}
+            onValueChange={handleTimeRangeChange}
             variant="outline"
             className="hidden *:data-[slot=toggle-group-item]:px-4! @[767px]/card:flex"
           >
@@ -186,7 +238,7 @@ export function ChartAreaInteractive() {
             <ToggleGroupItem value="30d">Last 30 days</ToggleGroupItem>
             <ToggleGroupItem value="7d">Last 7 days</ToggleGroupItem>
           </ToggleGroup>
-          <Select value={timeRange} onValueChange={setTimeRange}>
+          <Select value={timeRange} onValueChange={handleTimeRangeChange}>
             <SelectTrigger
               className="flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden"
               size="sm"
@@ -213,30 +265,30 @@ export function ChartAreaInteractive() {
           config={chartConfig}
           className="aspect-auto h-[250px] w-full"
         >
-          <AreaChart data={filteredData}>
+          <AreaChart data={chartPoints}>
             <defs>
               <linearGradient id="fillDesktop" x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="5%"
-                  stopColor="var(--color-desktop)"
-                  stopOpacity={1.0}
+                  stopColor="#6366f1"
+                  stopOpacity={0.8}
                 />
                 <stop
                   offset="95%"
-                  stopColor="var(--color-desktop)"
-                  stopOpacity={0.1}
+                  stopColor="#6366f1"
+                  stopOpacity={0.05}
                 />
               </linearGradient>
               <linearGradient id="fillMobile" x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="5%"
-                  stopColor="var(--color-mobile)"
+                  stopColor="#ffe633"
                   stopOpacity={0.8}
                 />
                 <stop
                   offset="95%"
-                  stopColor="var(--color-mobile)"
-                  stopOpacity={0.1}
+                  stopColor="#ffe633"
+                  stopOpacity={0.05}
                 />
               </linearGradient>
             </defs>
@@ -249,10 +301,12 @@ export function ChartAreaInteractive() {
               minTickGap={32}
               tickFormatter={(value) => {
                 const date = new Date(value)
-                return date.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                })
+                return !isNaN(date.getTime())
+                  ? date.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })
+                  : String(value)
               }}
             />
             <ChartTooltip
@@ -260,28 +314,31 @@ export function ChartAreaInteractive() {
               content={
                 <ChartTooltipContent
                   labelFormatter={(value) => {
-                    return new Date(value as string).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })
+                    const date = new Date(value as string)
+                    return !isNaN(date.getTime())
+                      ? date.toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : String(value)
                   }}
                   indicator="dot"
                 />
               }
             />
             <Area
-              dataKey="mobile"
+              dataKey="engagements"
+              name="Engagements"
               type="natural"
               fill="url(#fillMobile)"
-              stroke="var(--color-mobile)"
-              stackId="a"
+              stroke="#ffe633"
             />
             <Area
-              dataKey="desktop"
+              dataKey="impressions"
+              name="Impressions"
               type="natural"
               fill="url(#fillDesktop)"
-              stroke="var(--color-desktop)"
-              stackId="a"
+              stroke="#6366f1"
             />
           </AreaChart>
         </ChartContainer>

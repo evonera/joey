@@ -1,33 +1,63 @@
 'use client';
 
 import { useState } from "react";
-import { updateDraft, approveDraft, rejectDraft } from "@/app/actions/drafts";
+import { updateDraft, approveDraft, rejectDraft, deleteDraft } from "@/app/actions/drafts";
 import { publishDraft } from "@/app/actions/publisher";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "./ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import { toast } from "sonner";
+import { 
+  Delete02Icon as Trash2, 
+  Calendar03Icon as Calendar, 
+  NoteEditIcon as Edit, 
+  CheckmarkCircle02Icon as Check, 
+  Loading03Icon as Loader2,
+  SentIcon as Send,
+  Cancel01Icon as X
+} from "hugeicons-react";
 
-export function DraftCard({ draft, onActionComplete }: { draft: any, onActionComplete: () => void }) {
+interface DraftCardProps {
+  draft: any;
+  onActionComplete: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+}
+
+export function DraftCard({ draft, onActionComplete, selectable, selected, onToggleSelect }: DraftCardProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [content, setContent] = useState(draft.content || "");
     const [isRejecting, setIsRejecting] = useState(false);
     const [feedback, setFeedback] = useState("");
     const [loading, setLoading] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
     const [selectedVariant, setSelectedVariant] = useState(hasVariants ? draft.variants[0].name : "");
+    const [variantEdits, setVariantEdits] = useState<Record<string, string>>({});
 
     const platformOpts = draft.platformOptions as any;
-    const platform = platformOpts?.platform || "Unknown";
+    const platform = platformOpts?.platform || "Universal";
+    const mediaUrls: string[] = platformOpts?.mediaUrls || [];
+
+    const isScheduled = Boolean(draft.scheduledFor) && (draft.status === "scheduled" || draft.status === "approved");
 
     const handleApprove = async (variantName?: string, contentToApprove?: string) => {
         setLoading(true);
         setIsSheetOpen(false);
-        await approveDraft(draft.id, variantName, contentToApprove);
+        const res = await approveDraft(draft.id, variantName, contentToApprove);
         setLoading(false);
-        onActionComplete();
+        if (res.error) {
+            toast.error(res.error);
+        } else {
+            toast.success("Draft approved");
+            onActionComplete();
+        }
     };
 
     const handlePublish = async () => {
@@ -35,173 +65,305 @@ export function DraftCard({ draft, onActionComplete }: { draft: any, onActionCom
         const res = await publishDraft(draft.id);
         setLoading(false);
         if (res.error) {
-            alert(res.error);
+            toast.error(res.error);
         } else {
+            toast.success("Draft published successfully!");
             onActionComplete();
         }
     };
 
     const handleReject = async () => {
-        if (!feedback) return;
+        if (!feedback.trim()) return;
         setLoading(true);
-        await rejectDraft(draft.id, feedback);
+        const res = await rejectDraft(draft.id, feedback);
         setLoading(false);
         setIsRejecting(false);
-        onActionComplete();
+        if (res.error) {
+            toast.error(res.error);
+        } else {
+            toast.success("Draft rejected with feedback");
+            onActionComplete();
+        }
     };
 
     const handleSaveEdit = async () => {
         setLoading(true);
-        await updateDraft(draft.id, content);
+        const res = await updateDraft(draft.id, content);
         setLoading(false);
         setIsEditing(false);
-        onActionComplete();
+        if (res.error) {
+            toast.error(res.error);
+        } else {
+            toast.success("Draft updated");
+            onActionComplete();
+        }
     };
 
+    const handleDelete = async () => {
+        setLoading(true);
+        const res = await deleteDraft(draft.id);
+        setLoading(false);
+        setDeleteDialogOpen(false);
+        if (res.error) {
+            toast.error(res.error);
+        } else {
+            toast.success("Draft deleted");
+            onActionComplete();
+        }
+    };
+
+    const currentVariantContent = variantEdits[selectedVariant] ?? 
+      draft.variants?.find((v: any) => v.name === selectedVariant)?.content ?? "";
+
     return (
-        <div className="border rounded-xl p-4 bg-white dark:bg-zinc-900 shadow-sm flex flex-col gap-4">
-            <div className="flex justify-between items-center">
-                <span className="text-sm font-medium uppercase tracking-wider text-zinc-500">{platform}</span>
-                <span className="text-xs bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md">{draft.status}</span>
+        <div className={`border rounded-2xl p-5 bg-card shadow-sm flex flex-col gap-4 transition-all hover:border-primary/30 ${selected ? "border-primary ring-1 ring-primary bg-primary/5" : ""}`}>
+            {/* Header */}
+            <div className="flex justify-between items-center gap-2">
+                <div className="flex items-center gap-2.5">
+                    {selectable && (
+                        <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={onToggleSelect}
+                            className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                        />
+                    )}
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md">
+                        {platform}
+                    </span>
+                    {isScheduled && draft.scheduledFor && (
+                        <Badge variant="outline" className="text-[11px] gap-1 font-normal text-muted-foreground">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(draft.scheduledFor).toLocaleString(undefined, { 
+                                month: "short", day: "numeric", hour: "numeric", minute: "2-digit" 
+                            })}
+                        </Badge>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <Badge variant={
+                        draft.status === "approved" || draft.status === "scheduled" ? "default" :
+                        draft.status === "published" ? "secondary" :
+                        draft.status === "failed" || draft.status === "rejected" ? "destructive" : "outline"
+                    } className="text-[11px] capitalize">
+                        {draft.status.replace("_", " ")}
+                    </Badge>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleteDialogOpen(true)}
+                        disabled={loading}
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        title="Delete draft"
+                    >
+                        <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                </div>
             </div>
             
+            {/* Content or Edit Form */}
             {isEditing ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                     <Textarea 
                         value={content} 
                         onChange={(e) => setContent(e.target.value)}
-                        className="min-h-[120px]"
+                        className="min-h-[140px] text-sm leading-relaxed"
                     />
                     <div className="flex gap-2 justify-end">
                         <Button variant="outline" size="sm" onClick={() => setIsEditing(false)}>Cancel</Button>
-                        <Button size="sm" onClick={handleSaveEdit} disabled={loading}>Save</Button>
+                        <Button size="sm" onClick={handleSaveEdit} disabled={loading}>
+                            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+                            Save Changes
+                        </Button>
                     </div>
                 </div>
             ) : (
-                <div className="text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap text-sm">
+                <div className="text-foreground whitespace-pre-wrap text-sm leading-relaxed">
                     {draft.content ? (
                         draft.content
                     ) : hasVariants ? (
-                        <div className="italic text-zinc-500">Multiple draft variants generated. Click Review Variants to select one.</div>
+                        <div className="italic text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed text-xs">
+                            Multiple draft variations generated. Click <strong>Review & Edit Variants</strong> to select and adjust copy.
+                        </div>
                     ) : (
-                        <span className="italic text-zinc-400">No content available</span>
+                        <span className="italic text-muted-foreground">No text content available</span>
                     )}
                 </div>
             )}
 
-            {draft.errorMessage && draft.status === 'rejected' && (
-                <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">
-                    <strong>Feedback:</strong> {draft.errorMessage}
+            {/* Media Attachment Previews */}
+            {mediaUrls.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                    {mediaUrls.map((url, i) => {
+                        const isVideo = /\.(mp4|mov|webm|m4v)(\?.*)?$/i.test(url);
+                        return (
+                            <div key={url} className="relative rounded-lg overflow-hidden border bg-muted h-16 w-16 group">
+                                {isVideo ? (
+                                    <div className="h-full w-full flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                                        VIDEO
+                                    </div>
+                                ) : (
+                                    <img src={url} alt={`Media ${i + 1}`} className="h-full w-full object-cover" />
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 
-            {!isEditing && !isRejecting && draft.status === 'approved' && (
-                <div className="flex gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                    <Button onClick={handlePublish} disabled={loading} className="flex-1 bg-[#ffe633] hover:bg-[#ffe633]/90 text-black font-semibold">
-                        {loading ? "Publishing..." : "Publish Now"}
+            {/* Rejection / Failure Feedback */}
+            {draft.errorMessage && (draft.status === 'rejected' || draft.status === 'failed') && (
+                <div className="bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-xl text-xs space-y-1">
+                    <strong>{draft.status === 'failed' ? 'Publish Error:' : 'Feedback:'}</strong> {draft.errorMessage}
+                </div>
+            )}
+
+            {/* Approved Draft Actions */}
+            {!isEditing && !isRejecting && (draft.status === 'approved' || draft.status === 'scheduled') && (
+                <div className="flex gap-2 pt-2 border-t border-border">
+                    <Button onClick={() => setIsEditing(true)} variant="outline" size="sm" disabled={loading} className="gap-1 text-xs">
+                        <Edit className="h-3.5 w-3.5" /> Edit
+                    </Button>
+                    <Button onClick={handlePublish} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
+                        {loading ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Publishing...</> : isScheduled ? "Publish Early" : "Publish Now"}
                     </Button>
                 </div>
             )}
 
+            {/* Failed Retry */}
             {draft.status === 'failed' && (
-                <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                    <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm border border-red-100">
-                        <strong>Publish Failed:</strong> {draft.errorMessage || "Unknown error occurred"}
-                    </div>
-                    <div className="flex gap-2">
-                        <Button onClick={handlePublish} disabled={loading} className="flex-1 bg-[#ffe633] hover:bg-[#ffe633]/90 text-black font-semibold">
-                            {loading ? "Retrying..." : "Retry Publish"}
-                        </Button>
-                    </div>
+                <div className="flex gap-2 pt-2 border-t border-border">
+                    <Button onClick={() => setIsEditing(true)} variant="outline" size="sm" disabled={loading} className="gap-1 text-xs">
+                        <Edit className="h-3.5 w-3.5" /> Edit Post
+                    </Button>
+                    <Button onClick={handlePublish} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
+                        {loading ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Retrying...</> : "Retry Publish"}
+                    </Button>
                 </div>
             )}
 
+            {/* Pending Review Actions */}
             {!isEditing && !isRejecting && draft.status === 'pending_review' && (
-                <div className="flex gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex gap-2 pt-2 border-t border-border">
                     {hasVariants ? (
                         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                             <SheetTrigger asChild>
-                                <Button className="flex-1 bg-[#ffe633] hover:bg-[#ffe633]/90 text-black font-semibold">Review Variants</Button>
+                                <Button size="sm" className="flex-1 font-semibold text-xs">Review & Edit Variants</Button>
                             </SheetTrigger>
                             <SheetContent className="sm:max-w-xl overflow-y-auto">
-                                <SheetHeader className="mb-6">
-                                    <div className="flex items-center justify-between">
+                                <SheetHeader className="mb-4">
+                                    <div className="flex items-center justify-between gap-4">
                                         <div>
-                                            <SheetTitle>Review Draft Variants</SheetTitle>
-                                            <SheetDescription>
-                                                Your agent generated multiple variations for this post.
+                                            <SheetTitle className="text-base">Review & Edit Variants</SheetTitle>
+                                            <SheetDescription className="text-xs">
+                                                Edit text directly before approving your preferred variant.
                                             </SheetDescription>
                                         </div>
                                         <Select value={selectedVariant} onValueChange={setSelectedVariant}>
-                                            <SelectTrigger className="w-[180px]">
+                                            <SelectTrigger className="w-[160px] h-8 text-xs">
                                                 <SelectValue placeholder="Select variant" />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {draft.variants.map((v: any) => (
-                                                    <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>
+                                                    <SelectItem key={v.name} value={v.name} className="text-xs">{v.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
                                         </Select>
                                     </div>
                                 </SheetHeader>
                                 
-                                {draft.variants.map((v: any) => v.name === selectedVariant && (
-                                    <div key={v.name} className="mt-4 space-y-4">
-                                        <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-lg border whitespace-pre-wrap text-sm min-h-[150px]">
-                                            {v.content}
-                                        </div>
-                                        
-                                        {v.context && v.context.length > 0 && (
-                                            <div className="py-3 border-t border-b border-zinc-100 dark:border-zinc-800">
-                                                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Retrieved Context</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {v.context.map((ctx: any, idx: number) => (
-                                                        <span key={idx} className="text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1 rounded-md flex items-center gap-1 border border-indigo-100 dark:border-indigo-800">
-                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                                            {ctx.title || "Retrieved Source"}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-
-
-                                        <Button 
-                                            onClick={() => handleApprove(v.name, v.content)} 
-                                            disabled={loading}
-                                            className="w-full bg-green-600 hover:bg-green-700 text-white mt-4"
-                                        >
-                                            {loading ? "Approving..." : `Approve ${v.name} Variant`}
-                                        </Button>
+                                <div className="space-y-4 pt-2">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                            Variant Content (Editable)
+                                        </label>
+                                        <Textarea
+                                            value={currentVariantContent}
+                                            onChange={(e) => setVariantEdits(prev => ({ ...prev, [selectedVariant]: e.target.value }))}
+                                            className="min-h-[180px] text-sm leading-relaxed"
+                                        />
                                     </div>
-                                ))}
+                                    
+                                    {draft.variants.find((v: any) => v.name === selectedVariant)?.context?.length > 0 && (
+                                        <div className="py-3 border-t border-b border-border space-y-2">
+                                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Retrieved Context</p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {draft.variants.find((v: any) => v.name === selectedVariant).context.map((ctx: any, idx: number) => (
+                                                    <span key={idx} className="text-[11px] bg-primary/10 text-primary px-2 py-0.5 rounded-md border border-primary/20 flex items-center gap-1">
+                                                        {ctx.title || "Source"}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <Button 
+                                        onClick={() => handleApprove(selectedVariant, currentVariantContent)} 
+                                        disabled={loading || !currentVariantContent.trim()}
+                                        className="w-full font-semibold text-xs"
+                                    >
+                                        {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Check className="h-4 w-4 mr-1.5" />}
+                                        Approve &quot;{selectedVariant}&quot; Variant
+                                    </Button>
+                                </div>
                             </SheetContent>
                         </Sheet>
                     ) : (
-                        <Button onClick={() => handleApprove()} disabled={loading} className="flex-1 bg-green-600 hover:bg-green-700 text-white">Approve</Button>
+                        <Button onClick={() => handleApprove()} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
+                            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}
+                            Approve
+                        </Button>
                     )}
                     
                     {(!hasVariants || draft.content) && (
-                        <Button variant="outline" onClick={() => setIsEditing(true)} disabled={loading}>Edit</Button>
+                        <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} disabled={loading} className="text-xs">
+                            Edit
+                        </Button>
                     )}
-                    <Button variant="outline" onClick={() => setIsRejecting(true)} disabled={loading} className="text-red-600 hover:text-red-700 hover:bg-red-50">Reject</Button>
+                    <Button variant="outline" size="sm" onClick={() => setIsRejecting(true)} disabled={loading} className="text-destructive hover:bg-destructive/10 text-xs">
+                        Reject
+                    </Button>
                 </div>
             )}
 
+            {/* Rejection Feedback Box */}
             {isRejecting && (
-                <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="space-y-3 pt-2 border-t border-border">
                     <Textarea 
-                        placeholder="Provide feedback for the agent..." 
+                        placeholder="Provide feedback for the agent on why this was rejected..." 
                         value={feedback}
                         onChange={(e) => setFeedback(e.target.value)}
+                        className="text-xs min-h-[80px]"
                     />
                     <div className="flex gap-2 justify-end">
-                        <Button variant="outline" size="sm" onClick={() => setIsRejecting(false)}>Cancel</Button>
-                        <Button variant="destructive" size="sm" onClick={handleReject} disabled={loading || !feedback}>Send Feedback</Button>
+                        <Button variant="outline" size="sm" onClick={() => setIsRejecting(false)} className="text-xs">Cancel</Button>
+                        <Button variant="destructive" size="sm" onClick={handleReject} disabled={loading || !feedback.trim()} className="text-xs">
+                            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+                            Send Feedback
+                        </Button>
                     </div>
                 </div>
             )}
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete this draft?</DialogTitle>
+                        <DialogDescription className="text-xs">
+                            This action cannot be undone. This post will be permanently removed from your queue.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button variant="outline" size="sm" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+                        <Button variant="destructive" size="sm" onClick={handleDelete} disabled={loading}>
+                            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+                            Delete Draft
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

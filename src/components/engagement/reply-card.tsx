@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { approveReply, rejectReply, sendReply, updateReplyDraft, skipEngagementItem } from "@/app/actions/engagement";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import {
   IconMessage,
   IconBrandX,
@@ -101,7 +102,11 @@ export function ReplyCard({
     const res = await approveReply(item.replyDraft.id);
     if (res.success) {
       const sendRes = await sendReply(item.replyDraft.id);
-      if (sendRes.error) alert(sendRes.error);
+      if (sendRes.error) {
+        toast.error(sendRes.error);
+      } else {
+        toast.success("Reply sent successfully!");
+      }
     }
     setLoading(false);
     onActionComplete();
@@ -114,7 +119,11 @@ export function ReplyCard({
     const res = await approveReply(item.replyDraft.id);
     if (res.success) {
       const sendRes = await sendReply(item.replyDraft.id);
-      if (sendRes.error) alert(sendRes.error);
+      if (sendRes.error) {
+        toast.error(sendRes.error);
+      } else {
+        toast.success("Reply sent successfully!");
+      }
     }
     setLoading(false);
     setIsEditing(false);
@@ -146,13 +155,14 @@ export function ReplyCard({
     if (activeReplyDraftId.current !== savingDraftId) return;
     setLoading(false);
     if (response.error) {
-      alert(response.error);
+      toast.error(response.error);
       return;
     }
     const persistedContent = draftContent.trim();
     hasHumanEditsRef.current = false;
     setHasHumanEdits(false);
     setDraftContent(persistedContent);
+    toast.success("Reply saved");
     const stagedSnapshotCleared = onEditSaved?.(persistedContent, stagedSnapshot) ?? true;
     setIsEditing(!stagedSnapshotCleared);
     onActionComplete();

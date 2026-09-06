@@ -8,7 +8,7 @@ import { Bookmark01Icon as BookMarked, Clock01Icon as Clock3, PlusSignIcon as Pl
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createFlow, listFlows, deleteFlow, type FlowRow } from "@/app/actions/flows";
@@ -19,6 +19,8 @@ export default function FlowsPage() {
   const [loading, setLoading] = useState(true);
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [flowToDelete, setFlowToDelete] = useState<FlowRow | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -40,9 +42,18 @@ export default function FlowsPage() {
     } else toast.error(res.error ?? "Failed");
   }
 
-  async function handleDelete(id: string) {
-    const res = await deleteFlow(id);
-    if (res.ok) { setFlows((f) => f.filter((x) => x.id !== id)); toast.success("Deleted"); }
+  async function confirmDelete() {
+    if (!flowToDelete) return;
+    setIsDeleting(true);
+    const res = await deleteFlow(flowToDelete.id);
+    setIsDeleting(false);
+    if (res.ok) {
+      setFlows((f) => f.filter((x) => x.id !== flowToDelete.id));
+      toast.success(`Flow "${flowToDelete.name}" deleted`);
+      setFlowToDelete(null);
+    } else {
+      toast.error(res.error ?? "Failed to delete flow");
+    }
   }
 
   return (
@@ -87,7 +98,7 @@ export default function FlowsPage() {
             <div key={flow.id} className="group relative rounded-xl border bg-card p-5 shadow-sm transition-shadow hover:shadow-md">
               <Link href={`/flows/${flow.id}`} className="block">
                 <div className="flex items-center gap-2 mb-1">
-                  <h2 className="font-semibold group-hover:text-[#ffe633] transition-colors">{flow.name}</h2>
+                  <h2 className="font-semibold group-hover:text-primary transition-colors">{flow.name}</h2>
                   <Badge variant={flow.status === "active" ? "default" : "secondary"} className="text-[10px]">{flow.status}</Badge>
                 </div>
                 {flow.description && <p className="text-sm text-muted-foreground line-clamp-2">{flow.description}</p>}
@@ -98,8 +109,11 @@ export default function FlowsPage() {
               </Link>
               <button
                 aria-label={`Delete ${flow.name}`}
-                onClick={() => handleDelete(flow.id)}
-                className="absolute right-3 top-3 rounded-lg p-1.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFlowToDelete(flow);
+                }}
+                className="absolute right-3 top-3 rounded-lg p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -107,6 +121,26 @@ export default function FlowsPage() {
           ))}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={Boolean(flowToDelete)} onOpenChange={(open) => !open && setFlowToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Flow</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &ldquo;{flowToDelete?.name}&rdquo;? All configuration, history, and scheduled runs for this flow will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setFlowToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
+              {isDeleting ? "Deleting..." : "Delete Flow"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

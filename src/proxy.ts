@@ -2,16 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
-	let session = null;
-	try {
-		session = await auth.api.getSession({
-			headers: request.headers
-		});
-	} catch (err) {
-		console.error("[proxy] Session retrieval failed:", err);
-		session = null;
-	}
-
 	const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup');
 	
 	// Paths that require authentication
@@ -36,12 +26,27 @@ export async function proxy(request: NextRequest) {
 		request.nextUrl.pathname.startsWith('/theme-studio') ||
 		request.nextUrl.pathname.startsWith('/operations');
 
+	// Short-circuit public routes (e.g. /, /docs, /blog, /about) to avoid DB session queries
+	if (!isProtectedRoute && !isAuthRoute) {
+		return NextResponse.next();
+	}
+
+	let session = null;
+	try {
+		session = await auth.api.getSession({
+			headers: request.headers
+		});
+	} catch (err) {
+		console.error("[proxy] Session retrieval failed:", err);
+		session = null;
+	}
+
 	if (!session) {
 		if (isProtectedRoute) {
 			return NextResponse.redirect(new URL("/login", request.url));
 		}
 	} else {
-		if (isAuthRoute || request.nextUrl.pathname === '/') {
+		if (isAuthRoute) {
 			return NextResponse.redirect(new URL("/dashboard", request.url));
 		}
 	}

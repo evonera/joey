@@ -274,7 +274,10 @@ export async function getConnectedAccounts() {
     try {
         const { tenantId } = await getZernioClient();
         const accounts = await db.query.socialAccounts.findMany({
-            where: eq(socialAccounts.tenantId, tenantId)
+            where: and(
+                eq(socialAccounts.tenantId, tenantId),
+                eq(socialAccounts.isActive, true)
+            )
         });
         return { accounts };
     } catch (error: any) {
