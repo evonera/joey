@@ -10,6 +10,9 @@ import { getPendingReplyCount } from "@/app/actions/engagement"
 import { getAgentConfig } from "@/app/actions/agent"
 import { getUnreadNotificationCount } from "@/app/actions/notifications"
 import { AlertCircleIcon } from "hugeicons-react"
+import { getActiveTenantMembership } from "@/lib/auth"
+import { isLiveblocksConfigured } from "@/lib/liveblocks"
+import { JoeyLiveblocksProvider } from "@/components/collaboration/liveblocks-provider"
 
 export const dynamic = "force-dynamic"
 
@@ -20,34 +23,46 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const { count: unreadNotificationCount } = await getUnreadNotificationCount()
   const isPaused = config?.isPaused
 
+  let tenantId: string | null = null
+  try {
+    const membership = await getActiveTenantMembership()
+    tenantId = membership.tenantId
+  } catch {
+    // If not authenticated or tenant unresolvable, default to null
+  }
+
+  const liveblocksConfigured = isLiveblocksConfigured()
+
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" pendingDraftCount={count || 0} pendingReplyCount={pendingReplyCount || 0} />
-      <SidebarInset>
-        <SiteHeader unreadNotificationCount={unreadNotificationCount || 0} />
-        {isPaused && (
-            <div className="bg-red-500 text-white px-4 py-2 text-sm flex items-center justify-center gap-2">
-                <AlertCircleIcon className="w-4 h-4" />
-                <span><strong>Automation Paused:</strong> Your Zernio API key is invalid or revoked. Please update it in Settings to resume drafting and publishing.</span>
-            </div>
-        )}
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              <div className="px-4 lg:px-6">
-                 {children}
+    <JoeyLiveblocksProvider isConfigured={liveblocksConfigured} tenantId={tenantId}>
+      <SidebarProvider
+        style={
+          {
+            "--sidebar-width": "calc(var(--spacing) * 72)",
+            "--header-height": "calc(var(--spacing) * 12)",
+          } as React.CSSProperties
+        }
+      >
+        <AppSidebar variant="inset" pendingDraftCount={count || 0} pendingReplyCount={pendingReplyCount || 0} />
+        <SidebarInset>
+          <SiteHeader unreadNotificationCount={unreadNotificationCount || 0} />
+          {isPaused && (
+              <div className="bg-red-500 text-white px-4 py-2 text-sm flex items-center justify-center gap-2">
+                  <AlertCircleIcon className="w-4 h-4" />
+                  <span><strong>Automation Paused:</strong> Your Zernio API key is invalid or revoked. Please update it in Settings to resume drafting and publishing.</span>
+              </div>
+          )}
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+                <div className="px-4 lg:px-6">
+                   {children}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+        </SidebarInset>
+      </SidebarProvider>
+    </JoeyLiveblocksProvider>
   )
 }

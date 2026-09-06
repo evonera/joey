@@ -17,8 +17,12 @@ import {
   CheckmarkCircle02Icon as Check, 
   Loading03Icon as Loader2,
   SentIcon as Send,
-  Cancel01Icon as X
+  Cancel01Icon as X,
+  Comment01Icon as MessageSquare
 } from "hugeicons-react";
+import { DraftReviewRoom } from "@/components/drafts/draft-review-room";
+import { DraftComments } from "@/components/drafts/draft-comments";
+import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
 
 interface DraftCardProps {
   draft: any;
@@ -29,12 +33,14 @@ interface DraftCardProps {
 }
 
 export function DraftCard({ draft, onActionComplete, selectable, selected, onToggleSelect }: DraftCardProps) {
+    const { isConfigured } = useLiveblocksConfig();
     const [isEditing, setIsEditing] = useState(false);
     const [content, setContent] = useState(draft.content || "");
     const [isRejecting, setIsRejecting] = useState(false);
     const [feedback, setFeedback] = useState("");
     const [loading, setLoading] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [isCommentsOpen, setIsCommentsOpen] = useState(false);
 
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
@@ -149,6 +155,16 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                     } className="text-[11px] capitalize">
                         {draft.status.replace("_", " ")}
                     </Badge>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsCommentsOpen(true)}
+                        disabled={loading}
+                        className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                        title="Team comments & review"
+                    >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                    </Button>
                     <Button
                         variant="ghost"
                         size="icon"
@@ -316,6 +332,17 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                         </Button>
                     )}
                     
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setIsCommentsOpen(true)} 
+                        disabled={loading} 
+                        className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                        title="Discuss or suggest revisions"
+                    >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Comments
+                    </Button>
                     {(!hasVariants || draft.content) && (
                         <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} disabled={loading} className="text-xs">
                             Edit
@@ -364,6 +391,24 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Team Comments Sheet */}
+            <Sheet open={isCommentsOpen} onOpenChange={setIsCommentsOpen}>
+                <SheetContent className="sm:max-w-md overflow-y-auto">
+                    <SheetHeader className="mb-4">
+                        <SheetTitle className="text-base flex items-center gap-2">
+                            <MessageSquare className="h-4 w-4 text-primary" />
+                            Draft Review & Comments
+                        </SheetTitle>
+                        <SheetDescription className="text-xs">
+                            Real-time feedback, revision requests, and team discussion.
+                        </SheetDescription>
+                    </SheetHeader>
+                    <DraftReviewRoom draftId={draft.id} onActionComplete={onActionComplete}>
+                        <DraftComments draftId={draft.id} />
+                    </DraftReviewRoom>
+                </SheetContent>
+            </Sheet>
         </div>
     );
 }

@@ -20,6 +20,8 @@ import {
   Sparkles,
   PenSquare
 } from "lucide-react";
+import { CollaborativeAvatars } from "@/components/collaboration/collaborative-avatars";
+import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
 
 const PLATFORMS = [
   { id: "all", label: "All Platforms" },
@@ -33,6 +35,7 @@ const PLATFORMS = [
 ];
 
 export default function DraftsPage() {
+    const { isConfigured, tenantId } = useLiveblocksConfig();
     const [drafts, setDrafts] = useState<any[]>([]);
     const [counts, setCounts] = useState<Record<string, number>>({
         all: 0,
@@ -188,12 +191,20 @@ export default function DraftsPage() {
                         Review, edit, approve, and manage AI-generated drafts before publication.
                     </p>
                 </div>
-                <Button asChild size="sm" className="gap-1.5 self-start sm:self-auto">
-                    <Link href="/compose">
-                        <PenSquare className="w-4 h-4" />
-                        Compose New
-                    </Link>
-                </Button>
+                <div className="flex items-center gap-3 self-start sm:self-auto">
+                    {isConfigured && tenantId && (
+                        <div className="flex items-center gap-2 bg-muted/40 border rounded-lg px-2.5 py-1">
+                            <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">Reviewers:</span>
+                            <CollaborativeAvatars roomId={`workspace:${tenantId}:drafts`} maxAvatars={4} />
+                        </div>
+                    )}
+                    <Button asChild size="sm" className="gap-1.5">
+                        <Link href="/compose">
+                            <PenSquare className="w-4 h-4" />
+                            Compose New
+                        </Link>
+                    </Button>
+                </div>
             </div>
 
             {/* Tabs */}
