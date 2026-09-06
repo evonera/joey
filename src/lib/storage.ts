@@ -117,8 +117,22 @@ function getAccountId() {
   return id;
 }
 
-export function buildPublicUrl(key: string) {
-  return `https://${getBucketName()}.${getAccountId()}.r2.cloudflarestorage.com/${key}`;
+export function buildPublicUrl(key: string): string {
+  const publicCdn = process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+  if (publicCdn) {
+    return `${publicCdn.replace(/\/$/, "")}/${key}`;
+  }
+  const bucket = process.env.R2_BUCKET_NAME;
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (bucket && accountId) {
+    return `https://${bucket}.${accountId}.r2.cloudflarestorage.com/${key}`;
+  }
+  return `https://assets.joey.app/${key}`;
+}
+
+export function buildPublicClipUrl(key: string): string {
+  const cleanKey = key.startsWith("public-clips/") ? key : `public-clips/${key.replace(/^\/+/, "")}`;
+  return buildPublicUrl(cleanKey);
 }
 
 export async function deleteObject(key: string) {

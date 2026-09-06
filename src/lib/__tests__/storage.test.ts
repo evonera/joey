@@ -24,9 +24,27 @@ beforeEach(() => {
   process.env.R2_BUCKET_NAME = 'test-bucket';
 });
 
-const { generateUploadUrl, headObject, deleteObject, assertAllowedUpload, sanitizeUploadExtension } = await import('../storage');
+const { generateUploadUrl, headObject, deleteObject, assertAllowedUpload, sanitizeUploadExtension, buildPublicUrl, buildPublicClipUrl } = await import('../storage');
 
 describe('storage', () => {
+  describe('buildPublicUrl and buildPublicClipUrl', () => {
+    it('uses R2_PUBLIC_URL when set', () => {
+      process.env.R2_PUBLIC_URL = 'https://cdn.joey.app';
+      expect(buildPublicUrl('tenant/asset.png')).toBe('https://cdn.joey.app/tenant/asset.png');
+      expect(buildPublicClipUrl('streamers/speed.mp4')).toBe('https://cdn.joey.app/public-clips/streamers/speed.mp4');
+      delete process.env.R2_PUBLIC_URL;
+    });
+
+    it('falls back to S3 endpoint when bucket and account are configured', () => {
+      expect(buildPublicUrl('tenant/asset.png')).toBe('https://test-bucket.test-account.r2.cloudflarestorage.com/tenant/asset.png');
+    });
+
+    it('falls back to assets.joey.app when credentials are absent', () => {
+      delete process.env.R2_BUCKET_NAME;
+      delete process.env.CLOUDFLARE_ACCOUNT_ID;
+      expect(buildPublicUrl('test.png')).toBe('https://assets.joey.app/test.png');
+    });
+  });
   describe('generateUploadUrl', () => {
     it('returns uploadUrl, key, and publicUrl', async () => {
       mockGetSignedUrl.mockResolvedValue('https://signed.url/upload');

@@ -82,6 +82,32 @@ export function parseRssXml(xml: string, defaultRights: string = "unknown"): Nor
   return items;
 }
 
+export function parseHtmlMetadata(html: string, pageUrl: string, defaultRights = "unknown"): NormalizedFeedItem | null {
+  const ogTitleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+                       html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
+  const titleTagMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  const title = (ogTitleMatch?.[1] || titleTagMatch?.[1] || "").trim();
+  if (!title) return null;
+
+  const ogDescMatch = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+                      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i) ||
+                      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+  const body = (ogDescMatch?.[1] || title).trim();
+
+  const ogImageMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+                       html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  const heroImage = ogImageMatch?.[1] ? publicReferenceUrl(ogImageMatch[1]) : undefined;
+
+  return {
+    title: title.slice(0, 500),
+    body: body.slice(0, 20_000),
+    url: pageUrl,
+    publishedAt: new Date(),
+    rightsCategory: defaultRights,
+    metadata: heroImage ? { heroImage } : undefined,
+  };
+}
+
 export function extractCleanDomain(urlOrDomain: string): string {
   try {
     const candidate = urlOrDomain.startsWith("http://") || urlOrDomain.startsWith("https://")
@@ -324,39 +350,81 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
           }
         }
       } else {
-        // HTML response: Discover RSS or run Exa Domain search
+        // HTML response:
+        // 1. Check if raw text is actually RSS XML
         let discovered = parseRssXml(rawText, source.rightsCategory);
+
+        // 2. Discover alternate RSS/Atom XML feed from HTML <link> tags
         if (discovered.length === 0) {
-          const domain = extractCleanDomain(source.url);
-          const { searchWithExa } = await import("@/lib/search/exa-client");
-          const exaRes = await searchWithExa(
-            {
-              query: source.name || "latest news headlines breaking updates",
-              includeDomains: domain ? [domain] : undefined,
-              category: "news",
-              numResults: 20,
-              signal,
-            },
-            tenantId,
-          );
-          for (const item of exaRes.results) {
-            if (item.title && item.url) {
-              discovered.push({
-                title: item.title.slice(0, 500),
-                body: (item.text || item.highlights.join(" ") || item.title).slice(0, 20_000),
-                url: item.url,
-                publishedAt: parsedDate(item.publishedDate),
-                rightsCategory: source.rightsCategory || "news_fair_use",
-                metadata: {
-                  heroImage: item.heroImage,
-                  imageLinks: item.imageLinks,
-                  author: item.author,
-                  highlights: item.highlights,
-                },
+          let discoveredRssUrl: string | undefined;
+          const linkMatch =
+            rawText.match(/<link[^>]+type=["']application\/(?:rss|atom)\+xml["'][^>]+href=["']([^"']+)["']/i) ||
+            rawText.match(/<link[^>]+href=["']([^"']+)["'][^>]+type=["']application\/(?:rss|atom)\+xml["']/i);
+          if (linkMatch?.[1]) {
+            try {
+              discoveredRssUrl = new URL(linkMatch[1], source.url).toString();
+            } catch {}
+          }
+
+          if (discoveredRssUrl) {
+            try {
+              const feedRes = await outboundRequest(discoveredRssUrl, {
+                headers: { "User-Agent": "JoeyThemeStudioBot/1.0 (+https://eve.dev)" },
+                signal,
+                timeoutMs: 15_000,
+                maxBytes: 2 * 1024 * 1024,
               });
-            }
+              if (feedRes.status >= 200 && feedRes.status < 300) {
+                const alternateItems = parseRssXml(feedRes.buffer.toString("utf8"), source.rightsCategory);
+                if (alternateItems.length > 0) discovered.push(...alternateItems);
+              }
+            } catch {}
           }
         }
+
+        // 3. Fall back to Exa domain search
+        if (discovered.length === 0) {
+          const domain = extractCleanDomain(source.url);
+          try {
+            const { searchWithExa } = await import("@/lib/search/exa-client");
+            const exaRes = await searchWithExa(
+              {
+                query: source.name || "latest news headlines breaking updates",
+                includeDomains: domain ? [domain] : undefined,
+                category: "news",
+                numResults: 20,
+                signal,
+              },
+              tenantId,
+            );
+            for (const item of exaRes.results) {
+              if (item.title && item.url) {
+                discovered.push({
+                  title: item.title.slice(0, 500),
+                  body: (item.text || item.highlights.join(" ") || item.title).slice(0, 20_000),
+                  url: item.url,
+                  publishedAt: parsedDate(item.publishedDate),
+                  rightsCategory: source.rightsCategory || "news_fair_use",
+                  metadata: {
+                    heroImage: item.heroImage,
+                    imageLinks: item.imageLinks,
+                    author: item.author,
+                    highlights: item.highlights,
+                  },
+                });
+              }
+            }
+          } catch (exaErr) {
+            console.warn(`[source-poller] Exa search failed for ${source.url}:`, exaErr);
+          }
+        }
+
+        // 4. Fall back to direct page OpenGraph / HTML metadata
+        if (discovered.length === 0) {
+          const metaItem = parseHtmlMetadata(rawText, source.url, source.rightsCategory);
+          if (metaItem) discovered.push(metaItem);
+        }
+
         items.push(...discovered);
       }
     }

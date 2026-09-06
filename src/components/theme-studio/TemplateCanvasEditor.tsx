@@ -225,7 +225,7 @@ export function TemplateCanvasEditor({
   const [saving, setSaving] = React.useState(false);
   const [r2Configured, setR2Configured] = React.useState<boolean | null>(null);
   const [clipSearch, setClipSearch] = React.useState("");
-  const [clipCategory, setClipCategory] = React.useState<"all" | "reaction" | "gaming_loop" | "streamer">("all");
+  const [clipCategory, setClipCategory] = React.useState<"all" | "reaction" | "gaming_loop" | "streamer" | "cinema" | "b_roll">("all");
   const [videoMuted, setVideoMuted] = React.useState(true);
 
   React.useEffect(() => {
@@ -1162,18 +1162,18 @@ export function TemplateCanvasEditor({
                   <span className="text-[10px] text-muted-foreground">High Retention</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Curated viral reaction memes and hypnotic background loops for Reels, TikTok, and Mixed Carousels.
+                  Curated viral reaction memes, iconic movie/TV dialogue, streamer moments (IShowSpeed, Kai Cenat), and hypnotic background loops.
                 </p>
                 <input
                   type="text"
                   value={clipSearch}
                   onChange={(e) => setClipSearch(e.target.value)}
-                  placeholder="Search Homelander, Pedro Pascal, Subway Surfers, GTA..."
+                  placeholder="Search quotes ('Parkour', 'Danger'), Speed, Kai, The Office, Subway Surfers..."
                   className="w-full px-3 py-1.5 text-xs border rounded-lg bg-background font-medium"
                 />
                 {/* Category Pills */}
                 <div className="flex flex-wrap gap-1 pt-1">
-                  {(["all", "reaction", "gaming_loop", "streamer"] as const).map((cat) => (
+                  {(["all", "streamer", "cinema", "reaction", "gaming_loop", "b_roll"] as const).map((cat) => (
                     <button
                       key={cat}
                       type="button"
@@ -1220,6 +1220,11 @@ export function TemplateCanvasEditor({
                               {clip.aspectRatio}
                             </span>
                           </div>
+                          {clip.quote && (
+                            <p className="text-[10px] text-amber-500/90 font-medium italic truncate mt-0.5">
+                              &ldquo;{clip.quote}&rdquo; {clip.speaker && <span className="text-muted-foreground not-italic font-normal">— {clip.speaker}</span>}
+                            </p>
+                          )}
                           <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
                             {clip.description}
                           </p>
@@ -1233,6 +1238,12 @@ export function TemplateCanvasEditor({
                                   memeClipId: clip.id,
                                   templateFamily: prev.templateFamily === "mixed_carousel" ? "mixed_carousel" : "video_reel",
                                 }));
+                                if (clip.quote) {
+                                  setPreviewSample((prev) => ({
+                                    ...prev,
+                                    title: clip.quote!,
+                                  }));
+                                }
                                 toast.success(`Attached "${clip.title}" to template`);
                               }}
                               className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
