@@ -2,7 +2,7 @@ import { auth, getActiveTenantMembership } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 /**
  * Resolves user information for Liveblocks components (AvatarStack, Threads, Mentions).
@@ -21,14 +21,36 @@ export async function POST(request: Request) {
   }
 
   try {
+    const membership = await getActiveTenantMembership().catch(() => null);
+    const tenantId = membership?.tenantId;
     const { userIds } = (await request.json()) as { userIds?: string[] };
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return Response.json([]);
     }
 
-    // Fetch users matching the provided IDs
+    if (!tenantId) {
+      return Response.json(userIds.map(() => ({ name: "Teammate" })));
+    }
+
+    // Strictly verify which requested userIds are members of the caller's active tenant
+    const memberships = await db.query.member.findMany({
+      where: and(
+        eq(schema.member.organizationId, tenantId),
+        inArray(schema.member.userId, userIds)
+      ),
+      columns: {
+        userId: true,
+      },
+    });
+
+    const authorizedUserIds = new Set((memberships || []).map((m) => m.userId));
+    if (authorizedUserIds.size === 0) {
+      return Response.json(userIds.map(() => ({ name: "Teammate" })));
+    }
+
+    // Fetch users matching ONLY the authorized member IDs
     const users = await db.query.user.findMany({
-      where: inArray(schema.user.id, userIds),
+      where: inArray(schema.user.id, Array.from(authorizedUserIds)),
       columns: {
         id: true,
         name: true,

@@ -179,11 +179,19 @@ describe("Liveblocks Integration & Auth Scoping", () => {
     });
 
     it("resolves user details maintaining order", async () => {
-      const { auth } = await import("@/lib/auth");
+      const { auth, getActiveTenantMembership } = await import("@/lib/auth");
       const { db } = await import("@/lib/db");
       (auth.api.getSession as any).mockResolvedValue({
         user: { id: "usr_1" },
       });
+      (getActiveTenantMembership as any).mockResolvedValue({
+        tenantId: "org_alpha",
+        userId: "usr_1",
+      });
+      (db.query.member.findMany as any).mockResolvedValue([
+        { userId: "usr_1" },
+        { userId: "usr_2" },
+      ]);
 
       (db.query.user.findMany as any).mockResolvedValue([
         { id: "usr_2", name: "Bob", image: "https://bob.png" },
@@ -205,6 +213,33 @@ describe("Liveblocks Integration & Auth Scoping", () => {
       expect(data[0]).toEqual({ name: "Alice", avatar: "https://alice.png" });
       expect(data[1]).toEqual({ name: "Bob", avatar: "https://bob.png" });
       expect(data[2]).toEqual({ name: "Teammate" });
+    });
+
+    it("rejects cross-workspace user IDs and returns generic fallback", async () => {
+      const { auth, getActiveTenantMembership } = await import("@/lib/auth");
+      const { db } = await import("@/lib/db");
+      (auth.api.getSession as any).mockResolvedValue({
+        user: { id: "usr_1" },
+      });
+      (getActiveTenantMembership as any).mockResolvedValue({
+        tenantId: "org_alpha",
+        userId: "usr_1",
+      });
+      // Foreign user is NOT in member table for org_alpha
+      (db.query.member.findMany as any).mockResolvedValue([]);
+      (db.query.user.findMany as any).mockResolvedValue([]);
+
+      const { POST } = await import("@/app/api/liveblocks-users/route");
+      const req = new Request("http://localhost:3000/api/liveblocks-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: ["usr_foreign_victim"] }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data).toEqual([{ name: "Teammate" }]);
     });
   });
 

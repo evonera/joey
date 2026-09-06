@@ -289,12 +289,27 @@ export async function updateDraft(draftId: string, content: string) {
 
         const existingPackage = await db.query.contentPackages.findFirst({
             where: and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId)),
-            columns: { id: true }
+            columns: { id: true, title: true }
         });
 
         if (existingPackage) {
+            let newTitle = existingPackage.title;
+            let newCaption = content.trim();
+
+            if (content.startsWith(existingPackage.title + "\n\n")) {
+                newCaption = content.slice((existingPackage.title + "\n\n").length).trim();
+            } else if (content.startsWith(existingPackage.title + "\n")) {
+                newCaption = content.slice((existingPackage.title + "\n").length).trim();
+            } else {
+                const breakIdx = content.indexOf("\n\n");
+                if (breakIdx !== -1) {
+                    newTitle = content.slice(0, breakIdx).trim();
+                    newCaption = content.slice(breakIdx + 2).trim();
+                }
+            }
+
             await db.update(contentPackages)
-                .set({ caption: content, updatedAt: new Date() })
+                .set({ title: newTitle, caption: newCaption, updatedAt: new Date() })
                 .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId)));
             return { success: true };
         }
@@ -378,7 +393,7 @@ export async function rejectDraft(draftId: string, feedback: string) {
         });
 
         if (existingPackage) {
-            const res = await reviewThemePackage(draftId, "reject");
+            const res = await reviewThemePackage(draftId, "reject", feedback);
             if (res.error) return { error: res.error };
             return { success: true };
         }

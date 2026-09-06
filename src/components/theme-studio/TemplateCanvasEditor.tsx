@@ -12,10 +12,17 @@ import {
   IconCheck,
   IconCircleCheck,
   IconArrowRight,
-  IconBrandInstagram
+  IconBrandInstagram,
+  IconBrandX,
+  IconVideo,
+  IconPlayerPlay,
+  IconVolume,
+  IconVolumeOff,
+  IconLayoutGrid,
 } from "@tabler/icons-react";
 import { createThemeTemplate, updateThemeTemplate } from "@/app/actions/theme-templates";
 import { checkR2Status } from "@/app/actions/assets";
+import { CURATED_MEME_CLIPS, MemeClip, searchMemeClips } from "@/lib/theme-studio/assets/meme-clips";
 import { toast } from "sonner";
 
 interface TemplateData {
@@ -25,6 +32,7 @@ interface TemplateData {
   formatId: string;
   renderer: "puppeteer" | "remotion";
   componentSpec: {
+    templateFamily?: "pubity_hero" | "morning_brew_cyan" | "pubity_carousel" | "tweet_card" | "tweet_grid4" | "video_reel" | "mixed_carousel";
     backgroundColor?: string;
     backgroundGradient?: string;
     bgImageUrl?: string;
@@ -41,12 +49,32 @@ interface TemplateData {
     borderRadius?: number;
     titleTemplate?: string;
     bodyTemplate?: string;
-    topBadge?: "yellow_logo" | "swipe_pill" | "tag_pill" | "none";
+    topBadge?: "yellow_logo" | "swipe_pill" | "tag_pill" | "circular_seal" | "none";
     brandInitial?: string;
     showDivider?: boolean;
     pipInsetUrl?: string;
     highlightWords?: string[];
     watermarkBackdropText?: string;
+    videoUrl?: string;
+    memeClipId?: string;
+    mediaUrls?: string[];
+    mediaLayout?: "single" | "2-column" | "4-grid" | "none";
+    tweetAuthor?: {
+      name: string;
+      handle: string;
+      avatarUrl?: string;
+      isVerified?: boolean;
+    };
+    quotedTweet?: {
+      author: {
+        name: string;
+        handle: string;
+        avatarUrl?: string;
+        isVerified?: boolean;
+      };
+      content: string;
+      mediaUrl?: string;
+    };
   };
   propsSchema?: Record<string, unknown> | null;
   format?: {
@@ -192,10 +220,13 @@ export function TemplateCanvasEditor({
     (spec.highlightWords || ["RECORD", "HISTORIC", "VICTORY", "SMASHES"]).join(", ")
   );
 
-  const [activeTab, setActiveTab] = React.useState<"design" | "content">("design");
-  const [activeSlide, setActiveSlide] = React.useState<1 | 2 | 3>(1);
+  const [activeTab, setActiveTab] = React.useState<"design" | "content" | "clips">("design");
+  const [activeSlide, setActiveSlide] = React.useState<1 | 2 | 3 | 4>(1);
   const [saving, setSaving] = React.useState(false);
   const [r2Configured, setR2Configured] = React.useState<boolean | null>(null);
+  const [clipSearch, setClipSearch] = React.useState("");
+  const [clipCategory, setClipCategory] = React.useState<"all" | "reaction" | "gaming_loop" | "streamer">("all");
+  const [videoMuted, setVideoMuted] = React.useState(true);
 
   React.useEffect(() => {
     checkR2Status()
@@ -205,15 +236,16 @@ export function TemplateCanvasEditor({
 
   const selectedFormat = availableFormats.find((f) => f.id === formatId) || availableFormats[0];
   const isPortrait = selectedFormat?.aspectRatio === "4:5";
-  const isVertical = selectedFormat?.aspectRatio === "9:16";
-  const isCarousel = selectedFormat?.slug?.includes("carousel") || name.toLowerCase().includes("carousel");
+  const isVertical = selectedFormat?.aspectRatio === "9:16" || spec.templateFamily === "video_reel";
+  const isCarousel = selectedFormat?.slug?.includes("carousel") || name.toLowerCase().includes("carousel") || spec.templateFamily === "pubity_carousel" || spec.templateFamily === "mixed_carousel";
 
-  function applyPreset(presetType: "pubity_hero" | "pubity_carousel" | "sports_spotlight" | "dark_minimal") {
+  function applyPreset(presetType: "pubity_hero" | "morning_brew_cyan" | "pubity_carousel" | "tweet_card" | "tweet_grid4" | "video_reel" | "mixed_carousel" | "sports_spotlight" | "dark_minimal") {
     if (presetType === "pubity_hero") {
       setName("Pubity Breaking News Hero");
       setBgMode("photo");
       setSpec((prev) => ({
         ...prev,
+        templateFamily: "pubity_hero",
         bgType: "photo",
         bgImageUrl: PHOTO_PRESETS[0].url,
         backgroundColor: "#0a0908",
@@ -239,11 +271,43 @@ export function TemplateCanvasEditor({
       });
       setActiveSlide(1);
       toast.success("Applied Pubity Breaking Hero template");
+    } else if (presetType === "morning_brew_cyan") {
+      setName("Morning Brew Cyan Edition");
+      setBgMode("photo");
+      setSpec((prev) => ({
+        ...prev,
+        templateFamily: "morning_brew_cyan",
+        bgType: "photo",
+        bgImageUrl: PHOTO_PRESETS[5].url,
+        backgroundColor: "#030712",
+        accentColor: "#00e5ff",
+        textColor: "#ffffff",
+        topBadge: "circular_seal",
+        brandInitial: "M",
+        showDivider: true,
+        pipInsetUrl: undefined,
+        titleSize: 30,
+        bodySize: 15,
+        highlightWords: ["BEAR", "COYOTE", "URBAN", "LOVABLE", "SURGE"],
+        watermarkBackdropText: "MORNING BREW",
+      }));
+      setHighlightInput("BEAR, COYOTE, URBAN, LOVABLE, SURGE");
+      setPreviewSample({
+        title: "Urban Wildlife Encounters Surge in Record Historic Suburban Migration",
+        summary: "State rangers report unprecedented wildlife behavior across national corridors as urban fringe sightings triple.",
+        source_name: "Morning Brew Daily",
+        author: "Trends Desk",
+        tag: "OFFICIAL REPORT",
+        date: new Date().toLocaleDateString(),
+      });
+      setActiveSlide(1);
+      toast.success("Applied Morning Brew Cyan template");
     } else if (presetType === "pubity_carousel") {
       setName("Pubity Multi-Slide Carousel");
       setBgMode("photo");
       setSpec((prev) => ({
         ...prev,
+        templateFamily: "pubity_carousel",
         bgType: "photo",
         bgImageUrl: PHOTO_PRESETS[3].url,
         backgroundColor: "#0a0908",
@@ -268,11 +332,152 @@ export function TemplateCanvasEditor({
         date: new Date().toLocaleDateString(),
       });
       toast.success("Applied Pubity Carousel template");
+    } else if (presetType === "tweet_card") {
+      setName("Twitter / X Single Post & Media");
+      setBgMode("solid");
+      setSpec((prev) => ({
+        ...prev,
+        templateFamily: "tweet_card",
+        bgType: "solid",
+        backgroundColor: "#000000",
+        accentColor: "#1d9bf0",
+        textColor: "#ffffff",
+        mediaLayout: "single",
+        tweetAuthor: {
+          name: "Daily Loud",
+          handle: "@DailyLoud",
+          avatarUrl: PIP_PRESETS[0].url,
+          isVerified: true,
+        },
+        quotedTweet: {
+          author: {
+            name: "Pop Base",
+            handle: "@PopBase",
+            avatarUrl: PIP_PRESETS[1].url,
+            isVerified: true,
+          },
+          content: "This remains one of the most unpredictable cultural phenomena of the entire year.",
+        },
+        titleSize: 24,
+        bodySize: 15,
+      }));
+      setPreviewSample({
+        title: "The sheer velocity of autonomous social platforms is shattering every prior retention record in 2026.",
+        summary: "Live tests reveal automated content clustering drives 4.8x higher repeat impressions.",
+        source_name: "X Trending",
+        author: "Tech Reporter",
+        tag: "VIRAL POST",
+        date: new Date().toLocaleDateString(),
+      });
+      toast.success("Applied Twitter / X Post template");
+    } else if (presetType === "tweet_grid4") {
+      setName("Twitter / X 4-Grid Meme Collage");
+      setBgMode("solid");
+      setSpec((prev) => ({
+        ...prev,
+        templateFamily: "tweet_grid4",
+        bgType: "solid",
+        backgroundColor: "#000000",
+        accentColor: "#1d9bf0",
+        textColor: "#ffffff",
+        mediaLayout: "4-grid",
+        mediaUrls: [
+          PHOTO_PRESETS[0].url,
+          PHOTO_PRESETS[1].url,
+          PHOTO_PRESETS[2].url,
+          PHOTO_PRESETS[3].url,
+        ],
+        tweetAuthor: {
+          name: "Cinema & Culture",
+          handle: "@cinemac物を",
+          avatarUrl: PIP_PRESETS[0].url,
+          isVerified: true,
+        },
+        quotedTweet: {
+          author: {
+            name: "Acme Reviews",
+            handle: "@acme_corp",
+            isVerified: true,
+          },
+          content: "Top-right by far, nothing else comes remotely close.",
+        },
+        titleSize: 22,
+        bodySize: 14,
+      }));
+      setPreviewSample({
+        title: "Which cinematic world are you choosing to survive in for 30 consecutive days?",
+        summary: "Cast your vote below and debate in the replies.",
+        source_name: "X Discussions",
+        author: "Poll Host",
+        tag: "DEBATE",
+        date: new Date().toLocaleDateString(),
+      });
+      toast.success("Applied Twitter / X 4-Grid Meme template");
+    } else if (presetType === "video_reel") {
+      const memeClip = CURATED_MEME_CLIPS[0];
+      setName("Vertical 9:16 Video Meme Reel");
+      setBgMode("solid");
+      setSpec((prev) => ({
+        ...prev,
+        templateFamily: "video_reel",
+        bgType: "solid",
+        backgroundColor: "#000000",
+        accentColor: "#ffe633",
+        textColor: "#ffffff",
+        videoUrl: memeClip.videoUrl,
+        memeClipId: memeClip.id,
+        titleSize: 26,
+        bodySize: 14,
+        topBadge: "none",
+        watermarkText: "@JoeyReels",
+      }));
+      setPreviewSample({
+        title: "They were really filming scenes like this with zero CGI in mind...",
+        summary: "Watch closely at the camera movement in the final three seconds.",
+        source_name: "Viral Video Archive",
+        author: "Curator",
+        tag: "WATCH TILL END",
+        date: new Date().toLocaleDateString(),
+      });
+      toast.success("Applied Vertical Video Meme Reel template");
+    } else if (presetType === "mixed_carousel") {
+      const memeClip = CURATED_MEME_CLIPS[1];
+      setName("Mixed Media 4-Slide Carousel");
+      setBgMode("photo");
+      setSpec((prev) => ({
+        ...prev,
+        templateFamily: "mixed_carousel",
+        bgType: "photo",
+        bgImageUrl: PHOTO_PRESETS[0].url,
+        videoUrl: memeClip.videoUrl,
+        memeClipId: memeClip.id,
+        backgroundColor: "#0a0908",
+        accentColor: "#ffe633",
+        textColor: "#ffffff",
+        topBadge: "swipe_pill",
+        brandInitial: "🅟",
+        showDivider: true,
+        titleSize: 28,
+        bodySize: 15,
+        highlightWords: ["UNEXPECTED", "STUNNING", "REVEALED", "TURNING POINT"],
+        watermarkBackdropText: "PUBITY",
+      }));
+      setHighlightInput("UNEXPECTED, STUNNING, REVEALED, TURNING POINT");
+      setPreviewSample({
+        title: "Unexpected Turning Point Stuns Entire Arena in Final Seconds",
+        summary: "Slide 1 provides the background context, Slide 2 shows the live reaction video clip.",
+        source_name: "Sports Central",
+        author: "Live Desk",
+        tag: "EXCLUSIVE",
+        date: new Date().toLocaleDateString(),
+      });
+      toast.success("Applied Mixed Media Carousel template");
     } else if (presetType === "sports_spotlight") {
       setName("Sports Match Spotlight");
       setBgMode("photo");
       setSpec((prev) => ({
         ...prev,
+        templateFamily: "pubity_hero",
         bgType: "photo",
         bgImageUrl: PHOTO_PRESETS[1].url,
         backgroundColor: "#0a0908",
@@ -434,50 +639,100 @@ export function TemplateCanvasEditor({
       <div className="p-4 border rounded-2xl bg-card space-y-2.5">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <IconSparkles className="w-3.5 h-3.5 text-amber-500" /> Curated Pubity & Editorial Presets
+            <IconSparkles className="w-3.5 h-3.5 text-amber-500" /> Viral Template Families & Formats
           </span>
-          <span className="text-[11px] text-muted-foreground">1-click apply high-retention layout</span>
+          <span className="text-[11px] text-muted-foreground">1-click switch between high-retention formats</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
           <button
             type="button"
             onClick={() => applyPreset("pubity_hero")}
-            className="p-3 border rounded-xl text-left bg-muted/20 hover:bg-primary/5 hover:border-primary/40 transition-colors"
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "pubity_hero" ? "bg-primary/10 border-primary" : "bg-muted/20 hover:bg-muted/40"
+            }`}
           >
-            <div className="text-xs font-bold flex items-center gap-1.5">
-              <span className="text-amber-500 font-extrabold">🅟</span> Pubity Breaking
+            <div className="text-xs font-bold flex items-center gap-1">
+              <span className="text-amber-500 font-extrabold">🅟</span> Pubity Hero
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Photo scrim, yellow monogram shield, impact title</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Yellow shield & hairline divider</p>
           </button>
+
+          <button
+            type="button"
+            onClick={() => applyPreset("morning_brew_cyan")}
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "morning_brew_cyan" ? "bg-[#00e5ff]/10 border-[#00e5ff]" : "bg-muted/20 hover:bg-muted/40"
+            }`}
+          >
+            <div className="text-xs font-bold flex items-center gap-1 text-[#00e5ff]">
+              <span>☕</span> Morning Brew
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Cyan seal & — M — divider</p>
+          </button>
+
           <button
             type="button"
             onClick={() => applyPreset("pubity_carousel")}
-            className="p-3 border rounded-xl text-left bg-muted/20 hover:bg-primary/5 hover:border-primary/40 transition-colors"
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "pubity_carousel" ? "bg-primary/10 border-primary" : "bg-muted/20 hover:bg-muted/40"
+            }`}
           >
-            <div className="text-xs font-bold flex items-center gap-1.5">
-              <span className="text-amber-500">📑</span> 3-Slide Carousel
+            <div className="text-xs font-bold flex items-center gap-1">
+              <span className="text-amber-500">📑</span> 4-Slide Deck
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Frosted SWIPE pill, PIP circle, watermark outro</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Cover, PIP, points, outro CTA</p>
           </button>
+
           <button
             type="button"
-            onClick={() => applyPreset("sports_spotlight")}
-            className="p-3 border rounded-xl text-left bg-muted/20 hover:bg-primary/5 hover:border-primary/40 transition-colors"
+            onClick={() => applyPreset("tweet_card")}
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "tweet_card" ? "bg-sky-500/10 border-sky-500" : "bg-muted/20 hover:bg-muted/40"
+            }`}
           >
-            <div className="text-xs font-bold flex items-center gap-1.5">
-              <span className="text-amber-500">🏏</span> Sports Spotlight
+            <div className="text-xs font-bold flex items-center gap-1 text-sky-400">
+              <IconBrandX className="w-3.5 h-3.5" /> Single Post
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Action photo, PIP reaction circle, stat highlights</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Media & quote-tweet reply</p>
           </button>
+
           <button
             type="button"
-            onClick={() => applyPreset("dark_minimal")}
-            className="p-3 border rounded-xl text-left bg-muted/20 hover:bg-primary/5 hover:border-primary/40 transition-colors"
+            onClick={() => applyPreset("tweet_grid4")}
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "tweet_grid4" ? "bg-sky-500/10 border-sky-500" : "bg-muted/20 hover:bg-muted/40"
+            }`}
           >
-            <div className="text-xs font-bold flex items-center gap-1.5">
-              <span className="text-amber-500">🖤</span> Dark Minimal
+            <div className="text-xs font-bold flex items-center gap-1 text-sky-400">
+              <IconLayoutGrid className="w-3.5 h-3.5" /> 4-Grid Collage
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Subtle dark elegance with neon amber highlights</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">2x2 comparison meme</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => applyPreset("video_reel")}
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "video_reel" ? "bg-purple-500/10 border-purple-500" : "bg-muted/20 hover:bg-muted/40"
+            }`}
+          >
+            <div className="text-xs font-bold flex items-center gap-1 text-purple-400">
+              <IconVideo className="w-3.5 h-3.5" /> 9:16 Meme Reel
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Hook text & center video</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => applyPreset("mixed_carousel")}
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "mixed_carousel" ? "bg-emerald-500/10 border-emerald-500" : "bg-muted/20 hover:bg-muted/40"
+            }`}
+          >
+            <div className="text-xs font-bold flex items-center gap-1 text-emerald-400">
+              <span>🔀</span> Mixed Media
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Card cover + video clip</p>
           </button>
         </div>
       </div>
@@ -510,9 +765,21 @@ export function TemplateCanvasEditor({
                 <IconTypography className="w-3.5 h-3.5" /> Copy & Tokens
               </span>
             </button>
+            <button
+              onClick={() => setActiveTab("clips")}
+              className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
+                activeTab === "clips"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <IconVideo className="w-3.5 h-3.5 text-purple-400" /> Meme & Video Clips
+              </span>
+            </button>
           </div>
 
-          {activeTab === "design" ? (
+          {activeTab === "design" && (
             <div className="space-y-4 text-xs">
               <div>
                 <label className="block font-medium text-muted-foreground mb-1">Target Format</label>
@@ -778,18 +1045,20 @@ export function TemplateCanvasEditor({
                 />
               </div>
             </div>
-          ) : (
+          )}
+
+          {activeTab === "content" && (
             <div className="space-y-5 text-xs">
-              {/* Yellow Highlight Keywords */}
+              {/* Highlight Keywords */}
               <div className="space-y-2 p-3.5 border rounded-xl bg-amber-500/5 border-amber-500/20">
                 <div className="flex items-center justify-between">
                   <label className="block font-bold text-foreground flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Yellow Highlight Keywords
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Highlight Keywords
                   </label>
                   <span className="text-[10px] text-muted-foreground">Comma-separated</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Pubity&apos;s signature look highlights punchy words in neon yellow (`#ffe633`).
+                  Signature high-retention look highlights punchy words in your accent color ({spec.accentColor || "#ffe633"}).
                 </p>
                 <input
                   type="text"
@@ -882,6 +1151,111 @@ export function TemplateCanvasEditor({
               </div>
             </div>
           )}
+
+          {activeTab === "clips" && (
+            <div className="space-y-4 text-xs">
+              <div className="p-3.5 border rounded-xl bg-purple-500/5 border-purple-500/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-foreground flex items-center gap-1.5">
+                    <IconVideo className="w-4 h-4 text-purple-400" /> Viral Meme & Video Clip Library
+                  </label>
+                  <span className="text-[10px] text-muted-foreground">High Retention</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Curated viral reaction memes and hypnotic background loops for Reels, TikTok, and Mixed Carousels.
+                </p>
+                <input
+                  type="text"
+                  value={clipSearch}
+                  onChange={(e) => setClipSearch(e.target.value)}
+                  placeholder="Search Homelander, Pedro Pascal, Subway Surfers, GTA..."
+                  className="w-full px-3 py-1.5 text-xs border rounded-lg bg-background font-medium"
+                />
+                {/* Category Pills */}
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {(["all", "reaction", "gaming_loop", "streamer"] as const).map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setClipCategory(cat)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors ${
+                        clipCategory === cat
+                          ? "bg-purple-500 text-white border-purple-500"
+                          : "bg-muted/30 border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {cat === "all" ? "All Formats" : cat.replace("_", " ").toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Clip Cards List */}
+              <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                {searchMemeClips(clipSearch)
+                  .filter((clip) => clipCategory === "all" || clip.category === clipCategory)
+                  .map((clip) => {
+                    const isSelected = spec.videoUrl === clip.videoUrl;
+                    return (
+                      <div
+                        key={clip.id}
+                        className={`p-2.5 border rounded-xl flex items-center gap-3 transition-colors ${
+                          isSelected ? "bg-purple-500/10 border-purple-500 shadow-sm" : "bg-card hover:bg-muted/30"
+                        }`}
+                      >
+                        <div className="relative w-20 h-14 rounded-lg overflow-hidden shrink-0 bg-black/60 border border-white/10">
+                          <img
+                            src={clip.thumbnailUrl}
+                            alt={clip.title}
+                            className="w-full h-full object-cover"
+                          />
+                          <span className="absolute bottom-1 right-1 px-1 py-0.2 bg-black/80 text-white text-[9px] font-mono rounded">
+                            {clip.durationSeconds}s
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs truncate">{clip.title}</span>
+                            <span className="px-1.5 py-0.2 text-[9px] rounded uppercase font-semibold bg-muted text-muted-foreground shrink-0">
+                              {clip.aspectRatio}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                            {clip.description}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSpec((prev) => ({
+                                  ...prev,
+                                  videoUrl: clip.videoUrl,
+                                  memeClipId: clip.id,
+                                  templateFamily: prev.templateFamily === "mixed_carousel" ? "mixed_carousel" : "video_reel",
+                                }));
+                                toast.success(`Attached "${clip.title}" to template`);
+                              }}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                                isSelected
+                                  ? "bg-purple-500 text-white"
+                                  : "bg-primary/10 text-primary hover:bg-primary/20"
+                              }`}
+                            >
+                              {isSelected ? "Active on Canvas" : "Select Clip"}
+                            </button>
+                            {clip.attribution && (
+                              <span className="text-[9px] text-muted-foreground truncate">
+                                {clip.attribution}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right / Live Artboard Preview (7 cols) */}
@@ -891,249 +1265,486 @@ export function TemplateCanvasEditor({
               <IconEye className="w-4 h-4" /> Live High-Fidelity Canvas
             </div>
 
-            {/* Carousel Slide Switcher */}
-            <div className="inline-flex rounded-lg border p-0.5 bg-background shadow-xs text-xs">
-              <button
-                type="button"
-                onClick={() => setActiveSlide(1)}
-                className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                  activeSlide === 1 ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Slide 1 (Cover)
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSlide(2)}
-                className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                  activeSlide === 2 ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Slide 2 (Detail/PIP)
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSlide(3)}
-                className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                  activeSlide === 3 ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Slide 3 (Outro CTA)
-              </button>
-            </div>
+            {/* Slide Switcher for Carousels or Format Badge */}
+            {isCarousel ? (
+              <div className="inline-flex rounded-lg border p-0.5 bg-background shadow-xs text-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveSlide(1)}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    activeSlide === 1 ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Slide 1 (Cover)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSlide(2)}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    activeSlide === 2 ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Slide 2 {spec.templateFamily === "mixed_carousel" ? "(Video)" : "(Detail)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSlide(3)}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    activeSlide === 3 ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Slide 3 (Points)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSlide(4)}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    activeSlide === 4 ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Slide 4 (Outro)
+                </button>
+              </div>
+            ) : (
+              <span className="px-3 py-1 rounded-full text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20">
+                {spec.templateFamily === "video_reel" ? "🎬 9:16 Video Reel" : spec.templateFamily?.includes("tweet") ? "🐦 X Screenshot" : "🅟 Branded Post"}
+              </span>
+            )}
           </div>
 
           {/* Canvas Card Mockup */}
-          <div
-            style={{
-              backgroundColor: spec.backgroundColor || "#0a0908",
-              borderRadius: `${spec.borderRadius || 16}px`,
-              aspectRatio: isVertical ? "9/16" : isPortrait ? "4/5" : "1/1",
-              maxWidth: isVertical ? "330px" : isPortrait ? "380px" : "420px",
-              width: "100%",
-            }}
-            className="shadow-2xl flex flex-col justify-between relative overflow-hidden select-none transition-all duration-300 border border-white/10"
-          >
-            {/* Background Image / Gradient */}
-            {bgMode === "photo" && spec.bgImageUrl && (
-              <img
-                src={spec.bgImageUrl}
-                alt="Background"
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-              />
-            )}
-
-            {bgMode === "gradient" && spec.backgroundGradient && (
-              <div
-                style={{ background: spec.backgroundGradient }}
-                className="absolute inset-0 pointer-events-none"
-              />
-            )}
-
-            {/* Pubity-style Multi-stop Dark Gradient Contrast Scrim */}
+          {spec.templateFamily === "video_reel" ? (
+            /* Vertical 9:16 Video Meme Reel Canvas */
             <div
               style={{
-                background:
-                  bgMode === "photo"
-                    ? "linear-gradient(180deg, rgba(10,9,8,0.2) 0%, rgba(10,9,8,0.45) 45%, rgba(10,9,8,0.88) 78%, rgba(10,9,8,0.98) 100%)"
-                    : undefined,
+                backgroundColor: "#000000",
+                borderRadius: `${spec.borderRadius || 20}px`,
+                aspectRatio: "9/16",
+                maxWidth: "340px",
+                width: "100%",
               }}
-              className="absolute inset-0 pointer-events-none"
-            />
-
-            {/* Slide 3: Outro Massive Watermark Backdrop */}
-            {activeSlide === 3 && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-15 overflow-hidden">
-                <span className="text-8xl font-black tracking-tighter text-white uppercase select-none rotate-[-12deg]">
-                  {spec.watermarkBackdropText || "PUBITY"}
-                </span>
+              className="shadow-2xl flex flex-col justify-between p-6 relative overflow-hidden select-none border border-white/15"
+            >
+              {/* Top Reel Hook */}
+              <div className="space-y-3 text-center pt-4">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-white text-[11px] font-bold">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> LIVE REEL HOOK
+                </div>
+                <h2
+                  style={{
+                    fontSize: `${spec.titleSize || 26}px`,
+                    color: spec.textColor || "#ffffff",
+                    lineHeight: 1.25,
+                  }}
+                  className="font-extrabold tracking-tight drop-shadow-md text-center"
+                >
+                  {renderHighlightedText(
+                    interpolateTemplate(spec.titleTemplate || "{{title}}", previewSample),
+                    activeHighlights,
+                    spec.accentColor || "#ffe633"
+                  )}
+                </h2>
               </div>
-            )}
 
-            {/* Top Bar: Badges & Handles */}
-            <div className="relative z-10 p-6 flex items-start justify-between gap-2">
-              {/* Top Badge */}
-              {spec.topBadge === "yellow_logo" && (
-                <div className="w-10 h-10 rounded-full bg-[#ffe633] text-[#0a0908] flex items-center justify-center font-black text-xl shadow-lg border-2 border-white/20">
-                  {spec.brandInitial || "🅟"}
-                </div>
-              )}
+              {/* Center Embedded Video Player */}
+              <div className="w-full relative aspect-video bg-black/90 rounded-xl overflow-hidden border border-white/20 shadow-2xl my-auto flex items-center justify-center">
+                {spec.videoUrl ? (
+                  <video
+                    src={spec.videoUrl}
+                    autoPlay
+                    loop
+                    muted={videoMuted}
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-white/50 text-xs">
+                    <IconVideo className="w-8 h-8 text-white/40" />
+                    <span>Select clip from Meme Library</span>
+                  </div>
+                )}
 
-              {spec.topBadge === "swipe_pill" && (
-                <div className="px-3.5 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/25 text-white text-[11px] font-bold tracking-wider flex items-center gap-1 shadow-md">
-                  SWIPE <IconArrowRight className="w-3.5 h-3.5 text-[#ffe633]" />
-                </div>
-              )}
+                {/* Audio Toggle Cue */}
+                <button
+                  type="button"
+                  onClick={() => setVideoMuted(!videoMuted)}
+                  className="absolute bottom-2 right-2 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold flex items-center gap-1 hover:bg-black/90 transition-colors"
+                >
+                  {videoMuted ? <IconVolumeOff className="w-3 h-3 text-red-400" /> : <IconVolume className="w-3 h-3 text-emerald-400" />}
+                  {videoMuted ? "MUTED" : "SOUND ON"}
+                </button>
+              </div>
 
-              {spec.topBadge === "tag_pill" && (
-                <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-[#ffe633] text-[#0a0908] shadow-md">
-                  {previewSample.tag}
+              {/* Bottom Reel Footer */}
+              <div className="text-center space-y-1.5 pb-2">
+                <span className="text-xs font-semibold text-white/70 font-mono">
+                  {spec.watermarkText || "@JoeyReels"}
                 </span>
-              )}
-
-              {spec.topBadge === "none" && <div />}
-
-              {/* Source attribution & Slide number */}
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md text-white/90 text-[11px] font-semibold border border-white/10">
-                  {previewSample.source_name}
-                </span>
-                <span className="px-2 py-1 rounded-full bg-black/50 backdrop-blur-md text-white/80 text-[11px] font-mono border border-white/10">
-                  {activeSlide}/3
-                </span>
+                <p className="text-[10px] font-bold tracking-widest text-[#ffe633] uppercase">
+                  TAP FOR NEXT REEL
+                </p>
               </div>
             </div>
-
-            {/* Main Content Area */}
-            <div className="relative z-10 px-6 pb-6 pt-2 flex flex-col justify-end space-y-3">
-              {/* Slide 1: Cover View */}
-              {activeSlide === 1 && (
-                <>
-                  <h2
-                    style={{
-                      fontSize: `${spec.titleSize || 28}px`,
-                      color: spec.textColor || "#ffffff",
-                      lineHeight: 1.22,
-                    }}
-                    className="font-extrabold tracking-tight drop-shadow-md"
-                  >
-                    {renderHighlightedText(
-                      interpolateTemplate(spec.titleTemplate || "{{title}}", previewSample),
-                      activeHighlights,
-                      spec.accentColor || "#ffe633"
-                    )}
-                  </h2>
-
-                  {spec.showDivider && (
-                    <div className="flex items-center gap-3 py-1 opacity-85">
-                      <div className="h-[1px] bg-white/30 flex-1" />
-                      <span className="text-[#ffe633] text-xs font-black tracking-widest">
-                        {spec.brandInitial || "🅟"}
-                      </span>
-                      <div className="h-[1px] bg-white/30 flex-1" />
-                    </div>
-                  )}
-
-                  <p
-                    style={{
-                      fontSize: `${spec.bodySize || 15}px`,
-                      color: spec.textColor || "#ffffff",
-                      lineHeight: 1.45,
-                    }}
-                    className="opacity-90 font-medium line-clamp-3 drop-shadow-sm"
-                  >
-                    {interpolateTemplate(spec.bodyTemplate || "{{summary}}", previewSample)}
-                  </p>
-                </>
-              )}
-
-              {/* Slide 2: Inset / Detail View */}
-              {activeSlide === 2 && (
-                <div className="space-y-4">
-                  {spec.pipInsetUrl && (
-                    <div className="flex items-center gap-3 bg-black/40 backdrop-blur-md p-2 rounded-2xl border border-white/15">
-                      <img
-                        src={spec.pipInsetUrl}
-                        alt="PIP Inset"
-                        className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-lg shrink-0"
-                      />
-                      <div className="text-white text-xs">
-                        <span className="block font-bold text-[#ffe633]">Spotlight Reaction</span>
-                        <span className="text-white/80 text-[11px] leading-tight">Key post-match commentary and field statistics</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <h3
-                    style={{
-                      fontSize: `${(spec.titleSize || 28) - 4}px`,
-                      color: spec.textColor || "#ffffff",
-                      lineHeight: 1.25,
-                    }}
-                    className="font-bold tracking-tight"
-                  >
-                    {renderHighlightedText(
-                      "Key turning points in this historic matchup",
-                      activeHighlights,
-                      spec.accentColor || "#ffe633"
-                    )}
-                  </h3>
-
-                  <p
-                    style={{
-                      fontSize: `${spec.bodySize || 15}px`,
-                      color: spec.textColor || "#ffffff",
-                    }}
-                    className="opacity-90 leading-relaxed font-normal"
-                  >
-                    {interpolateTemplate(spec.bodyTemplate || "{{summary}}", previewSample)}
-                  </p>
-                </div>
-              )}
-
-              {/* Slide 3: Outro CTA View */}
-              {activeSlide === 3 && (
-                <div className="text-center py-6 space-y-4">
-                  <div className="w-16 h-16 mx-auto rounded-full bg-[#ffe633] text-[#0a0908] flex items-center justify-center font-black text-3xl shadow-2xl border-4 border-white">
-                    {spec.brandInitial || "🅟"}
+          ) : spec.templateFamily === "tweet_card" || spec.templateFamily === "tweet_grid4" ? (
+            /* Twitter / X Post Canvas */
+            <div
+              style={{
+                backgroundColor: "#000000",
+                borderRadius: `${spec.borderRadius || 16}px`,
+                aspectRatio: isPortrait ? "4/5" : "1/1",
+                maxWidth: isPortrait ? "390px" : "420px",
+                width: "100%",
+              }}
+              className="shadow-2xl flex flex-col justify-between p-6 relative overflow-hidden select-none border border-neutral-800 text-white"
+            >
+              {/* Tweet Header */}
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-neutral-800 overflow-hidden border border-white/10 shrink-0">
+                    <img
+                      src={PIP_PRESETS[0].url}
+                      alt="Avatar"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-white">Follow For Daily Updates</h3>
-                    <p className="text-xs text-white/80 mt-1">Join millions of fans for breaking stories & instant highlights</p>
+                    <div className="flex items-center gap-1">
+                      <span className="font-bold text-sm text-white">Daily Loud</span>
+                      <span className="w-4 h-4 rounded-full bg-[#1d9bf0] flex items-center justify-center text-[10px] text-white">
+                        ✓
+                      </span>
+                    </div>
+                    <span className="text-xs text-neutral-400 font-mono">@DailyLoud · Today</span>
                   </div>
-                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/15 backdrop-blur-md border border-white/30 text-white font-mono text-xs">
-                    {spec.watermarkText || "@Pubity"}
-                  </div>
+                </div>
+                <IconBrandX className="w-5 h-5 text-neutral-400" />
+              </div>
+
+              {/* Tweet Main Text */}
+              <div className="my-3">
+                <p className="text-sm text-white font-normal leading-relaxed">
+                  {interpolateTemplate(spec.titleTemplate || "{{title}}", previewSample)}
+                </p>
+              </div>
+
+              {/* Media Container */}
+              {spec.templateFamily === "tweet_grid4" ? (
+                /* 4-Grid Collage */
+                <div className="grid grid-cols-2 gap-1.5 rounded-xl overflow-hidden my-2 border border-neutral-800">
+                  <img src={PHOTO_PRESETS[0].url} alt="Grid 1" className="w-full h-24 object-cover" />
+                  <img src={PHOTO_PRESETS[1].url} alt="Grid 2" className="w-full h-24 object-cover" />
+                  <img src={PHOTO_PRESETS[2].url} alt="Grid 3" className="w-full h-24 object-cover" />
+                  <img src={PHOTO_PRESETS[3].url} alt="Grid 4" className="w-full h-24 object-cover" />
+                </div>
+              ) : (
+                /* Single Media Hero */
+                <div className="rounded-xl overflow-hidden border border-neutral-800 my-2">
+                  <img
+                    src={spec.bgImageUrl || PHOTO_PRESETS[0].url}
+                    alt="Media"
+                    className="w-full h-40 object-cover"
+                  />
                 </div>
               )}
 
-              {/* Bottom Watermark & Carousel Dots */}
-              <div className="pt-3 border-t border-white/15 flex items-center justify-between text-xs text-white/80">
-                <span className="font-semibold tracking-wide flex items-center gap-1.5">
-                  <span className="text-[#ffe633] font-bold">{spec.brandInitial || "🅟"}</span>
-                  {spec.watermarkText || "@PubityCricket"}
-                </span>
+              {/* Quoted Tweet Box (Stacked Reply) */}
+              <div className="p-3 border border-neutral-800 rounded-xl bg-neutral-900/80 space-y-1.5 my-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-neutral-700 overflow-hidden shrink-0">
+                    <img src={PIP_PRESETS[1].url} alt="Quote Author" className="w-full h-full object-cover" />
+                  </div>
+                  <span className="font-bold text-xs text-white">Pop Base</span>
+                  <span className="text-[10px] text-[#1d9bf0]">✓</span>
+                  <span className="text-[11px] text-neutral-400">@PopBase</span>
+                </div>
+                <p className="text-xs text-neutral-200">
+                  This remains one of the most unpredictable cultural phenomena of the entire year.
+                </p>
+              </div>
 
-                <div className="flex items-center gap-1.5">
+              {/* Tweet Footer Handle */}
+              <div className="pt-2 border-t border-neutral-800 flex items-center justify-between text-neutral-500 text-xs">
+                <span>{spec.watermarkText || "@JoeyThemeStudio"}</span>
+                <span className="text-[#1d9bf0] font-semibold">Post via Joey</span>
+              </div>
+            </div>
+          ) : (
+            /* Standard / Pubity / Morning Brew / Carousel Canvas */
+            <div
+              style={{
+                backgroundColor: spec.backgroundColor || "#0a0908",
+                borderRadius: `${spec.borderRadius || 16}px`,
+                aspectRatio: isVertical ? "9/16" : isPortrait ? "4/5" : "1/1",
+                maxWidth: isVertical ? "330px" : isPortrait ? "380px" : "420px",
+                width: "100%",
+              }}
+              className="shadow-2xl flex flex-col justify-between relative overflow-hidden select-none transition-all duration-300 border border-white/10"
+            >
+              {/* Background Image / Gradient */}
+              {bgMode === "photo" && spec.bgImageUrl && (
+                <img
+                  src={spec.bgImageUrl}
+                  alt="Background"
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                />
+              )}
+
+              {bgMode === "gradient" && spec.backgroundGradient && (
+                <div
+                  style={{ background: spec.backgroundGradient }}
+                  className="absolute inset-0 pointer-events-none"
+                />
+              )}
+
+              {/* Multi-stop Dark Gradient Contrast Scrim */}
+              <div
+                style={{
+                  background:
+                    bgMode === "photo"
+                      ? "linear-gradient(180deg, rgba(10,9,8,0.2) 0%, rgba(10,9,8,0.45) 45%, rgba(10,9,8,0.88) 78%, rgba(10,9,8,0.98) 100%)"
+                      : undefined,
+                }}
+                className="absolute inset-0 pointer-events-none"
+              />
+
+              {/* Slide 4: Outro Massive Watermark Backdrop */}
+              {activeSlide === 4 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-15 overflow-hidden">
+                  <span className="text-8xl font-black tracking-tighter text-white uppercase select-none rotate-[-12deg]">
+                    {spec.watermarkBackdropText || "PUBITY"}
+                  </span>
+                </div>
+              )}
+
+              {/* Top Bar: Badges & Handles */}
+              <div className="relative z-10 p-6 flex items-start justify-between gap-2">
+                {/* Top Badge */}
+                {spec.topBadge === "yellow_logo" && (
+                  <div className="w-10 h-10 rounded-full bg-[#ffe633] text-[#0a0908] flex items-center justify-center font-black text-xl shadow-lg border-2 border-white/20">
+                    {spec.brandInitial || "🅟"}
+                  </div>
+                )}
+
+                {spec.topBadge === "circular_seal" && (
+                  <div className="w-12 h-12 rounded-full border-2 border-dashed border-[#00e5ff] bg-[#00e5ff]/15 flex flex-col items-center justify-center text-[#00e5ff] font-black text-xs shadow-lg">
+                    <span className="text-[7px] font-bold text-white tracking-widest">OFFICIAL</span>
+                    <span className="text-sm font-black">{spec.brandInitial || "M"}</span>
+                    <span className="text-[7px] font-bold text-white tracking-widest">REPORT</span>
+                  </div>
+                )}
+
+                {spec.topBadge === "swipe_pill" && (
+                  <div className="px-3.5 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/25 text-white text-[11px] font-bold tracking-wider flex items-center gap-1 shadow-md">
+                    SWIPE <IconArrowRight className="w-3.5 h-3.5" style={{ color: spec.accentColor || "#ffe633" }} />
+                  </div>
+                )}
+
+                {spec.topBadge === "tag_pill" && (
                   <span
-                    className={`w-2 h-2 rounded-full transition-all ${
-                      activeSlide === 1 ? "bg-[#ffe633] w-4" : "bg-white/40"
-                    }`}
-                  />
-                  <span
-                    className={`w-2 h-2 rounded-full transition-all ${
-                      activeSlide === 2 ? "bg-[#ffe633] w-4" : "bg-white/40"
-                    }`}
-                  />
-                  <span
-                    className={`w-2 h-2 rounded-full transition-all ${
-                      activeSlide === 3 ? "bg-[#ffe633] w-4" : "bg-white/40"
-                    }`}
-                  />
+                    style={{ backgroundColor: spec.accentColor || "#ffe633" }}
+                    className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider text-[#0a0908] shadow-md"
+                  >
+                    {previewSample.tag}
+                  </span>
+                )}
+
+                {spec.topBadge === "none" && <div />}
+
+                {/* Source attribution & Slide number */}
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md text-white/90 text-[11px] font-semibold border border-white/10">
+                    {previewSample.source_name}
+                  </span>
+                  {isCarousel && (
+                    <span className="px-2 py-1 rounded-full bg-black/50 backdrop-blur-md text-white/80 text-[11px] font-mono border border-white/10">
+                      {activeSlide}/4
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Main Content Area */}
+              <div className="relative z-10 px-6 pb-6 pt-2 flex flex-col justify-end space-y-3">
+                {/* Slide 1: Cover View */}
+                {activeSlide === 1 && (
+                  <>
+                    <h2
+                      style={{
+                        fontSize: `${spec.titleSize || 28}px`,
+                        color: spec.textColor || "#ffffff",
+                        lineHeight: 1.22,
+                      }}
+                      className="font-extrabold tracking-tight drop-shadow-md"
+                    >
+                      {renderHighlightedText(
+                        interpolateTemplate(spec.titleTemplate || "{{title}}", previewSample),
+                        activeHighlights,
+                        spec.accentColor || "#ffe633"
+                      )}
+                    </h2>
+
+                    {spec.showDivider && (
+                      <div className="flex items-center gap-3 py-1 opacity-85">
+                        <div className="h-[1px] bg-white/30 flex-1" />
+                        <span
+                          style={{ color: spec.accentColor || "#ffe633" }}
+                          className="text-xs font-black tracking-widest"
+                        >
+                          {spec.templateFamily === "morning_brew_cyan" ? `— ${spec.brandInitial || "M"} —` : (spec.brandInitial || "🅟")}
+                        </span>
+                        <div className="h-[1px] bg-white/30 flex-1" />
+                      </div>
+                    )}
+
+                    <p
+                      style={{
+                        fontSize: `${spec.bodySize || 15}px`,
+                        color: spec.textColor || "#ffffff",
+                        lineHeight: 1.45,
+                      }}
+                      className="opacity-90 font-medium line-clamp-3 drop-shadow-sm"
+                    >
+                      {interpolateTemplate(spec.bodyTemplate || "{{summary}}", previewSample)}
+                    </p>
+                  </>
+                )}
+
+                {/* Slide 2: Inset / Detail View OR Video Loop for Mixed Carousel */}
+                {activeSlide === 2 && (
+                  <div className="space-y-4">
+                    {spec.templateFamily === "mixed_carousel" && spec.videoUrl ? (
+                      /* Live Embedded Video in Slide 2 */
+                      <div className="w-full aspect-video rounded-xl overflow-hidden border border-white/20 shadow-2xl relative">
+                        <video
+                          src={spec.videoUrl}
+                          autoPlay
+                          loop
+                          muted={videoMuted}
+                          playsInline
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setVideoMuted(!videoMuted)}
+                          className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-white text-[9px] font-bold flex items-center gap-1"
+                        >
+                          {videoMuted ? <IconVolumeOff className="w-2.5 h-2.5" /> : <IconVolume className="w-2.5 h-2.5" />}
+                          {videoMuted ? "MUTED" : "SOUND ON"}
+                        </button>
+                      </div>
+                    ) : spec.pipInsetUrl ? (
+                      <div className="flex items-center gap-3 bg-black/40 backdrop-blur-md p-2 rounded-2xl border border-white/15">
+                        <img
+                          src={spec.pipInsetUrl}
+                          alt="PIP Inset"
+                          className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-lg shrink-0"
+                        />
+                        <div className="text-white text-xs">
+                          <span
+                            style={{ color: spec.accentColor || "#ffe633" }}
+                            className="block font-bold"
+                          >
+                            Spotlight Reaction
+                          </span>
+                          <span className="text-white/80 text-[11px] leading-tight">Key post-match commentary and field statistics</span>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <h3
+                      style={{
+                        fontSize: `${(spec.titleSize || 28) - 4}px`,
+                        color: spec.textColor || "#ffffff",
+                        lineHeight: 1.25,
+                      }}
+                      className="font-bold tracking-tight"
+                    >
+                      {renderHighlightedText(
+                        "Key turning points in this historic matchup",
+                        activeHighlights,
+                        spec.accentColor || "#ffe633"
+                      )}
+                    </h3>
+
+                    <p
+                      style={{
+                        fontSize: `${spec.bodySize || 15}px`,
+                        color: spec.textColor || "#ffffff",
+                      }}
+                      className="opacity-90 leading-relaxed font-normal"
+                    >
+                      {interpolateTemplate(spec.bodyTemplate || "{{summary}}", previewSample)}
+                    </p>
+                  </div>
+                )}
+
+                {/* Slide 3: Deep Dive Takeaway */}
+                {activeSlide === 3 && (
+                  <div className="space-y-3">
+                    <span
+                      style={{ color: spec.accentColor || "#ffe633" }}
+                      className="text-xs font-black uppercase tracking-wider"
+                    >
+                      KEY TAKEAWAY #3
+                    </span>
+                    <h3 className="text-xl font-bold text-white leading-snug">
+                      Unprecedented performance metrics confirm structural shift across all competitive sectors
+                    </h3>
+                    <p className="text-xs text-white/80 leading-relaxed">
+                      Detailed telemetry data demonstrates 4.2x higher viral retention across both short-form loops and static carousels.
+                    </p>
+                  </div>
+                )}
+
+                {/* Slide 4: Outro CTA View */}
+                {activeSlide === 4 && (
+                  <div className="text-center py-6 space-y-4">
+                    <div
+                      style={{
+                        backgroundColor: spec.accentColor || "#ffe633",
+                        color: "#0a0908",
+                      }}
+                      className="w-16 h-16 mx-auto rounded-full flex items-center justify-center font-black text-3xl shadow-2xl border-4 border-white"
+                    >
+                      {spec.brandInitial || "🅟"}
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-white">Follow For Daily Updates</h3>
+                      <p className="text-xs text-white/80 mt-1">Join millions of fans for breaking stories & instant highlights</p>
+                    </div>
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/15 backdrop-blur-md border border-white/30 text-white font-mono text-xs">
+                      {spec.watermarkText || "@Pubity"}
+                    </div>
+                  </div>
+                )}
+
+                {/* Bottom Watermark & Carousel Dots */}
+                <div className="pt-3 border-t border-white/15 flex items-center justify-between text-xs text-white/80">
+                  <span className="font-semibold tracking-wide flex items-center gap-1.5">
+                    <span style={{ color: spec.accentColor || "#ffe633" }} className="font-bold">
+                      {spec.brandInitial || "🅟"}
+                    </span>
+                    {spec.watermarkText || "@JoeyThemeStudio"}
+                  </span>
+
+                  {isCarousel && (
+                    <div className="flex items-center gap-1.5">
+                      {[1, 2, 3, 4].map((slideIdx) => (
+                        <span
+                          key={slideIdx}
+                          style={{
+                            backgroundColor: activeSlide === slideIdx ? (spec.accentColor || "#ffe633") : "rgba(255,255,255,0.4)",
+                            width: activeSlide === slideIdx ? "16px" : "8px",
+                          }}
+                          className="h-2 rounded-full transition-all"
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

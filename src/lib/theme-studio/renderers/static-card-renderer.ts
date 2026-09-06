@@ -22,7 +22,7 @@ export interface CardRenderOptions {
   slideNumber?: number;
   totalSlides?: number;
   imageUrl?: string;
-  topBadge?: "yellow_logo" | "swipe_pill" | "tag_pill" | "none";
+  topBadge?: "yellow_logo" | "swipe_pill" | "tag_pill" | "circular_seal" | "none";
   showDividerMark?: boolean;
   pipInsetUrl?: string;
   highlightWords?: string[];
@@ -33,7 +33,7 @@ export interface CardRenderOptions {
 /**
  * Escapes XML special characters for SVG text safety.
  */
-function escapeXml(unsafe: string): string {
+export function escapeXml(unsafe: string): string {
   return unsafe
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -42,7 +42,7 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function safeColor(value: string | undefined, fallback: string): string {
+export function safeColor(value: string | undefined, fallback: string): string {
   if (!value) return fallback;
   const trimmed = value.trim();
   return /^(?:#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([\d\s.,%+-]+\)|[a-z]{3,20})$/i.test(trimmed)
@@ -342,6 +342,16 @@ export function renderCardSvg(options: CardRenderOptions): string {
     <text x="76" y="34" text-anchor="middle" fill="#ffffff" font-family="${escapeXml(fontFamily)}" font-size="18" font-weight="800" letter-spacing="2">SWIPE</text>
     <path d="M126 27 L140 27 M134 21 L141 27 L134 33" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
   </g>`
+      : topBadge === "circular_seal"
+      ? `<!-- Circular Branded Seal Badge -->
+  <g transform="translate(${width - (isCarousel ? 260 : 180)}, 55)">
+    <circle cx="50" cy="50" r="48" fill="none" stroke="${escapeXml(accentColor)}" stroke-width="2" stroke-dasharray="4 2" />
+    <circle cx="50" cy="50" r="42" fill="${escapeXml(accentColor)}" fill-opacity="0.18" />
+    <circle cx="50" cy="50" r="35" fill="none" stroke="${escapeXml(accentColor)}" stroke-width="1.5" />
+    <text x="50" y="58" text-anchor="middle" fill="${escapeXml(accentColor)}" font-family="${escapeXml(displayFont)}" font-size="30" font-weight="900">${escapeXml(logoMonogram)}</text>
+    <text x="50" y="26" text-anchor="middle" fill="#ffffff" font-family="${escapeXml(fontFamily)}" font-size="10" font-weight="800" letter-spacing="2">OFFICIAL</text>
+    <text x="50" y="80" text-anchor="middle" fill="#ffffff" font-family="${escapeXml(fontFamily)}" font-size="10" font-weight="800" letter-spacing="2">REPORT</text>
+  </g>`
       : topBadge === "tag_pill"
       ? `<!-- Top Header Tag -->
   <g transform="translate(80, 80)">
@@ -378,7 +388,14 @@ export function renderCardSvg(options: CardRenderOptions): string {
 
   ${
     showDivider
-      ? `<!-- Hairline Divider with Centered Logo Mark -->
+      ? brandKit.templatePreset === "morning_brew_cyan" || accentColor.toLowerCase() === "#00e5ff"
+        ? `<!-- Morning Brew Cyan Divider: — M — -->
+  <g transform="translate(${width / 2}, ${dividerY})">
+    <line x1="-120" y1="0" x2="-25" y2="0" stroke="${escapeXml(accentColor)}" stroke-width="2.5" stroke-linecap="round" />
+    <text x="0" y="8" text-anchor="middle" fill="${escapeXml(accentColor)}" font-family="${escapeXml(displayFont)}" font-size="28" font-weight="900">${escapeXml(logoMonogram)}</text>
+    <line x1="25" y1="0" x2="120" y2="0" stroke="${escapeXml(accentColor)}" stroke-width="2.5" stroke-linecap="round" />
+  </g>`
+        : `<!-- Hairline Divider with Centered Logo Mark -->
   <g transform="translate(80, ${dividerY})">
     <line x1="0" y1="0" x2="${width / 2 - 120}" y2="0" stroke="#ffffff" stroke-opacity="0.4" stroke-width="1.5" />
     <rect x="${width / 2 - 95}" y="-16" width="32" height="32" rx="7" fill="${escapeXml(accentColor)}" />

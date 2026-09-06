@@ -201,7 +201,7 @@ describe("Unified Drafts Actions", () => {
     (reviewThemePackage as any).mockResolvedValue({ package: { id: "pkg_123", status: "rejected" } });
 
     const res = await rejectDraft("pkg_123", "Visual card needs higher contrast");
-    expect(reviewThemePackage).toHaveBeenCalledWith("pkg_123", "reject");
+    expect(reviewThemePackage).toHaveBeenCalledWith("pkg_123", "reject", "Visual card needs higher contrast");
     expect(res.success).toBe(true);
   });
 });

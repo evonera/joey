@@ -10,6 +10,7 @@ import { publishContentPackage } from "@/lib/theme-studio/publishing/publisher";
 export async function reviewThemePackage(
   packageId: string,
   decision: "approve" | "reject",
+  feedback?: string,
 ) {
   const tenantId = await getActiveTenantId();
   const pkg = await db.query.contentPackages.findFirst({
@@ -26,7 +27,7 @@ export async function reviewThemePackage(
 
   const [updated] = await db.update(contentPackages).set({
     status: decision === "approve" ? "approved" : "rejected",
-    error: null,
+    error: decision === "reject" ? (feedback?.trim() || "Rejected by reviewer") : null,
     updatedAt: new Date(),
   }).where(and(
     eq(contentPackages.id, packageId),

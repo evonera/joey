@@ -2,6 +2,9 @@ import { db } from "@/lib/db";
 import { assets, contentPackages, storyClusters, themePages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { renderCardSvg, renderCarouselSlideSvgs } from "./static-card-renderer";
+import { renderTweetCardSvg } from "./tweet-card-renderer";
+import { renderVideoReelSvg } from "./video-reel-renderer";
+import { getMemeClipById } from "../assets/meme-clips";
 import { uploadAndRegisterFlowAsset } from "@/lib/flows/asset-registration";
 import { Resvg } from "@resvg/resvg-js";
 
@@ -197,21 +200,90 @@ export async function renderPackageMedia(
         );
         renderedUrls.push({ url: publicUrl, type: "image", slideIndex: i + 1 });
       }
-    } else if (format?.mediaType === "video") {
-      const message = "Video preview is available, but an MP4 render worker has not been configured";
-      await db.update(contentPackages).set({
-        status: "failed",
-        error: message,
-        metrics: { ...priorMetrics, failurePhase: "render_unsupported" },
-        updatedAt: new Date(),
-      }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
-      return {
-        packageId,
-        mediaType: "video",
-        renderedUrls: [],
-        success: false,
-        error: message,
-      };
+      if (templateSpec.templateFamily === "mixed_carousel") {
+        const clipId = typeof templateSpec.memeClipId === "string" ? templateSpec.memeClipId : undefined;
+        const memeClip = clipId ? getMemeClipById(clipId) : undefined;
+        const videoUrl = (typeof templateSpec.videoUrl === "string" && templateSpec.videoUrl) || memeClip?.videoUrl;
+        if (videoUrl) {
+          renderedUrls.push({ url: videoUrl, type: "video", slideIndex: 2 });
+        }
+      }
+    } else if (templateSpec.templateFamily === "tweet_card" || format?.slug?.includes("tweet")) {
+      const pageWatermark = typeof (pageBrandKit as any)?.watermark === "string" 
+        ? (pageBrandKit as any).watermark 
+        : `@${page.name.toLowerCase().replace(/\s+/g, "")}`;
+      const tweetAuthor = (templateSpec.tweetAuthor && typeof templateSpec.tweetAuthor === "object")
+        ? templateSpec.tweetAuthor as any
+        : { name: page.name, handle: pageWatermark, avatarUrl: (pageBrandKit as any)?.logoMonogramUrl };
+      const mediaLayout = (templateSpec.mediaLayout as any) || (heroImage ? "single" : "none");
+      const mediaUrls = Array.isArray(templateSpec.mediaUrls) && templateSpec.mediaUrls.length > 0
+        ? (templateSpec.mediaUrls as string[])
+        : heroImage ? [heroImage] : [];
+      const quotedTweet = (templateSpec.quotedTweet && typeof templateSpec.quotedTweet === "object")
+        ? templateSpec.quotedTweet as any
+        : undefined;
+
+      const svg = renderTweetCardSvg({
+        author: tweetAuthor,
+        content: renderedTitle,
+        mediaUrls,
+        mediaLayout,
+        quotedTweet,
+        aspectRatio: (format?.aspectRatio as any) || "4:5",
+        brandKit,
+      });
+
+      const publicUrl = await storePng(
+        svg,
+        `${pkg.tenantId}/theme-studio/${pkg.id}/tweet_card.png`,
+        `${pkg.title} tweet.png`,
+      );
+      renderedUrls.push({ url: publicUrl, type: "image" });
+    } else if (format?.mediaType === "video" || templateSpec.templateFamily === "video_reel") {
+      const clipId = typeof templateSpec.memeClipId === "string" ? templateSpec.memeClipId : undefined;
+      const memeClip = clipId ? getMemeClipById(clipId) : undefined;
+      const videoUrl = (typeof templateSpec.videoUrl === "string" && templateSpec.videoUrl) || memeClip?.videoUrl;
+
+      if (videoUrl) {
+        const pageWatermark = typeof (pageBrandKit as any)?.watermark === "string" 
+          ? (pageBrandKit as any).watermark 
+          : `@${page.name.toLowerCase().replace(/\s+/g, "")}`;
+        // Render high-res 9:16 vertical poster SVG
+        const posterSvg = renderVideoReelSvg({
+          hookText: renderedTitle,
+          posterUrl: heroImage || memeClip?.thumbnailUrl,
+          videoUrl,
+          account: {
+            name: page.name,
+            handle: pageWatermark,
+            avatarUrl: (pageBrandKit as any)?.logoMonogramUrl,
+          },
+          brandKit,
+        });
+
+        const posterPublicUrl = await storePng(
+          posterSvg,
+          `${pkg.tenantId}/theme-studio/${pkg.id}/video_poster.png`,
+          `${pkg.title} poster.png`,
+        );
+        renderedUrls.push({ url: videoUrl, type: "video" });
+        renderedUrls.push({ url: posterPublicUrl, type: "image" });
+      } else {
+        const message = "Video preview is available, but an MP4 render worker has not been configured";
+        await db.update(contentPackages).set({
+          status: "failed",
+          error: message,
+          metrics: { ...priorMetrics, failurePhase: "render_unsupported" },
+          updatedAt: new Date(),
+        }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
+        return {
+          packageId,
+          mediaType: "video",
+          renderedUrls: [],
+          success: false,
+          error: message,
+        };
+      }
     } else {
       // Standard static image card
       const svg = renderCardSvg({

@@ -95,19 +95,26 @@ export async function publishContentPackage(
     ),
   });
   const targetPlatform = zernioPlatform(format.platform);
-  const account = (priorAccountId ? accounts.find((candidate) => candidate.id === priorAccountId) : undefined)
-    ?? accounts.find(
+  const eligibleAccounts = (priorAccountId ? accounts.filter((candidate) => candidate.id === priorAccountId) : [])
+    .concat(accounts.filter(
       (candidate) => selectedAccountIds.includes(candidate.id)
         && candidate.isActive !== false
         && zernioPlatform(candidate.platform) === targetPlatform,
-    );
-  if (!account) {
+    ));
+
+  const uniqueAccountsMap = new Map<string, typeof accounts[0]>();
+  for (const acc of eligibleAccounts) {
+    uniqueAccountsMap.set(acc.id, acc);
+  }
+  const matchingAccounts = Array.from(uniqueAccountsMap.values());
+  if (matchingAccounts.length === 0) {
     return failPackage(
       packageId,
       tenantId,
       `No selected, active ${format.platform} account is connected`,
     );
   }
+  const primaryAccount = matchingAccounts[0];
 
   const variant = adaptPackageForPlatform(
     pkg,
@@ -130,7 +137,8 @@ export async function publishContentPackage(
       error: null,
       metrics: {
         ...priorMetrics,
-        publishAccountId: account.id,
+        publishAccountId: primaryAccount.id,
+        publishAccountIds: matchingAccounts.map((a) => a.id),
         publishRequestId: pkg.id,
         publishAttemptAt: claimTime.toISOString(),
       },
@@ -167,11 +175,15 @@ export async function publishContentPackage(
           url,
           altText: variant.mediaType === "video" ? undefined : pkg.title,
         })),
-        platforms: [{
-          platform: targetPlatform,
-          accountId: account.platformAccountId,
-          customContent: variant.adaptedCaption,
-        }],
+        platforms: matchingAccounts.map((acc) => ({
+          platform: zernioPlatform(acc.platform),
+          accountId: acc.platformAccountId,
+          customContent: adaptPackageForPlatform(
+            pkg,
+            acc.platform as "instagram" | "tiktok" | "x",
+            format.mediaType as "image" | "carousel" | "video",
+          ).adaptedCaption,
+        })),
         hashtags: variant.adaptedHashtags,
         ...(pkg.scheduledFor
           ? { scheduledFor: pkg.scheduledFor.toISOString() }
@@ -214,7 +226,8 @@ export async function publishContentPackage(
         publishedAt: published ? new Date() : null,
         metrics: {
           ...priorMetrics,
-          publishAccountId: account.id,
+          publishAccountId: primaryAccount.id,
+          publishAccountIds: matchingAccounts.map((a) => a.id),
           publishRequestId: pkg.id,
           zernioPostId: post._id,
           ...(platformResult?.platformPostUrl ? { publishedUrl: platformResult.platformPostUrl } : {}),
