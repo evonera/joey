@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { CANDIDATE_TOOLKITS, manageConnections } from "@/lib/composio-connect";
 import { db } from "@/lib/db";
 
@@ -64,18 +64,16 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = (await req.json().catch(() => null)) as { toolkit?: unknown } | null;
-  if (body === null || typeof body.toolkit !== "string" || !/^[a-z0-9_-]+$/.test(body.toolkit)) {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  }
-
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
+    const body = (await req.json().catch(() => null)) as { toolkit?: unknown } | null;
+    if (body === null || typeof body.toolkit !== "string" || !/^[a-z0-9_-]+$/.test(body.toolkit)) {
+      return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+    }
+
+    if (!CANDIDATE_TOOLKITS.includes(body.toolkit as (typeof CANDIDATE_TOOLKITS)[number])) {
+      return NextResponse.json({ error: "Unsupported toolkit" }, { status: 400 });
+    }
 
     const data = await manageConnections(tenantId, [{ name: body.toolkit, action: "add" }]);
     const results = (data.results ?? {}) as Record<string, ToolkitResult>;
@@ -83,6 +81,9 @@ export async function POST(req: NextRequest) {
     if (entry?.redirect_url) return NextResponse.json({ url: entry.redirect_url });
     return NextResponse.json({ error: entry?.error_message ?? "No auth link returned" }, { status: 502 });
   } catch (error) {
+    if (error instanceof Error && (error.message === "Unauthorized" || error.message.startsWith("Forbidden:"))) {
+      return NextResponse.json({ error: error.message }, { status: error.message === "Unauthorized" ? 401 : 403 });
+    }
     console.error("Connection add failed:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Connect failed" },
@@ -92,33 +93,34 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = (await req.json().catch(() => null)) as {
-    toolkit?: unknown;
-    accountId?: unknown;
-  } | null;
-  if (
-    body === null ||
-    typeof body.toolkit !== "string" ||
-    !/^[a-z0-9_-]+$/.test(body.toolkit) ||
-    typeof body.accountId !== "string" ||
-    body.accountId.length === 0
-  ) {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  }
-
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
+    const body = (await req.json().catch(() => null)) as {
+      toolkit?: unknown;
+      accountId?: unknown;
+    } | null;
+    if (
+      body === null ||
+      typeof body.toolkit !== "string" ||
+      !/^[a-z0-9_-]+$/.test(body.toolkit) ||
+      typeof body.accountId !== "string" ||
+      body.accountId.length === 0
+    ) {
+      return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+    }
+
+    if (!CANDIDATE_TOOLKITS.includes(body.toolkit as (typeof CANDIDATE_TOOLKITS)[number])) {
+      return NextResponse.json({ error: "Unsupported toolkit" }, { status: 400 });
+    }
 
     await manageConnections(tenantId, [
       { name: body.toolkit, action: "remove", account_id: body.accountId },
     ]);
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof Error && (error.message === "Unauthorized" || error.message.startsWith("Forbidden:"))) {
+      return NextResponse.json({ error: error.message }, { status: error.message === "Unauthorized" ? 401 : 403 });
+    }
     console.error("Connection remove failed:", error);
     return NextResponse.json({ error: "Disconnect failed" }, { status: 502 });
   }

@@ -8,6 +8,7 @@ describe("outbound request safety", () => {
   it.each([
     "127.0.0.1", "10.0.0.1", "172.31.2.3", "192.168.1.2", "169.254.169.254",
     "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:7f00:1",
+    "::127.0.0.1", "::10.0.0.1", "::7f00:1", "::a00:1",
   ])("rejects private or mapped address %s", (address) => expect(isPrivateAddress(address)).toBe(true));
 
   it.each(["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"])("accepts public address %s", (address) => expect(isPrivateAddress(address)).toBe(false));

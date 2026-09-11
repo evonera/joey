@@ -46,21 +46,31 @@ function privateIpv4(address: string): boolean {
   );
 }
 
-function mappedIpv4(address: string): string | undefined {
+function embeddedIpv4(address: string): string | undefined {
   const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
   const dotted = normalized.match(/^(?:0*:)*ffff:(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
   if (dotted) return dotted.slice(1).join(".");
   const hex = normalized.match(/^(?:0*:)*ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (!hex) return undefined;
-  const high = Number.parseInt(hex[1], 16);
-  const low = Number.parseInt(hex[2], 16);
+  if (hex) {
+    const high = Number.parseInt(hex[1], 16);
+    const low = Number.parseInt(hex[2], 16);
+    return `${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`;
+  }
+
+  // IPv4-compatible IPv6 addresses (for example ::127.0.0.1 and ::7f00:1)
+  // are loopback/private IPv4 addresses expressed with a zero 96-bit prefix.
+  const compatible = normalized.match(/^::(?:(\d+)\.(\d+)\.(\d+)\.(\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/);
+  if (!compatible) return undefined;
+  if (compatible[1]) return compatible.slice(1, 5).join(".");
+  const high = Number.parseInt(compatible[5], 16);
+  const low = Number.parseInt(compatible[6], 16);
   return `${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`;
 }
 
 export function isPrivateAddress(address: string): boolean {
   const normalized = address.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
-  const mapped = mappedIpv4(normalized);
-  if (mapped) return privateIpv4(mapped);
+  const embedded = embeddedIpv4(normalized);
+  if (embedded) return privateIpv4(embedded);
   if (isIP(normalized) === 4) return privateIpv4(normalized);
   if (isIP(normalized) !== 6) return true;
   return normalized === "::" || normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("2001:db8:") ||
