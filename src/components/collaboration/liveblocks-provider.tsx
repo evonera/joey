@@ -82,7 +82,7 @@ export function JoeyLiveblocksProvider({
 
   // If Liveblocks is not configured, render children directly without mounting
   // LiveblocksProvider, completely avoiding unneeded network/websocket attempts.
-  if (!isConfigured) {
+  if (!isConfigured || !tenantId) {
     return (
       <LiveblocksConfigContext.Provider value={contextValue}>
         {children}
@@ -93,6 +93,7 @@ export function JoeyLiveblocksProvider({
   return (
     <LiveblocksConfigContext.Provider value={contextValue}>
       <LiveblocksProvider
+        key={tenantId}
         authEndpoint="/api/liveblocks-auth"
         backgroundKeepAliveTimeout={15 * 60 * 1000}
         lostConnectionTimeout={5000}

@@ -27,13 +27,15 @@ import { ConnectionsPanel } from "./connections-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
 import { IntegrationsPanel } from "./integrations-panel";
 import { TelegramPanel } from "./telegram-panel";
+import { BillingPanel } from "./billing-panel";
+import { getSettingsData } from "@/app/actions/settings";
 import { toast } from "sonner";
 
 const AI_PROVIDERS = [
   {
     id: "google",
     name: "Google Gemini",
-    models: "Gemini 2.5 Flash, 1.5 Pro",
+    models: "Text and multimodal models",
     placeholder: "AIzaSy...",
     docsUrl: "https://aistudio.google.com",
     docsName: "Google AI Studio",
@@ -42,7 +44,7 @@ const AI_PROVIDERS = [
   {
     id: "openai",
     name: "OpenAI",
-    models: "GPT-4o, DALL-E 3",
+    models: "Text and image models",
     placeholder: "sk-...",
     docsUrl: "https://platform.openai.com",
     docsName: "platform.openai.com",
@@ -51,7 +53,7 @@ const AI_PROVIDERS = [
   {
     id: "anthropic",
     name: "Anthropic",
-    models: "Claude 3.7 Sonnet, 3.5 Haiku",
+    models: "Claude models",
     placeholder: "sk-ant-...",
     docsUrl: "https://console.anthropic.com",
     docsName: "console.anthropic.com",
@@ -80,11 +82,17 @@ const DAYS_OF_WEEK = [
 
 function SettingsContent() {
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") || "persona";
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const requestedTab = searchParams.get("tab");
+  const activeTab = ["persona", "byok", "apps", "api", "notifications", "billing"].includes(requestedTab || "") ? requestedTab! : "persona";
+  const setActiveTab = (tab: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
+    window.history.pushState(null, "", `?${params.toString()}`);
+  };
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [configReady, setConfigReady] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   
   const [brandVoice, setBrandVoice] = useState("");
@@ -117,23 +125,12 @@ function SettingsContent() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [configRes, accountsRes, usageRes, prefsRes] = await Promise.all([
-          getAgentConfig(),
-          getConnectedAccounts(),
-          getUsage(),
-          getNotificationPreferences()
-        ]);
-
-        if (usageRes.usage) {
-          setUsageStats(usageRes.usage);
+        const { configRes, accountsRes, usageRes, prefsRes, keys: [openaiKey, anthropicKey, googleKey, falKey] } = await getSettingsData();
+        if (usageRes.usage) setUsageStats(usageRes.usage);
+        if (configRes.error || accountsRes.error || usageRes.error || prefsRes.error) {
+          toast.error("Some settings couldn’t load. Refresh before making changes.");
         }
 
-        const [openaiKey, anthropicKey, googleKey, falKey] = await Promise.all([
-          getApiKey("openai"),
-          getApiKey("anthropic"),
-          getApiKey("google"),
-          getApiKey("fal"),
-        ]);
         const keyMap: Record<string, { id: string; provider: string; status: string; maskedKey?: string }> = {};
         if (openaiKey) keyMap["openai"] = openaiKey;
         if (anthropicKey) keyMap["anthropic"] = anthropicKey;
@@ -150,6 +147,7 @@ function SettingsContent() {
         }
 
         if (configRes.config) {
+          setConfigReady(!accountsRes.error);
           const cfg = configRes.config;
           setBrandVoice(cfg.brandVoice || "");
           setPostingGoals(cfg.postingGoals || "");
@@ -164,6 +162,7 @@ function SettingsContent() {
         }
       } catch (err) {
         console.error(err);
+        toast.error("Couldn’t load settings. Please refresh and try again.");
       } finally {
         setIsLoading(false);
       }
@@ -173,11 +172,16 @@ function SettingsContent() {
   }, []);
 
   const submitSave = async () => {
+    if (!configReady || isSaving) return;
     setIsSaving(true);
     setSaveSuccess(false);
 
-    // Clean up times input (e.g. "09:00, 14:00" -> ["09:00", "14:00"])
-    const times = timesText.split(",").map(t => t.trim()).filter(t => t.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/));
+    const times = timesText.split(",").map(t => t.trim()).filter(Boolean).map(t => t.padStart(5, "0"));
+    if (times.some(t => !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(t))) {
+      toast.error("Enter times in 24-hour format, separated by commas, such as 09:00, 14:30.");
+      setIsSaving(false);
+      return;
+    }
 
     try {
       const res = await saveAgentConfig({
@@ -260,7 +264,8 @@ function SettingsContent() {
 
   const handleDeleteKey = async (provider: string) => {
     try {
-      await deleteApiKey(provider);
+      const result = await deleteApiKey(provider);
+      if (result?.error) throw new Error(result.error);
       setApiKeys((prev) => {
         const next = { ...prev };
         delete next[provider];
@@ -304,7 +309,7 @@ function SettingsContent() {
           <button
             type="button"
             onClick={() => submitSave()}
-            disabled={isSaving}
+            disabled={isSaving || !configReady}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             {isSaving ? (
@@ -320,14 +325,14 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
-        <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-muted/60 border border-border">
+        <TabsList className="w-full max-w-full justify-start overflow-x-auto flex-nowrap h-auto p-1 bg-muted/60 border border-border">
           <TabsTrigger value="persona" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
             <UserIcon className="h-4 w-4" />
-            <span>Persona & Schedule</span>
+            <span>Voice & Schedule</span>
           </TabsTrigger>
           <TabsTrigger value="byok" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
             <Sparkles className="h-4 w-4" />
-            <span>AI Models (BYOK)</span>
+            <span>AI Providers</span>
           </TabsTrigger>
           <TabsTrigger value="apps" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
             <PlugZap className="h-4 w-4" />
@@ -341,16 +346,19 @@ function SettingsContent() {
             <Bell className="h-4 w-4" />
             <span>Notifications</span>
           </TabsTrigger>
+          <TabsTrigger value="billing" className="py-2 px-3 text-xs sm:text-sm">Billing</TabsTrigger>
         </TabsList>
 
-        {/* Tab 1: Persona & Schedule */}
+        <TabsContent value="billing"><BillingPanel /></TabsContent>
+
+        {/* Tab 1: Voice & Schedule */}
         <TabsContent value="persona">
           <form onSubmit={handleSaveForm} className="space-y-6">
         
             {/* Persona Section */}
             <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
               <div className="bg-muted/40 px-6 py-4 border-b border-border">
-                <h2 className="font-semibold text-foreground">Persona & Voice</h2>
+                <h2 className="font-semibold text-foreground">Brand Voice</h2>
               </div>
               <div className="p-6 space-y-6">
                 <div>
@@ -440,7 +448,7 @@ function SettingsContent() {
                     placeholder="09:00, 14:30, 18:00"
                     className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
-                  <p className="text-xs text-muted-foreground mt-2">The agent will attempt to generate and post content at these specific times on the days selected above.</p>
+                  <p className="text-xs text-muted-foreground mt-2">Joey prepares drafts at these times on the selected days. Review drafts before publishing; Theme Studio and Flows have their own schedules.</p>
                 </div>
               </div>
             </section>
@@ -486,7 +494,7 @@ function SettingsContent() {
           </form>
         </TabsContent>
 
-        {/* Tab 2: AI Models (BYOK) */}
+        {/* Tab 2: AI Providers */}
         <TabsContent value="byok" className="space-y-6">
           {/* Usage & Billing Section */}
           <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
@@ -551,11 +559,11 @@ function SettingsContent() {
             </div>
           </section>
 
-          {/* AI & Model Provider Keys (BYOK) */}
+          {/* AI Provider Keys */}
           <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
             <div className="bg-muted/40 px-6 py-4 border-b border-border flex justify-between items-center">
               <div>
-                <h2 className="font-semibold text-foreground">AI & Model Provider Keys (BYOK)</h2>
+                <h2 className="font-semibold text-foreground">AI Provider Keys</h2>
                 <p className="text-xs text-muted-foreground mt-1">Bring your own API keys for agent reasoning, text generation, and image generation. All keys are encrypted at rest with AES-256-GCM and cryptographically isolated to your workspace.</p>
               </div>
               <Sparkles className="h-5 w-5 text-muted-foreground" />

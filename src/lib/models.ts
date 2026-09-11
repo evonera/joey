@@ -18,6 +18,11 @@ export interface ModelDefinition {
   };
 }
 
+// Standard text pricing checked against provider documentation on 2026-09-07.
+// Provider-reported cost takes precedence in server usage accounting.
+const flashPricing = Date.now() < Date.parse("2027-01-01T00:00:00Z")
+  ? { input: 0.75, output: 3.75 } : { input: 1.5, output: 7.5 };
+
 export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
   // --- Google Gemini ---
   {
@@ -27,10 +32,10 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     providerModelId: "gemini-3.6-flash",
     tier: "recommended",
     recommended: true,
-    badge: "⚡ Fast",
-    description: "Latest high-speed, cost-effective Gemini model for social drafting.",
+    badge: "Fast",
+    description: "Previous-generation Flash model for fast, cost-effective social drafting.",
     contextWindowTokens: 1_048_576,
-    costPerMillionTokens: { input: 0.075, output: 0.3 },
+    costPerMillionTokens: flashPricing,
   },
   {
     id: "google/gemini-3.8-flash",
@@ -39,49 +44,25 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     providerModelId: "gemini-3.8-flash",
     tier: "recommended",
     recommended: true,
-    badge: "⚡ Frontier Agentic",
+    badge: "Frontier agentic",
     description: "Latest 2026 frontier agentic Flash model with enhanced reasoning and speed.",
     contextWindowTokens: 1_048_576,
-    costPerMillionTokens: { input: 0.1, output: 0.4 },
-  },
-  {
-    id: "google/gemini-2.5-pro",
-    name: "Gemini 2.5 Pro",
-    provider: "google",
-    providerModelId: "gemini-2.5-pro",
-    tier: "frontier",
-    recommended: false,
-    badge: "🧠 Deep Reasoning",
-    description: "Complex creative thinking, deep content critique, and multi-modal synthesis.",
-    contextWindowTokens: 2_097_152,
-    costPerMillionTokens: { input: 1.25, output: 5.0 },
+    costPerMillionTokens: flashPricing,
   },
   {
     id: "google/gemini-3.1-pro",
     name: "Gemini 3.1 Pro",
     provider: "google",
-    providerModelId: "gemini-3.1-pro",
+    providerModelId: "gemini-3.1-pro-preview",
     tier: "frontier",
     recommended: false,
-    badge: "🧠 Frontier Pro",
+    badge: "Frontier pro",
     description: "Highest capability Google model for long-horizon planning and complex reasoning.",
-    contextWindowTokens: 2_097_152,
-    costPerMillionTokens: { input: 1.25, output: 5.0 },
+    contextWindowTokens: 1_048_576,
+    costPerMillionTokens: { input: 2.0, output: 12.0 },
   },
 
   // --- OpenAI ---
-  {
-    id: "openai/gpt-4o-mini",
-    name: "GPT-4o Mini",
-    provider: "openai",
-    providerModelId: "gpt-4o-mini",
-    tier: "recommended",
-    recommended: true,
-    badge: "⚡ Fast",
-    description: "Lightweight and reliable for day-to-day social media tasks and fast chat turns.",
-    contextWindowTokens: 128_000,
-    costPerMillionTokens: { input: 0.15, output: 0.6 },
-  },
   {
     id: "openai/gpt-5.6-luna",
     name: "GPT-5.6 Luna",
@@ -89,22 +70,22 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     providerModelId: "gpt-5.6-luna",
     tier: "recommended",
     recommended: true,
-    badge: "⚡ High Efficiency",
+    badge: "High efficiency",
     description: "Production-optimized GPT-5.6 variant offering high intelligence at low cost.",
-    contextWindowTokens: 128_000,
-    costPerMillionTokens: { input: 0.2, output: 0.8 },
+    contextWindowTokens: 1_050_000,
+    costPerMillionTokens: { input: 0.2, output: 1.2 },
   },
   {
-    id: "openai/gpt-4o",
-    name: "GPT-4o",
+    id: "openai/gpt-5.6-terra",
+    name: "GPT-5.6 Terra",
     provider: "openai",
-    providerModelId: "gpt-4o",
+    providerModelId: "gpt-5.6-terra",
     tier: "standard",
     recommended: false,
-    badge: "Versatile Standard",
-    description: "Standard multimodal workhorse model with strong text and image understanding.",
-    contextWindowTokens: 128_000,
-    costPerMillionTokens: { input: 2.5, output: 10.0 },
+    badge: "Balanced",
+    description: "Balances intelligence and cost for demanding professional work.",
+    contextWindowTokens: 1_050_000,
+    costPerMillionTokens: { input: 2.0, output: 12.0 },
   },
   {
     id: "openai/gpt-5.6-sol",
@@ -113,10 +94,22 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     providerModelId: "gpt-5.6-sol",
     tier: "frontier",
     recommended: false,
-    badge: "🧠 Flagship Reasoning",
+    badge: "Flagship reasoning",
     description: "Flagship frontier model for deep reasoning, complex instructions, and coding.",
-    contextWindowTokens: 200_000,
-    costPerMillionTokens: { input: 3.0, output: 12.0 },
+    contextWindowTokens: 1_050_000,
+    costPerMillionTokens: { input: 4.0, output: 20.0 },
+  },
+  {
+    id: "openai/gpt-6-astra",
+    name: "GPT-6 Astra",
+    provider: "openai",
+    providerModelId: "gpt-6-astra",
+    tier: "frontier",
+    recommended: false,
+    badge: "Trusted access",
+    description: "Highest-capability OpenAI model; availability depends on account access.",
+    contextWindowTokens: 1_050_000,
+    costPerMillionTokens: { input: 10.0, output: 50.0 },
   },
 
   // --- Anthropic ---
@@ -124,24 +117,24 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     id: "anthropic/claude-haiku-4.5",
     name: "Claude Haiku 4.5",
     provider: "anthropic",
-    providerModelId: "claude-haiku-4-5",
+    providerModelId: "claude-haiku-4-5-20251001",
     tier: "recommended",
     recommended: true,
-    badge: "⚡ Fast",
+    badge: "Fast",
     description: "Fastest Claude tier with natural conversational fluency at minimal cost.",
     contextWindowTokens: 200_000,
-    costPerMillionTokens: { input: 0.8, output: 4.0 },
+    costPerMillionTokens: { input: 1.0, output: 5.0 },
   },
   {
-    id: "anthropic/claude-3-5-sonnet",
-    name: "Claude 3.5 Sonnet",
+    id: "anthropic/claude-sonnet-4.6",
+    name: "Claude Sonnet 4.6",
     provider: "anthropic",
-    providerModelId: "claude-3-5-sonnet-latest",
+    providerModelId: "claude-sonnet-4-6",
     tier: "standard",
     recommended: false,
     badge: "Creative Voice",
     description: "Exceptional nuance, tone modulation, and brand voice adherence.",
-    contextWindowTokens: 200_000,
+    contextWindowTokens: 1_000_000,
     costPerMillionTokens: { input: 3.0, output: 15.0 },
   },
   {
@@ -151,10 +144,10 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     providerModelId: "claude-sonnet-5",
     tier: "frontier",
     recommended: false,
-    badge: "🧠 Balanced Frontier",
+    badge: "Balanced frontier",
     description: "State-of-the-art agentic reasoning and nuanced content creation.",
-    contextWindowTokens: 200_000,
-    costPerMillionTokens: { input: 3.0, output: 15.0 },
+    contextWindowTokens: 1_000_000,
+    costPerMillionTokens: { input: 2.0, output: 10.0 },
   },
   {
     id: "anthropic/claude-opus-5",
@@ -163,23 +156,34 @@ export const SUPPORTED_MODELS: readonly ModelDefinition[] = [
     providerModelId: "claude-opus-5",
     tier: "frontier",
     recommended: false,
-    badge: "🧠 Deep Synthesis",
+    badge: "Deep synthesis",
     description: "Highest level of comprehension and strategic synthesis for enterprise brand strategy.",
-    contextWindowTokens: 200_000,
-    costPerMillionTokens: { input: 15.0, output: 75.0 },
+    contextWindowTokens: 1_000_000,
+    costPerMillionTokens: { input: 5.0, output: 25.0 },
   },
+
 ] as const;
 
-export const DEFAULT_MODEL_ID = "google/gemini-3.6-flash";
-export const FALLBACK_MODEL_ID = "openai/gpt-4o-mini";
+export const DEFAULT_MODEL_ID = "google/gemini-3.8-flash";
+export const FALLBACK_MODEL_ID = "openai/gpt-5.6-luna";
 
 export function getModelById(id: string | null | undefined): ModelDefinition {
   if (!id) {
-    return SUPPORTED_MODELS[0];
+    return SUPPORTED_MODELS.find(model => model.id === DEFAULT_MODEL_ID)!;
+  }
+  // Claude 3.5 Sonnet was retired; preserve saved selections within Anthropic.
+  if (id === "anthropic/claude-3-5-sonnet" || id === "claude-3-5-sonnet-latest") {
+    return SUPPORTED_MODELS.find(model => model.id === "anthropic/claude-sonnet-4.6")!;
   }
   // Legacy aliases
   if (id === "google/gemini-2.5-flash" || id === "gemini-2.5-flash") {
-    return SUPPORTED_MODELS[0];
+    return SUPPORTED_MODELS.find(model => model.id === "google/gemini-3.6-flash")!;
+  }
+  if (["openai/gpt-4o-mini", "gpt-4o-mini"].includes(id)) {
+    return SUPPORTED_MODELS.find(model => model.id === FALLBACK_MODEL_ID)!;
+  }
+  if (["openai/gpt-4o", "gpt-4o"].includes(id)) {
+    return SUPPORTED_MODELS.find(model => model.id === "openai/gpt-5.6-terra")!;
   }
 
   const match = SUPPORTED_MODELS.find((m) => m.id === id);
@@ -189,7 +193,28 @@ export function getModelById(id: string | null | undefined): ModelDefinition {
   const partial = SUPPORTED_MODELS.find(
     (m) => m.providerModelId === id || id.endsWith(m.providerModelId)
   );
-  return partial || SUPPORTED_MODELS[0];
+  return partial || SUPPORTED_MODELS.find(model => model.id === DEFAULT_MODEL_ID)!;
+}
+
+/** Strict lookup for accounting paths, where silently using another model's rate is unsafe. */
+export function findModelById(id: string | null | undefined): ModelDefinition | undefined {
+  if (!id) return undefined;
+  const normalized = id === "anthropic/claude-3-5-sonnet" || id === "claude-3-5-sonnet-latest"
+    ? "anthropic/claude-sonnet-4.6"
+    : id === "claude-3-5-haiku-latest"
+      ? "anthropic/claude-haiku-4.5"
+    : id === "google/gemini-2.5-flash" || id === "gemini-2.5-flash"
+      ? "google/gemini-3.6-flash"
+    : id === "openai/gpt-4o-mini" || id === "gpt-4o-mini"
+      ? "openai/gpt-5.6-luna"
+    : id === "openai/gpt-4o" || id === "gpt-4o"
+      ? "openai/gpt-5.6-terra"
+      : id;
+  return SUPPORTED_MODELS.find((model) =>
+    model.id === normalized
+    || model.providerModelId === normalized
+    || normalized === `${model.provider}/${model.providerModelId}`,
+  );
 }
 
 export function getRecommendedModels(): ModelDefinition[] {
@@ -205,8 +230,10 @@ export function getModelCost(
   inputTokens: number,
   outputTokens: number
 ): number {
-  const model = getModelById(modelId);
-  const inputCost = (inputTokens / 1_000_000) * model.costPerMillionTokens.input;
-  const outputCost = (outputTokens / 1_000_000) * model.costPerMillionTokens.output;
-  return Number((inputCost + outputCost).toFixed(6));
+  const model = findModelById(modelId) ?? getModelById(modelId);
+  const price = inputTokens > 200_000 && model.id === "google/gemini-3.1-pro"
+      ? { input: 4, output: 18 } : model.costPerMillionTokens;
+  const inputCost = (inputTokens / 1_000_000) * price.input;
+  const outputCost = (outputTokens / 1_000_000) * price.output;
+  return Number((inputCost + outputCost).toFixed(8));
 }

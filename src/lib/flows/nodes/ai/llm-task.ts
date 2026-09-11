@@ -22,7 +22,7 @@ export const llmTaskNode = defineNode({
     if (!budget.allowed) {
       throw new Error(
         `Monthly LLM budget reached ($${budget.costUsd.toFixed(2)} / $${budget.budgetUsd}). ` +
-          "Raise the limit in Settings to keep flows running.",
+          "Review AI usage in Settings.",
       );
     }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { useChatStorageScope } from "@/components/chat/chat-storage-provider";
+
 import * as React from "react";
 import {
   Search01Icon as SearchIcon,
@@ -46,14 +48,15 @@ export function ChatHistoryDrawer({
   onSelectSession,
   onNewChat,
 }: ChatHistoryDrawerProps) {
+  const storageScope = useChatStorageScope();
   const [sessions, setSessions] = React.useState<SavedChatSession[]>([]);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editTitle, setEditTitle] = React.useState("");
 
   const refreshSessions = React.useCallback(() => {
-    setSessions(getStoredSessions());
-  }, []);
+    setSessions(getStoredSessions(storageScope));
+  }, [storageScope]);
 
   React.useEffect(() => {
     if (open) {
@@ -98,7 +101,7 @@ export function ChatHistoryDrawer({
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteStoredSession(id);
+    deleteStoredSession(id, storageScope);
     refreshSessions();
     if (activeSessionId === id) {
       onNewChat();
@@ -107,7 +110,7 @@ export function ChatHistoryDrawer({
 
   const handleTogglePin = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    togglePinStoredSession(id);
+    togglePinStoredSession(id, storageScope);
     refreshSessions();
   };
 
@@ -121,7 +124,7 @@ export function ChatHistoryDrawer({
     e.preventDefault();
     e.stopPropagation();
     if (editTitle.trim()) {
-      updateStoredSessionTitle(id, editTitle);
+      updateStoredSessionTitle(id, editTitle, storageScope);
       refreshSessions();
     }
     setEditingId(null);

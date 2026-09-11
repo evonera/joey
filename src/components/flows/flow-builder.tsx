@@ -220,7 +220,7 @@ function graphEdgeToReactFlow(edge: FlowGraphDoc["edges"][number]): Edge {
   };
 }
 
-export function FlowBuilder({ flow }: { flow: FlowRow }) {
+export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?: Array<{ id: string; name: string | null; platform: string }> }) {
   const router = useRouter();
   const initialGraph = (flow.graph ?? { nodes: [], edges: [] }) as FlowGraphDoc;
 
@@ -326,7 +326,7 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
     nextNodeId: nextWebMcpNodeId,
     validate: validateStagedGraph,
   }), [flow.id, status, nextWebMcpNodeId, stageAgentGraph, stageAgentName, validateStagedGraph]);
-  const webMcpAvailable = useWebMcpTools(webMcpTools);
+  useWebMcpTools(webMcpTools);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -531,11 +531,6 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
         <div className="flex items-center gap-2 border-b px-4 py-2.5">
           <Input value={name} onChange={(e)=>setName(e.target.value)} className="h-8 w-56 text-sm font-semibold border-none shadow-none px-1" />
           <Badge variant={status === "active" ? "default" : "secondary"} className="text-[10px]">{status}</Badge>
-          {webMcpAvailable && (
-            <Badge variant="outline" className="gap-1 border-indigo-300 text-[10px] text-indigo-700 dark:border-indigo-800 dark:text-indigo-300">
-              <Sparkles className="h-3 w-3" />WebMCP ready
-            </Badge>
-          )}
           <div className="ml-auto flex items-center gap-1.5">
             <Button size="sm" variant="outline" disabled={busy} onClick={handleValidate}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>Validate</Button>
             <Button size="sm" variant={isDirty ? "default" : "outline"} disabled={busy} onClick={handleSave}>
@@ -684,17 +679,32 @@ export function FlowBuilder({ flow }: { flow: FlowRow }) {
 
           {/* Config drawer */}
           {selectedDef && selectedNode && (
-            <div className="absolute right-4 top-4 z-10 w-80 rounded-xl border bg-background p-4 shadow-lg space-y-3 max-h-[80%] overflow-y-auto">
+            <div className="absolute right-4 top-4 z-10 w-80 max-w-[calc(100%-2rem)] rounded-xl border bg-background p-4 shadow-lg space-y-3 max-h-[80%] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">{selectedDef.label}</p>
-                <button className="text-xs text-muted-foreground hover:text-foreground p-1" onClick={()=>setSelectedId(null)}><Cancel01Icon size={14} /></button>
+                <button aria-label="Close node settings" className="text-xs text-muted-foreground hover:text-foreground p-1" onClick={()=>setSelectedId(null)}><Cancel01Icon size={14} /></button>
               </div>
               <p className="text-xs text-muted-foreground">{selectedDef.description}</p>
+              {selectedDef.type === "action.create_draft" && accounts.length === 0 && <p className="text-xs text-muted-foreground">
+                <Link href="/settings?tab=accounts" className="underline">Connect a social account</Link> to choose where this draft will publish.
+              </p>}
               {Object.keys(selectedNode.data as object).includes("config") && (
                 <ZodForm
                   schema={selectedDef.configSchema}
                   value={((selectedNode.data as { config?: Record<string, unknown> }).config) ?? {}}
-                  onChange={updateSelectedConfig}
+                  fieldOptions={selectedDef.type === "action.create_draft" ? {
+                    accountId: [
+                      { value: "", label: "Auto-select if exactly one account matches" },
+                      ...accounts.filter(account => {
+                        const platform = ((selectedNode.data as { config?: Record<string, unknown> }).config?.platform) ?? "twitter";
+                        return account.platform === platform || (platform === "twitter" && account.platform === "x");
+                      }).map(account => ({ value: account.id, label: `${account.name || "Connected account"} (${account.platform === "twitter" || account.platform === "x" ? "X" : account.platform})` })),
+                    ],
+                  } : undefined}
+                  onChange={next => {
+                    const previous = (selectedNode.data as { config?: Record<string, unknown> }).config;
+                    updateSelectedConfig(selectedDef.type === "action.create_draft" && next.platform !== previous?.platform ? { ...next, accountId: "" } : next);
+                  }}
                 />
               )}
               <div className="pt-3 border-t flex justify-end">

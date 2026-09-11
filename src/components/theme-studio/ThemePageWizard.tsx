@@ -23,10 +23,7 @@ import {
   IconFlame,
   IconShare
 } from "@tabler/icons-react";
-import { createThemePage, deleteThemePage } from "@/app/actions/theme-pages";
-import { createThemeSource } from "@/app/actions/theme-sources";
-import { createThemeSlot } from "@/app/actions/theme-slots";
-import { createThemeTemplate } from "@/app/actions/theme-templates";
+import { createThemePageFromWizard } from "@/app/actions/theme-pages";
 import { toast } from "sonner";
 
 interface FormatItem {
@@ -146,73 +143,49 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
     }
 
     setLoading(true);
-    let createdPageId: string | undefined;
     try {
-      // 1. Create Theme Page
-      const pageRes = await createThemePage({
-        name: name.trim(),
-        niche: niche.trim() || undefined,
-        audience: audience.trim() || undefined,
-        voice: voice.trim() || undefined,
-        connectedAccounts: selectedAccountIds,
-        brandKit: {
-          primaryColor,
-          accentColor,
-          watermark,
-          brandInitial,
-          topBadge,
-          showDivider,
-        },
-      });
-
-      if (pageRes.error || !pageRes.page) {
-        throw new Error(pageRes.error || "Failed to create theme page");
-      }
-
-      const pageId = pageRes.page.id;
-      createdPageId = pageId;
-
-      const requireSuccess = (result: { error?: string }, operation: string) => {
-        if (result.error) throw new Error(`${operation}: ${result.error}`);
-      };
-
-      // 2. Add Sources
-      for (const src of sources) {
-        if (src.url.trim()) {
-          const result = await createThemeSource({
-            themePageId: pageId,
-            name: src.name.trim() || "Source Feed",
-            sourceType: src.type,
-            url: src.url.trim(),
-            rightsCategory: "unknown",
-          });
-          requireSuccess(result, `Could not add source "${src.name || src.url}"`);
-        }
-      }
-
-      // 3. Add Slots based on preset
       const productionFormats = availableFormats.filter((format) => format.mediaType !== "video");
       const squareCard = productionFormats.find((f) => f.slug === "instagram-card-1080") || productionFormats[0];
       const carousel = productionFormats.find((f) => f.slug === "instagram-carousel-1080") || productionFormats[0];
       if (!squareCard || !carousel) throw new Error("Theme Studio has no production-ready image formats configured");
-      
+
+      const slots: Array<{ formatId: string; label: string; priority: number }> = [];
       if (selectedPreset === "growth") {
-        if (squareCard) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Daily News Card", priority: 0 }), "Could not add Daily News Card slot");
-        if (carousel) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "5-Slide Deep Dive Carousel", priority: 1 }), "Could not add carousel slot");
-        if (squareCard) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Evening News Card", priority: 2 }), "Could not add Evening News Card slot");
+        slots.push(
+          { formatId: squareCard.id, label: "Daily News Card", priority: 0 },
+          { formatId: carousel.id, label: "5-Slide Deep Dive Carousel", priority: 1 },
+          { formatId: squareCard.id, label: "Evening News Card", priority: 2 },
+        );
       } else if (selectedPreset === "authority") {
-        if (carousel) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Morning Carousel Playbook", priority: 0 }), "Could not add morning carousel slot");
-        if (carousel) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: carousel.id, label: "Evening Strategy Breakdown", priority: 1 }), "Could not add evening carousel slot");
+        slots.push(
+          { formatId: carousel.id, label: "Morning Carousel Playbook", priority: 0 },
+          { formatId: carousel.id, label: "Evening Strategy Breakdown", priority: 1 },
+        );
       } else {
-        if (squareCard) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Morning Flash News", priority: 0 }), "Could not add morning news slot");
-        if (squareCard) requireSuccess(await createThemeSlot({ themePageId: pageId, formatId: squareCard.id, label: "Evening Recap Card", priority: 1 }), "Could not add evening news slot");
+        slots.push(
+          { formatId: squareCard.id, label: "Morning Flash News", priority: 0 },
+          { formatId: squareCard.id, label: "Evening Recap Card", priority: 1 },
+        );
       }
 
-      // 4. Create Default Pubity-Style Visual Template
-      if (squareCard) {
-        const result = await createThemeTemplate({
-          themePageId: pageId,
-          name: `${name} Pubity News Template`,
+      const pageRes = await createThemePageFromWizard({
+        page: {
+          name: name.trim(),
+          niche: niche.trim() || undefined,
+          audience: audience.trim() || undefined,
+          voice: voice.trim() || undefined,
+          connectedAccounts: selectedAccountIds,
+          brandKit: { primaryColor, accentColor, watermark, brandInitial, topBadge, showDivider },
+        },
+        sources: sources.filter((source) => source.url.trim()).map((source) => ({
+          name: source.name.trim() || "Source Feed",
+          sourceType: source.type,
+          url: source.url.trim(),
+          rightsCategory: "unknown",
+        })),
+        slots,
+        template: {
+          name: `${name.trim()} Pubity News Template`,
           formatId: squareCard.id,
           renderer: "puppeteer",
           componentSpec: {
@@ -226,14 +199,13 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
             titleTemplate: "{{title}}",
             bodyTemplate: "{{summary}}",
           },
-        });
-        requireSuccess(result, "Could not create the default visual template");
-      }
+        },
+      });
+      if (!pageRes.page) throw new Error(pageRes.error || "Failed to create theme page");
 
       toast.success("Theme page created successfully!");
-      router.push(`/theme-studio/${pageId}`);
+      router.push(`/theme-studio/${pageRes.page.id}`);
     } catch (err: any) {
-      if (createdPageId) await deleteThemePage(createdPageId);
       toast.error(err.message || "Failed to create theme page");
     } finally {
       setLoading(false);
@@ -454,11 +426,11 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
                       onChange={(e) => updateSourceField(idx, "type", e.target.value)}
                       className="px-2 py-1 text-xs border rounded bg-background"
                     >
-                      <option value="exa_domain">🌐 Exa News Domain</option>
-                      <option value="exa_topic">🔍 Exa Topic News</option>
-                      <option value="rss">📡 RSS Feed</option>
-                      <option value="reddit">💬 Reddit</option>
-                      <option value="http">🔗 Web Link</option>
+                      <option value="exa_domain">Exa news domain</option>
+                      <option value="exa_topic">Exa topic news</option>
+                      <option value="rss">RSS feed</option>
+                      <option value="reddit">Reddit</option>
+                      <option value="http">Web link</option>
                     </select>
                     {sources.length > 1 && (
                       <button
@@ -487,8 +459,8 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
                   className="w-full px-3 py-1.5 text-xs border rounded-lg bg-background font-mono"
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  {src.type === "exa_domain" && "⚡ Exa Search searches this domain for recent news articles and extracts high-resolution hero images."}
-                  {src.type === "exa_topic" && "⚡ Exa Search finds fresh breaking stories matching this topic across all top news sources."}
+                  {src.type === "exa_domain" && "Exa Search searches this domain for recent news articles and extracts high-resolution hero images."}
+                  {src.type === "exa_topic" && "Exa Search finds fresh breaking stories matching this topic across all top news sources."}
                 </p>
               </div>
             ))}

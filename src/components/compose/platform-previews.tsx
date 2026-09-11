@@ -79,10 +79,10 @@ export function PlatformPreviews({ content, media, selectedAccounts }: PlatformP
                 )}
                 
                 <div className="p-3 border-t flex justify-around text-xs text-muted-foreground">
-                  <span className="hover:text-foreground cursor-pointer transition-colors">&hearts; Like</span>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">&#128172; Comment</span>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">&#8646; Repost</span>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">&#8679; Share</span>
+                  <span className="hover:text-foreground cursor-pointer transition-colors">Like</span>
+                  <span className="hover:text-foreground cursor-pointer transition-colors">Comment</span>
+                  <span className="hover:text-foreground cursor-pointer transition-colors">Repost</span>
+                  <span className="hover:text-foreground cursor-pointer transition-colors">Share</span>
                 </div>
               </Card>
             </div>

@@ -9,6 +9,7 @@ import { eq, desc } from "drizzle-orm";
 export interface AuthoritativeWorkspaceData {
     activeTenantId: string | null;
     orderedTenantIds: string[];
+    isPro: boolean;
 }
 
 /**
@@ -23,7 +24,7 @@ export async function getAuthoritativeWorkspaceData(): Promise<AuthoritativeWork
         });
 
         if (!session) {
-            return { activeTenantId: null, orderedTenantIds: [] };
+            return { activeTenantId: null, orderedTenantIds: [], isPro: false };
         }
 
         const memberships = await db.query.member.findMany({
@@ -44,8 +45,14 @@ export async function getAuthoritativeWorkspaceData(): Promise<AuthoritativeWork
             }).catch(() => {});
         }
 
-        return { activeTenantId, orderedTenantIds };
+        let isPro = false;
+        if (activeTenantId) {
+            const { isProTenant } = await import("@/lib/billing");
+            isPro = await isProTenant(activeTenantId);
+        }
+
+        return { activeTenantId, orderedTenantIds, isPro };
     } catch {
-        return { activeTenantId: null, orderedTenantIds: [] };
+        return { activeTenantId: null, orderedTenantIds: [], isPro: false };
     }
 }

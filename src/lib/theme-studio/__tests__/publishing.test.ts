@@ -27,22 +27,28 @@ describe("Theme Studio Multi-Platform Publishing (Phase 5)", () => {
       const igVariant = adaptPackageForPlatform(mockPackage, "instagram", "carousel");
 
       expect(igVariant.platform).toBe("instagram");
-      expect(igVariant.adaptedCaption).toContain("👉 Swipe left for the breakdown.");
+      expect(igVariant.adaptedCaption).toContain("Swipe left for the breakdown.");
       expect(igVariant.adaptedCaption).toContain("#ai #coding #engineering");
       expect(igVariant.mediaUrls).toHaveLength(3);
     });
 
-    it("adapts package into video CTA format for TikTok", () => {
+    it("preserves approved TikTok copy without promising an unconfigured DM guide", () => {
       const ttVariant = adaptPackageForPlatform(mockPackage, "tiktok", "video");
 
       expect(ttVariant.platform).toBe("tiktok");
-      expect(ttVariant.adaptedCaption).toContain("Comment below to get the full guide.");
+      expect(ttVariant.adaptedCaption).toContain(mockPackage.caption);
+      expect(ttVariant.adaptedCaption).not.toContain("full guide");
       expect(ttVariant.adaptedHashtags).toHaveLength(5);
     });
 
     it("does not relabel an image as a TikTok video", () => {
       const ttVariant = adaptPackageForPlatform(mockPackage, "tiktok", "image");
       expect(ttVariant.mediaType).toBe("image");
+    });
+    it("does not submit video poster images as video attachments", () => {
+      const variant = adaptPackageForPlatform({ ...mockPackage, renderedAssetUrls: [{ url: "https://example.com/reel.mp4", type: "video" }, { url: "https://example.com/poster.png", type: "image" }] }, "tiktok", "video");
+      expect(variant.mediaUrls).toEqual(["https://example.com/reel.mp4"]);
+      expect(adaptPackageForPlatform(mockPackage, "tiktok", "video").mediaUrls).toEqual([]);
     });
   });
 });

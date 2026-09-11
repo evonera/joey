@@ -14,13 +14,13 @@ import { PlatformSelector } from "@/components/compose/platform-selector";
 import { SchedulePicker, type ScheduleType } from "@/components/compose/schedule-picker";
 import { PlatformPreviews } from "@/components/compose/platform-previews";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
-import { 
-  Loading03Icon as Loader2, 
-  SentIcon as Send, 
-  NoteEditIcon as PenSquare, 
-  UserMultiple02Icon as Users, 
-  Calendar03Icon as Calendar, 
-  Image01Icon as ImageIcon, 
+import {
+  Loading03Icon as Loader2,
+  SentIcon as Send,
+  NoteEditIcon as PenSquare,
+  UserMultiple02Icon as Users,
+  Calendar03Icon as Calendar,
+  Image01Icon as ImageIcon,
   Cancel01Icon as X,
   Upload01Icon as Upload,
   FloppyDiskIcon as Save,
@@ -28,19 +28,8 @@ import {
 } from "hugeicons-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { fromZonedTime } from "date-fns-tz";
-
-const PLATFORM_CHAR_LIMITS: Record<string, { label: string; limit: number; maxMedia: number }> = {
-  x: { label: "X", limit: 280, maxMedia: 4 },
-  twitter: { label: "Twitter", limit: 280, maxMedia: 4 },
-  threads: { label: "Threads", limit: 500, maxMedia: 10 },
-  bluesky: { label: "Bluesky", limit: 300, maxMedia: 4 },
-  linkedin: { label: "LinkedIn", limit: 3000, maxMedia: 9 },
-  instagram: { label: "Instagram", limit: 2200, maxMedia: 10 },
-  facebook: { label: "Facebook", limit: 63206, maxMedia: 10 },
-  tiktok: { label: "TikTok", limit: 2200, maxMedia: 1 },
-  youtube: { label: "YouTube", limit: 5000, maxMedia: 1 },
-};
+import { format } from "date-fns";
+import { COMPOSE_PLATFORM_LIMITS, validatePostForPlatforms } from "@/lib/compose-validation";
 
 export default function ComposePage() {
   const router = useRouter();
@@ -50,6 +39,8 @@ export default function ComposePage() {
 
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
+  const [loadingDraft, setLoadingDraft] = useState(Boolean(draftIdParam));
 
   // Form state
   const [content, setContent] = useState("");
@@ -76,9 +67,12 @@ export default function ComposePage() {
   // Load connected active accounts
   useEffect(() => {
     async function loadAccounts() {
-      const res = await getConnectedAccounts();
-      if (res.accounts) setAccounts(res.accounts);
-      setLoadingAccounts(false);
+      try {
+        const res = await getConnectedAccounts();
+        if (res.error) throw new Error(res.error);
+        if (res.accounts) setAccounts(res.accounts.filter(a => a.isActive));
+      } catch { toast.error("Couldn’t load accounts. Refresh to try again."); }
+      finally { setLoadingAccounts(false); }
     }
     loadAccounts();
   }, []);
@@ -87,7 +81,10 @@ export default function ComposePage() {
   useEffect(() => {
     if (!draftIdParam) return;
     async function loadDraft() {
+      setLoadingDraft(true);
+      try {
       const res = await getDraftForCompose(draftIdParam!);
+      if (res.error) throw new Error(res.error);
       if (res.draft) {
         setContent(res.draft.content || "");
         const opts = res.draft.platformOptions as any;
@@ -100,12 +97,15 @@ export default function ComposePage() {
         if (res.draft.scheduledFor) {
           setScheduleType("scheduled");
           const dateObj = new Date(res.draft.scheduledFor);
-          setScheduledDate(dateObj.toISOString().split("T")[0]);
+          setScheduledDate(format(dateObj, "yyyy-MM-dd"));
           const hh = String(dateObj.getHours()).padStart(2, "0");
           const mm = String(dateObj.getMinutes()).padStart(2, "0");
           setScheduledTime(`${hh}:${mm}`);
         }
       }
+      } catch (error) {
+        setDraftLoadError(error instanceof Error ? error.message : "Couldn’t load this draft.");
+      } finally { setLoadingDraft(false); }
     }
     loadDraft();
   }, [draftIdParam]);
@@ -117,13 +117,14 @@ export default function ComposePage() {
   const activeLimits = selectedAccounts.map(a => {
     const plat = a.platform?.toLowerCase() || "";
     return {
+      id: a.id,
       platform: a.platform,
       accountName: a.accountName,
-      ...(PLATFORM_CHAR_LIMITS[plat] || { label: a.platform, limit: 280, maxMedia: 4 })
+      ...(COMPOSE_PLATFORM_LIMITS[plat] || { label: a.platform, limit: 280, maxMedia: 4 })
     };
   });
 
-  const effectiveCharLimit = activeLimits.length > 0 
+  const effectiveCharLimit = activeLimits.length > 0
     ? Math.min(...activeLimits.map(l => l.limit))
     : 280;
 
@@ -134,14 +135,19 @@ export default function ComposePage() {
   const exceedsCharLimit = activeLimits.some(l => charCount > l.limit);
   const exceedsMediaLimit = mediaUrls.length > maxAllowedMedia;
 
-  const canSubmit = selectedAccountIds.length > 0 && 
-    (content.trim().length > 0 || mediaUrls.length > 0) && 
-    !isSubmitting && 
+  const canSubmit = selectedAccountIds.length > 0 &&
+    (content.trim().length > 0 || mediaUrls.length > 0) &&
+    !isSubmitting &&
     !isSavingDraft &&
-    !exceedsCharLimit;
+    !exceedsCharLimit && !exceedsMediaLimit && !uploading && !loadingDraft && !draftLoadError &&
+    !validatePostForPlatforms(content, mediaUrls, selectedAccounts.map(a => a.platform));
 
   const addExternalUrl = () => {
     const url = externalUrl.trim();
+    try {
+      const parsed = new URL(url);
+      if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error();
+    } catch { toast.error("Enter a valid HTTP or HTTPS media URL."); return; }
     if (url && !mediaUrls.includes(url)) {
       setMediaUrls((prev) => [...prev, url]);
       setExternalUrl("");
@@ -199,58 +205,41 @@ export default function ComposePage() {
       return;
     }
 
-    setIsSavingDraft(true);
-    const res = await createManualPost({
-      content,
-      mediaUrls,
-      accountIds: selectedAccountIds,
-      scheduleType: "draft",
-    });
-    setIsSavingDraft(false);
-
-    if (res.error) {
-      toast.error(res.error);
-    } else {
-      toast.success("Saved to drafts queue!");
-      router.push("/drafts");
-    }
+    await submitPost("draft");
   };
 
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-    setIsSubmitting(true);
-
-    let scheduledFor: string | undefined;
-    if (scheduleType === "scheduled" && scheduledDate) {
-      const [year, month, day] = scheduledDate.split("-").map(Number);
-      const [hours, minutes] = scheduledTime.split(":").map(Number);
-      const tz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC";
-      const localDate = new Date(year, month - 1, day, hours, minutes, 0);
-      const utcDate = fromZonedTime(localDate, tz);
-      scheduledFor = utcDate.toISOString();
-    }
-
-    const res = await createManualPost({
-      content,
-      mediaUrls,
-      accountIds: selectedAccountIds,
-      scheduleType,
-      scheduledFor
-    });
-
-    setIsSubmitting(false);
-
-    if (res.error) {
-      toast.error(res.error);
-    } else {
-      toast.success(scheduleType === "now" ? "Posts published successfully!" : "Posts scheduled successfully!");
-      setContent("");
-      setMediaUrls([]);
-      setExternalUrl("");
-      setSelectedAccountIds([]);
-      router.push(scheduleType === "now" ? "/dashboard" : "/calendar");
-    }
+  const submitPost = async (mode: "now" | "scheduled" | "draft") => {
+    if (mode === "draft") setIsSavingDraft(true);
+    else setIsSubmitting(true);
+    try {
+      let scheduledFor: string | undefined;
+      if (mode === "scheduled") {
+        if (!scheduledDate || !/^\d{2}:\d{2}$/.test(scheduledTime)) throw new Error("Choose a date and time.");
+        const localDate = new Date(`${scheduledDate}T${scheduledTime}:00`);
+        if (!Number.isFinite(localDate.getTime()) || localDate.getTime() <= Date.now()) throw new Error("Choose a future date and time.");
+        scheduledFor = localDate.toISOString();
+      }
+      const res = await createManualPost({
+        draftId: draftIdParam || undefined,
+        content, mediaUrls, accountIds: selectedAccountIds, scheduleType: mode, scheduledFor,
+      });
+      if (res.error) {
+        toast.error(res.error);
+        // A partial publish already saved the drafts. Continue in the queue,
+        // where retries use their existing IDs, instead of duplicating posts.
+        if (res.draftsCreated) router.push("/drafts");
+        return;
+      }
+      toast.success(mode === "draft" ? "Draft saved" : mode === "scheduled" ? "Post scheduled" : res.processing ? "Post submitted. Publishing is still in progress." : "Post published");
+      router.push(mode === "scheduled" ? "/calendar" : "/drafts");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn’t save your post. Please try again.");
+    } finally { setIsSavingDraft(false); setIsSubmitting(false); }
   };
+
+  const handleSubmit = async () => { if (canSubmit) await submitPost(scheduleType === "scheduled" ? "scheduled" : "now"); };
+
+  if (draftLoadError) return <div role="alert" className="space-y-4"><p>{draftLoadError}</p><Button asChild><Link href="/drafts">Back to drafts</Link></Button></div>;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-16">
@@ -263,7 +252,7 @@ export default function ComposePage() {
           type="button"
           variant="outline"
           onClick={handleSaveDraft}
-          disabled={selectedAccountIds.length === 0 || (!content.trim() && mediaUrls.length === 0) || isSavingDraft || isSubmitting}
+          disabled={selectedAccountIds.length === 0 || (!content.trim() && mediaUrls.length === 0) || isSavingDraft || isSubmitting || uploading || loadingDraft}
           className="self-start gap-1.5"
         >
           {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -272,18 +261,17 @@ export default function ComposePage() {
       </div>
 
       {/* Autopilot Discovery Banner */}
-      <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-primary/20 bg-primary/5 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl flex-wrap border border-primary/20 bg-primary/5 text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
-          <span className="text-base">💡</span>
           <span>
-            <strong className="text-foreground">Manual Composer:</strong> For ad-hoc posts right now. Want Joey to draft posts on autopilot every day?
+            <strong className="text-foreground">Compose:</strong> Create a single post here. Use Theme Studio for recurring content around a topic.
           </span>
         </div>
         <Link
           href="/theme-studio"
           className="font-medium text-primary hover:underline shrink-0 inline-flex items-center gap-1"
         >
-          Configure a Theme Page →
+          Open Theme Studio →
         </Link>
       </div>
 
@@ -327,9 +315,9 @@ export default function ComposePage() {
               {activeLimits.map((l) => {
                 const over = charCount > l.limit;
                 return (
-                  <Badge 
-                    key={l.accountName || l.platform} 
-                    variant={over ? "destructive" : "outline"} 
+                  <Badge
+                    key={l.id}
+                    variant={over ? "destructive" : "outline"}
                     className="text-[11px] font-mono capitalize"
                   >
                     {l.label}: {charCount}/{l.limit}
@@ -347,6 +335,7 @@ export default function ComposePage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Textarea
+              aria-label="Post content"
               placeholder="What's on your mind? Share news, insights, or start a discussion..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -360,9 +349,9 @@ export default function ComposePage() {
               </p>
             )}
           </div>
-          
+
           {/* Media Section */}
-          <div 
+          <div
             onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
             onDrop={(e) => {
               e.preventDefault();
@@ -370,7 +359,7 @@ export default function ComposePage() {
             }}
             className="bg-muted/30 p-4 rounded-xl border border-dashed space-y-3 transition-colors hover:border-primary/40"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <ImageIcon className="h-4 w-4 text-muted-foreground" />
                 Media Attachments
@@ -431,8 +420,9 @@ export default function ComposePage() {
                       )}
                       <button
                         type="button"
+                        aria-label={`Remove attachment ${i + 1}`}
                         onClick={() => setMediaUrls((prev) => prev.filter((_, j) => j !== i))}
-                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity shadow-sm"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -450,6 +440,7 @@ export default function ComposePage() {
 
             <div className="flex items-center gap-2 pt-1">
               <Input
+                aria-label="External media URL"
                 placeholder="Or paste an external image / video URL..."
                 value={externalUrl}
                 onChange={(e) => setExternalUrl(e.target.value)}
@@ -502,17 +493,17 @@ export default function ComposePage() {
           type="button"
           variant="outline"
           onClick={handleSaveDraft}
-          disabled={!canSubmit || isSavingDraft}
+          disabled={selectedAccountIds.length === 0 || (!content.trim() && mediaUrls.length === 0) || isSavingDraft || isSubmitting || uploading || loadingDraft}
           size="lg"
           className="w-full sm:w-auto px-6"
         >
           {isSavingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
           Save as Draft
         </Button>
-        <Button 
-          onClick={handleSubmit} 
-          disabled={!canSubmit || isSubmitting} 
-          size="lg" 
+        <Button
+          onClick={handleSubmit}
+          disabled={!canSubmit || isSubmitting}
+          size="lg"
           className="w-full sm:w-auto px-8 font-semibold"
         >
           {isSubmitting ? (

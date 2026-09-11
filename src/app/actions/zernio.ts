@@ -4,249 +4,107 @@ import { auth } from "@/lib/auth";
 import { headers, cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { apiKeys, tenants, socialAccounts, socialEntities } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { decrypt, encrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
 import crypto from "crypto";
 
 import { getActiveTenantId, requireRole } from "@/lib/auth";
 
-export async function getZernioClient() {
-    const tenantId = await getActiveTenantId();
+import { getZernioClient } from "@/lib/zernio-session";
 
-    const key = await db.query.apiKeys.findFirst({
-        where: and(
-            eq(apiKeys.tenantId, tenantId),
-            eq(apiKeys.provider, 'zernio'),
-            eq(apiKeys.status, 'active'),
-        ),
-    });
-
-    if (!key || !key.encryptedKey) {
-        throw new Error("No API key configured");
-    }
-
-    const apiKey = decrypt(key.encryptedKey, tenantId);
-    return { zernio: new Zernio({ apiKey }), tenantId };
-}
+import { ensureZernioProfile } from "@/lib/zernio-profile";
 
 export async function generateConnectUrl(platform: string) {
-    try {
-        const { zernio } = await getZernioClient();
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        
-        // Generate CSRF state
-        const state = crypto.randomUUID();
-        const cookieStore = await cookies();
-        cookieStore.set('zernio_oauth_state', state, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 10 * 60, // 10 mins
-            path: '/'
-        });
-
-        const response = await zernio.connect.getConnectUrl({
-            query: {
-                platform,
-                redirectUri: `${appUrl}/callback`,
-                state // send state to Zernio if supported, otherwise store locally to verify redirect flow
-            }
-        });
-
-        return { url: response.data.url };
-    } catch (error: any) {
-        console.error("Failed to generate connect URL:", error);
-        return { error: "Failed to connect to platform" };
-    }
+  try {
+    const tenantId = await requireRole(["owner", "admin"]);
+    const { assertAccountQuota } = await import("@/lib/billing");
+    await assertAccountQuota(tenantId);
+    const supported = ["facebook", "instagram", "linkedin", "twitter", "tiktok", "youtube", "threads", "reddit", "pinterest", "bluesky", "googlebusiness", "telegram", "snapchat", "discord", "whatsapp"];
+    const canonical = platform === "x" ? "twitter" : platform;
+    if (!supported.includes(canonical)) return { error: "This platform is not supported." };
+    const { zernio } = await getZernioClient();
+    const profileId = await ensureZernioProfile(tenantId, zernio);
+    const state = crypto.randomUUID();
+    const callback = new URL("/callback", auth.options.baseURL as string);
+    callback.searchParams.set("joey_state", state);
+    // Zernio owns OAuth state and hosted account selection. Our nonce is
+    // preserved in the custom redirect URL and bound to the active workspace.
+    const response = await zernio.connect.getConnectUrl({
+      path: { platform: canonical },
+      query: { profileId, redirect_url: callback.toString() },
+    });
+    if (response.error || !response.data?.authUrl) return { error: "Zernio could not start the connection. Check your key and plan." };
+    (await cookies()).set("zernio_oauth_state", encrypt(JSON.stringify({ state, profileId, platform: canonical }), tenantId), {
+      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 600, path: "/",
+    });
+    return { url: response.data.authUrl as string };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to connect to platform" };
+  }
 }
 
-export async function handleZernioCallback(searchParams: Record<string, string>) {
-    try {
-        const { zernio, tenantId } = await getZernioClient();
-        const platform = searchParams.platform;
-        const connected = searchParams.connected;
-        const step = searchParams.step;
-        const errorParam = searchParams.error;
-        const state = searchParams.state;
-
-        // Note: Realistically, if Zernio SDK/API supports state parameter passthrough, we'd verify it here.
-        // Assuming it does for the sake of CSRF protection:
-        const cookieStore = await cookies();
-        const storedState = cookieStore.get('zernio_oauth_state');
-        
-        if (!storedState?.value) {
-            return { error: "Invalid OAuth state: Missing CSRF session" };
-        }
-        
-        if (!state || storedState.value !== state) {
-            return { error: "Invalid OAuth state parameter" };
-        }
-        
-        cookieStore.delete('zernio_oauth_state'); // Clear it after use
-
-        if (errorParam) {
-            console.error("Zernio OAuth returned error:", errorParam);
-            return { error: "Authentication failed on the provider. Please try again." };
-        }
-
-        // Simple connection success
-        if (connected) {
-            const syncResult = await syncConnectedAccounts();
-            if (syncResult.error) {
-                return { error: syncResult.error };
-            }
-            return { success: true, platform: connected };
-        }
-
-        // Sub-entity selection required (Facebook Pages, LinkedIn Orgs, etc)
-        if (step && platform) {
-            const tempToken = searchParams.tempToken || "";
-            const connectToken = searchParams.connect_token || "";
-            const pendingDataToken = searchParams.pendingDataToken || "";
-            const userProfile = searchParams.userProfile || "";
-            
-            let entities: any[] = [];
-            
-            if (platform === "facebook" && step === "select_page") {
-                const { data } = await (zernio.connect as any).getFacebookPages({
-                    headers: { "X-Connect-Token": connectToken },
-                });
-                entities = data.pages || [];
-            } else if (platform === "linkedin" && step === "select_organization") {
-                const { data } = await (zernio.connect as any).getPendingOAuthData({
-                    query: { token: pendingDataToken },
-                });
-                entities = data.organizations || [];
-            } else if (platform === "pinterest" && step === "select_board") {
-                const { data } = await (zernio.connect as any).getPinterestBoards({
-                    query: { tempToken },
-                    headers: { "X-Connect-Token": connectToken },
-                });
-                entities = data.boards || [];
-            }
-
-            // Securely store the sensitive intermediary tokens on the server
-            cookieStore.set('zernio_oauth_session', encrypt(JSON.stringify({ tempToken, userProfile })), {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
-                maxAge: 10 * 60,
-                path: '/'
-            });
-
-            return { requiresSelection: true, platform, entities };
-        }
-
-        return { error: "Invalid callback state" };
-    } catch (error: any) {
-        console.error("Callback handling failed:", error);
-        return { error: error.message || "Failed to process callback" };
-    }
-}
-
-export async function selectEntityAndFinalize(platform: string, entityId: string) {
-    try {
-        const { zernio } = await getZernioClient();
-        
-        const cookieStore = await cookies();
-        const sessionCookie = cookieStore.get('zernio_oauth_session');
-        if (!sessionCookie?.value) {
-            return { error: "Session expired. Please try connecting again." };
-        }
-
-        const { tempToken, userProfile } = JSON.parse(decrypt(sessionCookie.value));
-        cookieStore.delete('zernio_oauth_session'); // Clean up
-
-        if (platform === "facebook") {
-            await (zernio.connect as any).selectFacebookPage({
-                body: { tempToken, userProfile, pageId: entityId }
-            });
-        } else if (platform === "linkedin") {
-            await (zernio.connect as any).selectLinkedInOrganization({
-                body: { tempToken, userProfile, organizationId: entityId }
-            });
-        } else if (platform === "pinterest") {
-            await (zernio.connect as any).selectPinterestBoard({
-                body: { tempToken, userProfile, boardId: entityId }
-            });
-        }
-        
-        const syncResult = await syncConnectedAccounts();
-        if (syncResult.error) {
-            return { error: syncResult.error };
-        }
-        return { success: true };
-    } catch (error: any) {
-        console.error("Entity selection failed:", error);
-        return { error: error.message || "Failed to finalize connection" };
-    }
-}
-
-export async function finalizeEntitySelection(selection: {
-    platform: string;
-    selectedEntities: { id: string; name: string; type?: string; picture?: string }[];
-    tempToken?: string;
-    connectToken?: string;
-    pendingDataToken?: string;
-}) {
-    try {
-        const { zernio, tenantId } = await getZernioClient();
-        await (zernio.accounts as any).selectEntities({
-            tempToken: selection.tempToken,
-            connect_token: selection.connectToken,
-            pendingDataToken: selection.pendingDataToken,
-            entities: selection.selectedEntities.map(e => ({ id: e.id })),
-        });
-
-        // Sync fresh list
-        await syncConnectedAccounts();
-        return { success: true };
-    } catch (error: any) {
-        console.error("Entity selection failed:", error);
-        return { error: error.message || "Failed to finalize connection" };
-    }
+export async function handleZernioCallback(params: Record<string, string>) {
+  try {
+    const tenantId = await requireRole(["owner", "admin"]);
+    const cookieStore = await cookies();
+    const saved = cookieStore.get("zernio_oauth_state")?.value;
+    if (!saved) return { error: "Connection session expired. Start again from Accounts." };
+    const pending = JSON.parse(decrypt(saved, tenantId)) as { state: string; profileId: string; platform: string };
+    if (!params.joey_state || params.joey_state !== pending.state) return { error: "Invalid connection state. Start again from Accounts." };
+    if (params.error) { cookieStore.delete("zernio_oauth_state"); return { error: "The provider could not connect your account. Please try again." }; }
+    if (params.profileId !== pending.profileId || params.connected !== pending.platform || !params.accountId) return { error: "The returned account does not match this connection. Start again from Accounts." };
+    const result = await syncConnectedAccounts();
+    if (result.error) return { error: result.error };
+    const account = await db.query.socialAccounts.findFirst({ where: and(eq(socialAccounts.tenantId, tenantId), eq(socialAccounts.platformAccountId, params.accountId), eq(socialAccounts.isActive, true)) });
+    if (!account) return { error: "The connected account is not yet available. Retry the connection from Accounts." };
+    cookieStore.delete("zernio_oauth_state");
+    return { success: true, platform: pending.platform };
+  } catch { return { error: "Could not verify this workspace connection. Start again from Accounts." }; }
 }
 
 export async function syncConnectedAccounts() {
     try {
         const { zernio, tenantId } = await getZernioClient();
-        const { data } = await zernio.accounts.listAccounts();
-        
-        if (!data || !data.accounts) return { success: true };
+        const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId), columns: { zernioProfileId: true } });
+        if (!tenant?.zernioProfileId) return { error: "Connect an account from Accounts to set up this workspace’s Zernio profile." };
+        const { data, error } = await zernio.accounts.listAccounts({ query: { profileId: tenant.zernioProfileId } });
+        if (error || !Array.isArray(data?.accounts)) return { error: "Zernio account sync failed. Your existing accounts were preserved." };
+        if (data.accounts.some((account: { _id?: string }) => !account._id)) return { error: "Zernio returned an account without an ID. Existing accounts were preserved." };
 
         // Non-destructive upsert to preserve account IDs and prevent cascading deletion of social_entities
         await db.transaction(async (tx) => {
+            await tx.execute(sql`SELECT id FROM ${tenants} WHERE id = ${tenantId} FOR UPDATE`);
             const existingAccounts = await tx.query.socialAccounts.findMany({
                 where: eq(socialAccounts.tenantId, tenantId),
             });
 
             const fetchedPlatformAccounts = new Set(
-                data.accounts.map((a: any) => `${a.platform}:${String(a.id)}`)
+                data.accounts.map((a: any) => `${a.platform}:${a._id}`)
             );
 
             for (const account of data.accounts) {
                 const existing = existingAccounts.find(
-                    (ea) => ea.platform === account.platform && ea.platformAccountId === String(account.id)
+                    (ea) => ea.platform === account.platform && ea.platformAccountId === account._id
                 );
 
                 if (existing) {
                     await tx
                         .update(socialAccounts)
                         .set({
-                            accountName: account.username || account.name || 'Unknown',
-                            avatarUrl: account.picture || null,
-                            isActive: true,
+                            accountName: account.username || account.displayName || 'Unknown',
+                            avatarUrl: account.profilePicture || null,
+                            isActive: account.isActive === true && account.enabled !== false && !account.needsReconnection,
                         })
                         .where(eq(socialAccounts.id, existing.id));
                 } else {
                     await tx.insert(socialAccounts).values({
                         tenantId,
                         platform: account.platform,
-                        platformAccountId: String(account.id),
-                        accountName: account.username || account.name || 'Unknown',
-                        avatarUrl: account.picture || null,
-                        isActive: true,
+                        platformAccountId: account._id,
+                        accountName: account.username || account.displayName || 'Unknown',
+                        avatarUrl: account.profilePicture || null,
+                        isActive: account.isActive === true && account.enabled !== false && !account.needsReconnection,
                     });
                 }
             }
@@ -272,7 +130,7 @@ export async function syncConnectedAccounts() {
 
 export async function getConnectedAccounts() {
     try {
-        const { tenantId } = await getZernioClient();
+        const tenantId = await getActiveTenantId();
         const accounts = await db.query.socialAccounts.findMany({
             where: and(
                 eq(socialAccounts.tenantId, tenantId),
@@ -288,15 +146,13 @@ export async function getConnectedAccounts() {
 export async function disconnectAccount(accountId: string) {
     try {
         const tenantId = await requireRole(["owner", "admin"]);
-        // Here we could also call Zernio API to delete the account from their side if they support it
-        // await zernio.accounts.deleteAccount({ accountId });
-        
-        await db.delete(socialAccounts)
-            .where(and(
-                eq(socialAccounts.id, accountId), 
-                eq(socialAccounts.tenantId, tenantId)
-            ));
-        
+        const account = await db.query.socialAccounts.findFirst({ where: and(eq(socialAccounts.id, accountId), eq(socialAccounts.tenantId, tenantId)) });
+        if (!account) return { error: "Account not found" };
+        const { zernio } = await getZernioClient();
+        const response = await zernio.accounts.deleteAccount({ path: { accountId: account.platformAccountId } });
+        if (response.error) return { error: "Zernio could not disconnect the account. Please try again." };
+        await db.update(socialAccounts).set({ isActive: false }).where(and(eq(socialAccounts.id, accountId), eq(socialAccounts.tenantId, tenantId)));
+
         return { success: true };
     } catch (error: any) {
         console.error("Failed to disconnect account:", error);

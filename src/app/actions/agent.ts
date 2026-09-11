@@ -3,9 +3,10 @@
 import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { agentConfigs, tenants } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { agentConfigs, socialAccounts } from "@/lib/db/schema";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { computeNextDraftTime, type PostingSchedule } from "@/lib/agent-schedule";
+import { agentConfigSchema } from "@/lib/agent-config-validation";
 
 export type { PostingSchedule };
 
@@ -26,14 +27,14 @@ export async function getAgentConfig() {
                 selectedAccountIds: []
             };
             const nextDraft = computeNextDraftTime(new Date(), defaultSchedule);
-            const [newConfig] = await db.insert(agentConfigs).values({
+            await db.insert(agentConfigs).values({
                 tenantId,
                 brandVoice: "",
                 postingGoals: "",
                 nextDraftAt: nextDraft,
                 postingSchedule: defaultSchedule
-            }).returning();
-            config = newConfig;
+            }).onConflictDoNothing({ target: agentConfigs.tenantId });
+            config = await db.query.agentConfigs.findFirst({ where: eq(agentConfigs.tenantId, tenantId) });
         }
 
         return { config };
@@ -50,6 +51,17 @@ export async function saveAgentConfig(data: {
 }) {
     try {
         const tenantId = await getActiveTenantId();
+        const parsed = agentConfigSchema.safeParse(data);
+        if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your configuration." };
+        data = parsed.data;
+        const selected = parsed.data.postingSchedule.selectedAccountIds;
+        if (selected.length) {
+            const accounts = await db.query.socialAccounts.findMany({
+                where: and(eq(socialAccounts.tenantId, tenantId), eq(socialAccounts.isActive, true), inArray(socialAccounts.id, selected)),
+                columns: { id: true },
+            });
+            if (accounts.length !== selected.length) return { error: "Select connected accounts from this workspace." };
+        }
         const nextDraft = computeNextDraftTime(new Date(), data.postingSchedule);
 
         // Atomic monotonic version stamp, computed inside the upsert: the

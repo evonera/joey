@@ -68,9 +68,6 @@ export async function createThemeSlot(data: CreateThemeSlotInput) {
     if (!format) {
       return { error: "Content format not found" };
     }
-    if (format.mediaType === "video") {
-      return { error: "Video slots require the production MP4 renderer, which is not configured yet" };
-    }
     if (data.overrideTemplateId) {
       const template = await db.query.themeVisualTemplates.findFirst({
         where: and(
@@ -121,9 +118,6 @@ export async function updateThemeSlot(id: string, data: UpdateThemeSlotInput) {
       columns: { id: true, mediaType: true },
     });
     if (!format) return { error: "Content format not found" };
-    if (format.mediaType === "video") {
-      return { error: "Video slots require the production MP4 renderer, which is not configured yet" };
-    }
     if (data.overrideTemplateId) {
       const template = await db.query.themeVisualTemplates.findFirst({
         where: and(

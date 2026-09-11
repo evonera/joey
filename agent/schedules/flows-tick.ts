@@ -118,6 +118,8 @@ export async function runFlowsTick() {
     const subProcessors: Array<[string, () => Promise<unknown>]> = [
       ["r2-cleanup", async () => { const { processR2CleanupTasks } = await import("@/lib/storage-cleanup"); return processR2CleanupTasks(); }],
       ["webhook-recovery", async () => { const { recoverStaleWebhookDeliveries } = await import("@/lib/flows/incoming-webhooks"); return recoverStaleWebhookDeliveries(); }],
+      ["media-render-settlement", async () => { const { settleCompletedThemeRenders } = await import("@/lib/media-engine/theme-adapter"); return settleCompletedThemeRenders(); }],
+      ["zernio-webhook-recovery", async () => { const { recoverZernioWebhookEvents } = await import("@/lib/zernio-webhook-processing"); return recoverZernioWebhookEvents(); }],
       ["theme-dm-retries", async () => { const { processThemeStudioDmRetries } = await import("@/lib/engagement-inbox"); return processThemeStudioDmRetries(); }],
       ["theme-analytics-sync", async () => { const { processThemeStudioAnalyticsSync } = await import("@/lib/theme-studio/learning/analytics-sync"); return processThemeStudioAnalyticsSync(); }],
       ["theme-optimization", async () => { const { processThemeStudioOptimization } = await import("@/lib/theme-studio/learning/recipe-optimizer"); return processThemeStudioOptimization(); }],

@@ -1,5 +1,6 @@
 "use client";
 
+import { RenderControls } from "./RenderControls";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -12,6 +13,7 @@ interface ThemePackageSummary {
   caption: string | null;
   status: string;
   renderedAssetUrls: unknown;
+  metrics?: unknown;
   createdAt: Date | string;
 }
 
@@ -55,7 +57,7 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
   }
 
   if (packages.length === 0) {
-    return <div className="p-6 text-center border border-dashed rounded-xl text-xs text-muted-foreground">No packages generated yet. Activate the recipe to stage the next daily mix.</div>;
+    return <div className="p-6 text-center border border-dashed rounded-xl text-xs text-muted-foreground">No posts generated yet. Add sources and content slots, then activate automation to create drafts.</div>;
   }
 
   return (
@@ -66,7 +68,7 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
         return (
           <article key={pkg.id} className="grid gap-4 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[96px_1fr]">
             <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-background">
-              {asset ? <img src={asset} alt={`Preview for ${pkg.title}`} className="h-full w-full object-cover" /> : <span className="px-2 text-center text-[10px] text-muted-foreground">No rendered media</span>}
+              {asset && /\.mp4(?:\?|$)/i.test(asset) ? <video src={asset} controls preload="metadata" className="h-full w-full object-contain" /> : asset ? <img src={asset} alt={`Preview for ${pkg.title}`} className="h-full w-full object-cover" /> : <span className="px-2 text-center text-[10px] text-muted-foreground">No rendered media</span>}
             </div>
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -77,6 +79,7 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
               </div>
               {pkg.caption ? <p className="line-clamp-3 text-xs text-muted-foreground">{pkg.caption}</p> : null}
               <div className="flex flex-wrap gap-2">
+                {["pending_review", "rejected", "failed"].includes(pkg.status) && <RenderControls packageId={pkg.id} renderJobId={typeof (pkg.metrics as { renderJobId?: unknown } | null)?.renderJobId === "string" ? (pkg.metrics as { renderJobId: string }).renderJobId : undefined} />}
                 {pkg.status === "pending_review" || pkg.status === "rejected" ? (
                   <>
                     <button type="button" disabled={busy || !asset} onClick={() => review(pkg.id, "approve")} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">Approve</button>

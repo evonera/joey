@@ -49,7 +49,7 @@ export function NavMain({
               {section.items.map((item) => {
                 const isActive =
                   pathname === item.url ||
-                  (item.url !== "/dashboard" && pathname?.startsWith(item.url))
+                  (item.url !== "/dashboard" && pathname?.startsWith(`${item.url}/`))
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
@@ -64,6 +64,8 @@ export function NavMain({
                     >
                       <Link
                         href={item.url}
+                        data-tour={`nav-${item.url.replace(/^\//, "").replaceAll("/", "-")}`}
+                        aria-current={isActive ? "page" : undefined}
                         className="flex items-center justify-between w-full"
                       >
                         <div className="flex items-center gap-2.5">

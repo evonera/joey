@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import type { z } from "zod";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,22 +23,31 @@ export function ZodForm({
   schema,
   value,
   onChange,
+  fieldOptions,
 }: {
+  fieldOptions?: Record<string, Array<{ value: string; label: string }>>;
   schema: AnySchema;
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const formId = useId();
   const fields = extractFields(schema);
 
   return (
     <div className="space-y-4">
       {fields.map((field) => (
         <div key={field.key} className="space-y-1.5">
-          <Label className="text-xs font-medium">
-            {field.label}
+          <Label htmlFor={`${formId}-${field.key}`} className="text-xs font-medium">
+            {field.key === "accountId" && fieldOptions?.accountId ? "Publishing account" : field.label}
             {field.required ? <span className="text-red-400 ml-0.5">*</span> : null}
           </Label>
-          {renderControl(field, value[field.key], (v) => onChange({ ...value, [field.key]: v }))}
+          {fieldOptions?.[field.key] ? (
+            <select id={`${formId}-${field.key}`} className="w-full h-9 rounded-md border bg-background px-2 text-sm" value={String(value[field.key] ?? "")} onChange={event => onChange({ ...value, [field.key]: event.target.value })}>
+              {value[field.key] && !fieldOptions[field.key].some(option => option.value === value[field.key]) ? <option value={String(value[field.key])} disabled>Previously selected account is unavailable</option> : null}
+              {fieldOptions[field.key].map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          ) : renderControl(field, value[field.key], (v) => onChange({ ...value, [field.key]: v }), `${formId}-${field.key}`)}
+          {field.description && <p className="text-xs text-muted-foreground">{field.description}</p>}
         </div>
       ))}
     </div>
@@ -50,6 +60,7 @@ type FieldDef = {
   kind: "string" | "text" | "number" | "boolean" | "enum" | "array";
   options?: string[];
   required: boolean;
+  description?: string;
 };
 
 export function extractFields(schema: AnySchema): FieldDef[] {
@@ -69,6 +80,7 @@ export function extractFields(schema: AnySchema): FieldDef[] {
       kind,
       options: kind === "enum" ? enumOptions(inner) : undefined,
       required: !isOptional(fieldSchema),
+      description: fieldSchema.description,
     };
   });
 
@@ -97,6 +109,7 @@ function renderControl(
   field: FieldDef,
   current: unknown,
   onChange: (value: unknown) => void,
+  id: string,
 ) {
   const stringValue = current === undefined || current === null ? "" : String(current);
 
@@ -104,6 +117,7 @@ function renderControl(
     return (
       <div className="flex items-center gap-2 pt-1">
         <input
+          id={id}
           type="checkbox"
           checked={Boolean(current)}
           onChange={(e) => onChange(e.target.checked)}
@@ -117,7 +131,7 @@ function renderControl(
   if (field.kind === "enum") {
     return (
       <Select value={stringValue} onValueChange={onChange}>
-        <SelectTrigger className="h-9 text-sm">
+        <SelectTrigger id={id} className="h-9 text-sm">
           <SelectValue placeholder="Choose…" />
         </SelectTrigger>
         <SelectContent>
@@ -134,6 +148,7 @@ function renderControl(
   if (field.kind === "number") {
     return (
       <Input
+        id={id}
         type="number"
         value={stringValue}
         onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
@@ -151,6 +166,7 @@ function renderControl(
     return (
       <div className="space-y-1">
         <Input
+          id={id}
           value={arrayVal}
           placeholder="item1, item2, item3"
           onChange={(e) => {
@@ -168,6 +184,7 @@ function renderControl(
   const isLong = /prompt|template|json|payload|input|system/i.test(field.key);
   return isLong ? (
     <Textarea
+      id={id}
       rows={5}
       value={stringValue}
       onChange={(e) => onChange(e.target.value)}
@@ -175,7 +192,7 @@ function renderControl(
       placeholder={field.kind === "text" ? "" : undefined}
     />
   ) : (
-    <Input value={stringValue} onChange={(e) => onChange(e.target.value)} className="h-9 text-sm" />
+    <Input id={id} value={stringValue} onChange={(e) => onChange(e.target.value)} className="h-9 text-sm" />
   );
 }
 
@@ -210,4 +227,3 @@ function prettify(key: string): string {
   const spaced = key.replace(/([A-Z])/g, " $1").replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
-

@@ -25,7 +25,7 @@ import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provi
 
 const PLATFORMS = [
   { id: "all", label: "All Platforms" },
-  { id: "theme", label: "🎨 Theme Channels" },
+  { id: "theme", label: "Theme channels" },
   { id: "x", label: "𝕏 / Twitter" },
   { id: "linkedin", label: "LinkedIn" },
   { id: "instagram", label: "Instagram" },
@@ -37,9 +37,9 @@ const PLATFORMS = [
 
 const SOURCES = [
   { id: "all", label: "All Sources" },
-  { id: "theme_studio", label: "🎨 Theme Pages" },
-  { id: "compose", label: "✍️ Compose / Manual" },
-  { id: "flows", label: "⚡ Flows" },
+  { id: "theme_studio", label: "Theme pages" },
+  { id: "compose", label: "Compose / Manual" },
+  { id: "flows", label: "Flows" },
 ];
 
 export default function DraftsPage() {
@@ -50,6 +50,7 @@ export default function DraftsPage() {
         pending_review: 0,
         scheduled: 0,
         approved: 0,
+        publishing: 0,
         published: 0,
         failed: 0,
         rejected: 0,
@@ -113,6 +114,7 @@ export default function DraftsPage() {
         { id: "pending_review", label: "Pending", count: counts.pending_review },
         { id: "scheduled", label: "Scheduled", count: counts.scheduled },
         { id: "approved", label: "Approved", count: counts.approved },
+        { id: "publishing", label: "Publishing", count: counts.publishing },
         { id: "published", label: "Published", count: counts.published },
         { id: "failed", label: "Failed", count: counts.failed },
         { id: "rejected", label: "Rejected", count: counts.rejected },
@@ -363,13 +365,13 @@ export default function DraftsPage() {
                                 </p>
                                 <div className="flex flex-wrap justify-center gap-2 max-w-lg">
                                     <Link href="/theme-studio" className="text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 px-3 py-1.5 rounded-full transition-colors border border-primary/20 font-medium">
-                                        🎨 Configure a Theme Page for daily auto-drafts
+                                        Configure a Theme Page for daily auto-drafts
                                     </Link>
                                     <Link href="/dashboard" className="text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-3 py-1.5 rounded-full transition-colors border">
-                                        🐱 Ask Joey to draft a viral thread
+                                        Ask Joey to draft a viral thread
                                     </Link>
                                     <Link href="/compose" className="text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-3 py-1.5 rounded-full transition-colors border">
-                                        ✍️ Write a post manually in Compose
+                                        Write a post manually in Compose
                                     </Link>
                                 </div>
                             </div>
@@ -447,4 +449,3 @@ export default function DraftsPage() {
         </div>
     );
 }
-

@@ -81,7 +81,7 @@ export function ConnectionsPanel() {
     <div className="space-y-4">
       {failed && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
-          Could not reach Composio. Check COMPOSIO_API_KEY and retry.
+          Connected apps are not enabled on this deployment. Zernio, flow integrations, and webhooks remain available below.
         </p>
       )}
 

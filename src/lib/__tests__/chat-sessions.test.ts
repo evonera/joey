@@ -165,36 +165,49 @@ describe("chat-sessions utilities", () => {
     };
 
     it("saves and retrieves session from localStorage", () => {
-      saveStoredSession(mockSession);
-      const retrieved = getStoredSession("sess_123");
+      saveStoredSession(mockSession, "user-1:workspace-1");
+      const retrieved = getStoredSession("sess_123", "user-1:workspace-1");
       expect(retrieved).not.toBeNull();
       expect(retrieved?.title).toBe("Test Session");
       expect(retrieved?.tokenMetrics.totalTokens).toBe(1600);
     });
 
-    it("toggles pin status on session", () => {
-      saveStoredSession(mockSession);
-      const pinned = togglePinStoredSession("sess_123");
-      expect(pinned).toBe(true);
-      expect(getStoredSession("sess_123")?.isPinned).toBe(true);
+    it("isolates history between users and workspaces", () => {
+      saveStoredSession(mockSession, "user-1:workspace-1");
+      expect(getStoredSessions("user-2:workspace-1")).toEqual([]);
+      expect(getStoredSessions("user-1:workspace-2")).toEqual([]);
+      deleteStoredSession(mockSession.id, "user-1:workspace-2");
+      expect(getStoredSessions("user-1:workspace-1")).toHaveLength(1);
+    });
 
-      const unpinned = togglePinStoredSession("sess_123");
+    it("does not expose legacy unscoped history", () => {
+      localStorage.setItem("joey_chat_sessions", JSON.stringify([mockSession]));
+      expect(getStoredSessions("user-1:workspace-1")).toEqual([]);
+    });
+
+    it("toggles pin status on session", () => {
+      saveStoredSession(mockSession, "user-1:workspace-1");
+      const pinned = togglePinStoredSession("sess_123", "user-1:workspace-1");
+      expect(pinned).toBe(true);
+      expect(getStoredSession("sess_123", "user-1:workspace-1")?.isPinned).toBe(true);
+
+      const unpinned = togglePinStoredSession("sess_123", "user-1:workspace-1");
       expect(unpinned).toBe(false);
-      expect(getStoredSession("sess_123")?.isPinned).toBe(false);
+      expect(getStoredSession("sess_123", "user-1:workspace-1")?.isPinned).toBe(false);
     });
 
     it("renames session title", () => {
-      saveStoredSession(mockSession);
-      updateStoredSessionTitle("sess_123", "Brand Strategy Q3");
-      expect(getStoredSession("sess_123")?.title).toBe("Brand Strategy Q3");
+      saveStoredSession(mockSession, "user-1:workspace-1");
+      updateStoredSessionTitle("sess_123", "Brand Strategy Q3", "user-1:workspace-1");
+      expect(getStoredSession("sess_123", "user-1:workspace-1")?.title).toBe("Brand Strategy Q3");
     });
 
     it("deletes session", () => {
-      saveStoredSession(mockSession);
-      expect(getStoredSessions().length).toBe(1);
-      deleteStoredSession("sess_123");
-      expect(getStoredSessions().length).toBe(0);
-      expect(getStoredSession("sess_123")).toBeNull();
+      saveStoredSession(mockSession, "user-1:workspace-1");
+      expect(getStoredSessions("user-1:workspace-1").length).toBe(1);
+      deleteStoredSession("sess_123", "user-1:workspace-1");
+      expect(getStoredSessions("user-1:workspace-1").length).toBe(0);
+      expect(getStoredSession("sess_123", "user-1:workspace-1")).toBeNull();
     });
   });
 });

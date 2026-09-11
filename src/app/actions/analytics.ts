@@ -2,6 +2,10 @@
 
 import { getActiveTenantId } from "@/lib/auth";
 import { getZernioClientForTenant } from "@/lib/publisher-core";
+import { db } from "@/lib/db";
+import { tenants } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { fetchZernioAnalyticsPages } from "@/lib/zernio-analytics";
 
 type Metrics = {
   impressions?: number;
@@ -44,7 +48,7 @@ const EMPTY_ACC = () => ({ impressions: 0, likes: 0, comments: 0, shares: 0, vie
 type Acc = ReturnType<typeof EMPTY_ACC>;
 
 const PLATFORM_LABELS: Record<string, string> = {
-  twitter: "Twitter",
+  twitter: "X",
   threads: "Threads",
   instagram: "Instagram",
   youtube: "YouTube",
@@ -68,6 +72,8 @@ export interface AnalyticsSnapshot {
     views: number;
     engagementRate: number;
     lastSync?: string | null;
+    pagesFetched: number;
+    truncated: boolean;
   };
   byPlatform: { platform: string; label: string; impressions: number; likes: number; comments: number; shares: number; views: number }[];
   posts: PostRow[];
@@ -79,27 +85,21 @@ export type AnalyticsResult = AnalyticsSnapshot | { success: false; error: strin
 export async function getAnalytics(days = 30): Promise<AnalyticsResult> {
   try {
     const tenantId = await getActiveTenantId();
+    if (!Number.isInteger(days) || days < 1 || days > 366) return { success: false, error: "Choose a date range between 1 and 366 days." };
+    const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId), columns: { zernioProfileId: true } });
+    if (!tenant?.zernioProfileId) return { success: false, error: "Connect a social account in Accounts to view this workspace’s analytics." };
     const { zernio } = await getZernioClientForTenant(tenantId);
 
     const toDate = new Date();
     const fromDate = new Date(toDate.getTime() - days * 24 * 60 * 60 * 1000);
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
-    const { data } = await zernio.analytics.getAnalytics({
-      query: {
-        fromDate: fmt(fromDate),
-        toDate: fmt(toDate),
-        limit: 100,
-        page: 1,
-        source: "all",
-      },
+    const anyData = await fetchZernioAnalyticsPages(zernio, {
+      profileId: tenant.zernioProfileId,
+      fromDate: fmt(fromDate),
+      toDate: fmt(toDate),
+      source: "all",
     });
-
-    if (!data) {
-      return { success: false, error: "No analytics returned from Zernio." };
-    }
-
-    const anyData = data as any;
 
     const posts: PostRow[] = (anyData.posts || []).map((p: any): PostRow => {
       const platforms: PlatformMeta[] = Array.isArray(p.platforms)
@@ -181,6 +181,8 @@ export async function getAnalytics(days = 30): Promise<AnalyticsResult> {
         views: total.views,
         engagementRate: Math.round(engagementRate * 100) / 100,
         lastSync: anyData.overview?.lastSync ?? null,
+        pagesFetched: anyData.pagesFetched,
+        truncated: anyData.truncated,
       },
       byPlatform,
       posts,

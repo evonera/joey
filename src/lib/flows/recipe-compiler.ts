@@ -54,9 +54,6 @@ export function compileThemeRecipe(input: CompileThemeRecipeInput): {
   const validationIssues = [
     ...(activeSources.length === 0 ? ["Add at least one active Theme Studio source."] : []),
     ...(activeSlots.length === 0 ? ["Add at least one active Theme Studio content slot."] : []),
-    ...(activeSlots.some((slot) => slot.format?.mediaType === "video")
-      ? ["Remove video slots until a production MP4 renderer is configured."]
-      : []),
     ...missingPlatforms.map((platform) => `Select an active ${platform} publishing account.`),
   ];
   const graph: FlowGraphDoc = {

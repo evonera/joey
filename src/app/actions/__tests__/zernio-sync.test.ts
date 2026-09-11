@@ -10,6 +10,7 @@ vi.mock("@/lib/db", () => {
   return {
     db: {
       query: {
+        tenants: { findFirst: vi.fn().mockResolvedValue({ zernioProfileId: "profile" }) },
         apiKeys: {
           findFirst: (...args: any[]) => mockFindFirstApiKey(...args),
         },
@@ -19,6 +20,7 @@ vi.mock("@/lib/db", () => {
       },
       transaction: (cb: any) =>
         cb({
+          execute: vi.fn(),
           query: {
             socialAccounts: {
               findMany: mockFindMany,
@@ -61,6 +63,7 @@ vi.mock("@zernio/node", () => ({
 }));
 
 vi.mock("@/lib/db/schema", () => ({
+  tenants: { id: "id" },
   apiKeys: { tenantId: "tenantId", provider: "provider", status: "status" },
   socialAccounts: { id: "id", tenantId: "tenantId", platform: "platform", platformAccountId: "platformAccountId", isActive: "isActive" },
 }));
@@ -104,16 +107,18 @@ describe("non-destructive account sync and strict oauth state", () => {
       data: {
         accounts: [
           {
-            id: 1001,
+            _id: "1001",
+            isActive: true,
             platform: "x",
             username: "NewName",
-            picture: "https://avatar.png",
+            profilePicture: "https://avatar.png",
           },
           {
-            id: 3003,
+            _id: "3003",
+            isActive: true,
             platform: "instagram",
             username: "InstaProfile",
-            picture: null,
+            profilePicture: null,
           },
         ],
       },

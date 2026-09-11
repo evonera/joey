@@ -1,5 +1,7 @@
 "use client";
 
+import { useChatStorageScope } from "@/components/chat/chat-storage-provider";
+
 import type { UserContent } from "ai";
 import { useEveAgent } from "eve/react";
 import {
@@ -48,9 +50,10 @@ import {
   DEFAULT_MODEL_ID,
 } from "@/lib/models";
 import Image from "next/image";
-import { Lock, ArrowLeft, RotateCw } from "lucide-react";
+import Link from "next/link";
+import { Lock, ArrowLeft, Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AgentMessage } from "./agent-message";
+import dynamic from "next/dynamic";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   getStoredSession,
@@ -61,45 +64,16 @@ import {
 } from "@/lib/chat-sessions";
 import { ChatLibraryView } from "@/components/chat/chat-library-view";
 import { SocialPlatformSelector } from "@/components/chat/social-platform-selector";
-import { ChatSidepanel } from "@/components/chat/chat-sidepanel";
-
-const SUGGESTION_PROMPTS = [
-  {
-    label: "Draft a viral 𝕏 thread on AI agents",
-    prompt: "Draft a 5-tweet viral 𝕏 thread breaking down how autonomous AI agents are reshaping developer productivity in 2026.",
-    icon: "🐱",
-  },
-  {
-    label: "Create an automated visual flow",
-    prompt: "Help me create an automated workflow that generates and schedules weekly tech insights across Twitter and LinkedIn.",
-    icon: "⚡",
-  },
-  {
-    label: "Curate top industry news & trends",
-    prompt: "Search the web for this week's most important AI and social media marketing trends and give me actionable takeaways.",
-    icon: "🔍",
-  },
-  {
-    label: "Review our weekly social analytics",
-    prompt: "Can you analyze our recent social media performance and recommend the best days and times to post next week?",
-    icon: "📊",
-  },
-  {
-    label: "Generate a LinkedIn thought leadership post",
-    prompt: "Draft an engaging LinkedIn thought leadership post about building in public with AI, featuring a strong hook and clear takeaway.",
-    icon: "💼",
-  },
-  {
-    label: "Repurpose longform content into multi-platform hooks",
-    prompt: "Help me repurpose my latest article into 3 punchy X hooks, an Instagram carousel outline, and a LinkedIn post.",
-    icon: "🎯",
-  },
-];
+const AgentMessage = dynamic(() => import("./agent-message").then(module => module.AgentMessage), {
+  loading: () => <div role="status" className="py-3 text-sm text-muted-foreground">Loading message…</div>,
+});
+const ChatSidepanel = dynamic(() => import("@/components/chat/chat-sidepanel").then(module => module.ChatSidepanel));
 
 type AgentStatus = ReturnType<typeof useEveAgent>["status"];
 type CancellationState = "idle" | "cancelling";
 
 export function AgentChat() {
+  const storageScope = useChatStorageScope();
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
   const [sessionKey, setSessionKey] = useState<string>(() => `chat_${Date.now()}`);
   const [initialPrompt, setInitialPrompt] = useState<string | undefined>(undefined);
@@ -110,8 +84,8 @@ export function AgentChat() {
   // Load saved session data when activeSessionId changes
   const activeSavedSession = useMemo(() => {
     if (!activeSessionId) return null;
-    return getStoredSession(activeSessionId);
-  }, [activeSessionId]);
+    return getStoredSession(activeSessionId, storageScope);
+  }, [activeSessionId, storageScope]);
 
   const handleSelectSession = (session: SavedChatSession) => {
     setActiveSessionId(session.id);
@@ -223,6 +197,7 @@ function AgentChatInner({
   onSidepanelTabChange,
   onCloseSidepanel,
 }: AgentChatInnerProps) {
+  const storageScope = useChatStorageScope();
   const [cancellationError, setCancellationError] = useState<string>();
   const [cancellationState, setCancellationState] = useState<CancellationState>("idle");
   const [selectedModel, setSelectedModel] = useState<string>(() => {
@@ -292,7 +267,7 @@ function AgentChatInner({
           snapshot.data.messages,
           selectedModel
         );
-        const existingSession = getStoredSession(snapshot.session.sessionId);
+        const existingSession = getStoredSession(snapshot.session.sessionId, storageScope);
         const title = existingSession?.title || deriveTitleFromMessages(snapshot.data.messages);
         sessionUpdatedAtRef.current = new Date().toISOString();
 
@@ -308,7 +283,7 @@ function AgentChatInner({
           session: snapshot.session,
           events: snapshot.events,
           messages: snapshot.data.messages as any[],
-        });
+        }, storageScope);
       }
     },
   });
@@ -331,26 +306,6 @@ function AgentChatInner({
 
   const isBusy = agent.status === "submitted" || agent.status === "streaming";
   const isEmpty = agent.data.messages.length === 0;
-  const [suggestionOffset, setSuggestionOffset] = useState(0);
-
-  // Auto-cycle through suggestions when chat is empty
-  useEffect(() => {
-    if (!isEmpty) return;
-    const timer = setInterval(() => {
-      setSuggestionOffset((prev) => (prev + 1) % SUGGESTION_PROMPTS.length);
-    }, 7000);
-    return () => clearInterval(timer);
-  }, [isEmpty]);
-
-  const visibleSuggestions = useMemo(() => {
-    const len = SUGGESTION_PROMPTS.length;
-    return [
-      SUGGESTION_PROMPTS[suggestionOffset % len],
-      SUGGESTION_PROMPTS[(suggestionOffset + 1) % len],
-      SUGGESTION_PROMPTS[(suggestionOffset + 2) % len],
-    ];
-  }, [suggestionOffset]);
-
   const errorMessage = cancellationError ?? agent.error?.message;
   const submitStatus =
     agent.status === "resuming" || (isBusy && cancellationState !== "idle")
@@ -487,11 +442,11 @@ function AgentChatInner({
             </PromptInputSelectTrigger>
             <PromptInputSelectContent className="w-80 max-h-96">
               <PromptInputSelectGroup>
-                <PromptInputSelectLabel>⚡ Recommended</PromptInputSelectLabel>
+                <PromptInputSelectLabel>Recommended</PromptInputSelectLabel>
                 {getRecommendedModels().map((m) => {
                   const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
                   return (
-                    <PromptInputSelectItem key={m.id} value={m.id} className="py-2 text-xs">
+                    <PromptInputSelectItem key={m.id} value={m.id} disabled={!hasKey} className="py-2 text-xs">
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-1.5 font-medium">
                           <span>{m.name}</span>
@@ -522,7 +477,7 @@ function AgentChatInner({
                 {getModelsByProvider("google").map((m) => {
                   const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
                   return (
-                    <PromptInputSelectItem key={m.id} value={m.id} className="py-1.5 text-xs">
+                    <PromptInputSelectItem key={m.id} value={m.id} disabled={!hasKey} className="py-1.5 text-xs">
                       <div className="flex items-center justify-between w-full gap-2">
                         <span className="font-medium">{m.name}</span>
                         <div className="flex items-center gap-1.5">
@@ -550,7 +505,7 @@ function AgentChatInner({
                 {getModelsByProvider("openai").map((m) => {
                   const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
                   return (
-                    <PromptInputSelectItem key={m.id} value={m.id} className="py-1.5 text-xs">
+                    <PromptInputSelectItem key={m.id} value={m.id} disabled={!hasKey} className="py-1.5 text-xs">
                       <div className="flex items-center justify-between w-full gap-2">
                         <span className="font-medium">{m.name}</span>
                         <div className="flex items-center gap-1.5">
@@ -578,7 +533,7 @@ function AgentChatInner({
                 {getModelsByProvider("anthropic").map((m) => {
                   const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
                   return (
-                    <PromptInputSelectItem key={m.id} value={m.id} className="py-1.5 text-xs">
+                    <PromptInputSelectItem key={m.id} value={m.id} disabled={!hasKey} className="py-1.5 text-xs">
                       <div className="flex items-center justify-between w-full gap-2">
                         <span className="font-medium">{m.name}</span>
                         <div className="flex items-center gap-1.5">
@@ -686,16 +641,54 @@ function AgentChatInner({
           </div>
         </header>
 
-        {/* Error Notification */}
+        {/* Error / Rate Limit Notification */}
         {errorMessage ? (
           <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 sm:px-6">
-            <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm">
-              <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
-              <div>
-                <p className="font-medium">Request failed</p>
-                <p className="mt-0.5 text-muted-foreground">{errorMessage}</p>
+            {errorMessage.includes("rate_limit:trial") || errorMessage.includes("Free AI trial limit reached") ? (
+              <div className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-sm backdrop-blur">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 font-medium text-foreground">
+                    <Crown className="size-4 text-amber-400 fill-amber-400/20" />
+                    <span className="font-semibold text-sm">Limit reached</span>
+                  </div>
+                  <span className="font-mono text-xs text-muted-foreground/70">
+                    rate_limit:chat
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Free AI trial limit reached. You have used your 3 free generations. Upgrade to a paid plan or add your own API key in Settings to continue.
+                </p>
+                <div className="mt-3.5 flex flex-wrap items-center gap-3">
+                  <Link
+                    href="/settings?tab=billing"
+                    className="inline-flex items-center justify-center rounded-full bg-[#fed7aa] px-4 py-1.5 text-xs font-semibold text-neutral-900 shadow-sm transition-colors hover:bg-[#fbd09b]"
+                  >
+                    See plans
+                  </Link>
+                  <Link
+                    href="/settings?tab=keys"
+                    className="inline-flex items-center justify-center text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Add API key
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setCancellationError(undefined)}
+                    className="ml-auto inline-flex items-center justify-center text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm">
+                <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+                <div>
+                  <p className="font-medium">Request failed</p>
+                  <p className="mt-0.5 text-muted-foreground">{errorMessage}</p>
+                </div>
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -745,14 +738,13 @@ function AgentChatInner({
               </div>
               <div className="space-y-1.5">
                 <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-[11px] font-medium text-[#ffe633]">
-                  <span>🐱</span>
-                  <span>Meet Joey • The Autonomous Cat Co-Pilot</span>
+                  <span>Joey · Your creative assistant</span>
                 </div>
                 <h1 className="font-semibold text-2xl sm:text-3xl tracking-tight text-foreground">
                   What are we creating today?
                 </h1>
-                <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-                  Joey watches social trends, crafts purr-fect hooks, and automates your cross-platform publishing.
+                <p className="whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
+                  Ask anything, draft a post, or build an automation. Joey can use your workspace context to help.
                 </p>
               </div>
             </div>
@@ -760,56 +752,11 @@ function AgentChatInner({
 
           <div className="w-full">{composer}</div>
 
-          {/* Clean rotating suggestions (3 at a time) anchored neatly below composer */}
-          {isEmpty ? (
-            <div className="w-full pt-1">
-              <div className="flex items-center justify-between px-1 mb-2">
-                <span className="text-[11px] text-muted-foreground/60 font-medium flex items-center gap-1.5">
-                  <span>Suggested angles</span>
-                  <span className="size-1 rounded-full bg-[#ffe633]/60 animate-pulse" />
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSuggestionOffset((prev) => (prev + 1) % SUGGESTION_PROMPTS.length)
-                  }
-                  className="text-[11px] text-muted-foreground/70 hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
-                  title="Cycle to next prompts"
-                >
-                  <RotateCw className="size-2.5" />
-                  <span>Shuffle</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {visibleSuggestions.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={() => {
-                      if (isBusy) return;
-                      prepareTurn();
-                      void agent.send(item.prompt);
-                    }}
-                    className="flex flex-col items-start p-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] hover:border-primary/40 text-left transition-all group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-foreground group-hover:text-primary transition-colors w-full">
-                      <span>{item.icon}</span>
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-relaxed">
-                      {item.prompt}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </div>
       </main>
 
       {/* Scira / Claude-style Right Sidepanel */}
-      <ChatSidepanel
+      {isSidepanelOpen && <ChatSidepanel
         isOpen={isSidepanelOpen}
         onClose={onCloseSidepanel}
         activeTab={sidepanelTab}
@@ -821,7 +768,7 @@ function AgentChatInner({
         estimatedCostUsd={liveMetrics.estimatedCostUsd}
         createdAt={sessionCreatedAtRef.current}
         updatedAt={sessionUpdatedAtRef.current}
-      />
+      />}
     </>
   );
 }

@@ -178,11 +178,11 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
                 onChange={(e) => setSourceType(e.target.value as any)}
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
-                <option value="exa_domain">🌐 News Website / Domain (Powered by Exa Search)</option>
-                <option value="exa_topic">🔍 Keyword Topic Search (Powered by Exa News)</option>
-                <option value="rss">📡 RSS / Atom XML Feed</option>
-                <option value="reddit">👽 Reddit Subreddit (e.g. r/cricket, r/nba)</option>
-                <option value="http">⚡ HTTP REST Endpoint / JSON</option>
+                <option value="exa_domain">News website / domain (Exa Search)</option>
+                <option value="exa_topic">Keyword topic search (Exa News)</option>
+                <option value="rss">RSS / Atom XML feed</option>
+                <option value="reddit">Reddit subreddit (e.g. r/cricket, r/nba)</option>
+                <option value="http">HTTP REST endpoint / JSON</option>
               </select>
             </div>
             <div className="md:col-span-2">
@@ -361,4 +361,3 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
     </div>
   );
 }
-

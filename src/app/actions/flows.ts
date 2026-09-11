@@ -365,6 +365,7 @@ export type TemplateCard = {
 };
 
 export async function listTemplates(): Promise<{ templates: TemplateCard[] }> {
+  await getActiveTenantId();
   await ensureOfficialTemplates();
   const rows = await db.query.flowTemplates.findMany({
     orderBy: [desc(flowTemplates.installs), desc(flowTemplates.createdAt)],
@@ -391,21 +392,16 @@ export async function installTemplate(templateId: string): Promise<{ flowId?: st
   const validation = await validateFlowGraph(template.graph);
   if (!validation.ok) return { error: "Template graph is invalid." };
 
-  const [flow] = await db
-    .insert(flows)
-    .values({
-      tenantId,
-      name: template.name,
-      description: template.description,
-      graph: template.graph,
-      status: "draft",
-    })
-    .returning();
-
-  await db
-    .update(flowTemplates)
-    .set({ installs: template.installs + 1 })
-    .where(eq(flowTemplates.id, templateId));
+  const flow = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(flows).values({
+      tenantId, name: template.name, description: template.description,
+      graph: template.graph, status: "draft",
+    }).returning();
+    await tx.update(flowTemplates)
+      .set({ installs: sql`${flowTemplates.installs} + 1` })
+      .where(eq(flowTemplates.id, templateId));
+    return created;
+  });
 
   return { flowId: flow.id };
 }
@@ -425,17 +421,16 @@ export async function deleteFlow(id: string): Promise<{ ok?: boolean; error?: st
  */
 async function ensureOfficialTemplates(): Promise<void> {
   const { officialTemplates } = await import("@/lib/flows/templates");
-  for (const t of officialTemplates) {
-    await db
-      .insert(flowTemplates)
-      .values({
-        slug: t.slug,
-        name: t.name,
-        description: t.description,
-        category: t.category,
-        graph: t.graph,
-        isOfficial: true,
-      })
-      .onConflictDoNothing({ target: flowTemplates.slug });
-  }
+  await db.insert(flowTemplates).values(officialTemplates.map(t => ({
+    slug: t.slug, name: t.name, description: t.description,
+    category: t.category, graph: t.graph, isOfficial: true,
+  }))).onConflictDoUpdate({
+    target: flowTemplates.slug,
+    set: {
+      name: sql`excluded.name`, description: sql`excluded.description`,
+      category: sql`excluded.category`, graph: sql`excluded.graph`,
+    },
+    // Never replace community content that happens to share a built-in slug.
+    setWhere: and(eq(flowTemplates.isOfficial, true), sql`(${flowTemplates.name}, ${flowTemplates.description}, ${flowTemplates.category}, ${flowTemplates.graph}) IS DISTINCT FROM (excluded.name, excluded.description, excluded.category, excluded.graph)`),
+  });
 }

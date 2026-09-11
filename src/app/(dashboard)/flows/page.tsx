@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -21,6 +21,9 @@ export default function FlowsPage() {
   const [newName, setNewName] = useState("");
   const [flowToDelete, setFlowToDelete] = useState<FlowRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const creating = useRef(false);
+  const deleting = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -36,32 +39,40 @@ export default function FlowsPage() {
   useEffect(() => { void load(); }, [load]);
 
   async function handleCreate() {
-    const res = await createFlow(newName);
-    if (res.flow) {
-      router.push(`/flows/${res.flow.id}`);
-    } else toast.error(res.error ?? "Failed");
+    if (!newName.trim() || creating.current) return;
+    creating.current = true;
+    setIsCreating(true);
+    try {
+      const res = await createFlow(newName.trim());
+      if (res.flow) {
+        setNewOpen(false);
+        router.push(`/flows/${res.flow.id}`);
+      } else toast.error(res.error ?? "Failed to create flow");
+    } catch { toast.error("Failed to create flow. Please try again."); }
+    finally { creating.current = false; setIsCreating(false); }
   }
 
   async function confirmDelete() {
-    if (!flowToDelete) return;
+    if (!flowToDelete || deleting.current) return;
+    deleting.current = true;
     setIsDeleting(true);
-    const res = await deleteFlow(flowToDelete.id);
-    setIsDeleting(false);
-    if (res.ok) {
-      setFlows((f) => f.filter((x) => x.id !== flowToDelete.id));
-      toast.success(`Flow "${flowToDelete.name}" deleted`);
-      setFlowToDelete(null);
-    } else {
-      toast.error(res.error ?? "Failed to delete flow");
-    }
+    try {
+      const res = await deleteFlow(flowToDelete.id);
+      if (res.ok) {
+        setFlows((f) => f.filter((x) => x.id !== flowToDelete.id));
+        toast.success(`Flow "${flowToDelete.name}" deleted`);
+        setFlowToDelete(null);
+      } else toast.error(res.error ?? "Failed to delete flow");
+    } catch { toast.error("Failed to delete flow. Please try again."); }
+    finally { deleting.current = false; setIsDeleting(false); }
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto pb-24">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="w-full max-w-5xl mx-auto pb-24">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Flows</h1>
-          <p className="text-muted-foreground mt-1">Compose automations: triggers → AI steps → drafts awaiting your approval.</p>
+          <p className="text-muted-foreground mt-1">Build automations with triggers, AI steps, and actions—or start from a template.</p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/flows/templates">
@@ -70,13 +81,13 @@ export default function FlowsPage() {
           <Dialog open={newOpen} onOpenChange={setNewOpen}>
             <DialogTrigger asChild><Button><Plus className="mr-1.5 h-4 w-4" />New flow</Button></DialogTrigger>
             <DialogContent>
-              <DialogHeader><DialogTitle>Name your flow</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>Name your flow</DialogTitle><DialogDescription>Give your automation a name you can recognize later.</DialogDescription></DialogHeader>
               <Input
-                autoFocus placeholder="e.g. Competitor watch" value={newName}
+                autoFocus aria-label="Flow name" maxLength={120} disabled={isCreating} placeholder="e.g. Competitor watch" value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && newName.trim() && handleCreate()}
               />
-              <Button disabled={!newName.trim()} onClick={handleCreate}>Create</Button>
+              <Button disabled={!newName.trim() || isCreating} onClick={handleCreate}>{isCreating ? "Creating…" : "Create"}</Button>
             </DialogContent>
           </Dialog>
         </div>
@@ -113,7 +124,7 @@ export default function FlowsPage() {
                   e.stopPropagation();
                   setFlowToDelete(flow);
                 }}
-                className="absolute right-3 top-3 rounded-lg p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute right-3 top-3 rounded-lg p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-100 sm:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -123,7 +134,7 @@ export default function FlowsPage() {
       )}
 
       {/* Delete confirmation dialog */}
-      <Dialog open={Boolean(flowToDelete)} onOpenChange={(open) => !open && setFlowToDelete(null)}>
+      <Dialog open={Boolean(flowToDelete)} onOpenChange={(open) => !open && !isDeleting && setFlowToDelete(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Flow</DialogTitle>
@@ -132,7 +143,7 @@ export default function FlowsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setFlowToDelete(null)}>
+            <Button variant="outline" disabled={isDeleting} onClick={() => setFlowToDelete(null)}>
               Cancel
             </Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>

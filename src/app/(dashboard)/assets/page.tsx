@@ -97,7 +97,13 @@ export default function AssetsPage() {
       const uploadRes = await fetch(uploadUrl, {
         method: "PUT",
         body: file,
-        headers: { "Content-Type": file.type },
+        // `generateUploadUrl` signs both of these headers. Omitting
+        // Content-Disposition makes Cloudflare R2 reject the PUT even though
+        // the URL itself is valid.
+        headers: {
+          "Content-Type": file.type,
+          "Content-Disposition": "attachment",
+        },
       });
 
       if (!uploadRes.ok) throw new Error("Upload to R2 failed");
@@ -158,7 +164,7 @@ export default function AssetsPage() {
             ref={fileInputRef}
             type="file"
             className="hidden"
-            accept="image/*,video/*,application/pdf"
+            accept="image/*,video/*,audio/mpeg,application/pdf"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) handleFileUpload(file);
@@ -190,7 +196,7 @@ export default function AssetsPage() {
           />
         </div>
         <div className="flex gap-2">
-          {["image/*", "video/*", "application/pdf"].map((mime) => {
+          {["image/*", "video/*", "audio/*", "application/pdf"].map((mime) => {
             const label = mime.split("/")[0];
             const isActive = filterMime === mime;
             return (

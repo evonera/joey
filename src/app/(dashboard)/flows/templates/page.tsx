@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft01Icon as ArrowLeft, Download01Icon as Download } from "hugeicons-react";
@@ -12,20 +12,29 @@ import { installTemplate, listTemplates, type TemplateCard } from "@/app/actions
 export default function FlowTemplatesPage() {
   const router = useRouter();
   const [templates, setTemplates] = useState<TemplateCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const installPending = useRef(false);
   const [installing, setInstalling] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
     try {
       const res = await listTemplates();
       setTemplates(res.templates);
     } catch {
-      toast.error("Failed to load templates");
+      setLoadError(true);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
 
   async function handleInstall(id: string) {
+    if (installPending.current) return;
+    installPending.current = true;
     setInstalling(id);
     try {
       const res = await installTemplate(id);
@@ -33,20 +42,23 @@ export default function FlowTemplatesPage() {
         toast.success("Template installed — it's yours to edit");
         router.push(`/flows/${res.flowId}`);
       } else toast.error(res.error ?? "Install failed");
+    } catch {
+      toast.error("Could not install the template. Please try again.");
     } finally {
+      installPending.current = false;
       setInstalling(null);
     }
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto pb-24">
+    <div className="w-full max-w-5xl mx-auto pb-24">
       <Link href="/flows" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
         <ArrowLeft className="h-3.5 w-3.5" /> All flows
       </Link>
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Flow templates</h1>
         <p className="text-muted-foreground mt-1">
-          One-click automations built by us and the community. Install, tweak, run.
+          Start with a draft flow. Configure its accounts, sources and AI providers, then test it before activation.
         </p>
       </div>
 
@@ -61,16 +73,19 @@ export default function FlowTemplatesPage() {
             {t.description && <p className="mt-1 text-sm text-muted-foreground flex-1">{t.description}</p>}
             <div className="mt-4 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">{t.installs} installs</span>
-              <Button size="sm" disabled={installing === t.id} onClick={() => handleInstall(t.id)}>
+              <Button size="sm" disabled={installing !== null} onClick={() => handleInstall(t.id)}>
                 <Download className="mr-1 h-3.5 w-3.5" />
                 {installing === t.id ? "Installing…" : "Install"}
               </Button>
             </div>
           </div>
         ))}
-        {templates.length === 0 && (
-          <p className="text-sm text-muted-foreground col-span-full py-8">Loading templates…</p>
-        )}
+        {loading && <p role="status" className="text-sm text-muted-foreground col-span-full py-8">Loading templates…</p>}
+        {!loading && loadError && <div role="alert" className="col-span-full py-8 text-sm">
+          <p>Could not load templates.</p>
+          <Button variant="outline" className="mt-3" onClick={() => void load()}>Try again</Button>
+        </div>}
+        {!loading && !loadError && templates.length === 0 && <p className="col-span-full py-8 text-sm text-muted-foreground">No templates are available yet.</p>}
       </div>
     </div>
   );

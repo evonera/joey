@@ -1,3 +1,22 @@
+-- Preserve foreign keys while both referenced and referencing UUID columns
+-- are converted to text. PostgreSQL cannot change either side while the
+-- original foreign key remains attached. The owner constraint is intentionally
+-- removed below when ownership moves to the member table.
+CREATE TEMP TABLE joey_0015_foreign_keys AS
+SELECT conrelid::regclass::text AS table_name, conname AS constraint_name,
+       pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE contype = 'f' AND connamespace = 'public'::regnamespace
+  AND conname <> 'tenants_owner_id_user_id_fk';
+--> statement-breakpoint
+DO $$
+DECLARE fk record;
+BEGIN
+  FOR fk IN SELECT * FROM joey_0015_foreign_keys LOOP
+    EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', fk.table_name, fk.constraint_name);
+  END LOOP;
+END $$;
+--> statement-breakpoint
 CREATE TABLE "invitation" (
 	"id" text PRIMARY KEY NOT NULL,
 	"organizationId" text NOT NULL,
@@ -88,3 +107,13 @@ WHERE owner_id IS NOT NULL;
 --> statement-breakpoint
 ALTER TABLE "tenants" DROP COLUMN "owner_id";--> statement-breakpoint
 ALTER TABLE "tenants" ADD CONSTRAINT "tenants_slug_unique" UNIQUE("slug");
+--> statement-breakpoint
+DO $$
+DECLARE fk record;
+BEGIN
+  FOR fk IN SELECT * FROM joey_0015_foreign_keys LOOP
+    EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %I %s', fk.table_name, fk.constraint_name, fk.definition);
+  END LOOP;
+END $$;
+--> statement-breakpoint
+DROP TABLE joey_0015_foreign_keys;

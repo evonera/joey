@@ -1,5 +1,7 @@
 "use client";
 
+import { useChatStorageScope } from "@/components/chat/chat-storage-provider";
+
 import * as React from "react";
 import Image from "next/image";
 import {
@@ -78,19 +80,16 @@ function formatRelativeTime(dateString: string): string {
 
 const STARTER_PROMPTS = [
   {
-    icon: "🐱",
     title: "Draft a viral breakdown thread",
     desc: "Hook-driven structure optimized for bookmark & share velocity on X & LinkedIn",
     prompt: "Draft a high-velocity breakdown thread about building autonomous AI content pipelines with proven hooks.",
   },
   {
-    icon: "⚡",
     title: "Build an automated theme flow",
     desc: "Connect RSS sources, daily mix slots, and multi-channel scheduling on autopilot",
     prompt: "Show me how to configure an automated Theme Studio flow that ingests RSS feeds and publishes 2 daily insights.",
   },
   {
-    icon: "🎯",
     title: "Critique hooks & retention angles",
     desc: "A/B test 5 contrarian openers before spending effort on post body copy",
     prompt: "Generate 5 contrarian hooks for a launch announcement and critique why each works or fails.",
@@ -103,6 +102,7 @@ export function ChatLibraryView({
   onBackToChat,
   className,
 }: ChatLibraryViewProps) {
+  const storageScope = useChatStorageScope();
   const [sessions, setSessions] = React.useState<SavedChatSession[]>([]);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [isSelectMode, setIsSelectMode] = React.useState(false);
@@ -112,8 +112,8 @@ export function ChatLibraryView({
   const [filterModel, setFilterModel] = React.useState<string | null>(null);
 
   const refreshSessions = React.useCallback(() => {
-    setSessions(getStoredSessions());
-  }, []);
+    setSessions(getStoredSessions(storageScope));
+  }, [storageScope]);
 
   React.useEffect(() => {
     refreshSessions();
@@ -154,7 +154,7 @@ export function ChatLibraryView({
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
     for (const id of selectedIds) {
-      deleteStoredSession(id);
+      deleteStoredSession(id, storageScope);
     }
     setSelectedIds(new Set());
     setIsSelectMode(false);
@@ -163,13 +163,13 @@ export function ChatLibraryView({
 
   const handleTogglePin = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    togglePinStoredSession(id);
+    togglePinStoredSession(id, storageScope);
     refreshSessions();
   };
 
   const handleDeleteOne = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteStoredSession(id);
+    deleteStoredSession(id, storageScope);
     refreshSessions();
   };
 
@@ -182,7 +182,7 @@ export function ChatLibraryView({
   const saveRename = (id: string, e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (editTitleValue.trim()) {
-      updateStoredSessionTitle(id, editTitleValue.trim());
+      updateStoredSessionTitle(id, editTitleValue.trim(), storageScope);
       refreshSessions();
     }
     setEditingId(null);
@@ -366,7 +366,6 @@ export function ChatLibraryView({
                     className="p-3.5 rounded-xl border border-white/[0.08] bg-muted/20 hover:bg-muted/40 hover:border-[#ffe633]/40 transition-all flex flex-col justify-between group cursor-pointer text-left"
                   >
                     <div>
-                      <span className="text-lg block mb-2">{starter.icon}</span>
                       <h3 className="text-xs font-semibold text-foreground group-hover:text-[#ffe633] transition-colors leading-snug">
                         {starter.title}
                       </h3>
@@ -573,4 +572,3 @@ export function ChatLibraryView({
     </div>
   );
 }
-

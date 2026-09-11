@@ -8,6 +8,7 @@ import { CheckmarkCircle02Icon as CheckCircle2, Loading03Icon as Loader2, Delete
 import { toast } from "sonner";
 
 const INTEGRATIONS = [
+  { provider: "zernio", label: "Zernio", placeholder: "sk_…", url: "https://zernio.com/dashboard/api-keys", hint: "Social account connections, publishing, analytics, and inbox" },
   { provider: "openrouter", label: "OpenRouter", placeholder: "sk-or-v1-…", url: "https://openrouter.ai/settings/keys", hint: "Multiple LLM providers through one key" },
   { provider: "supadata", label: "Supadata", placeholder: "Supadata API key", url: "https://supadata.ai/dashboard", hint: "YouTube transcript extraction" },
   { provider: "apify", label: "Apify", placeholder: "apify_api_…", url: "https://console.apify.com/settings/integrations", hint: "Scrapers (Instagram, TikTok, LinkedIn…)" },
@@ -38,10 +39,25 @@ export function IntegrationsPanel() {
   async function handleSave(provider: string) {
     setSaving(provider);
     try {
-      await saveApiKey(provider, inputs[provider]);
+      const key = inputs[provider]?.trim();
+      if (!key) return;
+
+      if (provider === "zernio") {
+        const response = await fetch("/api/validate-key", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: key }),
+        });
+        const result = await response.json().catch(() => null) as { error?: string } | null;
+        if (!response.ok) throw new Error(result?.error || "Zernio could not validate this key.");
+      } else {
+        const result = await saveApiKey(provider, key);
+        if (result?.error) throw new Error(result.error);
+      }
+
       setExisting((e) => ({ ...e, [provider]: true }));
       setInputs((v) => ({ ...v, [provider]: "" }));
-      toast.success("Key saved — stored encrypted");
+      toast.success(provider === "zernio" ? "Zernio connected — key verified and encrypted" : "Key saved — stored encrypted");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -50,9 +66,17 @@ export function IntegrationsPanel() {
   }
 
   async function handleDelete(provider: string) {
-    await deleteApiKey(provider);
-    setExisting((e) => ({ ...e, [provider]: false }));
-    toast.success("Key removed");
+    setSaving(provider);
+    try {
+      const result = await deleteApiKey(provider);
+      if (result?.error) throw new Error(result.error);
+      setExisting((e) => ({ ...e, [provider]: false }));
+      toast.success(provider === "zernio" ? "Zernio disconnected and linked accounts deactivated" : "Key removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Removal failed");
+    } finally {
+      setSaving(null);
+    }
   }
 
   return (
@@ -68,8 +92,8 @@ export function IntegrationsPanel() {
               <p className="text-xs text-zinc-500">{i.hint}</p>
             </div>
             {existing[i.provider] && (
-              <Button size="sm" variant="ghost" onClick={() => handleDelete(i.provider)} aria-label={`Remove ${i.label} key`}>
-                <Trash2 className="h-3.5 w-3.5" />
+              <Button size="sm" variant="ghost" disabled={saving === i.provider} onClick={() => handleDelete(i.provider)} aria-label={`Remove ${i.label} key`}>
+                {saving === i.provider ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
               </Button>
             )}
           </div>

@@ -3,29 +3,21 @@ import { assets, contentPackages, storyClusters, themePages, themeContentFormats
 import { and, eq } from "drizzle-orm";
 import { renderCardSvg, renderCarouselSlideSvgs } from "./static-card-renderer";
 import { renderTweetCardSvg } from "./tweet-card-renderer";
-import { renderVideoReelSvg } from "./video-reel-renderer";
-import { getMemeClipById } from "../assets/meme-clips";
 import { uploadAndRegisterFlowAsset } from "@/lib/flows/asset-registration";
-import { Resvg } from "@resvg/resvg-js";
+import { renderSvgPng } from "./rasterize-svg";
 
 export interface RenderPackageResult {
   packageId: string;
   mediaType: string;
   renderedUrls: Array<{ url: string; type: string; slideIndex?: number }>;
   success: boolean;
+  queued?: boolean;
   error?: string;
 }
 
 /**
  * Renders branded media assets for a content package and stores them in Cloudflare R2.
  */
-function pngBuffer(svg: string): Buffer {
-  return Buffer.from(new Resvg(svg, {
-    background: "rgba(0, 0, 0, 0)",
-    font: { loadSystemFonts: true },
-  }).render().asPng());
-}
-
 function existingRenderedUrls(value: unknown): Array<{ url: string; type: string; slideIndex?: number }> {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is { url: string; type: string; slideIndex?: number } => (
@@ -61,6 +53,14 @@ export async function renderPackageMedia(
   if (!page || !format) {
     return { packageId, mediaType: "unknown", renderedUrls: [], success: false, error: "Theme page or format not found" };
   }
+  if (process.env.MEDIA_ENGINE_ENABLED === "true" && (format.mediaType === "video" || process.env.MEDIA_STATIC_TEMPLATES_ENABLED === "true" && format.mediaType === "image")) {
+    const { queueThemeRender } = await import("@/lib/media-engine/theme-adapter");
+    try {
+      const job = await queueThemeRender(tenantId, packageId);
+      return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, queued: job.status === "queued" || job.status === "rendering" || job.status === "succeeded" };
+    } catch (error) { return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, error: error instanceof Error ? error.message : "Render submission failed" }; }
+  }
+  if (format.mediaType === "video") return { packageId, mediaType: "video", renderedUrls: [], success: false, error: "Enable the media worker to render a finished MP4. Raw source clips are not publishable exports." };
   const alreadyRendered = existingRenderedUrls(pkg.renderedAssetUrls);
   if (alreadyRendered.length > 0) {
     return { packageId, mediaType: format.mediaType, renderedUrls: alreadyRendered, success: true };
@@ -117,6 +117,7 @@ export async function renderPackageMedia(
   const priorMetrics = pkg.metrics && typeof pkg.metrics === "object" && !Array.isArray(pkg.metrics)
     ? pkg.metrics as Record<string, unknown>
     : {};
+  const imageCache = new Map<string, Buffer>();
 
   async function storePng(svg: string, key: string, filename: string): Promise<string> {
     signal?.throwIfAborted();
@@ -126,7 +127,7 @@ export async function renderPackageMedia(
       columns: { publicUrl: true },
     });
     if (existing) return existing.publicUrl;
-    const body = pngBuffer(svg);
+    const body = await renderSvgPng(svg, signal, imageCache);
     const registered = await uploadAndRegisterFlowAsset({
       tenantId,
       runId: flowRunId,
@@ -201,12 +202,7 @@ export async function renderPackageMedia(
         renderedUrls.push({ url: publicUrl, type: "image", slideIndex: i + 1 });
       }
       if (templateSpec.templateFamily === "mixed_carousel") {
-        const clipId = typeof templateSpec.memeClipId === "string" ? templateSpec.memeClipId : undefined;
-        const memeClip = clipId ? getMemeClipById(clipId) : undefined;
-        const videoUrl = (typeof templateSpec.videoUrl === "string" && templateSpec.videoUrl) || memeClip?.videoUrl;
-        if (videoUrl) {
-          renderedUrls.push({ url: videoUrl, type: "video", slideIndex: 2 });
-        }
+        throw new Error("Mixed video carousels require finished video exports and are not enabled yet.");
       }
     } else if (templateSpec.templateFamily === "tweet_card" || format?.slug?.includes("tweet")) {
       const pageWatermark = typeof (pageBrandKit as any)?.watermark === "string" 
@@ -239,51 +235,8 @@ export async function renderPackageMedia(
         `${pkg.title} tweet.png`,
       );
       renderedUrls.push({ url: publicUrl, type: "image" });
-    } else if (format?.mediaType === "video" || templateSpec.templateFamily === "video_reel") {
-      const clipId = typeof templateSpec.memeClipId === "string" ? templateSpec.memeClipId : undefined;
-      const memeClip = clipId ? getMemeClipById(clipId) : undefined;
-      const videoUrl = (typeof templateSpec.videoUrl === "string" && templateSpec.videoUrl) || memeClip?.videoUrl;
-
-      if (videoUrl) {
-        const pageWatermark = typeof (pageBrandKit as any)?.watermark === "string" 
-          ? (pageBrandKit as any).watermark 
-          : `@${page.name.toLowerCase().replace(/\s+/g, "")}`;
-        // Render high-res 9:16 vertical poster SVG
-        const posterSvg = renderVideoReelSvg({
-          hookText: renderedTitle,
-          posterUrl: heroImage || memeClip?.thumbnailUrl,
-          videoUrl,
-          account: {
-            name: page.name,
-            handle: pageWatermark,
-            avatarUrl: (pageBrandKit as any)?.logoMonogramUrl,
-          },
-          brandKit,
-        });
-
-        const posterPublicUrl = await storePng(
-          posterSvg,
-          `${pkg.tenantId}/theme-studio/${pkg.id}/video_poster.png`,
-          `${pkg.title} poster.png`,
-        );
-        renderedUrls.push({ url: videoUrl, type: "video" });
-        renderedUrls.push({ url: posterPublicUrl, type: "image" });
-      } else {
-        const message = "Video preview is available, but an MP4 render worker has not been configured";
-        await db.update(contentPackages).set({
-          status: "failed",
-          error: message,
-          metrics: { ...priorMetrics, failurePhase: "render_unsupported" },
-          updatedAt: new Date(),
-        }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
-        return {
-          packageId,
-          mediaType: "video",
-          renderedUrls: [],
-          success: false,
-          error: message,
-        };
-      }
+    } else if (templateSpec.templateFamily === "video_reel") {
+      throw new Error("Select a video format and render a finished MP4 before publishing.");
     } else {
       // Standard static image card
       const svg = renderCardSvg({

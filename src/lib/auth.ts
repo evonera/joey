@@ -1,9 +1,11 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { dodopayments, checkout, portal, webhooks, usage } from "@dodopayments/better-auth";
+import { dodopayments, webhooks } from "@dodopayments/better-auth";
 import { organization } from "better-auth/plugins";
 import DodoPayments from "dodopayments";
+import { getBillingConfig } from "./dodo";
+import { reconcileBillingWebhook } from "./billing-webhooks";
 import { db } from "./db";
 import * as schema from "./db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -22,39 +24,6 @@ export const dodoPayments = new DodoPayments({
     bearerToken: DODO_API_KEY || "dodo_dev_placeholder",
     environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as "test_mode" | "live_mode") || "test_mode",
 });
-
-/**
- * Resolves the tenantId from a Dodo Payments webhook payload.
- *
- * Priority:
- * 1. metadata.tenantId — present when the Dodo customer was created or
- *    updated after tenant creation (the happy path).
- * 2. metadata.userId fallback — for users whose Dodo customer was created at
- *    signup, before their tenant existed. We look up the tenant by ownerId so
- *    webhooks are never silently dropped.
- */
-async function resolveTenantId(payload: any): Promise<string | null> {
-    const meta = payload.data?.metadata ?? {};
-
-    if (meta.tenantId) {
-        const tenant = await db.query.tenants.findFirst({
-            where: eq(schema.tenants.id, meta.tenantId as string),
-            columns: { id: true },
-        });
-        if (tenant) return tenant.id;
-    }
-
-    if (meta.userId) {
-        const membership = await db.query.member.findFirst({
-            where: eq(schema.member.userId, meta.userId as string),
-            orderBy: [desc(schema.member.createdAt)],
-            columns: { organizationId: true },
-        });
-        return membership?.organizationId ?? null;
-    }
-
-    return null;
-}
 
 const isBuildPhase =
     process.env.NEXT_PHASE === "phase-production-build" ||
@@ -84,10 +53,6 @@ const authBaseURL =
                 : process.env.NODE_ENV === "production"
                   ? "https://joey.evonera.com"
                   : "http://localhost:3000");
-
-const dodoWebhookKey =
-    process.env.DODO_PAYMENTS_WEBHOOK_SECRET ||
-    "dev_dodo_webhook_secret_placeholder";
 
 export const auth = betterAuth({
     secret: authSecret,
@@ -152,7 +117,7 @@ export const auth = betterAuth({
                     console.error("Failed to send reset password email via Resend:", err);
                 }
             } else {
-                console.log(`[auth] Password reset requested for ${user.email}. Reset URL: ${url}`);
+                throw new Error("Password reset email delivery is not configured.");
             }
         },
     },
@@ -163,80 +128,35 @@ export const auth = betterAuth({
         },
     },
     plugins: [
-        nextCookies(),
         organization({
             schema: {
                 organization: {
                     modelName: "tenants"
                 }
-            }
-        }),
-        dodopayments({
-            client: dodoPayments,
-            createCustomerOnSignUp: true,
-            getCustomerParams: async (user) => {
-                // Look up the tenant so we can embed tenantId in Dodo metadata.
-                // Webhooks use this to update the correct row without ambiguity.
-                const membership = await db.query.member.findFirst({
-                    where: eq(schema.member.userId, user.id),
-                    orderBy: [desc(schema.member.createdAt)],
-                    columns: { organizationId: true },
-                });
-                return {
-                    name: user.name,
-                    email: user.email,
-                    metadata: {
-                        userId: user.id,
-                        ...(membership?.organizationId ? { tenantId: membership.organizationId } : {}),
-                    },
-                };
             },
+            organizationLimit: async (user) => {
+                const { assertWorkspaceQuota } = await import("@/lib/billing");
+                try {
+                    await assertWorkspaceQuota(user.id);
+                    return false;
+                } catch {
+                    return true;
+                }
+            },
+        }),
+        ...(getBillingConfig().webhookKey ? [dodopayments({
+            client: dodoPayments,
+            // Billing belongs to workspaces, not sign-up or the user's latest
+            // membership. Checkout and portal use role-checked server actions.
+            createCustomerOnSignUp: false,
             use: [
-                checkout({
-                    products: [
-                        {
-                            productId: process.env.NEXT_PUBLIC_DODO_PRO_PRODUCT_ID || "pdt_pro",
-                            slug: "pro-plan",
-                        },
-                    ],
-                    successUrl: "/dashboard",
-                    authenticatedUsersOnly: true,
-                }),
-                portal(),
-                usage(),
                 webhooks({
-                    webhookKey: dodoWebhookKey,
-                    onSubscriptionActive: async (payload: any) => {
-                        const tenantId = await resolveTenantId(payload);
-                        if (!tenantId) return;
-
-                        await db.update(schema.tenants)
-                            .set({
-                                subscriptionPlan: "pro",
-                                subscriptionStatus: "active",
-                                dodoCustomerId: payload.data?.customer_id
-                            })
-                            .where(eq(schema.tenants.id, tenantId));
-                    },
-                    onSubscriptionCancelled: async (payload: any) => {
-                        const tenantId = await resolveTenantId(payload);
-                        if (!tenantId) return;
-
-                        await db.update(schema.tenants)
-                            .set({ subscriptionStatus: "canceled" })
-                            .where(eq(schema.tenants.id, tenantId));
-                    },
-                    onPaymentFailed: async (payload: any) => {
-                        const tenantId = await resolveTenantId(payload);
-                        if (!tenantId) return;
-
-                        await db.update(schema.tenants)
-                            .set({ subscriptionStatus: "past_due" })
-                            .where(eq(schema.tenants.id, tenantId));
-                    },
+                    webhookKey: getBillingConfig().webhookKey!,
+                    onPayload: reconcileBillingWebhook,
                 }),
             ],
-        }),
+        })] : []),
+        nextCookies(),
     ],
 });
 

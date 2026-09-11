@@ -59,6 +59,7 @@ export function ChatSidepanel({
 
     for (const msg of messages) {
       if (msg.role !== "assistant") continue;
+      const resultCountBeforeMessage = results.length;
 
       let text = "";
       if (typeof msg.content === "string") {
@@ -98,6 +99,19 @@ export function ChatSidepanel({
           type,
           language: lang,
           code,
+          sourceMessageId: msg.id,
+        });
+      }
+
+      const cleanText = text.trim();
+      if (results.length === resultCountBeforeMessage && cleanText.length >= 80) {
+        count += 1;
+        const heading = cleanText.match(/^(?:#{1,3}\s+)?([^\n]{3,80})/);
+        results.push({
+          id: `artifact_${msg.id || count}_${count}`,
+          title: heading?.[1]?.replace(/[*_`]/g, "").trim() || `Draft ${count}`,
+          type: "markdown",
+          code: cleanText,
           sourceMessageId: msg.id,
         });
       }

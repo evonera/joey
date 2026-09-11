@@ -102,7 +102,7 @@ export async function runEditorialPipeline(
     const result = await renderPackageMedia(packageId, tenantId, flowRunId, signal, heartbeat);
     if (result.success) {
       packagesRendered += 1;
-    } else {
+    } else if (!result.queued) {
       renderFailures.push({ packageId, error: result.error || "Media rendering failed" });
     }
     await heartbeat?.();

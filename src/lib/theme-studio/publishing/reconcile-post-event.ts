@@ -1,71 +1,45 @@
-import { and, eq } from "drizzle-orm";
-
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contentPackages } from "@/lib/db/schema";
+import { draftStatusFromZernio, getZernioClientForTenant } from "@/lib/publisher-core";
 import type { ZernioWebhookPayload } from "@/lib/webhooks";
 
 type RecordValue = Record<string, unknown>;
-
 function record(value: unknown): RecordValue {
   return value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {};
 }
-
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function validDate(value: unknown): Date {
-  const parsed = typeof value === "string" ? new Date(value) : new Date();
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-}
-
-export async function reconcileThemePackagePostEvent(
-  payload: ZernioWebhookPayload,
-  tenantId: string,
-): Promise<void> {
+export async function reconcileThemePackagePostEvent(payload: { event: string; post?: unknown }, tenantId: string): Promise<void> {
   if (!payload.event.startsWith("post.")) return;
-  const post = record(payload.post);
-  const metadata = record(post.metadata);
-  const packageId = text(metadata.themePackageId);
+  const eventPost = record(payload.post);
+  const packageId = text(record(eventPost.metadata).themePackageId);
   if (!packageId) return;
-
-  const pkg = await db.query.contentPackages.findFirst({
-    where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)),
+  await db.transaction(async tx => {
+    await tx.execute(sql`SELECT id FROM ${contentPackages} WHERE id = ${packageId} AND tenant_id = ${tenantId} FOR UPDATE`);
+    const pkg = await tx.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
+    if (!pkg) return;
+    const priorMetrics = record(pkg.metrics);
+    const postId = text(priorMetrics.zernioPostId) || text(eventPost.id) || text(eventPost._id);
+    if (!postId) throw new Error("Theme package webhook is missing its post ID");
+    const { zernio } = await getZernioClientForTenant(tenantId);
+    // A single platform success is not an aggregate success. Fetch current state
+    // under the package lock so delayed webhooks cannot replay stale statuses.
+    const response = await zernio.posts.getPost({ path: { postId } });
+    const post = response.data?.post;
+    if (response.error || !post) throw new Error("Could not reconcile Theme Studio publishing status");
+    if (record(post.metadata).themePackageId !== packageId) throw new Error("Post does not belong to this content package");
+    const status = draftStatusFromZernio(post.status);
+    const publishedTarget = post.platforms?.find((target: { status?: string; platformPostId?: string; platformPostUrl?: string }) => target.status === "published");
+    await tx.update(contentPackages).set({
+      status,
+      error: status === "failed" ? "One or more destinations failed. Review the existing post in Zernio before retrying." : null,
+      publishedAt: status === "published" ? (pkg.publishedAt || new Date()) : null,
+      publishedPostId: publishedTarget?.platformPostId || pkg.publishedPostId || post._id,
+      metrics: { ...priorMetrics, zernioPostId: post._id, ...(publishedTarget?.platformPostUrl ? { publishedUrl: publishedTarget.platformPostUrl } : {}) },
+      updatedAt: new Date(),
+    }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
   });
-  if (!pkg) return;
-
-  const platformEvent = record(payload.platform);
-  const platforms = Array.isArray(post.platforms)
-    ? post.platforms.map(record)
-    : [];
-  const publishedTarget = platforms.find((target) => text(target.status) === "published");
-  const failedTarget = platforms.find((target) => text(target.status) === "failed");
-  const platformPostId = text(platformEvent.platformPostId)
-    ?? text(publishedTarget?.platformPostId)
-    ?? pkg.publishedPostId;
-  const publishedUrl = text(platformEvent.publishedUrl)
-    ?? text(publishedTarget?.publishedUrl);
-  const zernioPostId = text(post.id);
-  const published = payload.event === "post.published"
-    || payload.event === "post.platform.published"
-    || payload.event === "post.tiktok.url_resolved";
-  const failed = payload.event === "post.failed"
-    || payload.event === "post.partial"
-    || payload.event === "post.cancelled"
-    || payload.event === "post.platform.failed";
-  const error = text(platformEvent.error)
-    ?? text(failedTarget?.error)
-    ?? (failed ? `Zernio reported ${payload.event}` : undefined);
-
-  await db.update(contentPackages).set({
-    ...(published ? { status: "published", publishedAt: validDate(post.publishedAt) } : {}),
-    ...(failed ? { status: "failed", error } : {}),
-    ...(platformPostId ? { publishedPostId: platformPostId } : {}),
-    metrics: {
-      ...(pkg.metrics && typeof pkg.metrics === "object" ? pkg.metrics as RecordValue : {}),
-      ...(zernioPostId ? { zernioPostId } : {}),
-      ...(publishedUrl ? { publishedUrl } : {}),
-    },
-    updatedAt: new Date(),
-  }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
 }

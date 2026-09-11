@@ -23,10 +23,12 @@ describe("flow node catalog ↔ registry sync", () => {
   it("official templates are valid graphs with executable node connections", async () => {
     const { officialTemplates } = await import("@/lib/flows/templates");
     expect(officialTemplates.length).toBeGreaterThanOrEqual(4);
+    const { validateGraph } = await import("@/lib/flows/validation");
     for (const tmpl of officialTemplates) {
       expect(tmpl.slug).toBeDefined();
       expect(tmpl.graph.nodes.length).toBeGreaterThan(0);
       expect(tmpl.graph.edges.length).toBeGreaterThan(0);
+      expect(validateGraph(tmpl.graph), tmpl.slug).toMatchObject({ ok: true });
     }
   });
 

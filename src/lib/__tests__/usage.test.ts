@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { assertBudget, recordTokenUsage } from "../usage";
+import { assertBudget, recordTokenUsage, assertTrialQuota, FreeTrialLimitReachedError } from "../usage";
 import { db } from "@/lib/db";
 
 vi.mock("@/lib/notifications", () => ({
@@ -26,6 +26,11 @@ vi.mock("@/lib/db", () => {
         onConflictDoNothing: vi.fn().mockResolvedValue([]),
       }),
     }),
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ total: 0 }]),
+      }),
+    }),
   };
   return { db: mockDb };
 });
@@ -36,7 +41,7 @@ describe("Usage and Budget Enforcement", () => {
   });
 
   it("permits operations when spend is within budget", async () => {
-    const currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const currentMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
     (db.query.usageTracking.findFirst as any).mockResolvedValue({
       id: "u-1",
       tenantId: "tenant-1",
@@ -51,7 +56,7 @@ describe("Usage and Budget Enforcement", () => {
   });
 
   it("pauses agent and marks pause_reason as budget_exceeded when limit reached", async () => {
-    const currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const currentMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
     (db.query.usageTracking.findFirst as any).mockResolvedValue({
       id: "u-1",
       tenantId: "tenant-1",
@@ -90,7 +95,7 @@ describe("Usage and Budget Enforcement", () => {
   });
 
   it("records token usage correctly", async () => {
-    const currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const currentMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
     (db.query.usageTracking.findFirst as any).mockResolvedValue({
       id: "u-1",
       tenantId: "tenant-1",
@@ -102,5 +107,26 @@ describe("Usage and Budget Enforcement", () => {
     const res = await recordTokenUsage("tenant-1", 1000, 2000);
     expect(res.ok).toBe(true);
     expect(db.update).toHaveBeenCalled();
+  });
+
+  it("permits operations when free trial generations are under 3", async () => {
+    (db.select as any).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ total: 1 }]),
+      }),
+    });
+
+    await expect(assertTrialQuota("tenant-trial", 3)).resolves.toBeUndefined();
+  });
+
+  it("throws FreeTrialLimitReachedError when 3 generations are exhausted", async () => {
+    (db.select as any).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ total: 3 }]),
+      }),
+    });
+
+    await expect(assertTrialQuota("tenant-trial", 3)).rejects.toThrow(FreeTrialLimitReachedError);
+    await expect(assertTrialQuota("tenant-trial", 3)).rejects.toThrow(/rate_limit:trial/);
   });
 });

@@ -112,7 +112,7 @@ function AnalyticsDashboard() {
     <div className="p-8 max-w-6xl mx-auto pb-24 space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Analytics & Intelligence</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Analytics</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             Live cross-platform engagement performance and weekly AI strategy intelligence.
           </p>

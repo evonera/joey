@@ -1,5 +1,6 @@
 'use server';
 
+import { invalidateThemeMedia } from "@/lib/media-engine/invalidation";
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themeVisualTemplates, themeContentFormats, themeSlots, themePages } from "@/lib/db/schema";
@@ -194,7 +195,8 @@ export async function updateThemeTemplate(id: string, data: UpdateThemeTemplateI
       if (!format) return { error: "Content format not found" };
     }
 
-    const [updated] = await db.update(themeVisualTemplates)
+    const updated = await db.transaction(async tx => {
+    const [row] = await tx.update(themeVisualTemplates)
       .set({
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
         ...(data.formatId !== undefined ? { formatId: data.formatId } : {}),
@@ -207,6 +209,9 @@ export async function updateThemeTemplate(id: string, data: UpdateThemeTemplateI
       })
       .where(and(eq(themeVisualTemplates.id, id), eq(themeVisualTemplates.tenantId, tenantId)))
       .returning();
+      if (row) await invalidateThemeMedia(tx, tenantId, { kind: "template", id }, data.componentSpec !== undefined || data.formatId !== undefined || data.renderer !== undefined || data.propsSchema !== undefined);
+      return row;
+    });
 
     return { template: updated };
   } catch (error: any) {

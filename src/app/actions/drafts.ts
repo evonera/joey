@@ -4,8 +4,19 @@ import { auth, getActiveTenantId } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { drafts, contentPackages, themePages, tenants } from "@/lib/db/schema";
-import { eq, and, or, isNotNull, isNull, inArray, desc, ilike } from "drizzle-orm";
+import { eq, and, or, isNotNull, isNull, inArray, desc, ilike, sql } from "drizzle-orm";
 import { reviewThemePackage } from "@/app/actions/theme-packages";
+
+// A review action must never reset an accepted or uncertain publication.
+function editableDraft() {
+    return and(inArray(drafts.status, ["draft", "pending_review", "approved", "scheduled", "rejected", "failed"]),
+        or(isNull(drafts.errorMessage), sql`${drafts.errorMessage} NOT LIKE 'verify:%'`),
+        sql`NOT EXISTS (SELECT 1 FROM posts p WHERE p.draft_id = ${drafts.id} AND p.tenant_id = ${drafts.tenantId})`);
+}
+function editablePackage() {
+    return and(inArray(contentPackages.status, ["pending_review", "approved", "rejected", "failed"]),
+        sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`, sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`);
+}
 
 function extractMediaUrls(renderedAssetUrls: unknown): string[] {
     if (!Array.isArray(renderedAssetUrls)) return [];
@@ -68,14 +79,10 @@ export async function getDrafts(status?: string, platform?: string, search?: str
                             );
                         } else if (status === "approved") {
                             conditions.push(
-                                or(
-                                    and(
-                                        eq(contentPackages.status, "approved"),
-                                        isNull(contentPackages.scheduledFor)
-                                    ),
-                                    eq(contentPackages.status, "publishing")
-                                )!
+                                and(eq(contentPackages.status, "approved"), isNull(contentPackages.scheduledFor))!
                             );
+                        } else if (status === "publishing") {
+                            conditions.push(eq(contentPackages.status, "publishing"));
                         } else if (status === "pending_review") {
                             conditions.push(eq(contentPackages.status, "pending_review"));
                         } else if (status === "rejected") {
@@ -141,7 +148,7 @@ export async function getDrafts(status?: string, platform?: string, search?: str
                 content,
                 variants: null,
                 selectedVariantId: null,
-                status: pkg.status === "publishing" ? "approved" : pkg.status,
+                status: pkg.status,
                 platformOptions: {
                     platform: "Theme Channel",
                     mediaUrls: media,
@@ -211,6 +218,7 @@ export async function getDraftCounts() {
             scheduled: 0,
             approved: 0,
             published: 0,
+            publishing: 0,
             failed: 0,
             rejected: 0,
         };
@@ -231,7 +239,7 @@ export async function getDraftCounts() {
             } else if (p.status === "approved" && p.scheduledFor === null) {
                 counts.approved++;
             } else if (p.status === "publishing") {
-                counts.approved++;
+                counts.publishing++;
             } else if (counts[p.status] !== undefined) {
                 counts[p.status]++;
             }
@@ -239,7 +247,7 @@ export async function getDraftCounts() {
 
         return { counts };
     } catch (error: any) {
-        return { counts: { all: 0, pending_review: 0, scheduled: 0, approved: 0, published: 0, failed: 0, rejected: 0 } };
+        return { counts: { all: 0, pending_review: 0, scheduled: 0, approved: 0, publishing: 0, published: 0, failed: 0, rejected: 0 } };
     }
 }
 
@@ -281,15 +289,16 @@ export async function updateDraft(draftId: string, content: string) {
         });
 
         if (existingDraft) {
-            await db.update(drafts)
+            const changed = await db.update(drafts)
                 .set({ content })
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft())).returning({ id: drafts.id });
+            if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
             return { success: true };
         }
 
         const existingPackage = await db.query.contentPackages.findFirst({
             where: and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId)),
-            columns: { id: true, title: true }
+            columns: { id: true, title: true, caption: true, metrics: true }
         });
 
         if (existingPackage) {
@@ -308,9 +317,10 @@ export async function updateDraft(draftId: string, content: string) {
                 }
             }
 
-            await db.update(contentPackages)
-                .set({ title: newTitle, caption: newCaption, updatedAt: new Date() })
-                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId)));
+            const changed = await db.update(contentPackages)
+                .set({ title: newTitle, caption: newCaption, status: "pending_review", ...(newTitle !== existingPackage.title || (!(existingPackage.metrics as Record<string, unknown> | null)?.renderJobId && newCaption !== existingPackage.caption) ? { renderedAssetUrls: [] } : {}), updatedAt: new Date() })
+                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage())).returning({ id: contentPackages.id });
+            if (!changed.length) return { error: "This post has already been submitted for publishing. Review it in Theme Studio." };
             return { success: true };
         }
 
@@ -342,9 +352,10 @@ export async function approveDraft(draftId: string, variantName?: string, conten
                 return { error: "Cannot approve a draft without content. Please select a variant." };
             }
 
-            await db.update(drafts)
+            const changed = await db.update(drafts)
                 .set(updateData)
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft())).returning({ id: drafts.id });
+            if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
 
             return { success: true };
         }
@@ -381,9 +392,10 @@ export async function rejectDraft(draftId: string, feedback: string) {
         });
 
         if (existingDraft) {
-            await db.update(drafts)
+            const changed = await db.update(drafts)
                 .set({ status: "rejected", errorMessage: feedback })
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft())).returning({ id: drafts.id });
+            if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
             return { success: true };
         }
 
@@ -415,8 +427,9 @@ export async function deleteDraft(draftId: string) {
         });
 
         if (existingDraft) {
-            await db.delete(drafts)
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+            const changed = await db.delete(drafts)
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft())).returning({ id: drafts.id });
+            if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
             return { success: true };
         }
 
@@ -426,8 +439,9 @@ export async function deleteDraft(draftId: string) {
         });
 
         if (existingPackage) {
-            await db.delete(contentPackages)
-                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId)));
+            const changed = await db.delete(contentPackages)
+                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage())).returning({ id: contentPackages.id });
+            if (!changed.length) return { error: "This post has already been submitted for publishing. Review it in Theme Studio." };
             return { success: true };
         }
 
@@ -439,105 +453,26 @@ export async function deleteDraft(draftId: string) {
 }
 
 export async function bulkApproveDrafts(draftIds: string[]) {
-    try {
-        if (!draftIds || draftIds.length === 0) return { success: true, count: 0 };
-        const tenantId = await getActiveTenantId();
-
-        const [matchedDrafts, matchedPackages] = await Promise.all([
-            db.query.drafts.findMany({
-                where: and(inArray(drafts.id, draftIds), eq(drafts.tenantId, tenantId)),
-                columns: { id: true }
-            }),
-            db.query.contentPackages.findMany({
-                where: and(inArray(contentPackages.id, draftIds), eq(contentPackages.tenantId, tenantId)),
-                columns: { id: true, renderedAssetUrls: true }
-            })
-        ]);
-
-        let approvedCount = 0;
-
-        if (matchedDrafts.length > 0) {
-            const ids = matchedDrafts.map(d => d.id);
-            await db.update(drafts)
-                .set({ status: "approved", errorMessage: null })
-                .where(and(inArray(drafts.id, ids), eq(drafts.tenantId, tenantId)));
-            approvedCount += ids.length;
-        }
-
-        if (matchedPackages.length > 0) {
-            const validPkgIds = matchedPackages
-                .filter(p => Array.isArray(p.renderedAssetUrls) && p.renderedAssetUrls.length > 0)
-                .map(p => p.id);
-            if (validPkgIds.length > 0) {
-                await db.update(contentPackages)
-                    .set({ status: "approved", error: null, updatedAt: new Date() })
-                    .where(and(inArray(contentPackages.id, validPkgIds), eq(contentPackages.tenantId, tenantId)));
-                approvedCount += validPkgIds.length;
-            }
-        }
-
-        return { success: true, count: approvedCount };
-    } catch (error: any) {
-        console.error("Failed to bulk approve drafts:", error);
-        return { error: error.message || "Failed to bulk approve drafts" };
-    }
+    if (!Array.isArray(draftIds) || draftIds.length > 100) return { error: "Select up to 100 drafts at a time." };
+    await getActiveTenantId();
+    let count = 0;
+    for (const id of new Set(draftIds)) if ((await approveDraft(id)).success) count++;
+    return { success: true, count };
 }
 
 export async function bulkRejectDrafts(draftIds: string[], feedback?: string) {
-    try {
-        if (!draftIds || draftIds.length === 0) return { success: true, count: 0 };
-        const tenantId = await getActiveTenantId();
-
-        const [matchedDrafts, matchedPackages] = await Promise.all([
-            db.query.drafts.findMany({
-                where: and(inArray(drafts.id, draftIds), eq(drafts.tenantId, tenantId)),
-                columns: { id: true }
-            }),
-            db.query.contentPackages.findMany({
-                where: and(inArray(contentPackages.id, draftIds), eq(contentPackages.tenantId, tenantId)),
-                columns: { id: true }
-            })
-        ]);
-
-        let rejectedCount = 0;
-
-        if (matchedDrafts.length > 0) {
-            const ids = matchedDrafts.map(d => d.id);
-            await db.update(drafts)
-                .set({ status: "rejected", errorMessage: feedback || "Rejected via bulk action" })
-                .where(and(inArray(drafts.id, ids), eq(drafts.tenantId, tenantId)));
-            rejectedCount += ids.length;
-        }
-
-        if (matchedPackages.length > 0) {
-            const ids = matchedPackages.map(p => p.id);
-            await db.update(contentPackages)
-                .set({ status: "rejected", error: feedback || "Rejected via bulk action", updatedAt: new Date() })
-                .where(and(inArray(contentPackages.id, ids), eq(contentPackages.tenantId, tenantId)));
-            rejectedCount += ids.length;
-        }
-
-        return { success: true, count: rejectedCount };
-    } catch (error: any) {
-        console.error("Failed to bulk reject drafts:", error);
-        return { error: error.message || "Failed to bulk reject drafts" };
-    }
+    if (!Array.isArray(draftIds) || draftIds.length > 100) return { error: "Select up to 100 drafts at a time." };
+    if (feedback && feedback.length > 5000) return { error: "Feedback must be 5,000 characters or fewer." };
+    await getActiveTenantId();
+    let count = 0;
+    for (const id of new Set(draftIds)) if ((await rejectDraft(id, feedback || "Rejected via bulk action")).success) count++;
+    return { success: true, count };
 }
 
 export async function bulkDeleteDrafts(draftIds: string[]) {
-    try {
-        if (!draftIds || draftIds.length === 0) return { success: true, count: 0 };
-        const tenantId = await getActiveTenantId();
-
-        await Promise.all([
-            db.delete(drafts).where(and(inArray(drafts.id, draftIds), eq(drafts.tenantId, tenantId))),
-            db.delete(contentPackages).where(and(inArray(contentPackages.id, draftIds), eq(contentPackages.tenantId, tenantId))),
-        ]);
-
-        return { success: true, count: draftIds.length };
-    } catch (error: any) {
-        console.error("Failed to bulk delete drafts:", error);
-        return { error: error.message || "Failed to bulk delete drafts" };
-    }
+    if (!Array.isArray(draftIds) || draftIds.length > 100) return { error: "Select up to 100 drafts at a time." };
+    await getActiveTenantId();
+    let count = 0;
+    for (const id of new Set(draftIds)) if ((await deleteDraft(id)).success) count++;
+    return { success: true, count };
 }
-

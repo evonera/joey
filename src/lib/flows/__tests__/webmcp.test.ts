@@ -179,7 +179,7 @@ describe("WebMCP flow tools", () => {
 
     const invalid = await call(tools, "joey_configure_flow_node", {
       nodeId: "agent-2",
-      config: { platform: "tiktok" },
+      config: { platform: "unsupported-platform" },
     });
     expect(invalid.isError).toBe(true);
     expect(invalid.data.error).toContain("Invalid config");

@@ -10,13 +10,14 @@ import { CollaborativeAvatars } from "@/components/collaboration/collaborative-a
 import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider"
 
 const ROUTE_LABELS: Record<string, string> = {
-  "/dashboard": "Dashboard",
+  "/dashboard": "AI Chat",
   "/compose": "Compose",
   "/drafts": "Drafts",
   "/calendar": "Calendar",
   "/engagement": "Engagement",
   "/theme-studio": "Theme Studio",
   "/flows": "Flows",
+  "/flows/templates": "Flow Templates",
   "/assets": "Assets",
   "/brandkit": "Brand Kit",
   "/analytics": "Analytics",

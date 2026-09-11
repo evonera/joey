@@ -20,6 +20,6 @@ describe("HelpTutorialDialog", () => {
     expect(screen.getByText("Flows")).toBeDefined();
     expect(screen.getByText("Theme Studio")).toBeDefined();
     expect(screen.getByText("Telegram")).toBeDefined();
-    expect(screen.getByText(/Relaunch Full Onboarding Walkthrough/i)).toBeDefined();
+    expect(screen.getByText(/Start interactive tour/i)).toBeDefined();
   });
 });

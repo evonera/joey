@@ -49,7 +49,7 @@ export default async function ThemePageOverview({
             <IconCalendar className="w-4 h-4 text-blue-500" />
           </div>
           <p className="text-2xl font-bold">{slots?.length || 0}</p>
-          <p className="text-[11px] text-muted-foreground">Generated every 24 hours</p>
+          <p className="text-[11px] text-muted-foreground">Follows your configured schedule</p>
         </div>
 
         <div className="p-5 border rounded-2xl bg-card space-y-1">
@@ -67,7 +67,7 @@ export default async function ThemePageOverview({
             <IconSparkles className="w-4 h-4 text-emerald-500" />
           </div>
           <p className="text-2xl font-bold">{recentPackages?.length || 0}</p>
-          <p className="text-[11px] text-muted-foreground">Authored and staged</p>
+          <p className="text-[11px] text-muted-foreground">Latest generated posts</p>
         </div>
       </div>
 
@@ -118,7 +118,7 @@ export default async function ThemePageOverview({
           <div className="p-6 border rounded-2xl bg-card space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold">Recent Packages Staged</h2>
+                <h2 className="text-base font-bold">Recent Generated Posts</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Generated packages automatically flow into your global{" "}
                   <Link href="/drafts" className="text-primary font-medium hover:underline">

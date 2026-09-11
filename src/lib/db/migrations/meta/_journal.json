@@ -267,6 +267,76 @@
       "when": 1788800000000,
       "tag": "0037_add_pause_reason_to_agent_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788900000000,
+      "tag": "0038_workspace_billing_subscription",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788900000001,
+      "tag": "0039_agent_usage_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788900000002,
+      "tag": "0040_workspace_checkout",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1788900000003,
+      "tag": "0041_workspace_zernio_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1788900000004,
+      "tag": "0042_zernio_webhook_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788900000005,
+      "tag": "0043_media_render_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788900000006,
+      "tag": "0044_media_transcripts",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1788900000007,
+      "tag": "0045_media_transcription_cost",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1788900000008,
+      "tag": "0046_usage_reservations",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788900000009,
+      "tag": "0047_workspace_checkout_plan",
+      "breakpoints": true
     }
   ]
 }

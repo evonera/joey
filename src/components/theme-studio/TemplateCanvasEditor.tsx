@@ -24,6 +24,7 @@ import { createThemeTemplate, updateThemeTemplate } from "@/app/actions/theme-te
 import { checkR2Status } from "@/app/actions/assets";
 import { CURATED_MEME_CLIPS, MemeClip, searchMemeClips } from "@/lib/theme-studio/assets/meme-clips";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 interface TemplateData {
   id?: string;
@@ -127,27 +128,27 @@ function renderHighlightedText(text: string, highlightWords?: string[], accentCo
 
 const PHOTO_PRESETS = [
   {
-    label: "🏏 Cricket Stadium",
+    label: "Cricket stadium",
     url: "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=1200&auto=format&fit=crop",
   },
   {
-    label: "⚽ Football Lights",
+    label: "Football lights",
     url: "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=1200&auto=format&fit=crop",
   },
   {
-    label: "🏀 Basketball Arena",
+    label: "Basketball arena",
     url: "https://images.unsplash.com/photo-1546519638-68e109498ffc?q=80&w=1200&auto=format&fit=crop",
   },
   {
-    label: "🎬 Cinema & Pop",
+    label: "Cinema & pop",
     url: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=1200&auto=format&fit=crop",
   },
   {
-    label: "🤖 Tech / Future",
+    label: "Tech / future",
     url: "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1200&auto=format&fit=crop",
   },
   {
-    label: "🐻 Viral Nature",
+    label: "Viral nature",
     url: "https://images.unsplash.com/photo-1534567153574-2b12153a87f0?q=80&w=1200&auto=format&fit=crop",
   },
 ];
@@ -175,6 +176,7 @@ export function TemplateCanvasEditor({
   initialTemplate,
   availableFormats,
 }: TemplateCanvasEditorProps) {
+  const router = useRouter();
   const [name, setName] = React.useState(initialTemplate.name || "Pubity Breaking News Template");
   const [formatId, setFormatId] = React.useState(
     initialTemplate.formatId || availableFormats[0]?.id || ""
@@ -568,6 +570,10 @@ export function TemplateCanvasEditor({
         });
         if (res.error) throw new Error(res.error);
         toast.success("New template saved");
+        // A create form has no template id to update on a subsequent click.
+        // Return to the collection immediately so a second save cannot create
+        // a duplicate template by accident.
+        router.replace(themePageId ? `/theme-studio/${themePageId}/templates` : "/theme-studio");
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to save template");
@@ -652,7 +658,7 @@ export function TemplateCanvasEditor({
             }`}
           >
             <div className="text-xs font-bold flex items-center gap-1">
-              <span className="text-amber-500 font-extrabold">🅟</span> Pubity Hero
+              Pubity Hero
             </div>
             <p className="text-[10px] text-muted-foreground mt-0.5">Yellow shield & hairline divider</p>
           </button>
@@ -665,7 +671,7 @@ export function TemplateCanvasEditor({
             }`}
           >
             <div className="text-xs font-bold flex items-center gap-1 text-[#00e5ff]">
-              <span>☕</span> Morning Brew
+              Morning Brew
             </div>
             <p className="text-[10px] text-muted-foreground mt-0.5">Cyan seal & — M — divider</p>
           </button>
@@ -678,7 +684,7 @@ export function TemplateCanvasEditor({
             }`}
           >
             <div className="text-xs font-bold flex items-center gap-1">
-              <span className="text-amber-500">📑</span> 4-Slide Deck
+              4-Slide Deck
             </div>
             <p className="text-[10px] text-muted-foreground mt-0.5">Cover, PIP, points, outro CTA</p>
           </button>
@@ -730,7 +736,7 @@ export function TemplateCanvasEditor({
             }`}
           >
             <div className="text-xs font-bold flex items-center gap-1 text-emerald-400">
-              <span>🔀</span> Mixed Media
+              Mixed Media
             </div>
             <p className="text-[10px] text-muted-foreground mt-0.5">Card cover + video clip</p>
           </button>
@@ -1318,7 +1324,7 @@ export function TemplateCanvasEditor({
               </div>
             ) : (
               <span className="px-3 py-1 rounded-full text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20">
-                {spec.templateFamily === "video_reel" ? "🎬 9:16 Video Reel" : spec.templateFamily?.includes("tweet") ? "🐦 X Screenshot" : "🅟 Branded Post"}
+                {spec.templateFamily === "video_reel" ? "9:16 Video Reel" : spec.templateFamily?.includes("tweet") ? "X Screenshot" : "Branded Post"}
               </span>
             )}
           </div>

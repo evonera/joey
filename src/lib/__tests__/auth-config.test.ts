@@ -23,11 +23,12 @@ describe("Better Auth Configuration", () => {
     }
   });
 
-  it("includes required plugins: organization and dodopayments", () => {
+  it("includes organization and registers billing webhooks only when configured", () => {
     const plugins = auth.options.plugins || [];
     const pluginIds = plugins.map((p: any) => p.id);
     expect(pluginIds).toContain("organization");
-    expect(pluginIds).toContain("dodopayments");
+    expect(pluginIds.includes("dodopayments")).toBe(Boolean(process.env.DODO_PAYMENTS_WEBHOOK_SECRET || process.env.DODO_PAYMENTS_WEBHOOK_KEY));
+    expect(pluginIds.at(-1)).toBe("next-cookies");
   });
 
   it("enables Google social provider and disables GitHub", () => {

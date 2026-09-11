@@ -19,7 +19,7 @@
     "start:eve": "eve start",
     "eval": "eve eval",
     "db:seed": "node --env-file=.env --import tsx src/scripts/seed.ts",
-    "db:migrate": "node scripts/init-db.mjs && drizzle-kit push --force",
+    "db:migrate": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/migrate-db.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -29,7 +29,10 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "prepare": "husky",
-    "postinstall": "node scripts/patch-eve.mjs"
+    "postinstall": "node scripts/patch-eve.mjs",
+    "db:push": "drizzle-kit push",
+    "test:integration": "node --import tsx tests/integration/publishing-and-usage.ts",
+    "test:integration:media": "node --import tsx tests/integration/media-engine.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.49",

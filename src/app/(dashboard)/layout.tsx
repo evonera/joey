@@ -13,28 +13,32 @@ import { AlertCircleIcon } from "hugeicons-react"
 import { getActiveTenantMembership } from "@/lib/auth"
 import { isLiveblocksConfigured } from "@/lib/liveblocks"
 import { JoeyLiveblocksProvider } from "@/components/collaboration/liveblocks-provider"
+import Link from "next/link"
+import { ProductTour } from "@/components/product-tour"
 
 export const dynamic = "force-dynamic"
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  const { count } = await getPendingDraftCount()
-  const { config } = await getAgentConfig()
-  const { count: pendingReplyCount } = await getPendingReplyCount()
-  const { count: unreadNotificationCount } = await getUnreadNotificationCount()
+  const [{ count }, { config }, { count: pendingReplyCount }, { count: unreadNotificationCount }, membership] = await Promise.all([
+    getPendingDraftCount(),
+    getAgentConfig(),
+    getPendingReplyCount(),
+    getUnreadNotificationCount(),
+    getActiveTenantMembership().catch(() => null),
+  ])
   const isPaused = config?.isPaused
-
-  let tenantId: string | null = null
-  try {
-    const membership = await getActiveTenantMembership()
-    tenantId = membership.tenantId
-  } catch {
-    // If not authenticated or tenant unresolvable, default to null
-  }
+  const tenantId = membership?.tenantId ?? null
+  const pauseMessage = config?.pauseReason === "budget_exceeded"
+    ? "Your AI budget has been reached. Review usage and budget settings to resume."
+    : config?.pauseReason === "api_failure"
+      ? "An integration needs attention. Check your connected accounts and API keys."
+      : "Automatic drafting is paused. Review your schedule in Settings to resume."
 
   const liveblocksConfigured = isLiveblocksConfigured()
 
   return (
     <JoeyLiveblocksProvider isConfigured={liveblocksConfigured} tenantId={tenantId}>
+      <ProductTour />
       <SidebarProvider
         style={
           {
@@ -49,7 +53,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           {isPaused && (
               <div className="bg-red-500 text-white px-4 py-2 text-sm flex items-center justify-center gap-2">
                   <AlertCircleIcon className="w-4 h-4" />
-                  <span><strong>Automation Paused:</strong> Your Zernio API key is invalid or revoked. Please update it in Settings to resume drafting and publishing.</span>
+                  <span><strong>Automation paused:</strong> {pauseMessage} <Link href="/settings" className="underline font-medium">Open Settings</Link></span>
               </div>
           )}
           <div className="flex flex-1 flex-col">

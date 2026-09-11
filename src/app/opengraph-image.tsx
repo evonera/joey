@@ -82,7 +82,7 @@ export default function Image() {
                 fontSize: 32,
               }}
             >
-              🐱
+              J
             </div>
             <div
               style={{
@@ -324,7 +324,7 @@ export default function Image() {
                 borderRadius: 10,
               }}
             >
-              <div style={{ display: 'flex', fontSize: 14 }}>📱</div>
+              <div style={{ display: 'flex', fontSize: 14 }}>App</div>
               <div
                 style={{
                   display: 'flex',

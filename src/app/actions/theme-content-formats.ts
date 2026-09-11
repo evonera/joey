@@ -1,5 +1,6 @@
 'use server';
 
+import { invalidateThemeMedia } from "@/lib/media-engine/invalidation";
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themeContentFormats, themeSlots } from "@/lib/db/schema";
@@ -202,7 +203,8 @@ export async function updateContentFormat(id: string, data: UpdateContentFormatI
     const tenantId = await getActiveTenantId();
     if (data.platform !== undefined && !SUPPORTED_THEME_PLATFORMS.has(data.platform)) return { error: "Theme Studio currently supports Instagram, TikTok, and X formats" };
 
-    const [updated] = await db.update(themeContentFormats)
+    const updated = await db.transaction(async tx => {
+    const [row] = await tx.update(themeContentFormats)
       .set({
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
         ...(data.platform !== undefined ? { platform: data.platform } : {}),
@@ -218,6 +220,9 @@ export async function updateContentFormat(id: string, data: UpdateContentFormatI
       })
       .where(and(eq(themeContentFormats.id, id), eq(themeContentFormats.tenantId, tenantId)))
       .returning();
+      if (row) await invalidateThemeMedia(tx, tenantId, { kind: "format", id }, Object.keys(data).some(key => !["name", "platform"].includes(key)));
+      return row;
+    });
 
     if (!updated) {
       return { error: "Content format not found" };

@@ -157,7 +157,7 @@ export default function DocsPage() {
   -H "Authorization: Bearer joe_YOUR_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "content": "Big launch coming next week 👀",
+    "content": "Big launch coming next week",
     "scheduledFor": "2026-09-01T09:00:00Z"
   }'
 

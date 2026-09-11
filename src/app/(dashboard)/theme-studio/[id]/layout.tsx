@@ -55,7 +55,7 @@ export default async function ThemePageLayout({
           })),
         }}
       />
-      <div className="p-8 max-w-7xl mx-auto w-full flex-1">{children}</div>
+      <div className="py-6 sm:px-6 max-w-7xl mx-auto w-full min-w-0 flex-1">{children}</div>
     </div>
   );
 }

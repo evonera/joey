@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { checkUsageLimits, requireProPlan, assertThemePageQuota, isProTenant } from "../billing";
+import { canReuseCheckoutSession } from "../dodo";
+import { checkUsageLimits, requireProPlan, assertThemePageQuota, assertAccountQuota, assertWorkspaceQuota, isProTenant } from "../billing";
 
 vi.mock("@/lib/db", () => {
   return {
@@ -7,6 +8,9 @@ vi.mock("@/lib/db", () => {
       query: {
         tenants: {
           findFirst: vi.fn(),
+        },
+        member: {
+          findMany: vi.fn(),
         },
       },
       select: vi.fn(),
@@ -70,7 +74,7 @@ describe("Billing & Usage Limits", () => {
     });
 
     await expect(assertThemePageQuota("tenant-free")).rejects.toThrow(
-      "Free workspace limit reached (1 Theme Page). Upgrade to Pro for unlimited theme pages.",
+      "Workspace limit reached (1 theme page). Upgrade to a paid plan for more theme pages.",
     );
   });
 
@@ -88,5 +92,81 @@ describe("Billing & Usage Limits", () => {
     });
 
     await expect(assertThemePageQuota("tenant-free")).resolves.toBeUndefined();
+  });
+
+  it("enforces social account quota (max 2 accounts) on Free tier", async () => {
+    const { db } = await import("@/lib/db");
+    (db.query.tenants.findFirst as any).mockResolvedValue({
+      subscriptionPlan: "free",
+      subscriptionStatus: "active",
+    });
+
+    // Mock count query returning 1 existing active account
+    (db.select as any).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ total: 1 }]),
+      }),
+    });
+
+    await expect(assertAccountQuota("tenant-free")).rejects.toThrow(
+      "Workspace limit reached (1 connected account). Upgrade to a paid plan to connect more accounts.",
+    );
+  });
+
+  it("allows social account connection when under quota", async () => {
+    const { db } = await import("@/lib/db");
+    (db.query.tenants.findFirst as any).mockResolvedValue({
+      subscriptionPlan: "free",
+      subscriptionStatus: "active",
+    });
+
+    (db.select as any).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ total: 0 }]),
+      }),
+    });
+
+    await expect(assertAccountQuota("tenant-free")).resolves.toBeUndefined();
+  });
+
+  it("enforces workspace limit (1 workspace) on Free tier", async () => {
+    const { db } = await import("@/lib/db");
+    (db.query.member.findMany as any).mockResolvedValue([{ organizationId: "ws-1" }]);
+    (db.query.tenants.findFirst as any).mockResolvedValue({
+      subscriptionPlan: "free",
+      subscriptionStatus: "active",
+    });
+
+    await expect(assertWorkspaceQuota("user-free")).rejects.toThrow(
+      "Workspace limit reached (1 workspace). Free accounts are limited to 1 workspace. Upgrade to Pro to create more workspaces.",
+    );
+  });
+
+  it("permits additional workspaces for Pro subscribers up to limit", async () => {
+    const { db } = await import("@/lib/db");
+    (db.query.member.findMany as any).mockResolvedValue([{ organizationId: "ws-1" }]);
+    (db.query.tenants.findFirst as any).mockResolvedValue({
+      subscriptionPlan: "pro",
+      subscriptionStatus: "active",
+    });
+
+    await expect(assertWorkspaceQuota("user-pro")).resolves.toBeUndefined();
+  });
+});
+
+describe("Dodo hosted checkout reuse", () => {
+  const now = Date.parse("2026-09-08T00:00:00Z");
+
+  it("reuses only a recent unfinished checkout", () => {
+    expect(canReuseCheckoutSession("2026-09-07T23:55:00Z", null, now)).toBe(true);
+    expect(canReuseCheckoutSession("2026-09-07T23:55:00Z", "requires_payment_method", now)).toBe(true);
+  });
+
+  it("replaces stale or terminal checkout sessions", () => {
+    expect(canReuseCheckoutSession("2026-09-07T23:40:00Z", null, now)).toBe(false);
+    expect(canReuseCheckoutSession("2026-09-07T23:59:00Z", "failed", now)).toBe(false);
+    expect(canReuseCheckoutSession("2026-09-07T23:59:00Z", "cancelled", now)).toBe(false);
+    expect(canReuseCheckoutSession("2026-09-07T23:59:00Z", "succeeded", now)).toBe(false);
+    expect(canReuseCheckoutSession("not-a-date", null, now)).toBe(false);
   });
 });

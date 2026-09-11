@@ -62,7 +62,7 @@ export function renderVideoReelSvg(options: VideoReelRenderOptions): string {
   const accentColor = safeColor(brandKit.accentColor, "#ffe633");
   const textColor = safeColor(brandKit.textColor, "#ffffff");
   const watermark = brandKit.watermark || "@JoeyReels";
-  const fontFamily = brandKit.fontFamily || "system-ui, -apple-system, sans-serif";
+  const fontFamily = escapeXml(brandKit.fontFamily || "system-ui, -apple-system, sans-serif");
 
   // Center video frame dimensions (16:9 widescreen video centered in 9:16 frame)
   const videoWidth = width;

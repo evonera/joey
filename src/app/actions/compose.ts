@@ -2,12 +2,14 @@
 
 import { db } from "@/lib/db";
 import { drafts, socialAccounts } from "@/lib/db/schema";
-import { getZernioClient } from "./zernio";
+import { manualPostSchema, validatePostForPlatforms } from "@/lib/compose-validation";
+import { revalidatePath } from "next/cache";
 import { publishDraft } from "./publisher";
 import { getActiveTenantId } from "@/lib/auth";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 export async function createManualPost(data: {
+    draftId?: string;
     content: string;
     mediaUrls: string[];
     accountIds: string[];
@@ -15,33 +17,9 @@ export async function createManualPost(data: {
     scheduledFor?: string; // ISO date string
 }) {
     try {
-        if (!data.content || typeof data.content !== "string" || data.content.trim().length === 0) {
-            return { error: "Post content cannot be empty" };
-        }
-        if (data.content.length > 50000) {
-            return { error: "Post content exceeds maximum length of 50,000 characters" };
-        }
-        if (!Array.isArray(data.accountIds) || data.accountIds.length === 0) {
-            return { error: "At least one target account must be selected" };
-        }
-        if (data.mediaUrls && Array.isArray(data.mediaUrls)) {
-            if (data.mediaUrls.length > 10) {
-                return { error: "Maximum 10 media URLs allowed" };
-            }
-            for (const url of data.mediaUrls) {
-                if (typeof url !== "string" || (!url.startsWith("http://") && !url.startsWith("https://"))) {
-                    return { error: "Invalid media URL format" };
-                }
-            }
-        }
-        if (data.scheduleType === "scheduled") {
-            if (!data.scheduledFor || isNaN(Date.parse(data.scheduledFor))) {
-                return { error: "Please select a valid future date and time for scheduled posting" };
-            }
-            if (new Date(data.scheduledFor).getTime() < Date.now() - 60000) {
-                return { error: "Scheduled time cannot be in the past" };
-            }
-        }
+        const parsed = manualPostSchema.safeParse(data);
+        if (!parsed.success) return { error: parsed.error.issues[0].message };
+        data = parsed.data;
 
         const tenantId = await getActiveTenantId(); // auth check
         
@@ -54,54 +32,59 @@ export async function createManualPost(data: {
         });
         
         const selectedAccounts = accounts.filter(a => data.accountIds.includes(a.id));
-        if (selectedAccounts.length === 0) {
-            return { error: "No valid active accounts selected" };
+        if (selectedAccounts.length !== data.accountIds.length) {
+            return { error: "One or more selected accounts are unavailable. Refresh your accounts and try again." };
         }
 
-        // We will create one draft per platform for simplicity and parity with AI agent
-        const createdDraftIds: string[] = [];
-        const publishFailures: string[] = [];
-
-        const initialStatus = data.scheduleType === "draft"
-            ? "pending_review"
-            : data.scheduleType === "scheduled"
-            ? "scheduled"
-            : "approved";
-
-        for (const account of selectedAccounts) {
-            const platformOptions = {
-                accountId: account.id,
-                platform: account.platform,
-                mediaUrls: data.mediaUrls,
-            };
-
-            const [draft] = await db.insert(drafts).values({
-                tenantId,
-                content: data.content,
-                status: initialStatus,
-                platformOptions,
-                scheduledFor: data.scheduleType === "scheduled" && data.scheduledFor ? new Date(data.scheduledFor) : null,
-            }).returning();
-
-            createdDraftIds.push(draft.id);
-
-            // If "now", trigger publishDraft immediately and collect results
-            if (data.scheduleType === "now") {
-                const pubRes = await publishDraft(draft.id);
-                if (pubRes?.error) {
-                    publishFailures.push(`${account.platform} (@${account.accountName}): ${pubRes.error}`);
+        if (data.scheduleType !== "draft") {
+            const error = validatePostForPlatforms(data.content, data.mediaUrls, selectedAccounts.map(a => a.platform));
+            if (error) return { error };
+        }
+        const initialStatus = data.scheduleType === "draft" ? "pending_review" : data.scheduleType === "scheduled" ? "scheduled" : "approved";
+        const createdDraftIds = await db.transaction(async (tx) => {
+            const ids: string[] = [];
+            for (const account of selectedAccounts) {
+                const values = {
+                    content: data.content,
+                    status: initialStatus,
+                    platformOptions: { accountId: account.id, platform: account.platform, mediaUrls: data.mediaUrls, source: "compose" },
+                    scheduledFor: data.scheduleType === "scheduled" ? new Date(data.scheduledFor!) : null,
+                    errorMessage: null,
+                };
+                if (data.draftId) {
+                    const [updated] = await tx.update(drafts).set(values).where(and(
+                        eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId),
+                        inArray(drafts.status, ["pending_review", "approved", "rejected", "scheduled"]),
+                    )).returning({ id: drafts.id });
+                    if (!updated) throw new Error("This draft cannot be edited. It may already be publishing or published.");
+                    ids.push(updated.id);
+                } else {
+                    const [draft] = await tx.insert(drafts).values({ tenantId, ...values }).returning({ id: drafts.id });
+                    ids.push(draft.id);
                 }
             }
+            return ids;
+        });
+        const publishFailures: string[] = [];
+        let processing = false;
+        if (data.scheduleType === "now") {
+            for (const draftId of createdDraftIds) {
+                const result = await publishDraft(draftId);
+                if (result.error) publishFailures.push(result.error);
+                if (result.status === "publishing") processing = true;
+            }
         }
+        revalidatePath("/drafts");
+        revalidatePath("/calendar");
 
         if (publishFailures.length > 0) {
             return {
                 error: `Published with errors: ${publishFailures.join("; ")}`,
-                draftsCreated: createdDraftIds.length
+                draftsCreated: createdDraftIds.length, draftIds: createdDraftIds
             };
         }
 
-        return { success: true, draftsCreated: createdDraftIds.length };
+        return { success: true, draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, processing };
     } catch (error: any) {
         console.error("Failed to create manual post:", error);
         return { error: error.message || "Failed to create post" };
@@ -115,6 +98,7 @@ export async function getDraftForCompose(draftId: string) {
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId))
         });
         if (!draft) return { error: "Draft not found" };
+        if (!["pending_review", "approved", "rejected", "scheduled"].includes(draft.status)) return { error: "This draft cannot be edited while publishing or after publication." };
         return { draft };
     } catch (error: any) {
         return { error: error.message || "Failed to fetch draft" };

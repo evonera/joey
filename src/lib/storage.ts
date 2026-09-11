@@ -1,4 +1,4 @@
-import { S3Client, HeadObjectCommand, DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 function getS3Client() {
@@ -47,6 +47,7 @@ const ALLOWED_UPLOADS: Record<string, string[]> = {
   webp: ["image/webp"],
   gif: ["image/gif"],
   mp4: ["video/mp4"],
+  mp3: ["audio/mpeg"],
   pdf: ["application/pdf"],
 };
 
@@ -154,4 +155,26 @@ export async function deleteObjectWithRetry(key: string, maxAttempts = 3): Promi
     }
   }
   throw new Error(`Unable to delete orphaned R2 object ${key}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+}
+
+/** Restricted worker handoff: these URLs grant access to one object for 15 minutes. */
+export async function mediaWorkerUrls(inputKeys: string[], outputKey: string, mimeType: string) {
+  const client = getS3Client();
+  const inputs = await Promise.all(inputKeys.map(Key => getSignedUrl(client, new GetObjectCommand({ Bucket: getBucketName(), Key }), { expiresIn: 900 })));
+  const uploadUrl = await getSignedUrl(client, new PutObjectCommand({ Bucket: getBucketName(), Key: outputKey, ContentType: mimeType }), { expiresIn: 900 });
+  return { inputs, uploadUrl };
+}
+
+/** Internal owned-object reads only. Streaming limit applies even if metadata lies. */
+export async function readMediaObject(key: string, maxBytes: number): Promise<Buffer> {
+  const response = await getS3Client().send(new GetObjectCommand({ Bucket: getBucketName(), Key: key }));
+  if (!response.Body || (response.ContentLength ?? 0) > maxBytes) throw new Error("Invalid transcription audio size.");
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+    length += chunk.length;
+    if (length > maxBytes) throw new Error("Transcription audio exceeds size limit.");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }

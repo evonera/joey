@@ -54,7 +54,7 @@ export function AppSidebar({
       label: "Workflow",
       items: [
         {
-          title: "Dashboard",
+          title: "AI Chat",
           url: "/dashboard",
           icon: DashboardSquare01Icon,
         },
@@ -103,7 +103,7 @@ export function AppSidebar({
       ],
     },
     {
-      label: "Intelligence",
+      label: "Performance",
       items: [
         {
           title: "Analytics",
@@ -152,12 +152,12 @@ export function AppSidebar({
     },
     {
       title: "Support",
-      url: "https://github.com/shakthivel/joey/issues",
+      url: "https://github.com/evonera/joey/issues",
       icon: IconLifebuoy,
     },
     {
       title: "GitHub",
-      url: "https://github.com/shakthivel/joey",
+      url: "https://github.com/evonera/joey",
       icon: IconBrandGithub,
     },
   ]
