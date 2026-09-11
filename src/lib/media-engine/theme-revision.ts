@@ -14,7 +14,8 @@ function canonicalize(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value as JsonRecord)
         .filter(([, item]) => item !== undefined)
-        .sort(([left], [right]) => left.localeCompare(right))
+        // Hashing must not vary with the host's locale or ICU data.
+        .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
         .map(([key, item]) => [key, canonicalize(item)]),
     );
   }

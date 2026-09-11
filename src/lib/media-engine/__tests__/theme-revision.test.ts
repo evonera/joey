@@ -42,4 +42,10 @@ describe("themePackageRenderRevision", () => {
     expect(themePackageRenderRevision({ ...base, component }))
       .not.toBe(themePackageRenderRevision({ ...base, component: { ...component, durationSeconds: 4 } }));
   });
+
+  it("uses locale-independent ordering for arbitrary brand-kit keys", () => {
+    const component = { mediaAssetId: "asset", templateFamily: "branded_clip" };
+    expect(themePackageRenderRevision({ ...base, component, brand: { z: "last", Ä: "accent" } }))
+      .toBe(themePackageRenderRevision({ ...base, component, brand: { Ä: "accent", z: "last" } }));
+  });
 });
