@@ -48,7 +48,9 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
   // can otherwise finish before `settleThemeRender` can identify its package.
   const job = await submitRender(tenantId, spec, { dispatch: false });
   const updated = await db.update(contentPackages).set({ renderedAssetUrls: [], status: "pending_review", metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || ${JSON.stringify({ ...(settings ? { renderSettings: settings } : {}), renderJobId: job.jobId, renderRevision: revision, failurePhase: "render_pending" })}::jsonb`, error: null, updatedAt: new Date() })
-    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), eq(contentPackages.updatedAt, pkg.updatedAt), inArray(contentPackages.status, ["pending_review", "failed", "rejected"]), sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning();
+    // PostgreSQL stores microseconds while JavaScript Date carries milliseconds.
+    // Keep the optimistic fence, but compare at the precision the caller read.
+    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${pkg.updatedAt}`, inArray(contentPackages.status, ["pending_review", "failed", "rejected"]), sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning();
   if (!updated.length) throw new Error("Package changed before rendering was queued.");
   if (job.status === "queued") await dispatchQueuedRender(job.jobId);
   await settleThemeRender(tenantId, packageId);
@@ -65,7 +67,7 @@ export async function settleThemeRender(tenantId: string, packageId: string) {
     renderedAssetUrls: job.output ? [{ url: job.output.publicUrl, type: job.output.mimeType === "video/mp4" ? "video" : "image", assetId: job.output.id }] : [],
     error: job.output ? null : job.error || "Render cancelled", status: job.output ? "pending_review" : "failed",
     metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || ${JSON.stringify({ failurePhase: job.output ? null : "render" })}::jsonb`, updatedAt: new Date(),
-  }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), eq(contentPackages.updatedAt, pkg.updatedAt), eq(contentPackages.status, "pending_review"), sql`${contentPackages.metrics}->>'renderJobId' = ${job.jobId}`, sql`${contentPackages.metrics}->>'renderRevision' = ${revision}`));
+  }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${pkg.updatedAt}`, eq(contentPackages.status, "pending_review"), sql`${contentPackages.metrics}->>'renderJobId' = ${job.jobId}`, sql`${contentPackages.metrics}->>'renderRevision' = ${revision}`));
 }
 
 export async function assertThemeRenderCurrent(tenantId: string, packageId: string) {
