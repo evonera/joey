@@ -553,10 +553,10 @@ export default function OnboardingPage() {
 
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
-                onClick={() => router.push("/dashboard")}
+                onClick={() => router.push("/dashboard?tour=1")}
                 className="w-full sm:w-auto px-8 py-3 rounded-full bg-zinc-900 text-white dark:bg-[#ffe633] dark:text-zinc-950 font-bold text-sm hover:opacity-90 transition-opacity shadow-md"
               >
-                Go to Dashboard
+                Start guided tour
               </button>
             </div>
             <p className="text-[11px] text-muted-foreground">

@@ -1,8 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft01Icon, ArrowRight01Icon, Cancel01Icon } from "hugeicons-react";
+import {
+  getProductTourProgress,
+  startProductTourProgress,
+  updateProductTourProgress,
+} from "@/app/actions/onboarding-tour";
 import { Button } from "@/components/ui/button";
 
 const TOUR_EVENT = "joey:start-product-tour";
@@ -16,27 +21,71 @@ const STEPS = [
   { route: "/accounts", target: "[data-tour='nav-accounts']", title: "Connect accounts", body: "Authorize social channels through Zernio, then target them from Chat, Compose, and Theme Studio." },
 ] as const;
 
-export function startProductTour() {
-  window.dispatchEvent(new Event(TOUR_EVENT));
+export function startProductTour(restart = false) {
+  window.dispatchEvent(new CustomEvent(TOUR_EVENT, { detail: { restart } }));
 }
 
 export function ProductTour() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [step, setStep] = React.useState<number | null>(null);
   const [rect, setRect] = React.useState<DOMRect | null>(null);
+  const cardRef = React.useRef<HTMLElement>(null);
+  const hasLoadedProgress = React.useRef(false);
+  const persistenceQueue = React.useRef(Promise.resolve());
 
-  const close = React.useCallback(() => {
+  const save = React.useCallback((currentStep: number, status: "in_progress" | "dismissed" | "completed") => {
+    // Preserve the user's input order. The server also rejects stale writes
+    // after completion in case another tab has an older in-flight request.
+    persistenceQueue.current = persistenceQueue.current
+      .catch(() => undefined)
+      .then(() => updateProductTourProgress({ currentStep, status }))
+      .then(() => undefined)
+      .catch(() => undefined);
+  }, []);
+
+  const start = React.useCallback((restart = false) => {
+    void startProductTourProgress(restart)
+      .then(progress => setStep(Math.min(progress.currentStep, STEPS.length - 1)))
+      .catch(() => undefined);
+  }, []);
+
+  const dismiss = React.useCallback(() => {
+    if (step !== null) save(step, "dismissed");
     setStep(null);
     setRect(null);
-    localStorage.setItem("joey_product_tour_seen", "1");
-  }, []);
+  }, [save, step]);
+
+  const finish = React.useCallback(() => {
+    if (step !== null) save(step, "completed");
+    setStep(null);
+    setRect(null);
+  }, [save, step]);
 
   React.useEffect(() => {
-    const start = () => setStep(0);
-    window.addEventListener(TOUR_EVENT, start);
-    return () => window.removeEventListener(TOUR_EVENT, start);
-  }, []);
+    const handleStart = (event: Event) => {
+      const restart = (event as CustomEvent<{ restart?: boolean }>).detail?.restart ?? false;
+      start(restart);
+    };
+    window.addEventListener(TOUR_EVENT, handleStart);
+    return () => window.removeEventListener(TOUR_EVENT, handleStart);
+  }, [start]);
+
+  React.useEffect(() => {
+    if (hasLoadedProgress.current) return;
+    hasLoadedProgress.current = true;
+    if (searchParams.get("tour") === "1") {
+      start(true);
+      router.replace(pathname);
+      return;
+    }
+    void getProductTourProgress()
+      .then(progress => {
+        if (progress?.status === "in_progress") setStep(Math.min(progress.currentStep, STEPS.length - 1));
+      })
+      .catch(() => undefined);
+  }, [pathname, router, searchParams, start]);
 
   React.useEffect(() => {
     if (step === null) return;
@@ -66,30 +115,46 @@ export function ProductTour() {
     };
   }, [pathname, router, step]);
 
+  React.useEffect(() => {
+    if (step === null) return;
+    cardRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismiss();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [dismiss, step]);
+
+  const goTo = (nextStep: number) => {
+    setStep(nextStep);
+    save(nextStep, "in_progress");
+  };
+
   if (step === null) return null;
   const current = STEPS[step];
 
   return (
     <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="Joey product tour">
-      <div className="absolute inset-0 bg-black/55" onClick={close} />
+      <div className="absolute inset-0 bg-black/55" aria-hidden="true" onClick={dismiss} />
       {rect ? (
         <div
           className="pointer-events-none absolute rounded-xl border-2 border-[#ffe633] shadow-[0_0_0_5px_rgba(255,230,51,0.16)] transition-all duration-200"
           style={{ left: rect.left - 6, top: rect.top - 6, width: rect.width + 12, height: rect.height + 12 }}
         />
       ) : null}
-      <section className="absolute bottom-5 left-4 right-4 ml-auto w-auto max-w-sm rounded-xl border bg-background p-4 shadow-2xl sm:bottom-6 sm:right-6">
+      <section ref={cardRef} tabIndex={-1} className="absolute bottom-4 left-3 right-3 ml-auto w-auto max-w-sm rounded-xl border bg-background p-4 shadow-2xl outline-none sm:bottom-6 sm:left-auto sm:right-6">
         <div className="flex items-start justify-between gap-4">
-          <div>
+          <div aria-live="polite">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Step {step + 1} of {STEPS.length}</p>
             <h2 className="mt-1 text-base font-semibold">{current.title}</h2>
           </div>
-          <Button variant="ghost" size="icon" className="size-7" onClick={close} aria-label="Close tour"><Cancel01Icon className="size-4" /></Button>
+          <Button variant="ghost" size="icon" className="size-7" onClick={dismiss} aria-label="Pause tour"><Cancel01Icon className="size-4" /></Button>
         </div>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{current.body}</p>
-        <div className="mt-4 flex items-center justify-between">
-          <Button variant="ghost" size="sm" disabled={step === 0} onClick={() => setStep(step - 1)}><ArrowLeft01Icon className="size-4" />Back</Button>
-          <Button size="sm" onClick={() => step === STEPS.length - 1 ? close() : setStep(step + 1)}>
+        {rect ? null : <p className="mt-2 text-xs text-muted-foreground">The matching control is unavailable on this screen, but you can continue the tour.</p>}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" disabled={step === 0} onClick={() => goTo(step - 1)}><ArrowLeft01Icon className="size-4" />Back</Button>
+          <Button size="sm" onClick={() => step === STEPS.length - 1 ? finish() : goTo(step + 1)}>
             {step === STEPS.length - 1 ? "Finish" : "Next"}{step < STEPS.length - 1 ? <ArrowRight01Icon className="size-4" /> : null}
           </Button>
         </div>
