@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assets, contentPackages, mediaRenderJobs, themeContentFormats, themePages, themeVisualTemplates } from "@/lib/db/schema";
 import { getRender, submitRender } from "./engine";
 import { dispatchQueuedRender } from "./dispatch";
 import type { RenderSpec } from "./spec";
+import { themePackageRenderRevision } from "./theme-revision";
 
 export async function themeRenderInput(tenantId: string, packageId: string, settingsOverride?: Record<string, unknown>) {
   const pkg = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
@@ -18,7 +18,7 @@ export async function themeRenderInput(tenantId: string, packageId: string, sett
   const settings = settingsOverride ?? (pkg.metrics as { renderSettings?: Record<string, unknown> } | null)?.renderSettings ?? {};
   const component = { ...(template?.componentSpec as Record<string, unknown> ?? {}), ...settings };
   const brand = (page.brandKit ?? {}) as Record<string, unknown>;
-  const revision = createHash("sha256").update(JSON.stringify({ title: pkg.title, component, brand, name: page.name, format: format.mediaType })).digest("hex");
+  const revision = themePackageRenderRevision({ title: pkg.title, component, brand, name: page.name, format: format.mediaType });
   return { pkg, page, format, component, brand, revision };
 }
 
