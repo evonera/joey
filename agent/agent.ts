@@ -2,7 +2,7 @@ import { defineAgent, defineDynamic } from "eve";
 import { resolveModelForTurn } from "@/lib/agent-model-resolver";
 import { estimateTextCallCost } from "@/lib/ai-pricing";
 import { getModelById } from "@/lib/models";
-import { deterministicUsageReservationId, reserveUsageBudget } from "@/lib/usage";
+import { eveUsageReservationId, reserveUsageBudget } from "@/lib/usage";
 
 export default defineAgent({
   model: defineDynamic({
@@ -19,7 +19,7 @@ export default defineAgent({
             throw new Error("AGENT_MAX_OUTPUT_TOKENS_PER_STEP must be between 1 and 100000.");
           }
           await reserveUsageBudget({
-            id: deterministicUsageReservationId(["eve", tenantId, ctx.session.id, step.data.turnId, step.data.stepIndex, step.data.sequence]),
+            id: eveUsageReservationId({ tenantId, sessionId: ctx.session.id, ...step.data }),
             tenantId,
             kind: "text",
             modelId: model.providerModelId,

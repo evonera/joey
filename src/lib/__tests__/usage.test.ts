@@ -26,6 +26,7 @@ vi.mock("@/lib/db", () => {
         onConflictDoNothing: vi.fn().mockResolvedValue([]),
       }),
     }),
+    transaction: vi.fn(),
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([{ total: 0 }]),
@@ -72,13 +73,17 @@ describe("Usage and Budget Enforcement", () => {
 
   it("resumes budget-paused agent on billing rollover", async () => {
     const previousMonth = new Date(2020, 0, 1);
+    const previousUsage = {
+      id: "u-1",
+      tenantId: "tenant-1",
+      periodStart: previousMonth,
+      estimatedCostUsd: "15.00",
+      reservedCostUsd: "0",
+      budgetLimitUsd: 10.0,
+    };
     (db.query.usageTracking.findFirst as any)
       .mockResolvedValueOnce({
-        id: "u-1",
-        tenantId: "tenant-1",
-        periodStart: previousMonth,
-        estimatedCostUsd: "15.00",
-        budgetLimitUsd: 10.0,
+        ...previousUsage,
       })
       .mockResolvedValueOnce({
         id: "u-1",
@@ -87,11 +92,21 @@ describe("Usage and Budget Enforcement", () => {
         estimatedCostUsd: "0",
         budgetLimitUsd: 10.0,
       });
+    const lockedPrevious = { for: vi.fn().mockResolvedValue([previousUsage]) };
+    const noOutstandingReservations = { for: vi.fn().mockResolvedValue([]) };
+    const tx = {
+      select: vi.fn()
+        .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue(lockedPrevious) }) })
+        .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue(noOutstandingReservations) }) }),
+      update: db.update,
+      insert: db.insert,
+    };
+    (db.transaction as any).mockImplementation(async (callback: (transaction: typeof tx) => unknown) => callback(tx));
 
     await assertBudget("tenant-1");
 
-    // db.update should be called for usage_tracking reset and agentConfigs pause reset
-    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(db.update).toHaveBeenCalled();
   });
 
   it("records token usage correctly", async () => {

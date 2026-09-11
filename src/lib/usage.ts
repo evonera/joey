@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { usageTracking, usageReservations, agentUsageEvents, agentConfigs } from "@/lib/db/schema";
-import { eq, sql, and, desc, count } from "drizzle-orm";
+import { eq, sql, and, ne, count } from "drizzle-orm";
 import { createNotification } from "@/lib/notifications";
 import { getModelCost } from "@/lib/models";
 import { createHash } from "node:crypto";
@@ -24,9 +24,15 @@ export async function getOrCreateUsageRow(tenantId: string) {
   // If the row belongs to a previous (or future) period, reset the counters so
   // usage stats always reflect the current month.
   if (usage && (usage.periodStart.getTime() !== periodStart.getTime())) {
-    await db.update(usageTracking)
-      .set({ periodStart, inputTokensUsed: 0, outputTokensUsed: 0, estimatedCostUsd: "0", reservedCostUsd: "0" })
-      .where(and(eq(usageTracking.id, usage.id), eq(usageTracking.periodStart, usage.periodStart)));
+    await db.transaction(async (tx) => {
+      const [lockedUsage] = await tx.select().from(usageTracking)
+        .where(eq(usageTracking.id, usage!.id)).for("update");
+      if (!lockedUsage || lockedUsage.periodStart.getTime() === periodStart.getTime()) return;
+      await reconcilePriorPeriodReservations(tx, tenantId, periodStart);
+      await tx.update(usageTracking)
+        .set({ periodStart, inputTokensUsed: 0, outputTokensUsed: 0, estimatedCostUsd: "0", reservedCostUsd: "0" })
+        .where(and(eq(usageTracking.id, lockedUsage.id), eq(usageTracking.periodStart, lockedUsage.periodStart)));
+    });
 
     // Reset agent pause if it was caused by the billing cycle budget limit.
     // Preserves unrelated pauses (e.g. invalid API credentials or manual pauses).
@@ -117,6 +123,24 @@ export function deterministicUsageReservationId(parts: readonly (string | number
   return createHash("sha256").update(parts.join("\u001f")).digest("hex");
 }
 
+/** The shared lifecycle key lets a hook settle exactly the reservation it admitted. */
+export function eveUsageReservationId(input: {
+  tenantId: string;
+  sessionId: string;
+  turnId: string;
+  stepIndex: number;
+  sequence: number;
+}) {
+  return deterministicUsageReservationId([
+    "eve",
+    input.tenantId,
+    input.sessionId,
+    input.turnId,
+    input.stepIndex,
+    input.sequence,
+  ]);
+}
+
 function validateMoney(value: number, label: string) {
   if (!Number.isFinite(value) || value < 0) throw new Error(`Invalid ${label}.`);
   return value.toFixed(8);
@@ -125,6 +149,46 @@ function validateMoney(value: number, label: string) {
 function validateTokens(value: number) {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error("Invalid model usage counters.");
   return value;
+}
+
+/**
+ * A single usage row represents only the active billing period. Before moving
+ * it forward, conservatively settle every incomplete older reservation against
+ * its own recorded estimate. This prevents an old provider response from being
+ * charged to — and overspending — the new month's budget.
+ */
+async function reconcilePriorPeriodReservations(tx: any, tenantId: string, activePeriodStart: Date) {
+  const reservations = await tx.select().from(usageReservations)
+    .where(and(
+      eq(usageReservations.tenantId, tenantId),
+      eq(usageReservations.status, "reserved"),
+      ne(usageReservations.periodStart, activePeriodStart),
+    ))
+    .for("update");
+
+  for (const reservation of reservations) {
+    const metadata = {
+      ...(reservation.metadata as Record<string, unknown> | null),
+      providerOutcome: "period_rollover",
+      reservationPeriodStart: reservation.periodStart.toISOString(),
+    };
+    await tx.insert(agentUsageEvents).values({
+      id: reservation.id,
+      tenantId: reservation.tenantId,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: reservation.reservedCostUsd,
+      kind: reservation.kind,
+      modelId: reservation.modelId,
+      metadata,
+    }).onConflictDoNothing({ target: agentUsageEvents.id });
+    await tx.update(usageReservations).set({
+      status: "failed",
+      actualCostUsd: reservation.reservedCostUsd,
+      metadata,
+      updatedAt: new Date(),
+    }).where(and(eq(usageReservations.id, reservation.id), eq(usageReservations.status, "reserved")));
+  }
 }
 
 /**
@@ -159,15 +223,8 @@ export async function reserveUsageBudget(input: {
       .where(eq(usageTracking.tenantId, input.tenantId)).for("update");
     if (!usage) throw new Error("Could not initialize workspace usage accounting.");
 
-    const [existing] = await tx.select().from(usageReservations)
-      .where(eq(usageReservations.id, id)).limit(1);
-    if (existing) {
-      if (existing.tenantId !== input.tenantId) throw new Error("Usage reservation belongs to another workspace.");
-      if (existing.status !== "reserved") throw new Error("Usage reservation was already finalized.");
-      return existing;
-    }
-
     if (usage.periodStart.getTime() !== periodStart.getTime()) {
+      await reconcilePriorPeriodReservations(tx, input.tenantId, periodStart);
       await tx.update(usageTracking).set({
         periodStart,
         inputTokensUsed: 0,
@@ -176,6 +233,14 @@ export async function reserveUsageBudget(input: {
         reservedCostUsd: "0",
       }).where(eq(usageTracking.id, usage.id));
       usage = { ...usage, periodStart, inputTokensUsed: 0, outputTokensUsed: 0, estimatedCostUsd: "0", reservedCostUsd: "0" };
+    }
+
+    const [existing] = await tx.select().from(usageReservations)
+      .where(eq(usageReservations.id, id)).limit(1);
+    if (existing) {
+      if (existing.tenantId !== input.tenantId) throw new Error("Usage reservation belongs to another workspace.");
+      if (existing.status !== "reserved") throw new Error("Usage reservation was already finalized.");
+      return existing;
     }
 
     const spent = Number(usage.estimatedCostUsd ?? 0);
@@ -223,7 +288,13 @@ async function finalizeUsageReservation(input: {
     let [usage] = await tx.select().from(usageTracking)
       .where(eq(usageTracking.tenantId, reservation.tenantId)).for("update");
     if (!usage) throw new Error("Workspace usage row was not found.");
-    if (usage.periodStart.getTime() !== nowPeriod.getTime()) {
+    if (reservation.periodStart.getTime() !== nowPeriod.getTime() || usage.periodStart.getTime() !== nowPeriod.getTime()) {
+      await reconcilePriorPeriodReservations(tx, reservation.tenantId, nowPeriod);
+      if (usage.periodStart.getTime() === nowPeriod.getTime()) {
+        const [reconciled] = await tx.select().from(usageReservations)
+          .where(eq(usageReservations.id, reservation.id)).limit(1);
+        return reconciled!;
+      }
       await tx.update(usageTracking).set({
         periodStart: nowPeriod,
         inputTokensUsed: 0,
@@ -231,7 +302,9 @@ async function finalizeUsageReservation(input: {
         estimatedCostUsd: "0",
         reservedCostUsd: "0",
       }).where(eq(usageTracking.id, usage.id));
-      usage = { ...usage, periodStart: nowPeriod, inputTokensUsed: 0, outputTokensUsed: 0, estimatedCostUsd: "0", reservedCostUsd: "0" };
+      const [reconciled] = await tx.select().from(usageReservations)
+        .where(eq(usageReservations.id, reservation.id)).limit(1);
+      return reconciled!;
     }
 
     const shouldCharge = input.status !== "released";
@@ -284,22 +357,9 @@ export async function failUsageReservation(id: string, metadata?: Record<string,
   return finalizeUsageReservation({ id, status: "failed", actualCostUsd: Number(reservation.reservedCostUsd), metadata });
 }
 
-export async function findLatestUsageReservation(input: {
-  tenantId: string;
-  metadata: { sessionId: string; turnId: string; stepIndex: number; sequence: number };
-}) {
-  const rows = await db.query.usageReservations.findMany({
-    where: and(eq(usageReservations.tenantId, input.tenantId), eq(usageReservations.status, "reserved")),
-    orderBy: [desc(usageReservations.createdAt)],
-    limit: 20,
-  });
-  return rows.find((row) => {
-    const metadata = row.metadata as Record<string, unknown> | null;
-    return metadata?.sessionId === input.metadata.sessionId
-      && metadata.turnId === input.metadata.turnId
-      && metadata.stepIndex === input.metadata.stepIndex
-      && metadata.sequence === input.metadata.sequence;
-  });
+/** Looks up one deterministic lifecycle reservation without scanning workspace history. */
+export async function getUsageReservation(id: string) {
+  return db.query.usageReservations.findFirst({ where: eq(usageReservations.id, id) });
 }
 
 /**
