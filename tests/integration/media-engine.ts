@@ -122,6 +122,7 @@ try {
   const queuedPackage = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, queuePackage.id) });
   assert.equal(queuedRender.status, "queued");
   assert.equal((queuedPackage?.metrics as { renderJobId?: string }).renderJobId, queuedRender.jobId, "the queue path accepts a microsecond PostgreSQL timestamp and stores its render job");
+  await cancelRender(tenantId, queuedRender.jobId);
   let editing!: () => void, release!: () => void;
   const entered = new Promise<void>(resolve => { editing = resolve; });
   const hold = new Promise<void>(resolve => { release = resolve; });
