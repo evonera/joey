@@ -2,27 +2,22 @@ import { db } from "@/lib/db";
 import { assets, contentPackages, storyClusters, themePages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { renderCardSvg, renderCarouselSlideSvgs } from "./static-card-renderer";
+import { renderTweetCardSvg } from "./tweet-card-renderer";
 import { uploadAndRegisterFlowAsset } from "@/lib/flows/asset-registration";
-import { Resvg } from "@resvg/resvg-js";
+import { renderSvgPng } from "./rasterize-svg";
 
 export interface RenderPackageResult {
   packageId: string;
   mediaType: string;
   renderedUrls: Array<{ url: string; type: string; slideIndex?: number }>;
   success: boolean;
+  queued?: boolean;
   error?: string;
 }
 
 /**
  * Renders branded media assets for a content package and stores them in Cloudflare R2.
  */
-function pngBuffer(svg: string): Buffer {
-  return Buffer.from(new Resvg(svg, {
-    background: "rgba(0, 0, 0, 0)",
-    font: { loadSystemFonts: true },
-  }).render().asPng());
-}
-
 function existingRenderedUrls(value: unknown): Array<{ url: string; type: string; slideIndex?: number }> {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is { url: string; type: string; slideIndex?: number } => (
@@ -58,6 +53,14 @@ export async function renderPackageMedia(
   if (!page || !format) {
     return { packageId, mediaType: "unknown", renderedUrls: [], success: false, error: "Theme page or format not found" };
   }
+  if (process.env.MEDIA_ENGINE_ENABLED === "true" && (format.mediaType === "video" || process.env.MEDIA_STATIC_TEMPLATES_ENABLED === "true" && format.mediaType === "image")) {
+    const { queueThemeRender } = await import("@/lib/media-engine/theme-adapter");
+    try {
+      const job = await queueThemeRender(tenantId, packageId);
+      return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, queued: job.status === "queued" || job.status === "rendering" || job.status === "succeeded" };
+    } catch (error) { return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, error: error instanceof Error ? error.message : "Render submission failed" }; }
+  }
+  if (format.mediaType === "video") return { packageId, mediaType: "video", renderedUrls: [], success: false, error: "Enable the media worker to render a finished MP4. Raw source clips are not publishable exports." };
   const alreadyRendered = existingRenderedUrls(pkg.renderedAssetUrls);
   if (alreadyRendered.length > 0) {
     return { packageId, mediaType: format.mediaType, renderedUrls: alreadyRendered, success: true };
@@ -114,6 +117,7 @@ export async function renderPackageMedia(
   const priorMetrics = pkg.metrics && typeof pkg.metrics === "object" && !Array.isArray(pkg.metrics)
     ? pkg.metrics as Record<string, unknown>
     : {};
+  const imageCache = new Map<string, Buffer>();
 
   async function storePng(svg: string, key: string, filename: string): Promise<string> {
     signal?.throwIfAborted();
@@ -123,7 +127,7 @@ export async function renderPackageMedia(
       columns: { publicUrl: true },
     });
     if (existing) return existing.publicUrl;
-    const body = pngBuffer(svg);
+    const body = await renderSvgPng(svg, signal, imageCache);
     const registered = await uploadAndRegisterFlowAsset({
       tenantId,
       runId: flowRunId,
@@ -138,6 +142,18 @@ export async function renderPackageMedia(
     return registered.publicUrl;
   }
 
+  const heroImage = (
+    (typeof templateSpec.imageUrl === "string" && templateSpec.imageUrl) ||
+    (typeof firstSource.heroImage === "string" && firstSource.heroImage) ||
+    (typeof (provenance as any).heroImage === "string" && (provenance as any).heroImage) ||
+    (typeof (pkg as any).metadata?.heroImage === "string" && (pkg as any).metadata?.heroImage) ||
+    undefined
+  );
+
+  const highlightWords = Array.isArray(templateSpec.highlightKeywords)
+    ? (templateSpec.highlightKeywords as string[])
+    : undefined;
+
   try {
     if (format?.mediaType === "carousel") {
       const cluster = pkg.clusterId ? await db.query.storyClusters.findFirst({
@@ -149,12 +165,29 @@ export async function renderPackageMedia(
           )).slice(0, 3)
         : [];
       const slides = [
-        { title: renderedTitle, body: renderedBody.slice(0, 200), tag: "COVER" },
+        { 
+          title: renderedTitle, 
+          body: renderedBody.slice(0, 200), 
+          tag: "COVER", 
+          imageUrl: heroImage,
+          highlightWords,
+        },
         ...facts.map((fact, index) => ({
-          title: `Sourced point ${index + 1}`,
+          title: `Key takeaway #${index + 1}`,
           body: fact.claim,
           tag: `POINT ${index + 1}`,
+          imageUrl: heroImage,
+          pipInsetUrl: typeof templateSpec.pipInsetUrl === "string" ? templateSpec.pipInsetUrl : undefined,
+          highlightWords,
         })),
+        {
+          title: `Follow for daily updates`,
+          body: `Turn on notifications for more content like this.`,
+          tag: "FOLLOW",
+          imageUrl: heroImage,
+          isOutroSlide: true,
+          outroWatermarkText: typeof brandKit.watermark === "string" ? brandKit.watermark : undefined,
+        }
       ];
 
       const svgSlides = renderCarouselSlideSvgs(slides, brandKit);
@@ -168,21 +201,42 @@ export async function renderPackageMedia(
         );
         renderedUrls.push({ url: publicUrl, type: "image", slideIndex: i + 1 });
       }
-    } else if (format?.mediaType === "video") {
-      const message = "Video preview is available, but an MP4 render worker has not been configured";
-      await db.update(contentPackages).set({
-        status: "failed",
-        error: message,
-        metrics: { ...priorMetrics, failurePhase: "render_unsupported" },
-        updatedAt: new Date(),
-      }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
-      return {
-        packageId,
-        mediaType: "video",
-        renderedUrls: [],
-        success: false,
-        error: message,
-      };
+      if (templateSpec.templateFamily === "mixed_carousel") {
+        throw new Error("Mixed video carousels require finished video exports and are not enabled yet.");
+      }
+    } else if (templateSpec.templateFamily === "tweet_card" || format?.slug?.includes("tweet")) {
+      const pageWatermark = typeof (pageBrandKit as any)?.watermark === "string" 
+        ? (pageBrandKit as any).watermark 
+        : `@${page.name.toLowerCase().replace(/\s+/g, "")}`;
+      const tweetAuthor = (templateSpec.tweetAuthor && typeof templateSpec.tweetAuthor === "object")
+        ? templateSpec.tweetAuthor as any
+        : { name: page.name, handle: pageWatermark, avatarUrl: (pageBrandKit as any)?.logoMonogramUrl };
+      const mediaLayout = (templateSpec.mediaLayout as any) || (heroImage ? "single" : "none");
+      const mediaUrls = Array.isArray(templateSpec.mediaUrls) && templateSpec.mediaUrls.length > 0
+        ? (templateSpec.mediaUrls as string[])
+        : heroImage ? [heroImage] : [];
+      const quotedTweet = (templateSpec.quotedTweet && typeof templateSpec.quotedTweet === "object")
+        ? templateSpec.quotedTweet as any
+        : undefined;
+
+      const svg = renderTweetCardSvg({
+        author: tweetAuthor,
+        content: renderedTitle,
+        mediaUrls,
+        mediaLayout,
+        quotedTweet,
+        aspectRatio: (format?.aspectRatio as any) || "4:5",
+        brandKit,
+      });
+
+      const publicUrl = await storePng(
+        svg,
+        `${pkg.tenantId}/theme-studio/${pkg.id}/tweet_card.png`,
+        `${pkg.title} tweet.png`,
+      );
+      renderedUrls.push({ url: publicUrl, type: "image" });
+    } else if (templateSpec.templateFamily === "video_reel") {
+      throw new Error("Select a video format and render a finished MP4 before publishing.");
     } else {
       // Standard static image card
       const svg = renderCardSvg({
@@ -191,6 +245,11 @@ export async function renderPackageMedia(
         tag: "UPDATE",
         sourceName,
         brandKit,
+        imageUrl: heroImage,
+        topBadge: typeof templateSpec.topBadge === "string" ? (templateSpec.topBadge as any) : undefined,
+        showDividerMark: typeof templateSpec.showDividerMark === "boolean" ? templateSpec.showDividerMark : undefined,
+        pipInsetUrl: typeof templateSpec.pipInsetUrl === "string" ? templateSpec.pipInsetUrl : undefined,
+        highlightWords,
         aspectRatio: (format?.aspectRatio as any) || "1:1",
       });
 

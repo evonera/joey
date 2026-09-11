@@ -3,8 +3,8 @@
 import { auth, getActiveTenantId, requireRole } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { apiKeys, tenants } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { apiKeys, socialAccounts, tenants } from "@/lib/db/schema";
+import { eq, and, sql } from "drizzle-orm";
 import { encrypt, decrypt, maskKey } from "@/lib/crypto";
 
 const ALLOWED_PROVIDERS = new Set([
@@ -16,7 +16,8 @@ const ALLOWED_PROVIDERS = new Set([
   'supadata',
   'apify',
   'exa',
-  'tavily'
+  'tavily',
+  'zernio'
 ]);
 
 export async function getApiKey(provider: string) {
@@ -58,6 +59,13 @@ export async function saveApiKey(provider: string, key: string) {
         const cleanProvider = provider?.trim().toLowerCase();
         if (!ALLOWED_PROVIDERS.has(cleanProvider)) {
             return { error: `Unsupported provider: ${cleanProvider}` };
+        }
+
+        // Zernio credentials must be verified with the provider before they are
+        // stored. The Settings UI and onboarding route these through
+        // /api/validate-key instead of this generic BYOK action.
+        if (cleanProvider === "zernio") {
+            return { error: "Zernio keys must be saved through the verified Zernio connection form." };
         }
 
         const cleanKey = key?.trim();
@@ -102,10 +110,30 @@ export async function saveApiKey(provider: string, key: string) {
 
 export async function deleteApiKey(provider: string) {
     try {
+        const cleanProvider = provider?.trim().toLowerCase();
+        if (!ALLOWED_PROVIDERS.has(cleanProvider)) {
+            return { error: `Unsupported provider: ${cleanProvider}` };
+        }
         const tenantId = await requireRole(["owner", "admin"]);
 
-        await db.delete(apiKeys)
-            .where(and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, provider)));
+        if (cleanProvider === "zernio") {
+            await db.transaction(async tx => {
+                // Keep credential removal, profile invalidation, and account
+                // deactivation atomic with concurrent account sync/connect work.
+                await tx.execute(sql`SELECT id FROM ${tenants} WHERE id = ${tenantId} FOR UPDATE`);
+                await tx.delete(apiKeys)
+                    .where(and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, cleanProvider)));
+                await tx.update(tenants)
+                    .set({ zernioProfileId: null })
+                    .where(eq(tenants.id, tenantId));
+                await tx.update(socialAccounts)
+                    .set({ isActive: false })
+                    .where(eq(socialAccounts.tenantId, tenantId));
+            });
+        } else {
+            await db.delete(apiKeys)
+                .where(and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, cleanProvider)));
+        }
 
         return { success: true };
     } catch (error: any) {

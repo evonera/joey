@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { startProductTour } from "@/components/product-tour";
 
 export function HelpTutorialDialog() {
   const [open, setOpen] = React.useState(false);
@@ -116,15 +117,15 @@ export function HelpTutorialDialog() {
 
             <div className="space-y-2 text-xs">
               <div className="p-3 rounded-lg border border-border/60 space-y-1">
-                <span className="font-semibold text-foreground">⚡ Gemini 2.5 Flash &amp; 3.8 Flash (Recommended)</span>
+                <span className="font-semibold text-foreground">Gemini 2.5 Flash &amp; 3.8 Flash (Recommended)</span>
                 <p className="text-muted-foreground">Ultra-fast, thinking capable, and free-tier eligible on Google AI Studio.</p>
               </div>
               <div className="p-3 rounded-lg border border-border/60 space-y-1">
-                <span className="font-semibold text-foreground">⚡ GPT-5.6 Luna &amp; GPT-4o Mini</span>
+                <span className="font-semibold text-foreground">GPT-5.6 Luna &amp; GPT-4o Mini</span>
                 <p className="text-muted-foreground">Cost-efficient OpenAI workhorses for high-volume content operations.</p>
               </div>
               <div className="p-3 rounded-lg border border-border/60 space-y-1">
-                <span className="font-semibold text-foreground">⚡ Claude Haiku 4.5 &amp; Sonnet</span>
+                <span className="font-semibold text-foreground">Claude Haiku 4.5 &amp; Sonnet</span>
                 <p className="text-muted-foreground">Exceptional tone modulation and creative thought-leadership posts.</p>
               </div>
             </div>
@@ -228,13 +229,12 @@ export function HelpTutorialDialog() {
 
         {/* Footer Actions */}
         <div className="mt-6 pt-4 border-t border-border/60 flex items-center justify-between">
-          <Link
-            href="/onboarding"
-            onClick={() => setOpen(false)}
-            className="text-xs font-medium text-amber-600 dark:text-amber-400 hover:underline inline-flex items-center gap-1"
+          <Button
+            size="sm"
+            onClick={() => { setOpen(false); window.setTimeout(startProductTour, 150); }}
           >
-            Relaunch Full Onboarding Walkthrough <ArrowRight className="size-3" />
-          </Link>
+            Start interactive tour <ArrowRight className="size-3" />
+          </Button>
 
           <Button
             size="sm"

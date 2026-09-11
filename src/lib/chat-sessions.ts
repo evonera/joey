@@ -30,16 +30,25 @@ export interface SavedChatSession {
   messages: any[];
 }
 
-const STORAGE_KEY = "joey_chat_sessions";
+function storageKey(scope: string) {
+  if (!scope) throw new Error("Chat history requires a user and workspace scope");
+  return `joey_chat_sessions:v2:${encodeURIComponent(scope)}`;
+}
 
-export function getStoredSessions(): SavedChatSession[] {
+export function getStoredSessions(scope: string): SavedChatSession[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(scope));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.sort((a, b) => {
+    return parsed.filter((s): s is SavedChatSession =>
+      s && typeof s.id === "string" && typeof s.title === "string" &&
+      typeof s.model === "string" && typeof s.updatedAt === "string" &&
+      Array.isArray(s.messages) && Array.isArray(s.events) &&
+      s.session?.sessionId === s.id && typeof s.session.streamIndex === "number" &&
+      s.tokenMetrics && typeof s.tokenMetrics.totalTokens === "number"
+    ).sort((a, b) => {
       // Pinned first, then newest updated
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
@@ -51,15 +60,15 @@ export function getStoredSessions(): SavedChatSession[] {
   }
 }
 
-export function getStoredSession(id: string): SavedChatSession | null {
-  const sessions = getStoredSessions();
+export function getStoredSession(id: string, scope: string): SavedChatSession | null {
+  const sessions = getStoredSessions(scope);
   return sessions.find((s) => s.id === id) || null;
 }
 
-export function saveStoredSession(session: SavedChatSession): void {
+export function saveStoredSession(session: SavedChatSession, scope: string): void {
   if (typeof window === "undefined") return;
   try {
-    const sessions = getStoredSessions();
+    const sessions = getStoredSessions(scope);
     const existingIndex = sessions.findIndex((s) => s.id === session.id);
     if (existingIndex >= 0) {
       sessions[existingIndex] = {
@@ -75,30 +84,30 @@ export function saveStoredSession(session: SavedChatSession): void {
         updatedAt: new Date().toISOString(),
       });
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    localStorage.setItem(storageKey(scope), JSON.stringify(sessions));
   } catch (err) {
     console.warn("Failed to save chat session to localStorage:", err);
   }
 }
 
-export function deleteStoredSession(id: string): void {
+export function deleteStoredSession(id: string, scope: string): void {
   if (typeof window === "undefined") return;
   try {
-    const sessions = getStoredSessions().filter((s) => s.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    const sessions = getStoredSessions(scope).filter((s) => s.id !== id);
+    localStorage.setItem(storageKey(scope), JSON.stringify(sessions));
   } catch (err) {
     console.warn("Failed to delete chat session:", err);
   }
 }
 
-export function togglePinStoredSession(id: string): boolean {
+export function togglePinStoredSession(id: string, scope: string): boolean {
   if (typeof window === "undefined") return false;
   try {
-    const sessions = getStoredSessions();
+    const sessions = getStoredSessions(scope);
     const target = sessions.find((s) => s.id === id);
     if (!target) return false;
     target.isPinned = !target.isPinned;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    localStorage.setItem(storageKey(scope), JSON.stringify(sessions));
     return target.isPinned;
   } catch (err) {
     console.warn("Failed to toggle pin on session:", err);
@@ -106,15 +115,15 @@ export function togglePinStoredSession(id: string): boolean {
   }
 }
 
-export function updateStoredSessionTitle(id: string, newTitle: string): void {
+export function updateStoredSessionTitle(id: string, newTitle: string, scope: string): void {
   if (typeof window === "undefined") return;
   try {
-    const sessions = getStoredSessions();
+    const sessions = getStoredSessions(scope);
     const target = sessions.find((s) => s.id === id);
     if (!target) return;
     target.title = newTitle.trim() || target.title;
     target.updatedAt = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    localStorage.setItem(storageKey(scope), JSON.stringify(sessions));
   } catch (err) {
     console.warn("Failed to update session title:", err);
   }

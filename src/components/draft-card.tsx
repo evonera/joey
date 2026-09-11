@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from "react";
+import Link from "next/link";
 import { updateDraft, approveDraft, rejectDraft, deleteDraft } from "@/app/actions/drafts";
 import { publishDraft } from "@/app/actions/publisher";
 import { Textarea } from "./ui/textarea";
@@ -17,8 +18,13 @@ import {
   CheckmarkCircle02Icon as Check, 
   Loading03Icon as Loader2,
   SentIcon as Send,
-  Cancel01Icon as X
+  Cancel01Icon as X,
+  Comment01Icon as MessageSquare
 } from "hugeicons-react";
+import { DraftReviewRoom, useDraftCollaboration } from "@/components/drafts/draft-review-room";
+import { DraftComments } from "@/components/drafts/draft-comments";
+import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
+import { useThreads, useIsInsideRoom } from "@liveblocks/react";
 
 interface DraftCardProps {
   draft: any;
@@ -28,13 +34,36 @@ interface DraftCardProps {
   onToggleSelect?: () => void;
 }
 
-export function DraftCard({ draft, onActionComplete, selectable, selected, onToggleSelect }: DraftCardProps) {
+function InnerDraftCommentBadge({ draftId }: { draftId: string }) {
+  const { threads } = useThreads();
+  const count = (threads || []).filter(
+    (t) => !t.metadata?.draftId || t.metadata.draftId === draftId
+  ).length;
+  if (count === 0) return null;
+  return (
+    <span className="ml-1 px-1.5 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-bold">
+      {count}
+    </span>
+  );
+}
+
+function DraftCommentBadge({ draftId }: { draftId: string }) {
+  const { isConfigured } = useLiveblocksConfig();
+  const isInside = useIsInsideRoom();
+  if (!isConfigured || !isInside) return null;
+  return <InnerDraftCommentBadge draftId={draftId} />;
+}
+
+function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggleSelect }: DraftCardProps) {
+    const { isConfigured } = useLiveblocksConfig();
+    const { broadcastApproval, broadcastRejection, broadcastUpdate } = useDraftCollaboration();
     const [isEditing, setIsEditing] = useState(false);
     const [content, setContent] = useState(draft.content || "");
     const [isRejecting, setIsRejecting] = useState(false);
     const [feedback, setFeedback] = useState("");
     const [loading, setLoading] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [isCommentsOpen, setIsCommentsOpen] = useState(false);
 
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
@@ -47,70 +76,42 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
 
     const isScheduled = Boolean(draft.scheduledFor) && (draft.status === "scheduled" || draft.status === "approved");
 
-    const handleApprove = async (variantName?: string, contentToApprove?: string) => {
+    const publicationLocked = draft.status === "publishing" || draft.status === "published" || draft.errorMessage?.startsWith("verify:");
+    async function runAction(action: () => Promise<void>) {
+        if (loading) return;
         setLoading(true);
-        setIsSheetOpen(false);
+        try { await action(); }
+        catch (error) { toast.error(error instanceof Error ? error.message : "Couldn’t complete this action. Please try again."); }
+        finally { setLoading(false); }
+    }
+    const handleApprove = (variantName?: string, contentToApprove?: string) => runAction(async () => {
         const res = await approveDraft(draft.id, variantName, contentToApprove);
-        setLoading(false);
-        if (res.error) {
-            toast.error(res.error);
-        } else {
-            toast.success("Draft approved");
-            onActionComplete();
-        }
-    };
-
-    const handlePublish = async () => {
-        setLoading(true);
-        const res = await publishDraft(draft.id);
-        setLoading(false);
-        if (res.error) {
-            toast.error(res.error);
-        } else {
-            toast.success("Draft published successfully!");
-            onActionComplete();
-        }
-    };
-
-    const handleReject = async () => {
+        if (res.error) throw new Error(res.error);
+        setIsSheetOpen(false);
+        toast.success("Draft approved"); broadcastApproval(variantName); onActionComplete();
+    });
+    const handlePublish = () => runAction(async () => {
+        const res = await publishDraft(draft.id, isScheduled);
+        if (res.error) throw new Error(res.error);
+        toast.success(res.status === "published" ? "Post published" : "Post submitted. Publishing is in progress.");
+        onActionComplete();
+    });
+    const handleReject = () => runAction(async () => {
         if (!feedback.trim()) return;
-        setLoading(true);
         const res = await rejectDraft(draft.id, feedback);
-        setLoading(false);
-        setIsRejecting(false);
-        if (res.error) {
-            toast.error(res.error);
-        } else {
-            toast.success("Draft rejected with feedback");
-            onActionComplete();
-        }
-    };
-
-    const handleSaveEdit = async () => {
-        setLoading(true);
+        if (res.error) throw new Error(res.error);
+        setIsRejecting(false); toast.success("Draft rejected with feedback"); broadcastRejection(feedback); onActionComplete();
+    });
+    const handleSaveEdit = () => runAction(async () => {
         const res = await updateDraft(draft.id, content);
-        setLoading(false);
-        setIsEditing(false);
-        if (res.error) {
-            toast.error(res.error);
-        } else {
-            toast.success("Draft updated");
-            onActionComplete();
-        }
-    };
-
-    const handleDelete = async () => {
-        setLoading(true);
+        if (res.error) throw new Error(res.error);
+        setIsEditing(false); toast.success("Draft updated"); broadcastUpdate(); onActionComplete();
+    });
+    const handleDelete = () => runAction(async () => {
         const res = await deleteDraft(draft.id);
-        setLoading(false);
-        setDeleteDialogOpen(false);
-        if (res.error) {
-            toast.error(res.error);
-        } else {
-            toast.success("Draft deleted");
-            onActionComplete();
-        }
-    };
+        if (res.error) throw new Error(res.error);
+        setDeleteDialogOpen(false); toast.success("Draft deleted"); onActionComplete();
+    });
 
     const currentVariantContent = variantEdits[selectedVariant] ?? 
       draft.variants?.find((v: any) => v.name === selectedVariant)?.content ?? "";
@@ -128,9 +129,24 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                             className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
                         />
                     )}
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md">
-                        {platform}
-                    </span>
+                    {platformOpts?.isThemePackage ? (
+                        <Link 
+                            href={`/theme-studio/${platformOpts.themePageId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium bg-[#ffe633]/15 text-[#ffe633] border border-[#ffe633]/30 px-2.5 py-1 rounded-md hover:bg-[#ffe633]/25 transition-colors cursor-pointer"
+                            title="View Theme Page in Theme Studio"
+                        >
+                            <span>Theme: {platformOpts.themePageName || "Theme Channel"}</span>
+                        </Link>
+                    ) : platformOpts?.source === "flows" || platformOpts?.flowRunId ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-md">
+                            <span>Flow automation</span>
+                        </span>
+                    ) : (
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md">
+                            {platform}
+                        </span>
+                    )}
                     {isScheduled && draft.scheduledFor && (
                         <Badge variant="outline" className="text-[11px] gap-1 font-normal text-muted-foreground">
                             <Calendar className="h-3 w-3" />
@@ -152,8 +168,18 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                     <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => setDeleteDialogOpen(true)}
+                        onClick={() => setIsCommentsOpen(true)}
                         disabled={loading}
+                        className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                        title="Team comments & review"
+                    >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleteDialogOpen(true)}
+                        disabled={loading || publicationLocked}
                         className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         title="Delete draft"
                     >
@@ -215,7 +241,7 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
             {/* Rejection / Failure Feedback */}
             {draft.errorMessage && (draft.status === 'rejected' || draft.status === 'failed') && (
                 <div className="bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-xl text-xs space-y-1">
-                    <strong>{draft.status === 'failed' ? 'Publish Error:' : 'Feedback:'}</strong> {draft.errorMessage}
+                    <strong>{draft.status === 'failed' ? 'Publish Error:' : 'Feedback:'}</strong> {draft.errorMessage.replace(/^verify:\s*/, "")}
                 </div>
             )}
 
@@ -232,7 +258,7 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
             )}
 
             {/* Failed Retry */}
-            {draft.status === 'failed' && (
+            {draft.status === 'failed' && !publicationLocked && (
                 <div className="flex gap-2 pt-2 border-t border-border">
                     <Button onClick={() => setIsEditing(true)} variant="outline" size="sm" disabled={loading} className="gap-1 text-xs">
                         <Edit className="h-3.5 w-3.5" /> Edit Post
@@ -316,6 +342,18 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                         </Button>
                     )}
                     
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setIsCommentsOpen(true)} 
+                        disabled={loading} 
+                        className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                        title="Discuss or suggest revisions"
+                    >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Comments
+                        <DraftCommentBadge draftId={draft.id} />
+                    </Button>
                     {(!hasVariants || draft.content) && (
                         <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} disabled={loading} className="text-xs">
                             Edit
@@ -364,6 +402,30 @@ export function DraftCard({ draft, onActionComplete, selectable, selected, onTog
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Team Comments Sheet */}
+            <Sheet open={isCommentsOpen} onOpenChange={setIsCommentsOpen}>
+                <SheetContent className="sm:max-w-md overflow-y-auto">
+                    <SheetHeader className="mb-4">
+                        <SheetTitle className="text-base flex items-center gap-2">
+                            <MessageSquare className="h-4 w-4 text-primary" />
+                            Draft Review & Comments
+                        </SheetTitle>
+                        <SheetDescription className="text-xs">
+                            Real-time feedback, revision requests, and team discussion.
+                        </SheetDescription>
+                    </SheetHeader>
+                    <DraftComments draftId={draft.id} />
+                </SheetContent>
+            </Sheet>
         </div>
+    );
+}
+
+export function DraftCard(props: DraftCardProps) {
+    return (
+        <DraftReviewRoom draftId={props.draft.id} onActionComplete={props.onActionComplete}>
+            <InnerDraftCard {...props} />
+        </DraftReviewRoom>
     );
 }

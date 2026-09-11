@@ -23,6 +23,7 @@ interface PostDetailsDialogProps {
 
 export function PostDetailsDialog({ open, onOpenChange, post, onRescheduled, onClickCompose }: PostDetailsDialogProps) {
   const [dateTime, setDateTime] = useState<string>("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (post) {
@@ -37,8 +38,11 @@ export function PostDetailsDialog({ open, onOpenChange, post, onRescheduled, onC
   const isPublished = post?.status === "published";
 
   async function handleReschedule() {
-    if (!post || !dateTime) return;
+    if (!post?.canReschedule || !dateTime || saving) return;
     const target = new Date(dateTime);
+    if (!Number.isFinite(target.getTime()) || target <= new Date()) { toast.error("Choose a future date and time."); return; }
+    setSaving(true);
+    try {
     const res = await rescheduleDraft(post.id, target);
     if (res.success) {
       toast.success(`Rescheduled for ${target.toLocaleString()}`);
@@ -47,6 +51,8 @@ export function PostDetailsDialog({ open, onOpenChange, post, onRescheduled, onC
     } else {
       toast.error(res.error || "Failed to reschedule");
     }
+    } catch { toast.error("Couldn’t reschedule this post. Please try again."); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -90,7 +96,7 @@ export function PostDetailsDialog({ open, onOpenChange, post, onRescheduled, onC
               </div>
             )}
 
-            {!isPublished && (
+            {post.canReschedule && (
               <div>
                 <label className="text-xs font-medium uppercase tracking-wide text-zinc-500 mb-1 block" htmlFor="post-datetime">
                   Schedule
@@ -110,17 +116,17 @@ export function PostDetailsDialog({ open, onOpenChange, post, onRescheduled, onC
         )}
 
         <DialogFooter className="gap-2">
-          {!isPublished && post && (
-            <Button onClick={handleReschedule} className="mr-auto">
-              Reschedule
+          {post?.canReschedule && (
+            <Button disabled={saving} onClick={handleReschedule} className="mr-auto">
+              {saving ? "Saving…" : "Reschedule"}
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          {!isPublished && onClickCompose && (
+          {post?.editUrl && onClickCompose && (
             <Button variant="ghost" onClick={onClickCompose}>
-              Edit in Composer
+              {post.source === "theme" ? "Open Theme Studio" : "Open in Compose"}
             </Button>
           )}
         </DialogFooter>

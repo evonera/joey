@@ -46,7 +46,7 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
             AND ${flowRuns.trigger} = 'webhook'
             AND ${flowRuns.triggerPayload}->>'webhookDeliveryId' = ${flowWebhookDeliveries.id}
             AND ${flowRuns.status} IN ('running', 'waiting_approval')
-            AND ${flowRuns.updatedAt} >= ${staleWebhookRunCutoff}
+            AND ${flowRuns.updatedAt} >= ${staleWebhookRunCutoff.toISOString()}::timestamp
         )`,
       ),
     ),

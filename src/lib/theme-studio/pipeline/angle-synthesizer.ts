@@ -62,7 +62,7 @@ async function generateEditorialCopy(input: {
   const result = await runLlm({
     tenantId: input.tenantId,
     provider: "openai",
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
     signal: input.signal,
     maxTokens: 900,
     jsonSchema: {

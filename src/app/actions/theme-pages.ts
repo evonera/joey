@@ -1,11 +1,15 @@
 'use server';
 
+import { invalidateThemeMedia } from "@/lib/media-engine/invalidation";
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
 import { eq, and, desc, like, inArray, sql } from "drizzle-orm";
 import { syncThemePageFlow } from "@/lib/flows/recipe-compiler";
 import { assertThemePageQuota } from "@/lib/billing";
+import { createThemeSource, type CreateThemeSourceInput } from "./theme-sources";
+import { createThemeSlot, type CreateThemeSlotInput } from "./theme-slots";
+import { createThemeTemplate, type CreateThemeTemplateInput } from "./theme-templates";
 
 export interface CreateThemePageInput {
   name: string;
@@ -27,6 +31,13 @@ export interface UpdateThemePageInput {
   defaultRightsPolicy?: string;
 }
 
+export interface CreateThemePageFromWizardInput {
+  page: CreateThemePageInput;
+  sources: Array<Omit<CreateThemeSourceInput, "themePageId">>;
+  slots: Array<Omit<CreateThemeSlotInput, "themePageId">>;
+  template?: Omit<CreateThemeTemplateInput, "themePageId">;
+}
+
 function normalizeText(value: string | undefined, maxLength: number): string | null {
   const normalized = value?.trim() || "";
   if (normalized.length > maxLength) throw new Error(`Text must be ${maxLength} characters or fewer`);
@@ -40,9 +51,13 @@ function sanitizeBrandKit(value: Record<string, unknown> | undefined): Record<st
     return typeof candidate === "string" && /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : fallback;
   };
   return {
-    primaryColor: color("primaryColor", "#0f172a"),
-    accentColor: color("accentColor", "#38bdf8"),
+    ...value,
+    primaryColor: color("primaryColor", "#0a0908"),
+    accentColor: color("accentColor", "#ffe633"),
     watermark: normalizeText(typeof value.watermark === "string" ? value.watermark : undefined, 80),
+    brandInitial: typeof value.brandInitial === "string" ? value.brandInitial.slice(0, 5) : "🅟",
+    topBadge: typeof value.topBadge === "string" ? value.topBadge : "yellow_logo",
+    showDivider: typeof value.showDivider === "boolean" ? value.showDivider : true,
   };
 }
 
@@ -91,47 +106,33 @@ export async function getThemePageById(id: string) {
       return { error: "Theme page not found" };
     }
 
-    const sources = await db.query.themeSources.findMany({
-      where: and(eq(themeSources.themePageId, id), eq(themeSources.tenantId, tenantId)),
-    });
-
-    const slots = await db.query.themeSlots.findMany({
-      where: and(eq(themeSlots.themePageId, id), eq(themeSlots.tenantId, tenantId)),
-      orderBy: [themeSlots.priority],
-    });
-
-    const templates = await db.query.themeVisualTemplates.findMany({
-      where: and(eq(themeVisualTemplates.themePageId, id), eq(themeVisualTemplates.tenantId, tenantId)),
-    });
-
-    const formats = await db.query.themeContentFormats.findMany({
-      where: eq(themeContentFormats.tenantId, tenantId),
-    });
-
-    const formatMap = new Map(formats.map(f => [f.id, f]));
-    const populatedSlots = slots.map(slot => ({
-      ...slot,
-      format: formatMap.get(slot.formatId) || null,
-    }));
-
-    const recentPackages = await db.query.contentPackages.findMany({
-      where: and(eq(contentPackages.themePageId, id), eq(contentPackages.tenantId, tenantId)),
-      orderBy: [desc(contentPackages.createdAt)],
-      limit: 10,
-    });
     const selectedAccountIds = Array.isArray(page.connectedAccounts)
       ? page.connectedAccounts.filter((accountId): accountId is string => typeof accountId === "string")
       : [];
-    const publishingAccounts = selectedAccountIds.length > 0
-      ? await db.query.socialAccounts.findMany({
-          where: and(
-            eq(socialAccounts.tenantId, tenantId),
-            eq(socialAccounts.isActive, true),
-            inArray(socialAccounts.id, selectedAccountIds),
-          ),
-          columns: { id: true, platform: true },
-        })
-      : [];
+    const [sources, slots, templates, formats, recentPackages, publishingAccounts] = await Promise.all([
+      db.query.themeSources.findMany({
+        where: and(eq(themeSources.themePageId, id), eq(themeSources.tenantId, tenantId)),
+      }),
+      db.query.themeSlots.findMany({
+        where: and(eq(themeSlots.themePageId, id), eq(themeSlots.tenantId, tenantId)),
+        orderBy: [themeSlots.priority],
+      }),
+      db.query.themeVisualTemplates.findMany({
+        where: and(eq(themeVisualTemplates.themePageId, id), eq(themeVisualTemplates.tenantId, tenantId)),
+      }),
+      db.query.themeContentFormats.findMany({ where: eq(themeContentFormats.tenantId, tenantId) }),
+      db.query.contentPackages.findMany({
+        where: and(eq(contentPackages.themePageId, id), eq(contentPackages.tenantId, tenantId)),
+        orderBy: [desc(contentPackages.createdAt)],
+        limit: 10,
+      }),
+      selectedAccountIds.length ? db.query.socialAccounts.findMany({
+        where: and(eq(socialAccounts.tenantId, tenantId), eq(socialAccounts.isActive, true), inArray(socialAccounts.id, selectedAccountIds)),
+        columns: { id: true, platform: true },
+      }) : Promise.resolve([]),
+    ]);
+    const formatMap = new Map(formats.map(f => [f.id, f]));
+    const populatedSlots = slots.map(slot => ({ ...slot, format: formatMap.get(slot.formatId) || null }));
 
     return {
       page,
@@ -201,7 +202,7 @@ export async function createThemePage(data: CreateThemePageInput) {
       `);
       const inserted = (result as any).rows?.[0] ?? (result as any)[0];
       if (!inserted) {
-        throw new Error("Free workspace limit reached (1 Theme Page). Upgrade to Pro for unlimited theme pages.");
+        throw new Error(`Workspace limit reached (${limit} theme pages).${limits.isPro ? "" : " Upgrade to Pro for up to 100 theme pages."}`);
       }
       page = inserted;
     } else {
@@ -236,6 +237,33 @@ export async function createThemePage(data: CreateThemePageInput) {
   }
 }
 
+/**
+ * Complete the five-step wizard in one browser-to-server round trip. The
+ * existing mutation actions remain the validation boundary; independent
+ * source/slot/template writes run concurrently after the page exists. Any
+ * partial setup is removed by the page's cascading foreign keys.
+ */
+export async function createThemePageFromWizard(data: CreateThemePageFromWizardInput) {
+  const pageResult = await createThemePage(data.page);
+  if (!pageResult.page) return { error: pageResult.error || "Failed to create theme page" };
+
+  const page = pageResult.page;
+  try {
+    const results = await Promise.all([
+      ...data.sources.map((source) => createThemeSource({ ...source, themePageId: page.id })),
+      ...data.slots.map((slot) => createThemeSlot({ ...slot, themePageId: page.id })),
+      ...(data.template ? [createThemeTemplate({ ...data.template, themePageId: page.id })] : []),
+    ]);
+    const failed = results.find((result) => result.error);
+    if (failed?.error) throw new Error(failed.error);
+    return { page };
+  } catch (error) {
+    await db.delete(themePages).where(and(eq(themePages.id, page.id), eq(themePages.tenantId, page.tenantId)));
+    console.error("Failed to complete theme page wizard:", error);
+    return { error: error instanceof Error ? error.message : "Failed to complete theme page setup" };
+  }
+}
+
 export async function updateThemePage(id: string, data: UpdateThemePageInput) {
   try {
     const tenantId = await getActiveTenantId();
@@ -249,7 +277,8 @@ export async function updateThemePage(id: string, data: UpdateThemePageInput) {
       return { error: "Page name must contain 1-120 characters" };
     }
 
-    const [updated] = await db.update(themePages)
+    const updated = await db.transaction(async tx => {
+    const [row] = await tx.update(themePages)
       .set({
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
         ...(data.niche !== undefined ? { niche: normalizeText(data.niche, 240) } : {}),
@@ -262,6 +291,9 @@ export async function updateThemePage(id: string, data: UpdateThemePageInput) {
       })
       .where(and(eq(themePages.id, id), eq(themePages.tenantId, tenantId)))
       .returning();
+      if (row) await invalidateThemeMedia(tx, tenantId, { kind: "page", id }, data.name !== undefined || data.brandKit !== undefined);
+      return row;
+    });
 
     if (!updated) {
       return { error: "Theme page not found" };

@@ -17,7 +17,7 @@ function joeySession(): AuthFn<Request> {
     }
     return {
       authenticator: "better-auth",
-      principalId: session.user.id,
+      principalId: JSON.stringify([session.user.id, tenantId]),
       principalType: "user",
       attributes,
     };

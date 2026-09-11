@@ -254,3 +254,77 @@ textarea {
   color: #ffffff;
 }
 
+/* --- Liveblocks Theme Styling --- */
+.lb-root,
+:is(.dark, [data-theme="dark"]) .lb-root,
+.joey-collaboration-root {
+  --lb-accent: #ffe633;
+  --lb-accent-foreground: #0a0908;
+  --lb-background: #141312;
+  --lb-foreground: #f4f4f5;
+  --lb-radius: 0.75rem;
+  --lb-destructive: #ef4444;
+  --lb-elevation-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --lb-inset-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  font-family: inherit;
+}
+
+.lb-button[data-variant="primary"] {
+  --lb-accent: #ffe633;
+  background-color: #ffe633 !important;
+  color: #0a0908 !important;
+  font-weight: 600 !important;
+}
+
+.lb-composer {
+  background: #141312 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.75rem !important;
+}
+
+.lb-thread {
+  background: transparent !important;
+}
+
+.lb-comment {
+  border-radius: 0.75rem;
+}
+
+.lb-comment-mention,
+.lb-composer-mention {
+  color: #ffe633 !important;
+  background: rgba(255, 230, 51, 0.12) !important;
+  border-radius: 0.375rem !important;
+  padding: 0.1em 0.35em !important;
+  font-weight: 500 !important;
+}
+
+.lb-dropdown,
+.lb-emoji-picker {
+  background: #181716 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
+}
+
+.lb-tooltip {
+  background: #1f1e1d !important;
+  color: #f4f4f5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 0.5rem !important;
+}
+
+.lb-inbox-notification {
+  background: transparent !important;
+  transition: background-color 0.15s ease;
+}
+
+.lb-inbox-notification:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.lb-inbox-notification[data-unread] {
+  background: rgba(255, 230, 51, 0.04) !important;
+}
+
+

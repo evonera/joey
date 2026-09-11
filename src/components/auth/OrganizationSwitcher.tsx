@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { getAuthoritativeWorkspaceData } from '@/app/actions/workspace';
 import { 
   Building01Icon, 
   ArrowDown01Icon, 
@@ -27,6 +28,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   const [loading, setLoading] = React.useState(true);
   const [switching, setSwitching] = React.useState<string | null>(null);
   const [isCreating, setIsCreating] = React.useState(false);
+  const [isPro, setIsPro] = React.useState(false);
   const [newOrgName, setNewOrgName] = React.useState('');
   const [creatingLoading, setCreatingLoading] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -44,20 +46,26 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
       });
 
       if (error) {
-        toast.error(error.message || 'Failed to create workspace');
+        toast.error(
+          error.message?.toLowerCase().includes("limit") || error.message?.toLowerCase().includes("organization")
+            ? "Free accounts are limited to 1 workspace. Upgrade to Pro to create more workspaces."
+            : (error.message || 'Failed to create workspace')
+        );
         return;
       }
 
       if (data?.id) {
-        await authClient.organization.setActive({ organizationId: data.id });
+        const active = await authClient.organization.setActive({ organizationId: data.id });
+        if (active.error) throw new Error(active.error.message);
       }
 
       toast.success('Workspace created');
       setIsCreating(false);
       setNewOrgName('');
       setOpen(false);
-      router.refresh();
-      window.location.reload();
+      // A workspace switch must discard cached tenant data and mounted providers.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign("/dashboard");
     } catch {
       toast.error('An error occurred while creating workspace');
     } finally {
@@ -68,11 +76,12 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   const fetchOrgs = React.useCallback(async () => {
     try {
       setLoading(true);
-      const { data: orgList } = await authClient.organization.list();
+      const [{ data: orgList }, workspace] = await Promise.all([authClient.organization.list(), getAuthoritativeWorkspaceData()]);
       
+      setIsPro(Boolean(workspace.isPro));
       if (orgList && Array.isArray(orgList)) {
         setOrganizations(orgList as unknown as Organization[]);
-        setActiveOrg((prev) => prev ?? (orgList[0] as unknown as Organization));
+        setActiveOrg((orgList.find(org => org.id === workspace.activeTenantId) as Organization) ?? null);
       }
     } catch {
       // Graceful fallback
@@ -103,11 +112,13 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
 
     setSwitching(orgId);
     try {
-      await authClient.organization.setActive({ organizationId: orgId });
+      const result = await authClient.organization.setActive({ organizationId: orgId });
+      if (result.error) throw new Error(result.error.message);
       toast.success('Workspace switched');
       setOpen(false);
-      router.refresh();
-      window.location.reload();
+      // A workspace switch must discard cached tenant data and mounted providers.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign("/dashboard");
     } catch {
       toast.error('Failed to switch workspace');
     } finally {
@@ -122,6 +133,8 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 rounded-lg border border-border bg-sidebar-accent/50 px-3 py-1.5 text-xs text-foreground hover:bg-sidebar-accent hover:border-border/80 transition-all focus:outline-none w-full"
         aria-expanded={open}
+        aria-label="Switch workspace"
+        onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
       >
         <Building01Icon size={14} className="text-[#ffe633] shrink-0" />
         <span className="font-medium max-w-[140px] truncate text-left flex-1">
@@ -146,7 +159,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                   key={org.id}
                   type="button"
                   onClick={() => handleSelectOrg(org.id)}
-                  disabled={isPendingThis}
+                  disabled={switching !== null}
                   className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer text-left ${
                     isActive 
                       ? 'bg-accent text-accent-foreground font-medium' 
@@ -206,7 +219,13 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
             ) : (
               <button
                 type="button"
-                onClick={() => setIsCreating(true)}
+                onClick={() => {
+                  if (organizations.length >= 1 && !isPro) {
+                    toast.error("Free accounts are limited to 1 workspace. Upgrade to Pro to create more workspaces.");
+                    return;
+                  }
+                  setIsCreating(true);
+                }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ffe633] hover:text-[#f0d82e] rounded-lg hover:bg-[#ffe633]/10 transition-colors cursor-pointer"
               >
                 <PlusSignIcon size={14} />

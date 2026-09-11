@@ -23,7 +23,12 @@ export function adaptPackageForPlatform(
   const rawHashtags = pkg.hashtags || [];
 
   const mediaUrls: string[] = Array.isArray(pkg.renderedAssetUrls)
-    ? pkg.renderedAssetUrls.map((a: any) => (typeof a === "string" ? a : a.url)).filter(Boolean)
+    ? pkg.renderedAssetUrls.filter((asset: unknown) => {
+        const url = typeof asset === "string" ? asset : asset && typeof asset === "object" && "url" in asset ? asset.url : undefined;
+        if (typeof url !== "string") return false;
+        const type = typeof asset === "object" && asset && "type" in asset ? asset.type : /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url) ? "video" : "image";
+        return mediaType === "video" ? type === "video" : type === "image";
+      }).map((a: any) => (typeof a === "string" ? a : a.url)).filter(Boolean)
     : [];
 
   if (platform === "x") {
@@ -49,13 +54,13 @@ export function adaptPackageForPlatform(
 
   if (platform === "tiktok") {
     const topHashtags = rawHashtags.slice(0, 5).join(" ");
-    const adaptedCaption = `${pkg.title}\n\nComment below to get the full guide.\n\n${topHashtags}`;
+    const adaptedCaption = `${rawCaption}${topHashtags ? `\n\n${topHashtags}` : ""}`;
 
     return {
       platform: "tiktok",
       adaptedCaption,
       adaptedHashtags: rawHashtags.slice(0, 5),
-      mediaUrls,
+      mediaUrls: mediaUrls.slice(0, 1),
       // Adapting copy cannot turn an image into a video. The publisher rejects
       // non-video TikTok packages until the video renderer produces an MP4.
       mediaType,
@@ -64,7 +69,7 @@ export function adaptPackageForPlatform(
 
   // Instagram Default
   const isCarousel = mediaType === "carousel" || mediaUrls.length > 1;
-  const swipeCallout = isCarousel ? "\n\n👉 Swipe left for the breakdown." : "";
+  const swipeCallout = isCarousel ? "\n\nSwipe left for the breakdown." : "";
   const hashtagBlock = rawHashtags.length > 0 ? `\n\n${rawHashtags.join(" ")}` : "";
   const adaptedCaption = `${rawCaption}${swipeCallout}${hashtagBlock}`;
 

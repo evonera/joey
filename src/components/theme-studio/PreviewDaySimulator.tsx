@@ -14,8 +14,8 @@ import {
   IconFileText,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { RemotionPreviewPlayer } from "./video/RemotionPreviewPlayer";
-import { buildVerticalNewsComposition, RemotionCompositionProps } from "@/lib/theme-studio/renderers/video-renderer";
+import { ScenePreviewPlayer } from "./video/ScenePreviewPlayer";
+import { buildVerticalNewsComposition, VideoPreviewComposition } from "@/lib/theme-studio/renderers/video-scene-spec";
 
 interface SlotItem {
   id: string;
@@ -60,7 +60,7 @@ interface SimulatedPackage {
     isVerified: boolean;
   };
   slides?: Array<{ num: number; title: string; text: string; tag: string }>;
-  composition?: RemotionCompositionProps;
+  composition?: VideoPreviewComposition;
 }
 
 export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySimulatorProps) {
@@ -114,13 +114,11 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
           slotLabel: slot.label || slot.format?.name || `Slot #${index + 1}`,
           format: slot.format,
           title,
-          caption: `🔥 Essential update for ${themePage.niche || "enthusiasts"}.\n\nSwipe through for the breakdown. What's your take on this?\n\nComment 'GUIDE' to receive the full report in your DMs!\n\n#${(themePage.niche || "daily").replace(/\s+/g, "")} #updates #insights`,
+          caption: `Essential update for ${themePage.niche || "enthusiasts"}.\n\nSwipe through for the breakdown. What's your take on this?\n\nComment 'GUIDE' to receive the full report in your DMs.\n\n#${(themePage.niche || "daily").replace(/\s+/g, "")} #updates #insights`,
           provenance: {
-            sourcesUsed: sources.slice(0, 2).map((s) => s.name),
-            rightsCategories: [...new Set(sources.slice(0, 2).map((s) => s.rightsCategory))],
-            isVerified: sources.length > 0 && sources.slice(0, 2).every((s) =>
-              ["owned", "generated", "public_domain", "cc_by", "cc_by_sa", "commercial_license"].includes(s.rightsCategory)
-            ),
+            sourcesUsed: [],
+            rightsCategories: [],
+            isVerified: false,
           },
           slides,
           composition: videoComposition,
@@ -138,9 +136,9 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">"Preview Day" Simulation</h2>
+          <h2 className="text-xl font-bold tracking-tight">Sample Day Preview</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Simulate a full 24-hour cycle of posts, reels, and carousels for <strong>{themePage.name}</strong> before publishing.
+            Explore sample layouts for <strong>{themePage.name}</strong>. This uses example copy, not content from your sources.
           </p>
         </div>
         <button
@@ -151,32 +149,32 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
           {simulating ? (
             <>
               <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-              <span>Synthesizing angles...</span>
+              <span>Preparing samples…</span>
             </>
           ) : (
             <>
               <IconSparkles className="w-4 h-4" />
-              <span>{hasRun ? "Re-simulate Day" : "Run Simulation"}</span>
+              <span>{hasRun ? "Refresh Samples" : "Show Samples"}</span>
             </>
           )}
         </button>
       </div>
 
       {!hasRun ? (
-        <div className="p-16 text-center border border-dashed rounded-2xl bg-card/40">
+        <div className="p-6 sm:p-12 text-center border border-dashed rounded-2xl bg-card/40">
           <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4">
             <IconSparkles className="w-7 h-7" />
           </div>
-          <h3 className="text-base font-semibold">Simulate a Full Day's Production</h3>
+          <h3 className="text-base font-semibold">Preview Your Content Layouts</h3>
           <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1.5 mb-6">
-            Joey will take your {sources.length} sources and compose packages for all {slots.length} daily mix slots with brand formatting, vertical video reels, and proof-of-provenance.
+            Preview your brand formatting across {slots.length} content slots. Samples are not saved or published. Real generated posts appear in Drafts after your automation runs.
           </p>
           <button
             onClick={handleSimulate}
             disabled={simulating}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors shadow-sm"
           >
-            <IconSparkles className="w-4 h-4" /> Start Simulation
+            <IconSparkles className="w-4 h-4" /> Show Sample Day
           </button>
         </div>
       ) : (
@@ -185,7 +183,7 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
             <div className="flex items-center gap-2">
               <IconCheck className="w-4 h-4 shrink-0 font-bold" />
               <span>
-                Simulated <strong>{simulatedPackages.length} packages</strong> across {sources.length} active feeds. Interactive video player and carousel viewer are active.
+                Showing <strong>{simulatedPackages.length} sample posts</strong>. Example content has not been researched or checked for publishing rights.
               </span>
             </div>
             <button
@@ -239,7 +237,7 @@ function PackageCard({
             Slot #{idx + 1} · {pkg.slotLabel}
           </span>
           <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${pkg.provenance.isVerified ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
-            <IconShieldCheck className="w-3.5 h-3.5" /> {pkg.provenance.isVerified ? "Rights verified" : "Review required"}
+            <IconShieldCheck className="w-3.5 h-3.5" /> {pkg.provenance.isVerified ? "Rights verified" : "Sample only"}
           </span>
         </div>
 
@@ -264,7 +262,7 @@ function PackageCard({
           <div className="my-2">
             {isVideo && pkg.composition ? (
               <div className="py-2 bg-zinc-950/5 dark:bg-zinc-950/40 rounded-2xl border p-4 flex flex-col items-center">
-                <RemotionPreviewPlayer composition={pkg.composition} />
+                <ScenePreviewPlayer composition={pkg.composition} />
               </div>
             ) : isCarousel && pkg.slides ? (
               <div className="space-y-3">
@@ -388,7 +386,7 @@ function PackageCard({
       </div>
 
       <div className="pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-        <span>Sources: {pkg.provenance.sourcesUsed.join(", ") || "Feed sync"}</span>
+        <span>Example copy · No sources consulted</span>
         <span className="font-semibold text-primary">Interactive Preview</span>
       </div>
     </div>

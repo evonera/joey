@@ -5,7 +5,7 @@ import {
   normalizeContentBody, 
   hashContentBody 
 } from "@/lib/theme-studio/pipeline/deduplicator";
-import { fallbackItemUrl, parseRssXml } from "@/lib/theme-studio/pipeline/source-poller";
+import { fallbackItemUrl, parseRssXml, extractCleanDomain, parseHtmlMetadata } from "@/lib/theme-studio/pipeline/source-poller";
 import { verifyRightsAndProvenance } from "@/lib/theme-studio/pipeline/fact-rights-verifier";
 import { calculateTopicOverlap } from "@/lib/theme-studio/pipeline/story-clusterer";
 
@@ -165,6 +165,54 @@ describe("Theme Studio Editorial Pipeline", () => {
 
       expect(overlapAB).toBeGreaterThanOrEqual(0.3);
       expect(overlapAC).toBe(0);
+    });
+  });
+
+  describe("Domain Extraction", () => {
+    it("extracts clean domain from various URL formats and strings", () => {
+      expect(extractCleanDomain("https://www.cricinfo.com/")).toBe("cricinfo.com");
+      expect(extractCleanDomain("https://espncricinfo.com/cricket/news/1234")).toBe("espncricinfo.com");
+      expect(extractCleanDomain("www.theverge.com")).toBe("theverge.com");
+      expect(extractCleanDomain("techcrunch.com")).toBe("techcrunch.com");
+    });
+  });
+
+  describe("HTML Metadata & OpenGraph Extraction", () => {
+    it("extracts og:title, og:description, and og:image from raw HTML pages", () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Default HTML Title</title>
+            <meta property="og:title" content="India Clinches Historic Series Victory in Melbourne" />
+            <meta property="og:description" content="A stunning bowling display in the final session sealed the win." />
+            <meta property="og:image" content="https://img1.hscicdn.com/image/upload/cricket/trophy.jpg" />
+          </head>
+          <body><h1>Match Summary</h1></body>
+        </html>
+      `;
+      const item = parseHtmlMetadata(html, "https://www.espncricinfo.com/series/ind-in-aus-2026/match-1234");
+      expect(item).toBeDefined();
+      expect(item?.title).toBe("India Clinches Historic Series Victory in Melbourne");
+      expect(item?.body).toBe("A stunning bowling display in the final session sealed the win.");
+      expect(item?.metadata?.heroImage).toBe("https://img1.hscicdn.com/image/upload/cricket/trophy.jpg");
+    });
+
+    it("falls back to standard title and description tags when OpenGraph is omitted", () => {
+      const html = `
+        <html>
+          <head>
+            <title>Breaking: Major Trade Confirmed Ahead of Deadline</title>
+            <meta name="description" content="Sources confirm blockbuster multi-player deal agreed upon." />
+          </head>
+          <body>News article</body>
+        </html>
+      `;
+      const item = parseHtmlMetadata(html, "https://sports.example.com/trade-news");
+      expect(item).toBeDefined();
+      expect(item?.title).toBe("Breaking: Major Trade Confirmed Ahead of Deadline");
+      expect(item?.body).toBe("Sources confirm blockbuster multi-player deal agreed upon.");
+      expect(item?.metadata).toBeUndefined();
     });
   });
 });

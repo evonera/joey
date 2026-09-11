@@ -208,7 +208,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
     canStageReplyEdit: (replyDraftId) => !editingReplyDraftIds.current.has(replyDraftId),
     stageReplyEdit,
   }), [selectConversationForAgent, stageReplyEdit]);
-  const webMcpAvailable = useWebMcpTools(engagementWebMcpTools);
+  useWebMcpTools(engagementWebMcpTools);
   const stagedReplyCount = Object.keys(stagedReplyEdits).length;
 
   const selectConversation = async (conversation: UnifiedInboxConversation) => {
@@ -258,7 +258,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   return (
     <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><div className="flex items-center gap-2"><h1 className="text-2xl font-semibold tracking-tight">Engagement</h1>{webMcpAvailable ? <Badge variant="outline" className="gap-1 border-indigo-300 text-indigo-700 dark:border-indigo-800 dark:text-indigo-300"><IconSparkles className="size-3" />WebMCP ready</Badge> : null}</div><p className="text-sm text-muted-foreground">Comments, direct messages, mentions, reactions, and reviews in one queue.</p></div>
+        <div><h1 className="text-2xl font-semibold tracking-tight">Engagement</h1><p className="text-sm text-muted-foreground">Comments, direct messages, mentions, reactions, and reviews in one queue.</p></div>
         <Button variant="outline" onClick={sync} disabled={syncing}><IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "Syncing…" : "Sync Zernio"}</Button>
       </div>
 
@@ -266,13 +266,14 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
 
       <div className="grid min-h-0 flex-1 overflow-hidden rounded-xl border bg-background lg:grid-cols-[22rem_minmax(0,1fr)]">
         <aside className={`${mobileDetailOpen ? "hidden" : "flex"} min-h-[34rem] flex-col border-b lg:flex lg:border-b-0 lg:border-r`}>
-          <div className="space-y-3 border-b p-3">
+          <div className="space-y-3 border-b bg-muted/15 p-3">
             <form className="relative" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()); }}>
               <IconSearch className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search people or messages" className="pl-9" />
             </form>
-            <div className="flex flex-wrap gap-2">
-              {["all", "dm", "comment", "review"].map((value) => <Button key={value} size="sm" variant={kind === value ? "default" : "outline"} onClick={() => setKind(value)} className="capitalize">{value}</Button>)}
-              <Button size="sm" variant={status === "all" ? "default" : "outline"} onClick={() => setStatus((value) => value === "all" ? "active" : "all")}>{status === "all" ? "All status" : "Active"}</Button>
+            <div className="flex items-center gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1" aria-label="Conversation filters">
+              {["all", "dm", "comment", "review"].map((value) => <Button key={value} size="sm" variant="ghost" onClick={() => setKind(value)} className={`h-7 shrink-0 capitalize ${kind === value ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"}`}>{value === "dm" ? "Messages" : value}</Button>)}
+              <span className="mx-1 h-4 w-px shrink-0 bg-border" />
+              <Button size="sm" variant="ghost" onClick={() => setStatus((value) => value === "all" ? "active" : "all")} className={`h-7 shrink-0 ${status === "active" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"}`}>Active only</Button>
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">

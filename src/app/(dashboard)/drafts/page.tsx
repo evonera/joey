@@ -20,9 +20,12 @@ import {
   Sparkles,
   PenSquare
 } from "lucide-react";
+import { CollaborativeAvatars } from "@/components/collaboration/collaborative-avatars";
+import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
 
 const PLATFORMS = [
   { id: "all", label: "All Platforms" },
+  { id: "theme", label: "Theme channels" },
   { id: "x", label: "𝕏 / Twitter" },
   { id: "linkedin", label: "LinkedIn" },
   { id: "instagram", label: "Instagram" },
@@ -32,13 +35,22 @@ const PLATFORMS = [
   { id: "tiktok", label: "TikTok" },
 ];
 
+const SOURCES = [
+  { id: "all", label: "All Sources" },
+  { id: "theme_studio", label: "Theme pages" },
+  { id: "compose", label: "Compose / Manual" },
+  { id: "flows", label: "Flows" },
+];
+
 export default function DraftsPage() {
+    const { isConfigured, tenantId } = useLiveblocksConfig();
     const [drafts, setDrafts] = useState<any[]>([]);
     const [counts, setCounts] = useState<Record<string, number>>({
         all: 0,
         pending_review: 0,
         scheduled: 0,
         approved: 0,
+        publishing: 0,
         published: 0,
         failed: 0,
         rejected: 0,
@@ -46,6 +58,7 @@ export default function DraftsPage() {
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState<string>("pending_review");
     const [platformFilter, setPlatformFilter] = useState<string>("all");
+    const [sourceFilter, setSourceFilter] = useState<string>("all");
     const [searchQuery, setSearchQuery] = useState<string>("");
     
     // Bulk selection state
@@ -68,7 +81,7 @@ export default function DraftsPage() {
 
     const fetchDrafts = useCallback(async () => {
         setLoading(true);
-        const res = await getDrafts(statusFilter, platformFilter, searchQuery);
+        const res = await getDrafts(statusFilter, platformFilter, searchQuery, sourceFilter);
         if (res.drafts) {
             setDrafts(res.drafts);
             // Clear selections that are no longer visible
@@ -82,7 +95,7 @@ export default function DraftsPage() {
             });
         }
         setLoading(false);
-    }, [statusFilter, platformFilter, searchQuery]);
+    }, [statusFilter, platformFilter, searchQuery, sourceFilter]);
 
     useEffect(() => {
         refreshCounts();
@@ -101,6 +114,7 @@ export default function DraftsPage() {
         { id: "pending_review", label: "Pending", count: counts.pending_review },
         { id: "scheduled", label: "Scheduled", count: counts.scheduled },
         { id: "approved", label: "Approved", count: counts.approved },
+        { id: "publishing", label: "Publishing", count: counts.publishing },
         { id: "published", label: "Published", count: counts.published },
         { id: "failed", label: "Failed", count: counts.failed },
         { id: "rejected", label: "Rejected", count: counts.rejected },
@@ -183,17 +197,25 @@ export default function DraftsPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Drafts</h1>
+                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Drafts Queue</h1>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        Review, edit, approve, and manage AI-generated drafts before publication.
+                        Universal review hub — approve, edit, and schedule drafts from Compose, Theme Studio, and Flows in one place.
                     </p>
                 </div>
-                <Button asChild size="sm" className="gap-1.5 self-start sm:self-auto">
-                    <Link href="/compose">
-                        <PenSquare className="w-4 h-4" />
-                        Compose New
-                    </Link>
-                </Button>
+                <div className="flex items-center gap-3 self-start sm:self-auto">
+                    {isConfigured && tenantId && (
+                        <div className="flex items-center gap-2 bg-muted/40 border rounded-lg px-2.5 py-1">
+                            <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">Reviewers:</span>
+                            <CollaborativeAvatars roomId={`workspace:${tenantId}:drafts`} maxAvatars={4} />
+                        </div>
+                    )}
+                    <Button asChild size="sm" className="gap-1.5">
+                        <Link href="/compose">
+                            <PenSquare className="w-4 h-4" />
+                            Compose New
+                        </Link>
+                    </Button>
+                </div>
             </div>
 
             {/* Tabs */}
@@ -228,13 +250,27 @@ export default function DraftsPage() {
                 <div className="relative flex-1 w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
-                        placeholder="Search drafts by content..."
+                        placeholder="Search drafts by content or title..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="pl-9 h-9"
                     />
                 </div>
-                <div className="w-full sm:w-48">
+                <div className="w-full sm:w-44">
+                    <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                        <SelectTrigger className="h-9">
+                            <SelectValue placeholder="All Sources" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {SOURCES.map(s => (
+                                <SelectItem key={s.id} value={s.id}>
+                                    {s.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="w-full sm:w-44">
                     <Select value={platformFilter} onValueChange={setPlatformFilter}>
                         <SelectTrigger className="h-9">
                             <SelectValue placeholder="All Platforms" />
@@ -328,14 +364,14 @@ export default function DraftsPage() {
                                     Ask Joey to draft content
                                 </p>
                                 <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-                                    <Link href="/dashboard" className="text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-3 py-1.5 rounded-full transition-colors border">
-                                        Draft a thread about our new launch
+                                    <Link href="/theme-studio" className="text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 px-3 py-1.5 rounded-full transition-colors border border-primary/20 font-medium">
+                                        Configure a Theme Page for daily auto-drafts
                                     </Link>
                                     <Link href="/dashboard" className="text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-3 py-1.5 rounded-full transition-colors border">
-                                        Summarize our latest article for LinkedIn
+                                        Ask Joey to draft a viral thread
                                     </Link>
-                                    <Link href="/dashboard" className="text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-3 py-1.5 rounded-full transition-colors border">
-                                        Write a punchy tweet about tech trends
+                                    <Link href="/compose" className="text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-3 py-1.5 rounded-full transition-colors border">
+                                        Write a post manually in Compose
                                     </Link>
                                 </div>
                             </div>
@@ -413,4 +449,3 @@ export default function DraftsPage() {
         </div>
     );
 }
-

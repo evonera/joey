@@ -102,18 +102,18 @@ export function PostCalendar({
   const CustomToolbar = React.useCallback((toolbar: any) => {
     return (
       <div className="flex flex-col gap-4 mb-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center border rounded-md overflow-hidden">
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none border-r" onClick={() => toolbar.onNavigate('PREV')}>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none border-r" aria-label="Previous period" onClick={() => toolbar.onNavigate('PREV')}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" onClick={() => toolbar.onNavigate('NEXT')}>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" aria-label="Next period" onClick={() => toolbar.onNavigate('NEXT')}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
 
-            <span className="text-base font-semibold min-w-[150px] text-center">
+            <span className="text-sm sm:text-base font-semibold text-center">
               {format(toolbar.date, "MMMM yyyy")}
             </span>
 
@@ -122,6 +122,7 @@ export function PostCalendar({
             </Button>
 
             <select
+              aria-label="Calendar view"
               className="text-sm font-medium bg-transparent border rounded-md p-1 focus:ring-0 cursor-pointer outline-none"
               value={view}
               onChange={(e) => onViewChange(e.target.value)}
@@ -141,9 +142,10 @@ export function PostCalendar({
   }, [view, onViewChange, rightActions]);
 
   return (
-    <div className={cn("h-full relative flex flex-col min-h-[700px] bg-background")}>
+    <div className={cn("relative flex h-full min-h-[700px] min-w-0 flex-col bg-background")}>
       <DndProvider backend={HTML5Backend}>
       <DragAndDropCalendar
+        style={{ height: "max(640px, calc(100dvh - 220px))" }}
         localizer={localizer}
         events={events}
         date={currentDate}
@@ -156,15 +158,15 @@ export function PostCalendar({
         onSelectEvent={(event: any) => onPostClick(event)}
         onEventDrop={({ event, start }: any) => {
           // Prevent dragging already-published posts; only drafts can be rescheduled.
-          if (event.status === "published") {
-            toast.error("Published posts cannot be rescheduled.");
+          if (!event.canReschedule) {
+            toast.error("This post cannot be rescheduled from the calendar.");
             return;
           }
           onReschedule(event.id, new Date(start)).then((ok) => {
             if (ok) onReload?.();
           });
         }}
-        draggableAccessor={(event: any) => event.status !== "published"}
+        draggableAccessor={(event: CalendarPost) => event.canReschedule === true}
         resizable={false}
         slotPropGetter={(date) => {
           const isPastSlot = isBefore(date, new Date())
@@ -172,8 +174,7 @@ export function PostCalendar({
             ? {
               className: "rbc-time-slot-disabled",
               style: {
-                backgroundColor: "hsl(var(--muted) / 0.35)",
-                pointerEvents: "none",
+                backgroundColor: "color-mix(in oklch, var(--muted) 35%, transparent)",
               },
             }
             : {}
@@ -181,8 +182,7 @@ export function PostCalendar({
         dayPropGetter={(date: Date) => {
           const isPastDate = isBefore(date, startOfDay(new Date()))
           return {
-            className: isPastDate ? "pointer-events-none" : "",
-            style: isPastDate ? { backgroundColor: "hsl(var(--muted) / 0.2)" } : {}
+            style: isPastDate ? { backgroundColor: "color-mix(in oklch, var(--muted) 20%, transparent)" } : {}
           }
         }}
         components={{
@@ -224,7 +224,8 @@ export function PostCalendar({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="p-1 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label={`Create post for ${format(cellDate, "MMMM d")}`}
+                        className="p-1 h-6 w-6 rounded-full opacity-100 sm:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                         onClick={(e) => {
                           e.stopPropagation()
                           onCreatePost(cellDate)

@@ -25,25 +25,25 @@ type Step = 1 | 2 | 3 | 4 | 5;
 const VOICE_PRESETS = [
   {
     id: "bold",
-    title: "⚡ Bold & High-Signal",
+    title: "Bold & High-Signal",
     description: "Punchy, opinionated, direct. Zero filler, strong hooks.",
     prompt: "Direct, confident, contrarian where justified. Short sentences, data-backed insights, zero fluff.",
   },
   {
     id: "technical",
-    title: "🧠 Technical & Deep",
+    title: "Technical & Deep",
     description: "Architecture breakdown, engineering lessons, code snippets.",
     prompt: "Technical, analytical, precise. Explaining the 'why' and architectural trade-offs behind engineering decisions.",
   },
   {
     id: "founder",
-    title: "🚀 Founder & Build-in-Public",
+    title: "Founder & Build-in-Public",
     description: "Authentic founder journey, metrics, honest reflections.",
     prompt: "Transparent, founder-first, conversational. Sharing real numbers, failures, wins, and product lessons.",
   },
   {
     id: "approachable",
-    title: "🤝 Friendly & Educational",
+    title: "Friendly & Educational",
     description: "Accessible explanations, warm tone, community-first.",
     prompt: "Warm, engaging, educational. Breaking down complex concepts so any curious reader can understand.",
   },
@@ -83,7 +83,7 @@ export default function OnboardingPage() {
       }
       setAiKeySuccess(true);
       if (typeof window !== "undefined") {
-        if (selectedProvider === "google") localStorage.setItem("joey_preferred_model", "google/gemini-3.6-flash");
+        if (selectedProvider === "google") localStorage.setItem("joey_preferred_model", "google/gemini-3.8-flash");
         if (selectedProvider === "openai") localStorage.setItem("joey_preferred_model", "openai/gpt-5.6-luna");
         if (selectedProvider === "anthropic") localStorage.setItem("joey_preferred_model", "anthropic/claude-haiku-4.5");
       }
@@ -252,7 +252,7 @@ export default function OnboardingPage() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-sm">Google Gemini</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold">
-                    Free Tier ⚡
+                    Free tier
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -324,7 +324,7 @@ export default function OnboardingPage() {
                   disabled={savingAiKey || !aiKeyInput.trim()}
                   className="px-4 py-2 rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 text-xs font-semibold disabled:opacity-50 hover:opacity-90 transition-opacity"
                 >
-                  {savingAiKey ? "Saving..." : aiKeySuccess ? "Saved ✓" : "Save Key"}
+                  {savingAiKey ? "Saving..." : aiKeySuccess ? "Saved" : "Save Key"}
                 </button>
               </div>
               {aiKeyError ? (
@@ -507,7 +507,7 @@ export default function OnboardingPage() {
         {step === 5 && (
           <div className="space-y-6 text-center">
             <div className="space-y-1.5">
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">You&apos;re Ready to Launch! 🚀</h2>
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">You&apos;re ready to launch</h2>
               <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
                 Here are the 5 superpowers now at your fingertips in the Joey Dashboard:
               </p>
@@ -556,7 +556,7 @@ export default function OnboardingPage() {
                 onClick={() => router.push("/dashboard")}
                 className="w-full sm:w-auto px-8 py-3 rounded-full bg-zinc-900 text-white dark:bg-[#ffe633] dark:text-zinc-950 font-bold text-sm hover:opacity-90 transition-opacity shadow-md"
               >
-                Go to Dashboard 🚀
+                Go to Dashboard
               </button>
             </div>
             <p className="text-[11px] text-muted-foreground">

@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-09-07",
+  "build": "Next.js 16.3.3 production build with NEXT_OUTPUT=server",
+  "method": "Union of each route's client-reference manifest, polyfills and root runtime; gzip applied per emitted JavaScript chunk. This is a deterministic build-manifest ceiling, not a measured browser transfer or Core Web Vitals trace.",
+  "sharedDashboardShell": {
+    "files": 22,
+    "rawBytes": 1567554,
+    "gzipBytes": 473239
+  },
+  "routes": [
+    { "route": "/dashboard", "files": 28, "rawBytes": 2280454, "gzipBytes": 659161, "incrementalGzipBytes": 185922 },
+    { "route": "/settings", "files": 24, "rawBytes": 1614795, "gzipBytes": 485612, "incrementalGzipBytes": 12373 },
+    { "route": "/analytics", "files": 25, "rawBytes": 1711308, "gzipBytes": 513367, "incrementalGzipBytes": 40128 },
+    { "route": "/compose", "files": 26, "rawBytes": 1915786, "gzipBytes": 555446, "incrementalGzipBytes": 82207 },
+    { "route": "/flows", "files": 23, "rawBytes": 1575156, "gzipBytes": 476101, "incrementalGzipBytes": 2862 },
+    { "route": "/theme-studio", "files": 22, "rawBytes": 1567554, "gzipBytes": 473239, "incrementalGzipBytes": 0 }
+  ],
+  "limitations": [
+    "Manifest membership can include lazily requested chunks and therefore is an upper bound.",
+    "Cold/warm HTTP transfer, LCP, CLS, INP and heap growth require the Chrome DevTools MCP trace service, which was unavailable in this session.",
+    "The authenticated deployed app is older than this build, so its network payload would not validate the current branch."
+  ]
+}

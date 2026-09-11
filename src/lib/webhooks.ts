@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { webhookEvents, socialAccounts, flowRuns } from "@/lib/db/schema";
-import { eq, and, sql, gt } from "drizzle-orm";
+import { eq, and, sql, gt, inArray } from "drizzle-orm";
 
 export function verifyWebhookSignature(rawBody: string, signature: string, secret: string): boolean {
   const computed = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
@@ -29,6 +29,8 @@ export async function storeWebhookEvent(payload: ZernioWebhookPayload) {
       eventType: payload.event,
       payload,
       status: "pending",
+      createdAt: new Date(),
+      updatedAt: new Date(),
     })
     .onConflictDoNothing({ target: webhookEvents.eventId })
     .returning();
@@ -109,6 +111,7 @@ export async function markWebhookProcessed(eventId: string, error?: string, expe
     .set({
       status: error ? "failed" : "processed",
       processedAt: new Date(),
+      updatedAt: new Date(),
       errorMessage: error,
     })
     .where(
@@ -124,13 +127,18 @@ export async function resolveTenantFromPayload(payload: ZernioWebhookPayload): P
   const postPlatforms = Array.isArray((payload as any).post?.platforms)
     ? (payload as any).post.platforms
     : [];
-  const accountId = account?.accountId || account?.id || postPlatforms.find(
-    (platform: unknown) => platform && typeof platform === "object" && "accountId" in platform,
-  )?.accountId;
-  if (!accountId) return null;
+  const accountIds = [...new Set([
+    account?.accountId || account?.id || account?._id,
+    ...postPlatforms.map((platform: { accountId?: unknown }) => platform?.accountId),
+  ].filter((id): id is string => typeof id === "string" && id.length > 0))];
+  if (!accountIds.length) return null;
 
-  const socialAccount = await db.query.socialAccounts.findFirst({
-    where: eq(socialAccounts.platformAccountId, String(accountId)),
+  const accounts = await db.query.socialAccounts.findMany({
+    where: and(inArray(socialAccounts.platformAccountId, accountIds), eq(socialAccounts.isActive, true)),
+    columns: { tenantId: true },
   });
-  return socialAccount?.tenantId ?? null;
+  const workspaceIds = [...new Set(accounts.map((row) => row.tenantId))];
+  // Legacy shared-key imports can leave the same remote account in multiple
+  // workspaces. Never route private content to an arbitrary first match.
+  return workspaceIds.length === 1 ? workspaceIds[0] : null;
 }

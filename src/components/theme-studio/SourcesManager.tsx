@@ -12,7 +12,8 @@ import {
   IconClock,
   IconLoader2,
   IconCheck,
-  IconX
+  IconX,
+  IconSparkles
 } from "@tabler/icons-react";
 import { createThemeSource, deleteThemeSource, toggleThemeSource } from "@/app/actions/theme-sources";
 import { toast } from "sonner";
@@ -49,9 +50,9 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
   const [isAdding, setIsAdding] = React.useState(false);
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
-  const [sourceType, setSourceType] = React.useState<"rss" | "http" | "reddit">("rss");
+  const [sourceType, setSourceType] = React.useState<"exa_domain" | "exa_topic" | "rss" | "reddit" | "http">("exa_domain");
   const [freshnessHours, setFreshnessHours] = React.useState(24);
-  const [rightsCategory, setRightsCategory] = React.useState("unknown");
+  const [rightsCategory, setRightsCategory] = React.useState("news_fair_use");
   const [loading, setLoading] = React.useState(false);
   const [sourceToDelete, setSourceToDelete] = React.useState<SourceItem | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -77,7 +78,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
         setIsAdding(false);
         setName("");
         setUrl("");
-        toast.success("Source feed added");
+        toast.success("Source connected successfully");
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to add source");
@@ -115,11 +116,11 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
     }
   }
 
-
   function renderSourceIcon(type: string) {
     if (type === "reddit") return <IconBrandReddit className="w-4 h-4 text-orange-500" />;
-    if (type === "http") return <IconWorld className="w-4 h-4 text-blue-500" />;
-    return <IconRss className="w-4 h-4 text-amber-500" />;
+    if (type === "exa_domain" || type === "http") return <IconWorld className="w-4 h-4 text-blue-500" />;
+    if (type === "exa_topic") return <IconSparkles className="w-4 h-4 text-amber-400" />;
+    return <IconRss className="w-4 h-4 text-emerald-500" />;
   }
 
   function renderRightsBadge(rights: string) {
@@ -174,26 +175,49 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Source Type</label>
               <select
                 value={sourceType}
-                onChange={(e) => setSourceType(e.target.value as "rss" | "http" | "reddit")}
+                onChange={(e) => setSourceType(e.target.value as any)}
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
-                <option value="rss">RSS / Atom XML Feed</option>
-                <option value="reddit">Reddit Subreddit (e.g. r/nba)</option>
-                <option value="http">HTTP Web / REST Endpoint</option>
+                <option value="exa_domain">News website / domain (Exa Search)</option>
+                <option value="exa_topic">Keyword topic search (Exa News)</option>
+                <option value="rss">RSS / Atom XML feed</option>
+                <option value="reddit">Reddit subreddit (e.g. r/cricket, r/nba)</option>
+                <option value="http">HTTP REST endpoint / JSON</option>
               </select>
             </div>
             <div className="md:col-span-2">
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                Feed URL / Endpoint
+                {sourceType === "exa_domain"
+                  ? "Website URL or Domain"
+                  : sourceType === "exa_topic"
+                  ? "Topic or Search Query"
+                  : sourceType === "reddit"
+                  ? "Subreddit Name or URL"
+                  : "Feed URL or Endpoint"}
               </label>
               <input
                 type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder={sourceType === "reddit" ? "https://reddit.com/r/nba or r/nba" : "https://example.com/feed.xml"}
+                placeholder={
+                  sourceType === "exa_domain"
+                    ? "e.g. cricinfo.com, espn.com, techcrunch.com or https://www.cricinfo.com/"
+                    : sourceType === "exa_topic"
+                    ? "e.g. Cricket World Cup highlights, AI breakthroughs, NBA trade news"
+                    : sourceType === "reddit"
+                    ? "https://reddit.com/r/cricket or r/cricket"
+                    : "https://example.com/feed.xml"
+                }
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono text-xs"
                 required
               />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {sourceType === "exa_domain"
+                  ? "Joey polls articles from this domain with Exa Neural Search and extracts high-resolution hero images."
+                  : sourceType === "exa_topic"
+                  ? "Discovers the latest high-engagement news across reputable publications for this topic."
+                  : "Polled regularly, deduplicated, and clustered into daily story packages."}
+              </p>
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">
@@ -337,4 +361,3 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
     </div>
   );
 }
-

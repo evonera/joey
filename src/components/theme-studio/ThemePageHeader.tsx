@@ -64,7 +64,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
     () => createThemeStudioWebMcpTools(() => resolvedWebMcpState),
     [resolvedWebMcpState],
   );
-  const webMcpAvailable = useWebMcpTools(webMcpTools);
+  useWebMcpTools(webMcpTools);
 
   const tabs = [
     { label: "Overview", href: `/theme-studio/${page.id}`, icon: IconLayoutDashboard },
@@ -72,7 +72,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
     { label: "Daily Mix", href: `/theme-studio/${page.id}/mix`, icon: IconCalendar },
     { label: "Templates", href: `/theme-studio/${page.id}/templates`, icon: IconPalette },
     { label: "Preview Day", href: `/theme-studio/${page.id}/preview-day`, icon: IconEye },
-    { label: "DM Funnels", href: `/theme-studio/${page.id}/dm-rules`, icon: IconMessageCircle },
+    { label: "DM Automation", href: `/theme-studio/${page.id}/dm-rules`, icon: IconMessageCircle },
     { label: "Settings", href: `/theme-studio/${page.id}/settings`, icon: IconSettings },
   ];
 
@@ -88,7 +88,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
         const res = await activateThemePage(page.id);
         if (res.error) throw new Error(res.error);
         setStatus("active");
-        toast.success("Theme page recipe activated");
+        toast.success("Theme page automation activated");
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to update status");
@@ -99,7 +99,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
 
   return (
     <div className="border-b bg-card">
-      <div className="p-6 pb-0 max-w-7xl mx-auto">
+      <div className="py-4 sm:px-6 pb-0 max-w-7xl mx-auto min-w-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6">
           <div>
             <div className="flex items-center gap-3">
@@ -107,8 +107,8 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
                 <IconSparkles className="w-6 h-6" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold tracking-tight">{page.name}</h1>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-2xl font-bold tracking-tight break-words [overflow-wrap:anywhere]">{page.name}</h1>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
                       status === "active"
@@ -120,11 +120,6 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
                   >
                     {status}
                   </span>
-                  {webMcpAvailable ? (
-                    <span className="rounded-full border border-indigo-300 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:border-indigo-800 dark:text-indigo-300">
-                      WebMCP ready
-                    </span>
-                  ) : null}
                 </div>
                 {page.niche && (
                   <p className="text-sm text-muted-foreground mt-0.5">
@@ -150,11 +145,11 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
                 <IconLoader2 className="w-4 h-4 animate-spin" />
               ) : status === "active" ? (
                 <>
-                  <IconPlayerPause className="w-4 h-4" /> Pause Recipe
+                  <IconPlayerPause className="w-4 h-4" /> Pause Automation
                 </>
               ) : (
                 <>
-                  <IconPlayerPlay className="w-4 h-4" /> Activate Recipe
+                  <IconPlayerPlay className="w-4 h-4" /> Activate Automation
                 </>
               )}
             </button>

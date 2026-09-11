@@ -124,6 +124,35 @@ describe("Theme Studio Media Renderers (Phase 4)", () => {
       expect(svgSlides[0]).toContain("Slide 1: Overview");
       expect(svgSlides[2]).toContain("Slide 3: Execution");
     });
+
+    it("renders Pubity-style card with photo, PIP inset, yellow badge, and keyword highlights", () => {
+      const svg = renderCardSvg({
+        title: "BAD BUNNY IS NOW AN EMMY WINNER",
+        body: "Bad Bunny won his first Emmy for the Super Bowl LX Halftime Show as a producer.",
+        imageUrl: "https://images.unsplash.com/photo-bad-bunny.jpg",
+        pipInsetUrl: "https://images.unsplash.com/photo-crowd.jpg",
+        topBadge: "yellow_logo",
+        showDividerMark: true,
+        highlightWords: ["Super Bowl LX Halftime Show"],
+        brandKit: {
+          accentColor: "#ffe633",
+          watermark: "@Pubity",
+          logoMonogram: "P",
+        },
+        aspectRatio: "4:5",
+      });
+
+      expect(svg).toContain('height="1350"');
+      expect(svg).toContain("https://images.unsplash.com/photo-bad-bunny.jpg");
+      expect(svg).toContain("https://images.unsplash.com/photo-crowd.jpg");
+      expect(svg).toContain("bottomScrim");
+      expect(svg).toContain("pipCircle");
+      expect(svg).toContain("#ffe633");
+      expect(svg).toContain(">P<");
+      expect(svg).toContain("BAD BUNNY IS NOW AN");
+      expect(svg).toContain("EMMY WINNER");
+      expect(svg).toContain('<tspan fill="#ffe633" font-weight="bold">Super Bowl LX Halftime Show</tspan>');
+    });
   });
 
   describe("Video Composition & Captions Engine", () => {

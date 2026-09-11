@@ -7,6 +7,7 @@ import {
   engagementSyncCursors,
   socialAccounts,
   contentPackages,
+  tenants,
 } from "@/lib/db/schema";
 import type { ZernioWebhookPayload } from "@/lib/webhooks";
 import { getZernioClientForTenant } from "@/lib/publisher-core";
@@ -656,6 +657,13 @@ export async function syncZernioInboxBackfill(
   const bounded = boundedInboxSyncLimits(limits);
   const conversationLimit = bounded.conversations;
   const messageLimit = bounded.messagesPerConversation;
+  const [tenant, accounts] = await Promise.all([
+    db.query.tenants.findFirst({ where: eq(tenants.id, tenantId), columns: { zernioProfileId: true } }),
+    db.query.socialAccounts.findMany({ where: and(eq(socialAccounts.tenantId, tenantId), eq(socialAccounts.isActive, true)), columns: { platformAccountId: true } }),
+  ]);
+  if (!tenant?.zernioProfileId) throw new Error("Connect a social account in Accounts before syncing this workspace’s inbox.");
+  const profileId = tenant.zernioProfileId;
+  const allowedAccounts = new Set(accounts.map((account) => account.platformAccountId));
   const { zernio } = await getZernioClientForTenant(tenantId);
   const [conversationCursor, mentionCursor, reviewCursor] = await Promise.all([
     syncCursor(tenantId, "conversations"),
@@ -663,7 +671,7 @@ export async function syncZernioInboxBackfill(
     syncCursor(tenantId, "reviews"),
   ]);
   const response = await zernio.messages.listInboxConversations({
-    query: { limit: conversationLimit, sortOrder: "desc", cursor: conversationCursor?.cursor },
+    query: { profileId, limit: conversationLimit, sortOrder: "desc", cursor: conversationCursor?.cursor },
   });
   if (response.error) throw response.error;
 
@@ -671,7 +679,7 @@ export async function syncZernioInboxBackfill(
   let activitiesSynced = 0;
   let conversationPageComplete = true;
   for (const conversation of response.data?.data ?? []) {
-    if (!conversation.id || !conversation.platform || !conversation.accountId) continue;
+    if (!conversation.id || !conversation.platform || !conversation.accountId || !allowedAccounts.has(conversation.accountId)) continue;
     await ingestZernioEngagementEvent({
       id: `backfill:conversation:${conversation.platform}:${conversation.id}`,
       event: "conversation.started",
@@ -764,11 +772,11 @@ export async function syncZernioInboxBackfill(
   }
 
   const mentions = await zernio.mentions.listInboxMentions({
-    query: { limit: conversationLimit, sortOrder: "desc", cursor: mentionCursor?.cursor },
+    query: { profileId, limit: conversationLimit, sortOrder: "desc", cursor: mentionCursor?.cursor },
   });
   if (!mentions.error) {
     for (const mention of mentions.data?.data ?? []) {
-      if (!mention.id || !mention.accountId) continue;
+      if (!mention.id || !mention.accountId || !allowedAccounts.has(mention.accountId)) continue;
       const created = await ingestZernioEngagementEvent({
         id: `backfill:mention:${mention.id}`,
         event: "comment.received",
@@ -793,11 +801,11 @@ export async function syncZernioInboxBackfill(
   }
 
   const reviews = await zernio.reviews.listInboxReviews({
-    query: { limit: conversationLimit, sortBy: "date", sortOrder: "desc", cursor: reviewCursor?.cursor },
+    query: { profileId, limit: conversationLimit, sortBy: "date", sortOrder: "desc", cursor: reviewCursor?.cursor },
   });
   if (!reviews.error) {
     for (const review of reviews.data?.data ?? []) {
-      if (!review.id || !review.accountId || !review.platform) continue;
+      if (!review.id || !review.accountId || !review.platform || !allowedAccounts.has(review.accountId)) continue;
       const created = await ingestZernioEngagementEvent({
         id: `backfill:review:${review.id}`,
         event: "review.new",

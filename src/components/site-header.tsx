@@ -6,15 +6,18 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { NotificationBell } from "@/components/notification-bell"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { HelpTutorialDialog } from "@/components/help-tutorial-dialog"
+import { CollaborativeAvatars } from "@/components/collaboration/collaborative-avatars"
+import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider"
 
 const ROUTE_LABELS: Record<string, string> = {
-  "/dashboard": "Dashboard",
+  "/dashboard": "AI Chat",
   "/compose": "Compose",
   "/drafts": "Drafts",
   "/calendar": "Calendar",
   "/engagement": "Engagement",
   "/theme-studio": "Theme Studio",
   "/flows": "Flows",
+  "/flows/templates": "Flow Templates",
   "/assets": "Assets",
   "/brandkit": "Brand Kit",
   "/analytics": "Analytics",
@@ -26,6 +29,7 @@ const ROUTE_LABELS: Record<string, string> = {
 
 export function SiteHeader({ unreadNotificationCount = 0 }: { unreadNotificationCount?: number }) {
   const pathname = usePathname();
+  const { isConfigured, tenantId } = useLiveblocksConfig();
   const activeLabel =
     (pathname && ROUTE_LABELS[pathname]) ||
     (pathname?.startsWith("/flows/")
@@ -48,6 +52,11 @@ export function SiteHeader({ unreadNotificationCount = 0 }: { unreadNotification
           <span className="font-semibold text-foreground">{activeLabel}</span>
         </div>
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          {isConfigured && tenantId && (
+            <div className="flex items-center gap-2 border-r border-border pr-2 sm:pr-3">
+              <CollaborativeAvatars roomId={`workspace:${tenantId}:presence`} maxAvatars={3} />
+            </div>
+          )}
           <HelpTutorialDialog />
           <NotificationBell initialUnreadCount={unreadNotificationCount} />
           <ThemeToggle />

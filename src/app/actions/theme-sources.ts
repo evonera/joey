@@ -4,11 +4,14 @@ import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themeSources, themePages } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { normalizeThemeSourceLocation } from "@/lib/theme-studio/source-location";
+
+export type ThemeSourceType = 'rss' | 'http' | 'reddit' | 'exa_domain' | 'exa_topic';
 
 export interface CreateThemeSourceInput {
   themePageId: string;
   name: string;
-  sourceType: 'rss' | 'http' | 'reddit';
+  sourceType: ThemeSourceType;
   url: string;
   pollIntervalMinutes?: number;
   freshnessWindowHours?: number;
@@ -19,7 +22,7 @@ export interface CreateThemeSourceInput {
 
 export interface UpdateThemeSourceInput {
   name?: string;
-  sourceType?: 'rss' | 'http' | 'reddit';
+  sourceType?: ThemeSourceType;
   url?: string;
   pollIntervalMinutes?: number;
   freshnessWindowHours?: number;
@@ -29,12 +32,16 @@ export interface UpdateThemeSourceInput {
   isActive?: boolean;
 }
 
-function validSourceLocation(type: "rss" | "http" | "reddit", value: string): boolean {
+function validSourceLocation(type: ThemeSourceType, value: string): boolean {
   if (type === "reddit" && /^(?:r\/)?[A-Za-z0-9_]{2,21}$/.test(value)) return true;
+  if (type === "exa_domain" || type === "exa_topic") {
+    return typeof value === "string" && value.trim().length > 0;
+  }
   try {
     const parsed = new URL(value);
-    return parsed.protocol === "https:";
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
   } catch {
+    if (type === "http" && /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(value)) return true;
     return false;
   }
 }
@@ -63,8 +70,9 @@ export async function createThemeSource(data: CreateThemeSourceInput) {
     if (!data.url || !data.url.trim()) {
       return { error: "Source URL is required" };
     }
-    if (!['rss', 'http', 'reddit'].includes(data.sourceType)) return { error: "Unsupported source type" };
-    if (!validSourceLocation(data.sourceType, data.url.trim())) return { error: "Use an HTTPS URL or a valid subreddit name" };
+    if (!['rss', 'http', 'reddit', 'exa_domain', 'exa_topic'].includes(data.sourceType)) return { error: "Unsupported source type" };
+    const url = normalizeThemeSourceLocation(data.sourceType, data.url);
+    if (!validSourceLocation(data.sourceType, url)) return { error: "Use a valid URL, domain, or subreddit name" };
     if (data.pollIntervalMinutes !== undefined && (data.pollIntervalMinutes < 5 || data.pollIntervalMinutes > 10080)) return { error: "Poll interval must be between 5 minutes and 7 days" };
     if (data.freshnessWindowHours !== undefined && (data.freshnessWindowHours < 1 || data.freshnessWindowHours > 720)) return { error: "Freshness window must be between 1 and 720 hours" };
 
@@ -81,7 +89,7 @@ export async function createThemeSource(data: CreateThemeSourceInput) {
       themePageId: data.themePageId,
       name: data.name.trim(),
       sourceType: data.sourceType,
-      url: data.url.trim(),
+      url,
       pollIntervalMinutes: data.pollIntervalMinutes ?? 60,
       freshnessWindowHours: data.freshnessWindowHours ?? 24,
       geoFilter: data.geoFilter?.trim() || null,
@@ -100,15 +108,16 @@ export async function createThemeSource(data: CreateThemeSourceInput) {
 export async function updateThemeSource(id: string, data: UpdateThemeSourceInput) {
   try {
     const tenantId = await getActiveTenantId();
-    if (data.sourceType !== undefined && !['rss', 'http', 'reddit'].includes(data.sourceType)) return { error: "Unsupported source type" };
+    if (data.sourceType !== undefined && !['rss', 'http', 'reddit', 'exa_domain', 'exa_topic'].includes(data.sourceType)) return { error: "Unsupported source type" };
+    let normalizedUrl: string | undefined;
     if (data.url !== undefined || data.sourceType !== undefined) {
       const existing = await db.query.themeSources.findFirst({
         where: and(eq(themeSources.id, id), eq(themeSources.tenantId, tenantId)),
       });
       if (!existing) return { error: "Theme source not found" };
-      const type = data.sourceType ?? existing.sourceType as "rss" | "http" | "reddit";
-      const url = data.url?.trim() ?? existing.url;
-      if (!validSourceLocation(type, url)) return { error: "Use an HTTPS URL or a valid subreddit name" };
+      const type = data.sourceType ?? existing.sourceType as ThemeSourceType;
+      normalizedUrl = normalizeThemeSourceLocation(type, data.url ?? existing.url);
+      if (!validSourceLocation(type, normalizedUrl)) return { error: "Use a valid URL, domain, or subreddit name" };
     }
     if (data.pollIntervalMinutes !== undefined && (data.pollIntervalMinutes < 5 || data.pollIntervalMinutes > 10080)) return { error: "Poll interval must be between 5 minutes and 7 days" };
     if (data.freshnessWindowHours !== undefined && (data.freshnessWindowHours < 1 || data.freshnessWindowHours > 720)) return { error: "Freshness window must be between 1 and 720 hours" };
@@ -117,7 +126,7 @@ export async function updateThemeSource(id: string, data: UpdateThemeSourceInput
       .set({
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
         ...(data.sourceType !== undefined ? { sourceType: data.sourceType } : {}),
-        ...(data.url !== undefined ? { url: data.url.trim() } : {}),
+        ...(normalizedUrl !== undefined ? { url: normalizedUrl } : {}),
         ...(data.pollIntervalMinutes !== undefined ? { pollIntervalMinutes: data.pollIntervalMinutes } : {}),
         ...(data.freshnessWindowHours !== undefined ? { freshnessWindowHours: data.freshnessWindowHours } : {}),
         ...(data.geoFilter !== undefined ? { geoFilter: data.geoFilter?.trim() || null } : {}),

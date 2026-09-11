@@ -5,12 +5,20 @@ import {
 } from "@/lib/agent-model-resolver";
 import { encrypt } from "@/lib/crypto";
 
+vi.mock("@/lib/usage", () => ({
+  assertBudget: vi.fn().mockResolvedValue({ allowed: true }),
+  assertTrialQuota: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@/lib/db", () => {
   return {
     db: {
       query: {
         apiKeys: {
           findFirst: vi.fn(),
+        },
+        tenants: {
+          findFirst: vi.fn().mockResolvedValue({ subscriptionPlan: "free", subscriptionStatus: "active" }),
         },
       },
     },
@@ -52,6 +60,13 @@ describe("agent-model-resolver", () => {
     expect(resolved).toBe("AIzaSyEnvGoogleKey");
   });
 
+  it("does not silently spend a server key when the workspace disabled its own key", async () => {
+    const { db } = await import("@/lib/db");
+    process.env.OPENAI_API_KEY = "server-key-must-not-be-used";
+    vi.mocked(db.query.apiKeys.findFirst).mockResolvedValueOnce({ encryptedKey: encrypt("disabled-key", "tenant"), status: "revoked" } as any);
+    await expect(resolveProviderApiKey("openai", "tenant")).rejects.toThrow("disabled");
+  });
+
   it("throws a descriptive error when no API key is available for the requested model", async () => {
     const { db } = await import("@/lib/db");
     (db.query.apiKeys.findFirst as any).mockResolvedValueOnce(null);
@@ -84,5 +99,19 @@ describe("agent-model-resolver", () => {
 
     expect(result.model).toBeDefined();
     expect(result.modelContextWindowTokens).toBe(1_048_576);
+  });
+
+  it("enforces trial quota when using fallback server key for free tenant", async () => {
+    const { db } = await import("@/lib/db");
+    const { assertTrialQuota } = await import("@/lib/usage");
+    (db.query.apiKeys.findFirst as any).mockResolvedValueOnce(null);
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "AIzaSyTestServerKey";
+
+    await resolveModelForTurn({
+      preferredModel: "google/gemini-3.6-flash",
+      tenantId: "tenant-free-trial",
+    });
+
+    expect(assertTrialQuota).toHaveBeenCalledWith("tenant-free-trial", 3);
   });
 });

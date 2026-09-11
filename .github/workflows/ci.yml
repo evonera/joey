@@ -77,6 +77,14 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Apply database migrations
         run: npm run db:migrate
+      - name: Verify publishing and usage transactions
+        run: npm run test:integration
+        env:
+          JOEY_INTEGRATION_TEST: "true"
+      - name: Verify media job isolation and fencing
+        run: npm run test:integration:media
+        env:
+          JOEY_INTEGRATION_TEST: "true"
       - name: Run Playwright tests
         run: npm run test:e2e
       - uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1

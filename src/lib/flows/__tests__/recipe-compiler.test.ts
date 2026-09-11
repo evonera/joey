@@ -125,7 +125,7 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
 
   });
 
-  it("fails closed while video output has no production renderer", () => {
+  it("accepts video output for the production MP4 renderer", () => {
     const result = compileThemeRecipe({
       page: mockPage,
       sources: mockSources,
@@ -141,8 +141,8 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
         },
       }],
     });
-    expect(result.isValid).toBe(false);
-    expect(result.validationIssues).toContain("Remove video slots until a production MP4 renderer is configured.");
+    expect(result.isValid).toBe(true);
+    expect(result.validationIssues).not.toContain("Remove video slots until a production MP4 renderer is configured.");
   });
 
   it("refuses activation when an active slot has no matching publishing account", () => {

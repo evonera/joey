@@ -326,7 +326,7 @@ export default function LandingPage() {
                   BYOK Agent Chat
                 </h3>
                 <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
-                  Bring your own key for Google Gemini (including free-tier Gemini 2.5 Flash), OpenAI GPT-5.6, or Claude Haiku 4.5. Switch models dynamically with zero markup on tokens.
+                  Bring your own key for Google Gemini, OpenAI GPT-5.6, or Claude Haiku 4.5. Switch models dynamically with zero markup on tokens.
                 </p>
                 <div className="pt-2">
                   <Link
@@ -351,7 +351,7 @@ export default function LandingPage() {
 
                   <div className="p-3 rounded-lg bg-white/[0.04] border border-white/[0.06] space-y-1">
                     <div className="text-[10px] text-amber-400 font-medium">Selected Provider</div>
-                    <div className="text-white font-semibold">Gemini 2.5 Flash (Recommended ⚡)</div>
+                    <div className="text-white font-semibold">Gemini 2.5 Flash (Recommended)</div>
                     <div className="text-[11px] text-white/40">Free tier eligible • Sub-second drafting</div>
                   </div>
 

@@ -69,8 +69,8 @@ export const llmTaskConfig = z
     provider: z.enum(["openai", "anthropic", "openrouter", "google"]).default("openai"),
     model: z
       .string()
-      .default("gpt-4o-mini")
-      .describe("Model id, e.g. gpt-4o-mini, gpt-4o, claude-sonnet-4-5, gemini-3.6-flash"),
+      .default("gpt-5.6-luna")
+      .describe("Model id, e.g. gpt-5.6-luna, claude-haiku-4-5-20251001, gemini-3.8-flash"),
     systemPrompt: z.string().describe("What this step should do (the system prompt)"),
     userTemplate: z
       .string()
@@ -85,17 +85,17 @@ export const llmTaskConfig = z
   .transform((data) => {
     let model = data.model;
     if (model === "gemini-2.5-flash") {
-      model = "gemini-3.6-flash";
+      model = "gemini-3.8-flash";
     }
     if (data.provider === "google" && !model.startsWith("gemini-")) {
       model = "gemini-3.6-flash";
     } else if (data.provider === "anthropic" && !model.startsWith("claude-")) {
-      model = "claude-3-5-haiku-latest";
+      model = "claude-haiku-4-5-20251001";
     } else if (
       data.provider === "openai" &&
       (model.startsWith("claude-") || model.startsWith("gemini-"))
     ) {
-      model = "gpt-4o-mini";
+      model = "gpt-5.6-luna";
     }
     return { ...data, model };
   });
@@ -118,8 +118,19 @@ export const youtubeTranscriptConfig = z.object({ videoUrlField: z.string().opti
 export const telegramSendConfig = z.object({ chatId: z.string().min(1), messageTemplate: z.string().min(1).max(4096) });
 export const themeStudioRunConfig = z.object({ themePageId: z.string().min(1) });
 
+
+export const renderMediaConfig = z.object({
+  template: z.enum(["photo_headline", "photo_inset", "branded_clip", "minimal_meme"]),
+  mediaAssetId: z.uuid().optional().describe("Source asset ID from Assets; omit to use incoming assetId."),
+  insetAssetId: z.uuid().optional(),
+  title: z.string().min(1).max(500).describe("Headline; {{input}} uses incoming text or caption."),
+  brandName: z.string().max(100).default(""), handle: z.string().max(100).default(""),
+  durationSeconds: z.number().min(1).max(60).default(15),
+  captions: z.boolean().default(false).describe("Generate timed captions using the workspace OpenAI key."),
+});
+
 export const createDraftConfig = z.object({
-  platform: z.enum(["twitter", "linkedin", "facebook"]).default("twitter"),
+  platform: z.enum(["twitter", "linkedin", "facebook", "instagram", "tiktok", "youtube", "threads", "pinterest", "reddit"]).default("twitter"),
   contentField: z
     .string()
     .optional()
@@ -128,7 +139,7 @@ export const createDraftConfig = z.object({
     .string()
     .optional()
     .describe("Field of the incoming data holding image/video URL(s) (blank = auto-detect from input)"),
-  accountId: z.string().optional().describe("Connected account id (blank = tenant default)"),
+  accountId: z.union([z.uuid(), z.literal("")]).optional().describe("Connected account ID. Leave blank only when exactly one active account matches the platform."),
 });
 
 export const notifyConfig = z.object({
@@ -213,10 +224,11 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "ai.transcribe", category: "ai", label: "Transcribe", description: "Downloads an audio/video URL and transcribes it with OpenAI Whisper. Uses your OpenAI key; spend counts against budget.", inputs: ["media"], outputs: ["transcript"], configSchema: transcribeConfig },
   { type: "ai.image", category: "ai", label: "Generate image", description: "Generates and durably stores an image asset.", inputs: ["idea"], outputs: ["image"], configSchema: imageGenConfig },
   { type: "ai.youtube_transcript", category: "ai", label: "YouTube transcript", description: "Fetches a YouTube transcript through Supadata.", inputs: ["video"], outputs: ["transcript"], configSchema: youtubeTranscriptConfig },
-  { type: "action.create_draft", category: "action", label: "Create Draft", description: "Creates a draft in your approval queue. Nothing publishes until you approve it — this is how every flow must end.", inputs: ["data"], outputs: ["draft"], configSchema: createDraftConfig },
+  { type: "action.create_draft", category: "action", label: "Create Draft", description: "Creates a post in Drafts for review. Choose a connected account before publishing.", inputs: ["data"], outputs: ["draft"], configSchema: createDraftConfig },
   { type: "action.notify", category: "action", label: "Notify me", description: "Sends you an in-app notification (and email if your preferences allow).", inputs: ["data"], outputs: ["data"], configSchema: notifyConfig },
   { type: "action.save_asset", category: "action", label: "Save to Assets", description: "Downloads and registers a public file.", inputs: ["file"], outputs: ["asset"], configSchema: saveAssetConfig },
   { type: "action.telegram_send", category: "action", label: "Send Telegram", description: "Queues an idempotent Telegram message.", inputs: ["data"], outputs: ["message"], configSchema: telegramSendConfig },
+  { type: "action.render_media", category: "action", label: "Render finished media", description: "Renders a workspace asset with a headline and branding, then returns the completed export for a draft.", inputs: ["data"], outputs: ["media"], configSchema: renderMediaConfig },
   { type: "action.theme_studio_run", category: "action", label: "Run Theme Studio recipe", description: "Runs a tenant-scoped Theme Studio editorial recipe and stages compliant packages for human review.", inputs: ["data"], outputs: ["report"], configSchema: themeStudioRunConfig },
 ];
 

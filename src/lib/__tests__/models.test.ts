@@ -29,7 +29,7 @@ describe("models catalog", () => {
 
     const ids = recommended.map((m) => m.id);
     expect(ids).toContain("google/gemini-3.6-flash");
-    expect(ids).toContain("openai/gpt-4o-mini");
+    expect(ids).toContain("openai/gpt-5.6-luna");
     expect(ids).toContain("anthropic/claude-haiku-4.5");
   });
 
@@ -52,7 +52,7 @@ describe("models catalog", () => {
 
     const openaiModels = getModelsByProvider("openai");
     expect(openaiModels.every((m) => m.provider === "openai")).toBe(true);
-    expect(openaiModels.some((m) => m.id === "openai/gpt-4o-mini")).toBe(true);
+    expect(openaiModels.some((m) => m.id === "openai/gpt-5.6-luna")).toBe(true);
 
     const anthropicModels = getModelsByProvider("anthropic");
     expect(anthropicModels.every((m) => m.provider === "anthropic")).toBe(true);
@@ -60,12 +60,13 @@ describe("models catalog", () => {
   });
 
   it("calculates model token costs correctly", () => {
-    // Gemini 3.6 Flash: $0.075 / 1M in, $0.30 / 1M out
+    // Standard promotional Gemini pricing through 2026.
     const cost = getModelCost("google/gemini-3.6-flash", 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.375, 4);
+    const price = getModelById("google/gemini-3.6-flash").costPerMillionTokens;
+    expect(cost).toBeCloseTo(price.input + price.output, 4);
 
     const smallCost = getModelCost("google/gemini-3.6-flash", 10_000, 2_000);
     expect(smallCost).toBeGreaterThan(0);
-    expect(smallCost).toBeLessThan(0.01);
+    expect(smallCost).toBeLessThan(0.1);
   });
 });

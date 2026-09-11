@@ -7,9 +7,12 @@ import { imageGenConfig } from "../../catalog";
 import { defineNode } from "../../node-contract";
 import { outboundRequest } from "../../outbound-request";
 import { uploadAndRegisterFlowAsset } from "../../asset-registration";
+import { estimateGptImage2Cost, getGptImage2Cost } from "@/lib/ai-pricing";
+import { failUsageReservation, reserveUsageBudget, settleUsageReservation } from "@/lib/usage";
 
 async function openAiKey(tenantId: string) {
   const key = await db.query.apiKeys.findFirst({ where: and(eq(apiKeys.tenantId, tenantId), eq(apiKeys.provider, "openai")) });
+  if (key && key.status !== "active") throw new Error("The OpenAI key for this workspace is disabled. Update it in Settings → AI Providers.");
   if (key?.status === "active") return decrypt(key.encryptedKey, tenantId);
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
   throw new Error("No active OpenAI key is configured.");
@@ -47,7 +50,35 @@ export const imageGenNode = defineNode({
     const budget = await (await import("@/lib/usage")).assertBudget(ctx.tenantId);
     if (!budget.allowed) throw new Error("Monthly LLM budget reached.");
     const prompt = interpolatePrompt(config.prompt, input);
-    const result = await new OpenAI({ apiKey: await openAiKey(ctx.tenantId) }).images.generate({ model: "gpt-image-1", prompt, size: config.size, quality: config.quality }, { signal: ctx.signal });
+    const apiKey = await openAiKey(ctx.tenantId);
+    const reservation = await reserveUsageBudget({
+      tenantId: ctx.tenantId,
+      kind: "image",
+      modelId: "gpt-image-2",
+      estimatedCostUsd: estimateGptImage2Cost(prompt, config.size, config.quality),
+      metadata: { runId: ctx.runId, nodeId: ctx.nodeId, size: config.size, quality: config.quality },
+    });
+    let result: Awaited<ReturnType<OpenAI["images"]["generate"]>>;
+    try {
+      result = await new OpenAI({ apiKey }).images.generate({ model: "gpt-image-2", prompt, size: config.size, quality: config.quality }, { signal: ctx.signal });
+    } catch (error) {
+      try { await failUsageReservation(reservation.id, { providerOutcome: "ambiguous" }); } catch {}
+      throw error;
+    }
+    const imageUsage = result.usage;
+    await settleUsageReservation({
+      id: reservation.id,
+      inputTokens: imageUsage?.input_tokens ?? 0,
+      outputTokens: imageUsage?.output_tokens ?? 0,
+      actualCostUsd: imageUsage
+        ? getGptImage2Cost({
+            textInputTokens: imageUsage.input_tokens_details.text_tokens,
+            imageInputTokens: imageUsage.input_tokens_details.image_tokens,
+            outputTokens: imageUsage.output_tokens,
+          })
+        : estimateGptImage2Cost(prompt, config.size, config.quality),
+      metadata: { providerUsageAvailable: Boolean(imageUsage) },
+    });
     const generated = result.data?.[0];
     let body: Buffer | undefined;
     if (generated?.b64_json) {

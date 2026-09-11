@@ -157,6 +157,7 @@ export async function claimWebhookDispatches(
       SELECT we.id
       FROM webhook_events AS we
       WHERE we.status = 'pending' AND we.tenant_id IS NOT NULL
+        AND coalesce(we.payload->>'event', '') = ''
       ORDER BY we.created_at ASC, we.id ASC
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED

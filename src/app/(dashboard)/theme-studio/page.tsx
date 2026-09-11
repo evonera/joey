@@ -13,10 +13,11 @@ import {
 export default async function ThemeStudioOverviewPage() {
   const pagesRes = await getThemePages();
 
+  if (pagesRes.error) throw new Error(pagesRes.error);
   const pages = pagesRes.pages || [];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
+    <div className="w-full max-w-7xl mx-auto space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
         <div>
@@ -27,7 +28,7 @@ export default async function ThemeStudioOverviewPage() {
             <h1 className="text-2xl font-bold tracking-tight">Theme Studio</h1>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Build, operate, and automate niche social media pages with factual provenance and branded templates.
+            Create recurring content for Instagram, TikTok, and other social pages using your sources, brand, and templates.
           </p>
         </div>
 
@@ -40,19 +41,19 @@ export default async function ThemeStudioOverviewPage() {
       </div>
 
       {pages.length === 0 ? (
-        <div className="p-16 text-center border-2 border-dashed rounded-3xl bg-card/40 space-y-4">
+        <div className="px-6 py-12 sm:p-16 text-center border-2 border-dashed rounded-3xl bg-card/40 space-y-4">
           <div className="w-16 h-16 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-2">
             <IconSparkles className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-bold">No Theme Pages Created Yet</h2>
           <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
-            Theme Studio turns trusted news and stories into reviewable daily cards and carousels with source attribution and explicit rights gates.
+            Choose a topic, connect your accounts, and add sources. Joey prepares posts for your review before publishing.
           </p>
           <Link
             href="/theme-studio/new"
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 shadow-md"
           >
-            <IconPlus className="w-4 h-4" /> Start Theme Page Setup Wizard
+            <IconPlus className="w-4 h-4" /> Create your first theme page
           </Link>
         </div>
       ) : (

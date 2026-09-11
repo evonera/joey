@@ -72,6 +72,6 @@ describe("flow platform reconciliation", () => {
     expect(journal.entries.find(({ idx }) => idx === 34)).toEqual(expect.objectContaining({ tag: "0034_phase2_dispatch_ledger" }));
     expect(journal.entries.find(({ idx }) => idx === 35)).toEqual(expect.objectContaining({ tag: "0035_flow_tick_rotation" }));
     expect(journal.entries.find(({ idx }) => idx === 36)).toEqual(expect.objectContaining({ tag: "0036_one_guideline_per_tenant" }));
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({ idx: 37, tag: "0037_add_pause_reason_to_agent_configs" }));
+    expect(journal.entries.find(({ idx }) => idx === 37)).toEqual(expect.objectContaining({ idx: 37, tag: "0037_add_pause_reason_to_agent_configs" }));
   });
 });

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, integer, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, doublePrecision, integer, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // --- BetterAuth Required Tables ---
@@ -59,7 +59,12 @@ export const tenants = pgTable("tenants", {
   metadata: text("metadata"),
   subscriptionPlan: varchar("subscription_plan", { length: 50 }).default('free').notNull(),
   subscriptionStatus: varchar("subscription_status", { length: 50 }).default('inactive').notNull(),
+  zernioProfileId: text("zernio_profile_id"),
   dodoCustomerId: text("dodo_customer_id"),
+  dodoSubscriptionId: text("dodo_subscription_id"),
+  dodoCheckoutId: text("dodo_checkout_id"),
+  dodoCheckoutUrl: text("dodo_checkout_url"),
+  dodoCheckoutPlan: varchar("dodo_checkout_plan", { length: 50 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -170,6 +175,7 @@ export const webhookEvents = pgTable("webhook_events", {
   tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "set null" }),
   eventId: text("event_id").notNull().unique(),
   eventType: varchar("event_type", { length: 100 }).notNull(),
+  attemptCount: integer("attempt_count").default(0).notNull(),
   platform: varchar("platform", { length: 50 }),
   payload: jsonb("payload").notNull(),
   status: varchar("status", { length: 50 }).default("pending").notNull(),
@@ -177,7 +183,9 @@ export const webhookEvents = pgTable("webhook_events", {
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("webhook_events_recovery_idx").on(table.status, table.updatedAt).where(sql`${table.status} IN ('pending', 'processing', 'failed')`),
+]);
 
 /**
  * Durable ledger of proactive automation runs (reminder/webhook/engagement
@@ -204,7 +212,8 @@ export const usageTracking = pgTable("usage_tracking", {
   periodStart: timestamp("period_start").notNull(),
   inputTokensUsed: bigint("input_tokens_used", { mode: "number" }).default(0),
   outputTokensUsed: bigint("output_tokens_used", { mode: "number" }).default(0),
-  estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 4 }).default('0'),
+  estimatedCostUsd: numeric("estimated_cost_usd", { precision: 14, scale: 8 }).default('0'),
+  reservedCostUsd: numeric("reserved_cost_usd", { precision: 14, scale: 8 }).default('0').notNull(),
   budgetLimitUsd: numeric("budget_limit_usd", { precision: 10, scale: 4 }),
 });
 
@@ -818,3 +827,66 @@ export const dmAutomationRules = pgTable("dm_automation_rules", {
 export const fanoutProgressCol = {
   fanoutProgress: jsonb("fanout_progress").default({}).notNull(),
 };
+
+export const agentUsageEvents = pgTable("agent_usage_events", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  inputTokens: bigint("input_tokens", { mode: "number" }).notNull(),
+  outputTokens: bigint("output_tokens", { mode: "number" }).notNull(),
+  costUsd: numeric("cost_usd", { precision: 14, scale: 8 }).notNull(),
+  kind: varchar("kind", { length: 30 }).default("text").notNull(),
+  modelId: text("model_id"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, table => [index("agent_usage_events_tenant_created_idx").on(table.tenantId, table.createdAt)]);
+
+export const usageReservations = pgTable("usage_reservations", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 30 }).notNull(),
+  modelId: text("model_id"),
+  periodStart: timestamp("period_start").notNull(),
+  reservedCostUsd: numeric("reserved_cost_usd", { precision: 14, scale: 8 }).notNull(),
+  actualCostUsd: numeric("actual_cost_usd", { precision: 14, scale: 8 }),
+  inputTokens: bigint("input_tokens", { mode: "number" }).default(0).notNull(),
+  outputTokens: bigint("output_tokens", { mode: "number" }).default(0).notNull(),
+  status: varchar("status", { length: 20 }).default("reserved").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, table => [
+  index("usage_reservations_tenant_status_idx").on(table.tenantId, table.status, table.createdAt),
+]);
+
+
+export const mediaRenderJobs = pgTable("media_render_jobs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  inputHash: text("input_hash").notNull(),
+  spec: jsonb("spec").notNull(),
+  status: text("status").notNull().default("queued"),
+  attempt: integer("attempt").notNull().default(0),
+  attemptToken: text("attempt_token"),
+  outputAssetId: text("output_asset_id").references(() => assets.id, { onDelete: "set null" }),
+  error: text("error"),
+  usage: jsonb("usage"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, table => ({
+  inputIdx: uniqueIndex("media_render_jobs_tenant_id_input_hash_key").on(table.tenantId, table.inputHash),
+  queueIdx: index("media_render_jobs_queue_idx").on(table.status, table.updatedAt),
+}));
+
+export const mediaTranscripts = pgTable("media_transcripts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  inputHash: text("input_hash").notNull(),
+  status: text("status").notNull(),
+  attemptToken: text("attempt_token").notNull(),
+  words: jsonb("words"),
+  durationSeconds: doublePrecision("duration_seconds"),
+  estimatedCostUsd: numeric("estimated_cost_usd", { precision: 14, scale: 8 }).notNull().default("0"),
+  error: text("error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, table => [uniqueIndex("media_transcripts_tenant_id_input_hash_key").on(table.tenantId, table.inputHash)]);

@@ -1,8 +1,8 @@
 'use server';
 
 import { db } from "@/lib/db";
-import { drafts, posts, socialAccounts } from "@/lib/db/schema";
-import { and, eq, gte, lte, isNotNull, inArray } from "drizzle-orm";
+import { drafts, posts, socialAccounts, contentPackages, themeContentFormats } from "@/lib/db/schema";
+import { and, eq, gte, lte, isNotNull, inArray, or, sql, isNull } from "drizzle-orm";
 import { getActiveTenantId } from "@/lib/auth";
 
 export type CalendarPost = {
@@ -15,35 +15,30 @@ export type CalendarPost = {
   mediaUrls: string[];
   accountName?: string;
   avatarUrl?: string;
+  canReschedule?: boolean;
+  editUrl?: string;
+  source?: "draft" | "theme";
 };
 
 export async function getCalendarPosts(startDate: Date, endDate: Date) {
     try {
         const tenantId = await getActiveTenantId();
         
-        // 1. Fetch scheduled drafts
-        const scheduledDrafts = await db.query.drafts.findMany({
-            where: and(
-                eq(drafts.tenantId, tenantId),
-                isNotNull(drafts.scheduledFor),
-                gte(drafts.scheduledFor, startDate),
-                lte(drafts.scheduledFor, endDate)
-            )
-        });
-
-        // 2. Fetch published posts
-        const publishedPosts = await db.query.posts.findMany({
-            where: and(
-                eq(posts.tenantId, tenantId),
-                gte(posts.publishedAt, startDate),
-                lte(posts.publishedAt, endDate)
-            )
-        });
-
-        // 3. Fetch social accounts for mapping
-        const accounts = await db.query.socialAccounts.findMany({
-            where: eq(socialAccounts.tenantId, tenantId)
-        });
+        if (!(startDate instanceof Date) || !(endDate instanceof Date) || !Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate || endDate.getTime() - startDate.getTime() > 366 * 86_400_000) return { error: "Choose a valid calendar range of up to one year." };
+        const [scheduledDrafts, publishedPosts, accounts, packages, formats] = await Promise.all([
+            db.query.drafts.findMany({
+                where: and(eq(drafts.tenantId, tenantId), isNotNull(drafts.scheduledFor), gte(drafts.scheduledFor, startDate), lte(drafts.scheduledFor, endDate), inArray(drafts.status, ["draft", "pending_review", "approved", "scheduled", "publishing", "failed"])),
+            }),
+            db.query.posts.findMany({
+                where: and(eq(posts.tenantId, tenantId), eq(posts.status, "published"), gte(posts.publishedAt, startDate), lte(posts.publishedAt, endDate)),
+            }),
+            db.query.socialAccounts.findMany({ where: eq(socialAccounts.tenantId, tenantId) }),
+            db.query.contentPackages.findMany({ where: and(eq(contentPackages.tenantId, tenantId), or(
+                and(eq(contentPackages.status, "published"), gte(contentPackages.publishedAt, startDate), lte(contentPackages.publishedAt, endDate)),
+                and(inArray(contentPackages.status, ["pending_review", "approved", "publishing", "failed"]), gte(contentPackages.scheduledFor, startDate), lte(contentPackages.scheduledFor, endDate)),
+            )) }),
+            db.query.themeContentFormats.findMany({ where: eq(themeContentFormats.tenantId, tenantId), columns: { id: true, platform: true } }),
+        ]);
         const accountMap = new Map(accounts.map(a => [a.id, a]));
 
         // 4. Batch fetch drafts for published posts to avoid N+1 query
@@ -54,15 +49,17 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
         let draftMap = new Map();
         if (postDraftIds.length > 0) {
             const resolvedDrafts = await db.query.drafts.findMany({
-                where: inArray(drafts.id, postDraftIds)
+                where: and(eq(drafts.tenantId, tenantId), inArray(drafts.id, postDraftIds))
             });
             draftMap = new Map(resolvedDrafts.map(d => [d.id, d]));
         }
 
         const calendarEvents: CalendarPost[] = [];
 
+        const publishedDraftIds = new Set(postDraftIds);
         // Map drafts
         for (const draft of scheduledDrafts) {
+            if (publishedDraftIds.has(draft.id)) continue;
             const opts = draft.platformOptions as any;
             const platform = opts?.platform || 'unknown';
             const accountId = opts?.accountId;
@@ -71,6 +68,9 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
             if (draft.scheduledFor) {
                 calendarEvents.push({
                     id: draft.id,
+                    source: "draft",
+                    canReschedule: ["draft", "pending_review", "approved", "scheduled"].includes(draft.status),
+                    editUrl: `/compose?draftId=${draft.id}`,
                     title: draft.content || "Draft variants pending review",
                     start: new Date(draft.scheduledFor),
                     end: new Date(draft.scheduledFor),
@@ -103,6 +103,8 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
 
             calendarEvents.push({
                 id: post.id,
+                source: "draft",
+                canReschedule: false,
                 title: post.content,
                 start: new Date(post.publishedAt),
                 end: new Date(post.publishedAt),
@@ -114,6 +116,16 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
             });
         }
 
+        const formatMap = new Map(formats.map(row => [row.id, row.platform]));
+        for (const pkg of packages) {
+            const date = pkg.status === "published" ? pkg.publishedAt : pkg.scheduledFor;
+            if (!date) continue;
+            const media = Array.isArray(pkg.renderedAssetUrls) ? pkg.renderedAssetUrls : [];
+            calendarEvents.push({ id: pkg.id, source: "theme", canReschedule: false, editUrl: `/theme-studio/${pkg.themePageId}`,
+                title: pkg.title, start: date, end: date, status: pkg.status, platform: formatMap.get(pkg.formatId) || "unknown",
+                mediaUrls: media.map(item => typeof item === "string" ? item : item && typeof item === "object" && "url" in item ? item.url : undefined).filter((url): url is string => typeof url === "string"),
+            });
+        }
         return { posts: calendarEvents };
     } catch (error: any) {
         console.error("Failed to fetch calendar posts:", error);
@@ -129,17 +141,14 @@ export async function rescheduleDraft(draftId: string, scheduledFor: Date) {
     try {
         const tenantId = await getActiveTenantId();
 
-        const existing = await db.query.drafts.findFirst({
-            where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
-            columns: { scheduledFor: true, status: true },
-        });
-
-        if (!existing) return { error: "Draft not found" };
-        if (!existing.scheduledFor) return { error: "Only scheduled drafts can be rescheduled." };
-
-        await db.update(drafts)
+        if (!(scheduledFor instanceof Date) || !Number.isFinite(scheduledFor.getTime()) || scheduledFor <= new Date()) return { error: "Choose a future date and time." };
+        const changed = await db.update(drafts)
             .set({ scheduledFor })
-            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), isNotNull(drafts.scheduledFor),
+                inArray(drafts.status, ["draft", "pending_review", "approved", "scheduled"]),
+                or(isNull(drafts.errorMessage), sql`${drafts.errorMessage} NOT LIKE 'verify:%'`)))
+            .returning({ id: drafts.id });
+        if (!changed.length) return { error: "This draft cannot be rescheduled. It may already be publishing; refresh the calendar." };
 
         return { success: true };
     } catch (error: any) {

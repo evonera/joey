@@ -53,7 +53,6 @@ describe("Theme Studio UI Components", () => {
     expect(screen.getByText("Daily Mix")).toBeDefined();
     expect(screen.getByText("Templates")).toBeDefined();
     expect(screen.getByText("Preview Day")).toBeDefined();
-    expect(screen.getByText("WebMCP ready")).toBeDefined();
     expect(webMcpHarness.tools.map((tool) => tool.name)).toEqual([
       "theme_studio_inspect_page",
       "theme_studio_check_readiness",
@@ -176,7 +175,7 @@ describe("Theme Studio UI Components", () => {
       />
     );
 
-    expect(screen.getByText(/"Preview Day" Simulation/)).toBeDefined();
-    expect(screen.getByText(/Simulate a Full Day's Production/)).toBeDefined();
+    expect(screen.getByText(/Sample Day Preview/)).toBeDefined();
+    expect(screen.getByText(/Preview Your Content Layouts/)).toBeDefined();
   });
 });

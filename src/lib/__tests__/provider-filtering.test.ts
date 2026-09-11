@@ -49,7 +49,7 @@ describe("API Key Provider Scoping", () => {
   });
 
   it("filters getZernioClient by provider=zernio and passes tenantId to decrypt", async () => {
-    const { getZernioClient } = await import("@/app/actions/zernio");
+    const { getZernioClient } = await import("@/lib/zernio-session");
     const { db } = await import("@/lib/db");
     const { decrypt } = await import("@/lib/crypto");
 

@@ -69,7 +69,9 @@ interface DailyMixSchedulerProps {
 }
 
 export function DailyMixScheduler({ themePageId, initialSlots, availableFormats }: DailyMixSchedulerProps) {
-  const supportedFormats = availableFormats.filter((format) => format.mediaType !== "video");
+  // Video formats are queued through the production MP4 worker and are
+  // reviewed before publishing, just like image and carousel slots.
+  const supportedFormats = availableFormats;
   const [slots, setSlots] = React.useState<SlotItem[]>(initialSlots);
   const [isAdding, setIsAdding] = React.useState(false);
   const [selectedFormatId, setSelectedFormatId] = React.useState(supportedFormats[0]?.id || "");

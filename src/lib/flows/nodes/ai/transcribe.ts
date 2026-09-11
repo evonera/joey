@@ -1,6 +1,8 @@
 import { defineNode } from "../../node-contract";
 import { transcribeConfig } from "../../catalog";
 import OpenAI from "openai";
+import { getWhisperCost, WHISPER_USD_PER_MINUTE } from "@/lib/ai-pricing";
+import { failUsageReservation, reserveUsageBudget, settleUsageReservation } from "@/lib/usage";
 
 const configSchema = transcribeConfig;
 
@@ -35,23 +37,44 @@ export const transcribeNode = defineNode({
     if (!budget.allowed) {
       throw new Error(
         `Monthly LLM budget reached ($${budget.costUsd.toFixed(2)} / $${budget.budgetUsd}). ` +
-          "Raise the limit in Settings to keep flows running.",
+          "Review AI usage in Settings.",
       );
     }
 
-    const client = new OpenAI({ apiKey });
-    const transcription = await client.audio.transcriptions.create({
-      model: "whisper-1",
-      file: new File([buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer], "media.mp4", { type: contentType || "video/mp4" }),
-      ...(config.language ? { language: config.language } : {}),
-    }, { signal: ctx.signal });
-
-    try {
-      const { recordTokenUsage } = await import("@/lib/usage");
-      await recordTokenUsage(ctx.tenantId, Math.ceil(buffer.length / 1_000_000), 0);
-    } catch {
-      // ignore usage recording failures
+    const maximumMinutes = Number(process.env.AI_TRANSCRIPTION_MAX_MINUTES || 60);
+    if (!Number.isFinite(maximumMinutes) || maximumMinutes <= 0 || maximumMinutes > 240) {
+      throw new Error("AI_TRANSCRIPTION_MAX_MINUTES must be between 1 and 240.");
     }
+    const reservation = await reserveUsageBudget({
+      tenantId: ctx.tenantId,
+      kind: "transcription",
+      modelId: "whisper-1",
+      estimatedCostUsd: maximumMinutes * WHISPER_USD_PER_MINUTE,
+      metadata: { runId: ctx.runId, nodeId: ctx.nodeId, source: "flow" },
+    });
+    const client = new OpenAI({ apiKey });
+    let transcription: Awaited<ReturnType<typeof client.audio.transcriptions.create>>;
+    try {
+      transcription = await client.audio.transcriptions.create({
+        model: "whisper-1",
+        file: new File([buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer], "media.mp4", { type: contentType || "video/mp4" }),
+        response_format: "verbose_json",
+        ...(config.language ? { language: config.language } : {}),
+      }, { signal: ctx.signal });
+    } catch (error) {
+      try { await failUsageReservation(reservation.id, { providerOutcome: "ambiguous" }); } catch {}
+      throw error;
+    }
+    const durationSeconds = "duration" in transcription ? Number(transcription.duration) : NaN;
+    if (!Number.isFinite(durationSeconds) || durationSeconds < 0) {
+      await failUsageReservation(reservation.id, { providerOutcome: "missing_duration" });
+      throw new Error("Transcription provider did not return billable audio duration.");
+    }
+    await settleUsageReservation({
+      id: reservation.id,
+      actualCostUsd: getWhisperCost(durationSeconds),
+      metadata: { durationSeconds },
+    });
 
     return { output: { transcript: transcription.text, source: finalUrl } };
   },

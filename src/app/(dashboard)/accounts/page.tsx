@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { createElement, useState, useEffect } from "react";
 import { generateConnectUrl, getConnectedAccounts, disconnectAccount } from "@/app/actions/zernio";
 import { Loading03Icon as Loader2, PlusSignIcon as Plus, Delete02Icon as Trash2 } from "hugeicons-react";
 import { toast } from "sonner";
@@ -13,17 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-
-const PLATFORMS = [
-  { id: "twitter", name: "X (Twitter)" },
-  { id: "linkedin", name: "LinkedIn" },
-  { id: "facebook", name: "Facebook" },
-  { id: "instagram", name: "Instagram" },
-  { id: "tiktok", name: "TikTok" },
-  { id: "youtube", name: "YouTube" },
-  { id: "pinterest", name: "Pinterest" },
-  { id: "reddit", name: "Reddit" },
-];
+import { PLATFORMS } from "@/components/chat/social-platform-selector";
 
 export default function AccountsPage() {
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -31,6 +21,7 @@ export default function AccountsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
   const [accountToDisconnect, setAccountToDisconnect] = useState<any | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAccounts();
@@ -51,11 +42,21 @@ export default function AccountsPage() {
 
   const handleConnect = async (platform: string) => {
     setConnecting(platform);
-    const { url, error } = await generateConnectUrl(platform);
-    if (url) {
-      window.location.assign(url);
-    } else {
-      toast.error(error || "Failed to initiate connection");
+    setConnectionError(null);
+    try {
+      const { url, error } = await generateConnectUrl(platform);
+      if (url) {
+        window.location.assign(url);
+        return;
+      }
+      const message = error || "Failed to initiate connection";
+      setConnectionError(message);
+      toast.error(message);
+    } catch {
+      const message = "Couldn’t start the connection. Check the Zernio key in Settings and try again.";
+      setConnectionError(message);
+      toast.error(message);
+    } finally {
       setConnecting(null);
     }
   };
@@ -84,22 +85,31 @@ export default function AccountsPage() {
         <p className="text-muted-foreground mt-1">Manage your connected social media profiles</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="col-span-1 border border-border rounded-xl p-6 bg-card shadow-xs">
-          <h2 className="font-semibold mb-4 text-foreground">Connect a Platform</h2>
-          <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)]">
+        <div className="col-span-1 rounded-xl border border-border bg-card p-4 shadow-xs sm:p-5" data-tour="accounts-connect">
+          <h2 className="font-semibold text-foreground">Connect a platform</h2>
+          <p className="mb-4 mt-1 text-xs text-muted-foreground">Connections open Zernio’s secure provider authorization flow.</p>
+          {connectionError ? (
+            <p role="alert" className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">
+              {connectionError}
+            </p>
+          ) : null}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
             {PLATFORMS.map((platform) => (
               <button
                 key={platform.id}
-                onClick={() => handleConnect(platform.id)}
+                onClick={() => handleConnect(platform.canonicalKey)}
                 disabled={connecting !== null}
-                className="flex w-full items-center justify-between p-3 border border-border rounded-lg hover:bg-muted/50 transition-colors disabled:opacity-50 text-foreground cursor-pointer"
+                className="group flex w-full items-center gap-3 rounded-lg border border-border p-2.5 text-foreground transition-colors hover:border-foreground/20 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:text-foreground">
+                  {createElement(platform.icon, { className: "size-4" })}
+                </span>
                 <span className="font-medium text-sm">{platform.name}</span>
-                {connecting === platform.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                {connecting === platform.canonicalKey ? (
+                  <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
-                  <Plus className="h-4 w-4 text-muted-foreground" />
+                  <Plus className="ml-auto h-4 w-4 text-muted-foreground" />
                 )}
               </button>
             ))}

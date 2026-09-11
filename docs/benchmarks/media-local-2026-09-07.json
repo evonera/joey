@@ -1,0 +1,50 @@
+[
+  {
+    "durationSeconds": 15,
+    "renderSeconds": 7.016888375000001,
+    "repetition": 0,
+    "encoder": "libx264",
+    "bytes": 3559234,
+    "scope": "render-only; browser starts every render; excludes Modal allocation, network, queue, transcription"
+  },
+  {
+    "durationSeconds": 30,
+    "renderSeconds": 11.432458291000001,
+    "repetition": 0,
+    "encoder": "libx264",
+    "bytes": 7162682,
+    "scope": "render-only; browser starts every render; excludes Modal allocation, network, queue, transcription"
+  },
+  {
+    "durationSeconds": 60,
+    "renderSeconds": 23.183006958999997,
+    "repetition": 0,
+    "encoder": "libx264",
+    "bytes": 14284458,
+    "scope": "render-only; browser starts every render; excludes Modal allocation, network, queue, transcription"
+  },
+  {
+    "durationSeconds": 15,
+    "renderSeconds": 6.090085958000003,
+    "repetition": 1,
+    "encoder": "libx264",
+    "bytes": 3559234,
+    "scope": "render-only; browser starts every render; excludes Modal allocation, network, queue, transcription"
+  },
+  {
+    "durationSeconds": 30,
+    "renderSeconds": 12.385428624999996,
+    "repetition": 1,
+    "encoder": "libx264",
+    "bytes": 7162682,
+    "scope": "render-only; browser starts every render; excludes Modal allocation, network, queue, transcription"
+  },
+  {
+    "durationSeconds": 60,
+    "renderSeconds": 25.521200124999993,
+    "repetition": 1,
+    "encoder": "libx264",
+    "bytes": 14284458,
+    "scope": "render-only; browser starts every render; excludes Modal allocation, network, queue, transcription"
+  }
+]

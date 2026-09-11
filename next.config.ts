@@ -17,7 +17,9 @@ const withAnalyze = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
-  output: process.env.NEXT_OUTPUT === "export" ? "export" : (process.env.VERCEL ? undefined : "standalone"),
+  output: process.env.NEXT_OUTPUT === "export"
+    ? "export"
+    : (process.env.NEXT_OUTPUT === "server" || process.env.VERCEL ? undefined : "standalone"),
   // resvg ships platform-native binaries and must remain a Node server
   // dependency instead of being bundled into Turbopack ESM chunks.
   serverExternalPackages: ["@resvg/resvg-js"],
@@ -35,7 +37,11 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline'", // recharts/rbc inject inline styles
       "img-src 'self' blob: data: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https:",
+      `connect-src 'self' https: wss://*.liveblocks.io${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
+      "media-src 'self' blob: data: https:",
+      "worker-src 'self' blob:",
+      "base-uri 'self'",
+      "object-src 'none'",
       "frame-ancestors 'none'",
     ].join("; ");
 
@@ -46,15 +52,16 @@ const nextConfig: NextConfig = {
     //  - *.r2.cloudflarestorage.com uploaded assets served from Cloudflare R2
     //  - pbs.twimg.com / cdn.syndication.twimg.com / media.licdn.com /
     //    graph.facebook.com         social account avatars & post media previews
-    // All API traffic (Zernio, LLM providers, Dodo Payments) is server-side,
-    // so connect-src stays same-origin only.
+    // Liveblocks connects from the browser; R2 uploads use presigned HTTPS URLs.
     const cspReportOnly = [
       "default-src 'self'",
       `script-src ${scriptSrc}`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' blob: data: https://img.shields.io https://*.r2.cloudflarestorage.com https://pbs.twimg.com https://cdn.syndication.twimg.com https://media.licdn.com https://graph.facebook.com",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      "connect-src 'self' https://*.liveblocks.io wss://*.liveblocks.io https://*.r2.cloudflarestorage.com",
+      "media-src 'self' blob: data: https:",
+      "worker-src 'self' blob:",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

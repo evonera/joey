@@ -13,7 +13,7 @@ import {
   engagementConversations,
 } from "@/lib/db/schema";
 import { eq, and, desc, asc, inArray, ilike, lt, or } from "drizzle-orm";
-import { getZernioClient } from "./zernio";
+import { getZernioClient } from "@/lib/zernio-session";
 import { syncZernioInboxBackfill } from "@/lib/engagement-inbox";
 import { checkRateLimit } from "@/lib/rate-limit";
 

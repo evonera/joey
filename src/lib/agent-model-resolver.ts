@@ -3,6 +3,7 @@ import { getModelById, type ModelDefinition } from "@/lib/models";
 import { db } from "@/lib/db";
 import { apiKeys } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
+import { assertBudget } from "@/lib/usage";
 import { decrypt } from "@/lib/crypto";
 
 export interface ResolveModelOptions {
@@ -16,6 +17,45 @@ export interface ResolvedModelResult {
 }
 
 /**
+ * Resolves the API key for a requested model provider along with source metadata (BYOK vs platform).
+ */
+export async function resolveProviderKeyInfo(
+  provider: "google" | "openai" | "anthropic",
+  tenantId?: string | null
+): Promise<{ key: string | null; isByok: boolean }> {
+  if (tenantId) {
+    const keyRow = await db.query.apiKeys.findFirst({
+      where: and(
+        eq(apiKeys.tenantId, tenantId),
+        eq(apiKeys.provider, provider)
+      ),
+    });
+
+    if (keyRow && keyRow.status !== "active") throw new Error(`The ${provider} key for this workspace is disabled. Update it in Settings → AI Providers.`);
+    if (keyRow?.encryptedKey) {
+      try {
+        return { key: decrypt(keyRow.encryptedKey, tenantId), isByok: true };
+      } catch (err) {
+        console.warn(`[agent-model-resolver] Failed to decrypt ${provider} key for tenant ${tenantId}:`, err);
+        throw new Error(`The ${provider} key could not be read. Save it again in Settings → AI Providers.`);
+      }
+    }
+  }
+
+  // Fallback to process environment variables
+  let envKey: string | null = null;
+  if (provider === "google") {
+    envKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || null;
+  } else if (provider === "openai") {
+    envKey = process.env.OPENAI_API_KEY || null;
+  } else if (provider === "anthropic") {
+    envKey = process.env.ANTHROPIC_API_KEY || null;
+  }
+
+  return { key: envKey, isByok: false };
+}
+
+/**
  * Resolves the API key for a requested model provider.
  * Looks for tenant BYOK keys in Postgres first, then falls back to environment variables.
  */
@@ -23,36 +63,8 @@ export async function resolveProviderApiKey(
   provider: "google" | "openai" | "anthropic",
   tenantId?: string | null
 ): Promise<string | null> {
-  if (tenantId) {
-    const keyRow = await db.query.apiKeys.findFirst({
-      where: and(
-        eq(apiKeys.tenantId, tenantId),
-        eq(apiKeys.provider, provider),
-        eq(apiKeys.status, "active")
-      ),
-    });
-
-    if (keyRow?.encryptedKey) {
-      try {
-        return decrypt(keyRow.encryptedKey, tenantId);
-      } catch (err) {
-        console.warn(`[agent-model-resolver] Failed to decrypt ${provider} key for tenant ${tenantId}:`, err);
-      }
-    }
-  }
-
-  // Fallback to process environment variables
-  if (provider === "google") {
-    return process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || null;
-  }
-  if (provider === "openai") {
-    return process.env.OPENAI_API_KEY || null;
-  }
-  if (provider === "anthropic") {
-    return process.env.ANTHROPIC_API_KEY || null;
-  }
-
-  return null;
+  const info = await resolveProviderKeyInfo(provider, tenantId);
+  return info.key;
 }
 
 /**
@@ -90,16 +102,30 @@ export async function resolveLanguageModel(
 export async function resolveModelForTurn(
   options: ResolveModelOptions
 ): Promise<ResolvedModelResult> {
+  if (options.tenantId && !(await assertBudget(options.tenantId)).allowed) {
+    throw new Error("Workspace monthly AI budget reached. Review usage in Settings.");
+  }
   const modelDef = getModelById(options.preferredModel);
-  const apiKey = await resolveProviderApiKey(modelDef.provider, options.tenantId);
+  const keyInfo = await resolveProviderKeyInfo(modelDef.provider, options.tenantId);
 
-  if (!apiKey) {
+  if (!keyInfo.key) {
     throw new Error(
-      `No active API key found for ${modelDef.name} (${modelDef.provider.toUpperCase()}). Please add your key in Settings → API Keys or select a different model.`
+      `No active API key found for ${modelDef.name} (${modelDef.provider.toUpperCase()}). Please add your key in Settings → AI Providers or select a different model.`
     );
   }
 
-  const model = await resolveLanguageModel(modelDef, apiKey);
+  // If using platform fallback key and workspace is on free tier without an active subscription,
+  // enforce the 3-attempt trial limit.
+  if (options.tenantId && !keyInfo.isByok) {
+    const { isProTenant } = await import("@/lib/billing");
+    const isPro = await isProTenant(options.tenantId);
+    if (!isPro) {
+      const { assertTrialQuota } = await import("@/lib/usage");
+      await assertTrialQuota(options.tenantId, 3);
+    }
+  }
+
+  const model = await resolveLanguageModel(modelDef, keyInfo.key);
   return {
     model,
     modelContextWindowTokens: modelDef.contextWindowTokens,

@@ -59,6 +59,7 @@ export function ChatSidepanel({
 
     for (const msg of messages) {
       if (msg.role !== "assistant") continue;
+      const resultCountBeforeMessage = results.length;
 
       let text = "";
       if (typeof msg.content === "string") {
@@ -98,6 +99,19 @@ export function ChatSidepanel({
           type,
           language: lang,
           code,
+          sourceMessageId: msg.id,
+        });
+      }
+
+      const cleanText = text.trim();
+      if (results.length === resultCountBeforeMessage && cleanText.length >= 80) {
+        count += 1;
+        const heading = cleanText.match(/^(?:#{1,3}\s+)?([^\n]{3,80})/);
+        results.push({
+          id: `artifact_${msg.id || count}_${count}`,
+          title: heading?.[1]?.replace(/[*_`]/g, "").trim() || `Draft ${count}`,
+          type: "markdown",
+          code: cleanText,
           sourceMessageId: msg.id,
         });
       }
@@ -156,12 +170,12 @@ export function ChatSidepanel({
         onValueChange={(val) => onTabChange(val as "artifacts" | "context")}
         className="flex flex-col h-full gap-0"
       >
-        {/* Header with Tab switcher and Close button */}
-        <div className="flex h-14 items-center justify-between border-b border-border/40 px-3 shrink-0">
-          <TabsList className="h-8 p-0.5 bg-muted/40 border border-border/50">
+        {/* Header with Tab switcher and Close button - h-12 aligns with main header */}
+        <div className="flex h-12 items-center justify-between border-b border-border/40 px-3 shrink-0 bg-background/50 backdrop-blur-xs">
+          <TabsList className="h-7 p-0.5 bg-muted/40 border border-border/50">
             <TabsTrigger
               value="artifacts"
-              className="h-7 px-2.5 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
+              className="h-6 px-2.5 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
             >
               <FileIcon className="size-3.5" />
               <span>Artifacts</span>
@@ -174,7 +188,7 @@ export function ChatSidepanel({
 
             <TabsTrigger
               value="context"
-              className="h-7 px-2.5 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
+              className="h-6 px-2.5 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
             >
               <BrainIcon className="size-3.5" />
               <span>Context</span>
@@ -189,8 +203,8 @@ export function ChatSidepanel({
             variant="ghost"
             size="sm"
             onClick={onClose}
-            className="size-7 p-0 text-muted-foreground hover:text-foreground"
-            title="Close sidepanel"
+            className="size-7 p-0 text-muted-foreground hover:text-foreground cursor-pointer"
+            aria-label="Close sidepanel"
           >
             <CloseIcon className="size-4" />
           </Button>
