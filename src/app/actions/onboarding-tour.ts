@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { getActiveTenant } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -43,7 +43,9 @@ export async function startProductTourProgress(restart = false): Promise<Product
     columns: { currentStep: true, status: true },
   });
   const currentStatus = current ? tourStatusSchema.parse(current.status) : null;
-  const currentStep = !restart && currentStatus === "in_progress" ? current!.currentStep : 0;
+  // A paused tour resumes when the user explicitly starts it again. Completed
+  // tours start afresh, and onboarding can always request an explicit restart.
+  const currentStep = !restart && currentStatus !== "completed" && current ? current.currentStep : 0;
   const now = new Date();
 
   await db.insert(onboardingProgress).values({
@@ -67,7 +69,7 @@ export async function updateProductTourProgress(input: unknown): Promise<Product
   const now = new Date();
   const completedAt = value.status === "completed" ? now : null;
 
-  await db.insert(onboardingProgress).values({
+  const [saved] = await db.insert(onboardingProgress).values({
     tenantId,
     userId: user.id,
     currentStep: value.currentStep,
@@ -82,6 +84,21 @@ export async function updateProductTourProgress(input: unknown): Promise<Product
       completedAt,
       updatedAt: now,
     },
+    // A delayed checkpoint must never revive a completed tour. An explicit
+    // restart is handled by startProductTourProgress, not this checkpoint API.
+    where: or(
+      ne(onboardingProgress.status, "completed"),
+      eq(onboardingProgress.status, value.status),
+    ),
+  }).returning({ currentStep: onboardingProgress.currentStep, status: onboardingProgress.status });
+  if (saved) return { currentStep: saved.currentStep, status: tourStatusSchema.parse(saved.status) };
+
+  // The only expected no-op is a stale write after completion. Return the
+  // authoritative record rather than reporting the client payload as saved.
+  const current = await db.query.onboardingProgress.findFirst({
+    where: and(eq(onboardingProgress.tenantId, tenantId), eq(onboardingProgress.userId, user.id)),
+    columns: { currentStep: true, status: true },
   });
-  return value;
+  if (!current) throw new Error("Tour progress could not be saved.");
+  return { currentStep: current.currentStep, status: tourStatusSchema.parse(current.status) };
 }

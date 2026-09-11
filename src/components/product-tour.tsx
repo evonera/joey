@@ -21,7 +21,7 @@ const STEPS = [
   { route: "/accounts", target: "[data-tour='nav-accounts']", title: "Connect accounts", body: "Authorize social channels through Zernio, then target them from Chat, Compose, and Theme Studio." },
 ] as const;
 
-export function startProductTour(restart = true) {
+export function startProductTour(restart = false) {
   window.dispatchEvent(new CustomEvent(TOUR_EVENT, { detail: { restart } }));
 }
 
@@ -33,9 +33,16 @@ export function ProductTour() {
   const [rect, setRect] = React.useState<DOMRect | null>(null);
   const cardRef = React.useRef<HTMLElement>(null);
   const hasLoadedProgress = React.useRef(false);
+  const persistenceQueue = React.useRef(Promise.resolve());
 
   const save = React.useCallback((currentStep: number, status: "in_progress" | "dismissed" | "completed") => {
-    void updateProductTourProgress({ currentStep, status }).catch(() => undefined);
+    // Preserve the user's input order. The server also rejects stale writes
+    // after completion in case another tab has an older in-flight request.
+    persistenceQueue.current = persistenceQueue.current
+      .catch(() => undefined)
+      .then(() => updateProductTourProgress({ currentStep, status }))
+      .then(() => undefined)
+      .catch(() => undefined);
   }, []);
 
   const start = React.useCallback((restart = false) => {
@@ -58,7 +65,7 @@ export function ProductTour() {
 
   React.useEffect(() => {
     const handleStart = (event: Event) => {
-      const restart = (event as CustomEvent<{ restart?: boolean }>).detail?.restart ?? true;
+      const restart = (event as CustomEvent<{ restart?: boolean }>).detail?.restart ?? false;
       start(restart);
     };
     window.addEventListener(TOUR_EVENT, handleStart);
