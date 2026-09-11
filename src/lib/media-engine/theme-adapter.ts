@@ -47,10 +47,14 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
   // Persist the package ↔ job reference before waking Modal. A short export
   // can otherwise finish before `settleThemeRender` can identify its package.
   const job = await submitRender(tenantId, spec, { dispatch: false });
+  // `postgres` cannot encode a Date passed through a raw SQL fragment. Bind
+  // the exact millisecond value read from PostgreSQL as an ISO timestamp so
+  // this optimistic fence works with both the Neon and local test drivers.
+  const readUpdatedAt = pkg.updatedAt.toISOString();
   const updated = await db.update(contentPackages).set({ renderedAssetUrls: [], status: "pending_review", metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || ${JSON.stringify({ ...(settings ? { renderSettings: settings } : {}), renderJobId: job.jobId, renderRevision: revision, failurePhase: "render_pending" })}::jsonb`, error: null, updatedAt: new Date() })
     // PostgreSQL stores microseconds while JavaScript Date carries milliseconds.
     // Keep the optimistic fence, but compare at the precision the caller read.
-    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${pkg.updatedAt}`, inArray(contentPackages.status, ["pending_review", "failed", "rejected"]), sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning();
+    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${readUpdatedAt}::timestamp`, inArray(contentPackages.status, ["pending_review", "failed", "rejected"]), sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning();
   if (!updated.length) throw new Error("Package changed before rendering was queued.");
   if (job.status === "queued") await dispatchQueuedRender(job.jobId);
   await settleThemeRender(tenantId, packageId);
