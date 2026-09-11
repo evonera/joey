@@ -337,6 +337,13 @@
       "when": 1788900000009,
       "tag": "0047_workspace_checkout_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788900000010,
+      "tag": "0048_onboarding_progress",
+      "breakpoints": true
     }
   ]
 }

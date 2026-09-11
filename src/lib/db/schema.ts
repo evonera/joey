@@ -87,6 +87,24 @@ export const invitation = pgTable("invitation", {
 	createdAt: timestamp("createdAt").notNull()
 });
 
+/**
+ * A user's guided-product-tour state is scoped to their active workspace.
+ * Keeping it server-side makes the tour resumable across browsers and avoids
+ * showing a completed tour again after a local-storage reset.
+ */
+export const onboardingProgress = pgTable("onboarding_progress", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  currentStep: integer("current_step").notNull().default(0),
+  status: varchar("status", { length: 20 }).notNull().default("in_progress"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, table => [
+  uniqueIndex("onboarding_progress_tenant_user_key").on(table.tenantId, table.userId),
+]);
+
 // Multi-tenant relations: most things belong to a tenant
 export const apiKeys = pgTable("api_keys", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
