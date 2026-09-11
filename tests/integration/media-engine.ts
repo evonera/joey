@@ -78,17 +78,43 @@ try {
   await db.execute(sql`UPDATE content_packages SET updated_at = '2026-09-12T00:00:00.123987Z'::timestamptz WHERE id = ${pkg.id}`);
   const microsecondPackage = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, pkg.id) });
   assert.equal(microsecondPackage?.updatedAt.getMilliseconds(), 123, "the driver must expose the PostgreSQL timestamp at millisecond precision");
+  const readAt = microsecondPackage!.updatedAt.toISOString();
   const [sameMillisecond] = await db.update(contentPackages).set({ error: null }).where(and(
     eq(contentPackages.id, pkg.id),
-    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${microsecondPackage!.updatedAt}`,
+    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${readAt}::timestamp`,
   )).returning({ id: contentPackages.id });
   assert.equal(sameMillisecond?.id, pkg.id, "the queue fence must accept the millisecond value read from a microsecond PostgreSQL timestamp");
   await db.update(contentPackages).set({ updatedAt: new Date(microsecondPackage!.updatedAt.getTime() + 1) }).where(eq(contentPackages.id, pkg.id));
   const staleFence = await db.update(contentPackages).set({ error: null }).where(and(
     eq(contentPackages.id, pkg.id),
-    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${microsecondPackage!.updatedAt}`,
+    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${readAt}::timestamp`,
   )).returning({ id: contentPackages.id });
   assert.equal(staleFence.length, 0, "the queue fence must still reject an update in a later millisecond");
+  const [settlementPackage] = await db.insert(contentPackages).values({
+    tenantId, themePageId: page.id, formatId: format.id, title: "Attach after caption edit", caption: "Caption-only changes keep the same pixels.", status: "pending_review",
+  }).returning();
+  const { themeRenderInput, settleThemeRender } = await import("../../src/lib/media-engine/theme-adapter");
+  const { revision: settlementRevision } = await themeRenderInput(tenantId, settlementPackage.id);
+  const [exportAsset] = await db.insert(assets).values({
+    tenantId, filename: "completed.png", key: `${tenantId}/renders/completed.png`, mimeType: "image/png", size: 100, publicUrl: "https://assets.example.test/completed.png",
+  }).returning();
+  const [settlementJob] = await db.insert(mediaRenderJobs).values({
+    tenantId, inputHash: crypto.randomUUID(), spec: { ...spec, source: { kind: "theme_package", id: settlementPackage.id, revision: settlementRevision }, title: settlementPackage.title },
+    status: "succeeded", outputAssetId: exportAsset.id,
+  }).returning();
+  await db.update(contentPackages).set({
+    metrics: { renderJobId: settlementJob.id, renderRevision: settlementRevision, failurePhase: "render_pending" },
+    // This is intentionally after the render revision is taken: captions do
+    // not affect pixels and must not prevent the finished asset from attaching.
+    caption: "An edited caption must keep the completed render.",
+  }).where(eq(contentPackages.id, settlementPackage.id));
+  await settleThemeRender(tenantId, settlementPackage.id);
+  const captionPreserved = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, settlementPackage.id) });
+  assert.equal((captionPreserved?.renderedAssetUrls as Array<{ assetId?: string }>)[0]?.assetId, exportAsset.id, "caption-only edits attach the completed render through the settlement path");
+  await db.update(contentPackages).set({ title: "A headline change requires a new render", renderedAssetUrls: [] }).where(eq(contentPackages.id, settlementPackage.id));
+  await settleThemeRender(tenantId, settlementPackage.id);
+  const staleRender = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, settlementPackage.id) });
+  assert.deepEqual(staleRender?.renderedAssetUrls, [], "a headline change rejects a stale completed render");
   let editing!: () => void, release!: () => void;
   const entered = new Promise<void>(resolve => { editing = resolve; });
   const hold = new Promise<void>(resolve => { release = resolve; });
