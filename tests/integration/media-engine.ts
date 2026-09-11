@@ -93,7 +93,7 @@ try {
   const [settlementPackage] = await db.insert(contentPackages).values({
     tenantId, themePageId: page.id, formatId: format.id, title: "Attach after caption edit", caption: "Caption-only changes keep the same pixels.", status: "pending_review",
   }).returning();
-  const { themeRenderInput, settleThemeRender } = await import("../../src/lib/media-engine/theme-adapter");
+  const { queueThemeRender, themeRenderInput, settleThemeRender } = await import("../../src/lib/media-engine/theme-adapter");
   const { revision: settlementRevision } = await themeRenderInput(tenantId, settlementPackage.id);
   const [exportAsset] = await db.insert(assets).values({
     tenantId, filename: "completed.png", key: `${tenantId}/renders/completed.png`, mimeType: "image/png", size: 100, publicUrl: "https://assets.example.test/completed.png",
@@ -115,6 +115,13 @@ try {
   await settleThemeRender(tenantId, settlementPackage.id);
   const staleRender = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, settlementPackage.id) });
   assert.deepEqual(staleRender?.renderedAssetUrls, [], "a headline change rejects a stale completed render");
+  const [queuePackage] = await db.insert(contentPackages).values({
+    tenantId, themePageId: page.id, formatId: format.id, title: "Queue with PostgreSQL timestamp precision", status: "pending_review",
+  }).returning();
+  const queuedRender = await queueThemeRender(tenantId, queuePackage.id, { mediaAssetId: asset.id, cropMode: "cover" });
+  const queuedPackage = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, queuePackage.id) });
+  assert.equal(queuedRender.status, "queued");
+  assert.equal((queuedPackage?.metrics as { renderJobId?: string }).renderJobId, queuedRender.jobId, "the queue path accepts a microsecond PostgreSQL timestamp and stores its render job");
   let editing!: () => void, release!: () => void;
   const entered = new Promise<void>(resolve => { editing = resolve; });
   const hold = new Promise<void>(resolve => { release = resolve; });
