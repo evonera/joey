@@ -67,7 +67,12 @@ export async function settleThemeRender(tenantId: string, packageId: string) {
     renderedAssetUrls: job.output ? [{ url: job.output.publicUrl, type: job.output.mimeType === "video/mp4" ? "video" : "image", assetId: job.output.id }] : [],
     error: job.output ? null : job.error || "Render cancelled", status: job.output ? "pending_review" : "failed",
     metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || ${JSON.stringify({ failurePhase: job.output ? null : "render" })}::jsonb`, updatedAt: new Date(),
-  }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${pkg.updatedAt}`, eq(contentPackages.status, "pending_review"), sql`${contentPackages.metrics}->>'renderJobId' = ${job.jobId}`, sql`${contentPackages.metrics}->>'renderRevision' = ${revision}`));
+  // `renderJobId` + `renderRevision` are the concurrency fence here. Unlike
+  // updatedAt, they remain valid for caption-only changes, which deliberately
+  // retain the same rendered pixels. A pixel-affecting edit clears or changes
+  // this pair via invalidateThemeMedia, so a late worker completion cannot
+  // attach stale output.
+  }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), eq(contentPackages.status, "pending_review"), sql`${contentPackages.metrics}->>'renderJobId' = ${job.jobId}`, sql`${contentPackages.metrics}->>'renderRevision' = ${revision}`));
 }
 
 export async function assertThemeRenderCurrent(tenantId: string, packageId: string) {

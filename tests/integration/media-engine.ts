@@ -7,7 +7,7 @@ const { db } = await import("../../src/lib/db");
 const { tenants, assets, flows, mediaRenderJobs, mediaTranscripts, contentPackages, themePages, themeContentFormats, apiKeys, usageTracking } = await import("../../src/lib/db/schema");
 const { submitRender, getRender, cancelRender, retryRender } = await import("../../src/lib/media-engine/engine");
 const { claimNextRender, completeRenderJob } = await import("../../src/lib/media-engine/worker-jobs");
-const { eq, and } = await import("drizzle-orm");
+const { eq, and, sql } = await import("drizzle-orm");
 const tenantId = crypto.randomUUID();
 let failed = false;
 try {
@@ -71,6 +71,24 @@ try {
     { tenantId, themePageId: page.id, formatId: format.id, title: "Review me", status: "approved", renderedAssetUrls: attached, updatedAt: new Date(Date.now() - 1000) },
     { tenantId, themePageId: page.id, formatId: format.id, title: "Already submitted", status: "publishing", renderedAssetUrls: attached, metrics: { publishAttemptAt: new Date().toISOString() } },
   ]).returning();
+  // PostgreSQL retains microseconds while the JavaScript driver exposes a Date
+  // rounded to milliseconds. Keep this as a database test: a future change to
+  // the optimistic queue fence must accept the row it just read, but still
+  // reject a later update in a different millisecond.
+  await db.execute(sql`UPDATE content_packages SET updated_at = '2026-09-12T00:00:00.123987Z'::timestamptz WHERE id = ${pkg.id}`);
+  const microsecondPackage = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, pkg.id) });
+  assert.equal(microsecondPackage?.updatedAt.getMilliseconds(), 123, "the driver must expose the PostgreSQL timestamp at millisecond precision");
+  const [sameMillisecond] = await db.update(contentPackages).set({ error: null }).where(and(
+    eq(contentPackages.id, pkg.id),
+    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${microsecondPackage!.updatedAt}`,
+  )).returning({ id: contentPackages.id });
+  assert.equal(sameMillisecond?.id, pkg.id, "the queue fence must accept the millisecond value read from a microsecond PostgreSQL timestamp");
+  await db.update(contentPackages).set({ updatedAt: new Date(microsecondPackage!.updatedAt.getTime() + 1) }).where(eq(contentPackages.id, pkg.id));
+  const staleFence = await db.update(contentPackages).set({ error: null }).where(and(
+    eq(contentPackages.id, pkg.id),
+    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${microsecondPackage!.updatedAt}`,
+  )).returning({ id: contentPackages.id });
+  assert.equal(staleFence.length, 0, "the queue fence must still reject an update in a later millisecond");
   let editing!: () => void, release!: () => void;
   const entered = new Promise<void>(resolve => { editing = resolve; });
   const hold = new Promise<void>(resolve => { release = resolve; });
