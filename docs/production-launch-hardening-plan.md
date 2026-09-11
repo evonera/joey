@@ -9,9 +9,12 @@ until that release is merged, then be retargeted to `main`.
 ## Release sequencing
 
 1. Merge and deploy the readiness release only after PR checks and review pass.
-2. Apply migrations `0046_usage_reservations.sql` and
-   `0047_workspace_checkout_plan.sql` to production immediately before that
-   deployment. Production is currently known to be at migration 0045.
+2. Verify the production Drizzle journal and schema immediately before
+   deployment. As of 12 September 2026, both the `usage_reservations` table
+   and `tenants.dodo_checkout_plan` column already exist in production. Do not
+   rerun numbered SQL files manually. If the journal/schema check finds drift,
+   first validate on an isolated Neon branch, then use the journaled
+   `npm run db:migrate` command with a direct connection.
 3. Run the deployed acceptance checks in this document. Use an isolated Neon
    branch for automated database tests; never exercise them against production.
 4. Ship this hardening branch after its own review, acceptance pass, and
