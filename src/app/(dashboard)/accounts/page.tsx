@@ -116,7 +116,7 @@ export default function AccountsPage() {
           </div>
         </div>
 
-        <div className="col-span-1 md:col-span-2 border border-border rounded-xl p-6 bg-card shadow-xs">
+        <div className="col-span-1 rounded-xl border border-border bg-card p-4 shadow-xs sm:p-6">
           <h2 className="font-semibold mb-4 text-foreground">Your Accounts</h2>
           
           {isLoading ? (

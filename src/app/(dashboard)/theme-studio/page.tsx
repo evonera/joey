@@ -19,7 +19,7 @@ export default async function ThemeStudioOverviewPage() {
   return (
     <div className="w-full max-w-7xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6" data-tour="theme-studio-overview">
         <div>
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-xl bg-primary/10 text-primary">

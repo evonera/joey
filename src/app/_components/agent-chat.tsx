@@ -440,7 +440,7 @@ function AgentChatInner({
             <PromptInputSelectTrigger className="h-7 text-xs px-2 gap-1.5 border border-border/50 rounded-md bg-background/50 hover:bg-muted/80 transition-colors">
               <span className="font-medium text-foreground">{currentModelDef.name}</span>
             </PromptInputSelectTrigger>
-            <PromptInputSelectContent className="w-80 max-h-96">
+            <PromptInputSelectContent className="max-h-96 w-[min(20rem,calc(100vw-2rem))]">
               <PromptInputSelectGroup>
                 <PromptInputSelectLabel>Recommended</PromptInputSelectLabel>
                 {getRecommendedModels().map((m) => {
@@ -743,14 +743,14 @@ function AgentChatInner({
                 <h1 className="font-semibold text-2xl sm:text-3xl tracking-tight text-foreground">
                   What are we creating today?
                 </h1>
-                <p className="whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
+                <p className="max-w-[calc(100vw-4rem)] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground sm:max-w-none sm:text-sm">
                   Ask anything, draft a post, or build an automation. Joey can use your workspace context to help.
                 </p>
               </div>
             </div>
           ) : null}
 
-          <div className="w-full">{composer}</div>
+          <div className="w-full" data-tour="chat-composer">{composer}</div>
 
         </div>
       </main>
