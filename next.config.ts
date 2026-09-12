@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import createMDX from "@next/mdx";
 import bundleAnalyzer from "@next/bundle-analyzer";
 import { withEve } from "eve/next";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const withMDX = createMDX({
   extension: /\.mdx?$/,
@@ -62,7 +63,7 @@ const nextConfig: NextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' blob: data: https://img.shields.io https://*.r2.cloudflarestorage.com https://pbs.twimg.com https://cdn.syndication.twimg.com https://media.licdn.com https://graph.facebook.com",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.liveblocks.io wss://*.liveblocks.io https://*.r2.cloudflarestorage.com",
+      "connect-src 'self' https://*.liveblocks.io wss://*.liveblocks.io https://*.r2.cloudflarestorage.com https://*.ingest.sentry.io",
       "media-src 'self' blob: data: https:",
       "worker-src 'self' blob:",
       "frame-ancestors 'none'",
@@ -139,4 +140,18 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withEve(withMDX(withAnalyze(nextConfig)));
+export default withSentryConfig(withEve(withMDX(withAnalyze(nextConfig))), {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: !process.env.CI,
+  sourcemaps: {
+    disable: !process.env.SENTRY_AUTH_TOKEN,
+    deleteSourcemapsAfterUpload: true,
+  },
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
+});

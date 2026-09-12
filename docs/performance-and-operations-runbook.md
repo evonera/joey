@@ -4,6 +4,11 @@ This runbook covers repeatable client-performance acceptance and first-response 
 
 ## Ownership and alert routing
 
+Joey uses Sentry for uncaught client, server, edge, and navigation errors. Set
+`NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and `SENTRY_PROJECT` in Vercel. Add a
+scoped `SENTRY_AUTH_TOKEN` only when source-map uploads are required; runtime
+error capture does not require that token.
+
 Before launch, assign a named primary and backup responder and connect the chosen error-monitoring service to the support/on-call destination. Alerts should include the environment, workspace ID where safe, request or job ID, provider, release SHA, and first failing timestamp. Never attach API keys, webhook signatures, post bodies, access tokens, or raw customer prompts.
 
 Create alerts for:

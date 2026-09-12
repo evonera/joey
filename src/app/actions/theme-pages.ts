@@ -202,7 +202,7 @@ export async function createThemePage(data: CreateThemePageInput) {
       `);
       const inserted = (result as any).rows?.[0] ?? (result as any)[0];
       if (!inserted) {
-        throw new Error(`Workspace limit reached (${limit} theme pages).${limits.isPro ? "" : " Upgrade to Pro for up to 100 theme pages."}`);
+        throw new Error(`Workspace limit reached (${limit} theme pages).${limits.isPro ? " Upgrade your plan to create more theme pages." : " Upgrade to a paid plan to create more theme pages."}`);
       }
       page = inserted;
     } else {
