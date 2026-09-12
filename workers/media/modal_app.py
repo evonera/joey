@@ -10,36 +10,45 @@ image = (modal.Image.debian_slim(python_version="3.12")
          .run_commands("playwright install --with-deps chromium")
          .add_local_dir(str(root), "/worker", copy=True, ignore=["__pycache__", ".venv", "output", "*.mp4"]))
 secret = modal.Secret.from_name("joey-media-secrets")
+sentry_secret = modal.Secret.from_name("joey-media-sentry")
 
-@app.function(image=image, cpu=2, memory=4096, timeout=600, min_containers=0, max_containers=2, scaledown_window=2, secrets=[secret])
+@app.function(image=image, cpu=2, memory=4096, timeout=600, min_containers=0, max_containers=2, scaledown_window=2, secrets=[secret, sentry_secret])
 def render_cpu():
     import sys
     sys.path.insert(0, "/worker")
     from render import process_one
     return process_one("libx264")
 
-@app.function(image=image, gpu="T4", cpu=2, memory=4096, timeout=600, min_containers=0, max_containers=2, scaledown_window=2, secrets=[secret])
+@app.function(image=image, gpu="T4", cpu=2, memory=4096, timeout=600, min_containers=0, max_containers=2, scaledown_window=2, secrets=[secret, sentry_secret])
 def render_t4():
     import sys
     sys.path.insert(0, "/worker")
     from render import process_one
     return process_one("h264_nvenc")
 
-@app.function(image=image, schedule=modal.Period(minutes=1), timeout=30, secrets=[secret])
+@app.function(image=image, schedule=modal.Period(minutes=1), timeout=30, secrets=[secret, sentry_secret])
 def tick():
     import os
+    import sentry_sdk
+    sentry_sdk.init(dsn=os.environ.get("SENTRY_DSN"), environment=os.environ.get("SENTRY_ENVIRONMENT", "production"), send_default_pii=False, include_local_variables=False)
+    sentry_sdk.set_tag("service", "media-worker")
+    sentry_sdk.set_tag("runtime", "modal-python")
     worker = render_t4 if os.environ.get("MEDIA_ENCODER") == "t4" else render_cpu
     worker.spawn()
 
 
-@app.function(image=image, cpu=0.125, memory=256, timeout=30, min_containers=0, max_containers=2, scaledown_window=2, secrets=[secret])
+@app.function(image=image, cpu=0.125, memory=256, timeout=30, min_containers=0, max_containers=2, scaledown_window=2, secrets=[secret, sentry_secret])
 @modal.asgi_app()
 def dispatch():
     import hashlib
     import hmac
     import os
     import time
+    import sentry_sdk
     from fastapi import FastAPI, Request, Response
+    sentry_sdk.init(dsn=os.environ.get("SENTRY_DSN"), environment=os.environ.get("SENTRY_ENVIRONMENT", "production"), send_default_pii=False, include_local_variables=False)
+    sentry_sdk.set_tag("service", "media-worker")
+    sentry_sdk.set_tag("runtime", "modal-python")
     api = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     @api.post("/")

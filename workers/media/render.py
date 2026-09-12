@@ -10,9 +10,21 @@ import tempfile
 import time
 
 import httpx
+import sentry_sdk
 from playwright.sync_api import sync_playwright
 
 MAX_BYTES = 150 * 1024 * 1024
+
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN"),
+    environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+    release=os.environ.get("SENTRY_RELEASE"),
+    send_default_pii=False,
+    include_local_variables=False,
+    traces_sample_rate=0.1,
+)
+sentry_sdk.set_tag("service", "media-worker")
+sentry_sdk.set_tag("runtime", "modal-python")
 
 
 def api(path, payload):
@@ -209,6 +221,10 @@ def process_one(encoder="libx264"):
         result["success"] = True
     except Exception as error:
         # Do not send presigned URLs or subprocess arguments back to logs/UI.
+        with sentry_sdk.new_scope() as scope:
+            scope.set_tag("encoder", encoder)
+            scope.set_tag("render_job_id", job["jobId"])
+            sentry_sdk.capture_exception(error)
         result["error"] = f"Render failed ({type(error).__name__}). Check worker diagnostics."
     result["usage"] = {"elapsedSeconds": min(600, time.monotonic() - started), "encoder": encoder, "outputSeconds": job["spec"].get("video", {}).get("duration", 0)}
     for attempt in range(3):
