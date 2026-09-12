@@ -3,6 +3,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { memories } from "@/lib/db/schema";
+import { workspaceApproval } from "../lib/workspace-approval";
 
 export default defineTool({
   description:
@@ -10,6 +11,7 @@ export default defineTool({
   inputSchema: z.object({
     id: z.string().min(1).max(100).describe("The memory id from list_memories."),
   }),
+  approval: workspaceApproval({ allowOwnerAutomation: true }),
   execute: async ({ id }, ctx) => {
     const tenantId = ctx.session.auth.current?.attributes?.tenantId;
     if (!tenantId) throw new Error("Unable to identify tenant from session auth.");

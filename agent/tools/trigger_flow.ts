@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
 import { and, eq, ilike, or } from "drizzle-orm";
 import { startFlowRun } from "@/lib/flows/run-flow-server";
+import { workspaceApproval } from "../lib/workspace-approval";
 
 export default defineTool({
   description:
@@ -18,6 +19,7 @@ export default defineTool({
       .optional()
       .describe("Optional key-value parameters to pass as the trigger payload to the flow nodes."),
   }),
+  approval: workspaceApproval(),
   execute: async ({ flowIdOrName, parameters }, ctx) => {
     const tenantId = ctx.session?.auth?.current?.attributes?.tenantId as string | undefined;
     if (!tenantId) {

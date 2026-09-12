@@ -8,11 +8,20 @@ const targetFile = resolve(
 
 if (existsSync(targetFile)) {
   let content = readFileSync(targetFile, "utf8");
-  const targetNeedle = "node_modules`";
-  const replacement = "node_modules`,`repos`";
+  const patchedEntry = "`node_modules`,`repos`";
+  const candidates = ["`node_modules`])", "`node_modules`]);"];
 
-  if (content.includes(targetNeedle) && !content.includes(replacement)) {
-    content = content.replace(targetNeedle, replacement);
+  if (!content.includes(patchedEntry)) {
+    const targetNeedle = candidates.find((candidate) => content.includes(candidate));
+    if (!targetNeedle) {
+      throw new Error(
+        "[patch-eve] Eve's workflow ignore-list format changed; update this compatibility patch before building.",
+      );
+    }
+    content = content.replace(
+      targetNeedle,
+      targetNeedle.replace("`node_modules`", patchedEntry),
+    );
     writeFileSync(targetFile, content, "utf8");
     console.log("✓ [patch-eve] Added `repos` to Eve workflow ignore list.");
   }
