@@ -226,7 +226,8 @@ def process_one(encoder="libx264"):
             scope.set_tag("encoder", encoder)
             scope.set_tag("render_job_id", job["jobId"])
             scope.set_tag("error_type", type(error).__name__)
-            sentry_sdk.capture_message("Media render failed", level="error")
+            safe_error = RuntimeError(f"Media render failed ({type(error).__name__})")
+            sentry_sdk.capture_exception(safe_error.with_traceback(error.__traceback__))
         result["error"] = f"Render failed ({type(error).__name__}). Check worker diagnostics."
     result["usage"] = {"elapsedSeconds": min(600, time.monotonic() - started), "encoder": encoder, "outputSeconds": job["spec"].get("video", {}).get("duration", 0)}
     for attempt in range(3):
