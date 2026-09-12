@@ -185,4 +185,14 @@ describe("Dodo product migration", () => {
     delete process.env.DODO_CREATOR_PRODUCT_ID;
     delete process.env.DODO_CREATOR_LEGACY_PRODUCT_IDS;
   });
+
+  it("fails closed when a product ID is configured for multiple plans", () => {
+    process.env.DODO_CREATOR_PRODUCT_ID = "shared-product";
+    process.env.DODO_PRO_LEGACY_PRODUCT_IDS = "shared-product";
+
+    expect(planForProductId("shared-product")).toBeUndefined();
+
+    delete process.env.DODO_CREATOR_PRODUCT_ID;
+    delete process.env.DODO_PRO_LEGACY_PRODUCT_IDS;
+  });
 });

@@ -43,9 +43,10 @@ export function productIdForPlan(plan: BillingPlan) {
 
 export function planForProductId(productId: string): BillingPlan | undefined {
   const config = getBillingConfig();
-  return BILLING_PLANS.find(
+  const matches = BILLING_PLANS.filter(
     (plan) => config.productIds[plan] === productId || readLegacyProductIds(plan).includes(productId),
   );
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 export function getDodoClient() {
