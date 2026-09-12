@@ -6,6 +6,7 @@ interface JoeyLogoProps {
   size?: "sm" | "md" | "lg";
   showText?: boolean;
   href?: string;
+  prefetch?: boolean;
   className?: string;
   textClassName?: string;
 }
@@ -14,6 +15,7 @@ export function JoeyLogo({
   size = "md",
   showText = true,
   href = "/",
+  prefetch,
   className,
   textClassName,
 }: JoeyLogoProps) {
@@ -56,7 +58,7 @@ export function JoeyLogo({
 
   if (href) {
     return (
-      <Link href={href} className="inline-flex items-center focus:outline-none">
+      <Link href={href} prefetch={prefetch} className="inline-flex items-center focus:outline-none">
         {content}
       </Link>
     );
