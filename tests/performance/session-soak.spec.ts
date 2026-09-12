@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { maximumEventsInWindow } from "@/lib/performance-soak";
 
 const DEFAULT_ROUTES = [
   "/dashboard",
@@ -64,6 +65,19 @@ async function navigateWithinApp(page: Page, route: string) {
   await page.waitForLoadState("domcontentloaded");
 }
 
+function isSignInPath(page: Page) {
+  return /\/(sign-in|login)(?:\/|$)/.test(new URL(page.url()).pathname);
+}
+
+async function verifyAuthenticatedSession(page: Page) {
+  const response = await page.request.get("/api/auth/get-session");
+  if (!response.ok()) throw new Error(`Authentication probe returned HTTP ${response.status()}.`);
+  const session = (await response.json()) as { user?: { id?: string } } | null;
+  if (!session?.user?.id) {
+    throw new Error("The soak does not have an authenticated session. Supply JOEY_SOAK_STORAGE_STATE.");
+  }
+}
+
 async function attachReport(testInfo: TestInfo, report: unknown) {
   await testInfo.attach("session-soak-report", {
     body: Buffer.from(JSON.stringify(report, null, 2)),
@@ -77,6 +91,7 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   const maxHeapGrowthBytes = positiveNumber("JOEY_SOAK_MAX_HEAP_GROWTH_MB", 64) * 1024 * 1024;
   const maxListenerGrowth = positiveNumber("JOEY_SOAK_MAX_LISTENER_GROWTH", 200);
   const maxRequestsPerMinute = positiveNumber("JOEY_SOAK_MAX_REQUESTS_PER_MINUTE", 30);
+  const allowPublic = process.env.JOEY_SOAK_ALLOW_PUBLIC === "true";
   const routes = (process.env.JOEY_SOAK_ROUTES?.split(",") ?? DEFAULT_ROUTES)
     .map((route) => route.trim())
     .filter(Boolean);
@@ -115,16 +130,22 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
     else if (response.status() >= 400) httpErrors.push(`${response.status()} ${response.url()}`);
   });
 
-  await page.goto(routes[0], { waitUntil: "domcontentloaded" });
-  if (routes[0] !== "/" && /\/(sign-in|login)(?:\/|$)/.test(new URL(page.url()).pathname)) {
+  if (!allowPublic && !process.env.JOEY_SOAK_STORAGE_STATE) {
     throw new Error(
-      "The soak reached a sign-in page. Supply JOEY_SOAK_STORAGE_STATE from an authenticated test account."
+      "JOEY_SOAK_STORAGE_STATE is required. Set JOEY_SOAK_ALLOW_PUBLIC=true only for a public harness check.",
     );
   }
+  await page.goto(routes[0], { waitUntil: "domcontentloaded" });
+  if (!allowPublic) await verifyAuthenticatedSession(page);
 
   // Warm every route before recording the baseline so module loading and route
   // caches are not mistaken for leaks.
-  for (const route of routes) await navigateWithinApp(page, route);
+  for (const route of routes) {
+    await navigateWithinApp(page, route);
+    if (!allowPublic && isSignInPath(page)) {
+      throw new Error(`Authentication expired while warming ${route}.`);
+    }
+  }
   await collectGarbage(page);
   samples.push(await readMetrics(page));
   requestTimes.clear();
@@ -134,6 +155,9 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   while (Date.now() - startedAt < durationMs) {
     const route = routes[iteration % routes.length];
     await navigateWithinApp(page, route);
+    if (!allowPublic && isSignInPath(page)) {
+      throw new Error(`Authentication expired while soaking ${route}.`);
+    }
     await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }));
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
     if (iteration % routes.length === routes.length - 1) samples.push(await readMetrics(page));
@@ -145,11 +169,14 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   const finalMetrics = await readMetrics(page);
   samples.push(finalMetrics);
   const baseline = samples[0];
-  const elapsedMinutes = Math.max((Date.now() - startedAt) / 60_000, 1 / 60);
   const noisyEndpoints = [...requestTimes.entries()]
-    .map(([endpoint, times]) => ({ endpoint, count: times.length, requestsPerMinute: times.length / elapsedMinutes }))
-    .filter((entry) => entry.requestsPerMinute > maxRequestsPerMinute)
-    .sort((left, right) => right.requestsPerMinute - left.requestsPerMinute);
+    .map(([endpoint, times]) => ({
+      endpoint,
+      count: times.length,
+      maximumRequestsInOneMinute: maximumEventsInWindow(times, 60_000),
+    }))
+    .filter((entry) => entry.maximumRequestsInOneMinute > maxRequestsPerMinute)
+    .sort((left, right) => right.maximumRequestsInOneMinute - left.maximumRequestsInOneMinute);
   const report = {
     baseURL: testInfo.project.use.baseURL,
     consoleErrors,

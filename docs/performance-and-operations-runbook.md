@@ -34,7 +34,9 @@ JOEY_SOAK_STORAGE_STATE=/tmp/joey-soak-auth.json \
 npm run test:soak
 ```
 
-For a short harness check, set `JOEY_SOAK_DURATION_MS=30000`. The release acceptance remains 30 minutes. Optional budgets are `JOEY_SOAK_MAX_HEAP_GROWTH_MB` (default 64), `JOEY_SOAK_MAX_LISTENER_GROWTH` (default 200), and `JOEY_SOAK_MAX_REQUESTS_PER_MINUTE` (default 30 per method/path). Override a budget only with a documented baseline and reviewer approval.
+For a short authenticated harness check, set `JOEY_SOAK_DURATION_MS=30000`. The release acceptance remains 30 minutes. `JOEY_SOAK_WARMUP_TIMEOUT_MS` defaults to ten minutes and is accounted for separately from the measurement duration. Optional budgets are `JOEY_SOAK_MAX_HEAP_GROWTH_MB` (default 64), `JOEY_SOAK_MAX_LISTENER_GROWTH` (default 200), and `JOEY_SOAK_MAX_REQUESTS_PER_MINUTE` (default 30 per method/path in any sliding one-minute window). Override a budget only with a documented baseline and reviewer approval.
+
+The authenticated gate requires both a storage-state file and a successful Better Auth session probe. `JOEY_SOAK_ALLOW_PUBLIC=true` is reserved for short harness checks of explicitly public routes; it must not be used as release evidence.
 
 The JSON report is attached to the Playwright result under `test-results/`; the HTML report is written to `playwright-report/soak/`. Retain the release report with the deployment record. Passing means no unhandled errors, non-aborted request failures, HTTP error responses, excessive request loops, or budget breaches.
 

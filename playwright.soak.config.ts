@@ -2,13 +2,18 @@ import { defineConfig, devices } from "@playwright/test";
 
 const remoteBaseUrl = process.env.JOEY_SOAK_BASE_URL;
 const durationMs = Number(process.env.JOEY_SOAK_DURATION_MS ?? 30 * 60 * 1000);
+const warmupTimeoutMs = Number(process.env.JOEY_SOAK_WARMUP_TIMEOUT_MS ?? 10 * 60 * 1000);
+if (!Number.isFinite(durationMs) || durationMs <= 0) throw new Error("JOEY_SOAK_DURATION_MS must be positive.");
+if (!Number.isFinite(warmupTimeoutMs) || warmupTimeoutMs <= 0) {
+  throw new Error("JOEY_SOAK_WARMUP_TIMEOUT_MS must be positive.");
+}
 
 export default defineConfig({
   testDir: "./tests/performance",
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  timeout: durationMs + 2 * 60 * 1000,
+  timeout: warmupTimeoutMs + durationMs + 2 * 60 * 1000,
   reporter: [["list"], ["html", { outputFolder: "playwright-report/soak", open: "never" }]],
   use: {
     ...devices["Desktop Chrome"],
