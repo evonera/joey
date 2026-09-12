@@ -75,10 +75,10 @@ Implement an optional, resumable in-product tour rather than a blocking modal.
 
 1. Verify Dodo test checkout redirect, webhook idempotency, customer portal,
    and plan refresh in the deployed preview. Do not create a real charge.
-2. Keep the published test-mode catalog at Creator $29, Pro $79, and Agency
-   $199 until a product decision changes it. Pricing changes require matching
-   Dodo products, entitlement limits, billing copy, and migration/reconciliation
-   coverage.
+2. Launch with the beta catalog: Creator $19, Pro $59, and Agency $149.
+   Theme Page, account, workspace, and slot limits are defined centrally in
+   `src/lib/plans.ts`. New Dodo products back checkout, while legacy product IDs
+   remain mapped for webhook reconciliation during migration.
 3. Check Zernio account synchronization and draft delivery only. A live social
    post needs explicit approval.
 4. Before live billing: configure production Dodo products/webhooks/tax policy,
@@ -102,10 +102,11 @@ Implement an optional, resumable in-product tour rather than a blocking modal.
 
 ## Decisions required from the product owner
 
-- Choose launch pricing: retain $29 / $79 / $199 or adopt beta pricing.
+- Revalidate the $19 / $59 / $149 beta catalog before switching Dodo from test
+  mode to live mode.
 - Approve any final live Instagram publish test.
 - Approve live-mode Dodo checkout/payment testing and tax configuration.
-- Choose an error-monitoring provider and support/on-call destination.
+- Choose the support/on-call destination for Sentry alerts.
 
 ## Definition of done
 

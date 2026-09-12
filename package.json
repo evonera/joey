@@ -65,6 +65,7 @@
     "@opentelemetry/api": "^1.9.1",
     "@radix-ui/react-use-controllable-state": "1.2.2",
     "@resvg/resvg-js": "^2.6.2",
+    "@sentry/nextjs": "^10.74.0",
     "@shikijs/core": "4.1.0",
     "@shikijs/engine-javascript": "4.1.0",
     "@shikijs/engine-oniguruma": "4.1.0",

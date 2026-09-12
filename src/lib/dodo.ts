@@ -19,6 +19,11 @@ function readProductId(plan: BillingPlan) {
   return (process.env[`DODO_${upper}_PRODUCT_ID`] || process.env[`NEXT_PUBLIC_DODO_${upper}_PRODUCT_ID`])?.trim();
 }
 
+function readLegacyProductIds(plan: BillingPlan) {
+  const raw = process.env[`DODO_${plan.toUpperCase()}_LEGACY_PRODUCT_IDS`];
+  return raw?.split(",").map((id) => id.trim()).filter(Boolean) ?? [];
+}
+
 export function getBillingConfig() {
   const apiKey = process.env.DODO_PAYMENTS_API_KEY?.trim();
   const webhookKey = (process.env.DODO_PAYMENTS_WEBHOOK_SECRET || process.env.DODO_PAYMENTS_WEBHOOK_KEY)?.trim();
@@ -38,7 +43,10 @@ export function productIdForPlan(plan: BillingPlan) {
 
 export function planForProductId(productId: string): BillingPlan | undefined {
   const config = getBillingConfig();
-  return BILLING_PLANS.find((plan) => config.productIds[plan] === productId);
+  const matches = BILLING_PLANS.filter(
+    (plan) => config.productIds[plan] === productId || readLegacyProductIds(plan).includes(productId),
+  );
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 export function getDodoClient() {

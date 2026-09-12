@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { canReuseCheckoutSession } from "../dodo";
+import { canReuseCheckoutSession, planForProductId } from "../dodo";
 import { checkUsageLimits, requireProPlan, assertThemePageQuota, assertAccountQuota, assertWorkspaceQuota, isProTenant } from "../billing";
 
 vi.mock("@/lib/db", () => {
@@ -33,7 +33,9 @@ describe("Billing & Usage Limits", () => {
 
     const limits = await checkUsageLimits("tenant-pro");
     expect(limits.isPro).toBe(true);
-    expect(limits.themePageLimit).toBe(100);
+    expect(limits.themePageLimit).toBe(8);
+    expect(limits.maxConnectedAccounts).toBe(8);
+    expect(limits.maxWorkspaces).toBe(3);
     expect(limits.allowsVideoRendering).toBe(true);
 
     const isPro = await isProTenant("tenant-pro");
@@ -168,5 +170,29 @@ describe("Dodo hosted checkout reuse", () => {
     expect(canReuseCheckoutSession("2026-09-07T23:59:00Z", "cancelled", now)).toBe(false);
     expect(canReuseCheckoutSession("2026-09-07T23:59:00Z", "succeeded", now)).toBe(false);
     expect(canReuseCheckoutSession("not-a-date", null, now)).toBe(false);
+  });
+});
+
+describe("Dodo product migration", () => {
+  it("continues reconciling webhook events from legacy products", () => {
+    process.env.DODO_CREATOR_PRODUCT_ID = "creator-current";
+    process.env.DODO_CREATOR_LEGACY_PRODUCT_IDS = "creator-old, creator-older";
+
+    expect(planForProductId("creator-current")).toBe("creator");
+    expect(planForProductId("creator-old")).toBe("creator");
+    expect(planForProductId("unrelated")).toBeUndefined();
+
+    delete process.env.DODO_CREATOR_PRODUCT_ID;
+    delete process.env.DODO_CREATOR_LEGACY_PRODUCT_IDS;
+  });
+
+  it("fails closed when a product ID is configured for multiple plans", () => {
+    process.env.DODO_CREATOR_PRODUCT_ID = "shared-product";
+    process.env.DODO_PRO_LEGACY_PRODUCT_IDS = "shared-product";
+
+    expect(planForProductId("shared-product")).toBeUndefined();
+
+    delete process.env.DODO_CREATOR_PRODUCT_ID;
+    delete process.env.DODO_PRO_LEGACY_PRODUCT_IDS;
   });
 });
