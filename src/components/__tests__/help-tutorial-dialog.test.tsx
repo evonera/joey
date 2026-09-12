@@ -28,7 +28,7 @@ describe("HelpTutorialDialog", () => {
     expect(trigger).toBeDefined();
   });
 
-  it("opens modal with tabs when clicked", () => {
+  it("opens modal with tabs when clicked", async () => {
     render(<HelpTutorialDialog />);
     const trigger = screen.getByRole("button", { name: /Help & Tutorial Guide/i });
     fireEvent.click(trigger);
@@ -39,7 +39,7 @@ describe("HelpTutorialDialog", () => {
     expect(screen.getByText("Flows")).toBeDefined();
     expect(screen.getByText("Theme Studio")).toBeDefined();
     expect(screen.getByText("Telegram")).toBeDefined();
-    expect(screen.getByText(/Start interactive tour/i)).toBeDefined();
+    expect(await screen.findByRole("button", { name: /Start interactive tour/i })).toBeEnabled();
   });
 
   it("labels a paused tour with its resumable step", async () => {
@@ -61,6 +61,29 @@ describe("HelpTutorialDialog", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Restart interactive tour/i })).toBeDefined();
+    });
+  });
+
+  it("blocks a stale tour action until reopened progress finishes loading", async () => {
+    let resolveProgress: ((value: { currentStep: number; status: "in_progress" }) => void) | undefined;
+    mocks.getProductTourProgress.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveProgress = resolve;
+      }),
+    );
+    render(<HelpTutorialDialog />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Help & Tutorial Guide/i }));
+
+    const loadingButton = screen.getByRole("button", { name: /Loading tour/i });
+    expect(loadingButton).toBeDisabled();
+    expect(loadingButton).toHaveClass("w-full");
+    fireEvent.click(loadingButton);
+    expect(mocks.startProductTour).not.toHaveBeenCalled();
+
+    resolveProgress?.({ currentStep: 3, status: "in_progress" });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Resume interactive tour at step 4/i })).toBeEnabled();
     });
   });
 });

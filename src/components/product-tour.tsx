@@ -99,37 +99,59 @@ export function ProductTour() {
     let frame = 0;
     let resizeObserver: ResizeObserver | null = null;
     let observedElement: Element | null = null;
-    const update = () => {
+    let mutationObserver: MutationObserver | null = null;
+
+    function scheduleUpdate() {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        update();
+      });
+    }
+
+    function update() {
       const element = document.querySelector(current.target);
       if (element) {
+        mutationObserver?.disconnect();
+        mutationObserver = null;
         if (element !== observedElement) {
           resizeObserver?.disconnect();
           observedElement = element;
           element.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
           if (typeof ResizeObserver !== "undefined") {
-            resizeObserver = new ResizeObserver(update);
+            resizeObserver = new ResizeObserver(scheduleUpdate);
             resizeObserver.observe(element);
           }
         }
-        setRect(element.getBoundingClientRect());
+        const nextRect = element.getBoundingClientRect();
+        setRect((previous) =>
+          previous &&
+          previous.left === nextRect.left &&
+          previous.top === nextRect.top &&
+          previous.width === nextRect.width &&
+          previous.height === nextRect.height
+            ? previous
+            : nextRect,
+        );
       } else {
         resizeObserver?.disconnect();
         resizeObserver = null;
         observedElement = null;
         setRect(null);
       }
-    };
-    frame = requestAnimationFrame(update);
-    const mutationObserver = new MutationObserver(update);
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    }
+
+    mutationObserver = new MutationObserver(scheduleUpdate);
+    mutationObserver.observe(document.querySelector("main") ?? document.body, { childList: true, subtree: true });
+    scheduleUpdate();
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
     return () => {
       cancelAnimationFrame(frame);
-      mutationObserver.disconnect();
+      mutationObserver?.disconnect();
       resizeObserver?.disconnect();
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
     };
   }, [pathname, router, step]);
 

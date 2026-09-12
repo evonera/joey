@@ -29,25 +29,33 @@ import { getProductTourProgress, type ProductTourProgress } from "@/app/actions/
 export function HelpTutorialDialog() {
   const [open, setOpen] = React.useState(false);
   const [tourProgress, setTourProgress] = React.useState<ProductTourProgress | null>(null);
+  const [tourProgressLoading, setTourProgressLoading] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
     let active = true;
+    setTourProgress(null);
+    setTourProgressLoading(true);
     void getProductTourProgress()
       .then((progress) => {
         if (active) setTourProgress(progress);
       })
       .catch(() => {
         if (active) setTourProgress(null);
+      })
+      .finally(() => {
+        if (active) setTourProgressLoading(false);
       });
     return () => { active = false; };
   }, [open]);
 
-  const tourButtonLabel = tourProgress?.status === "completed"
-    ? "Restart interactive tour"
-    : tourProgress?.status === "dismissed" || tourProgress?.status === "in_progress"
-      ? `Resume interactive tour at step ${tourProgress.currentStep + 1}`
-      : "Start interactive tour";
+  const tourButtonLabel = tourProgressLoading
+    ? "Loading tour…"
+    : tourProgress?.status === "completed"
+      ? "Restart interactive tour"
+      : tourProgress?.status === "dismissed" || tourProgress?.status === "in_progress"
+        ? `Resume interactive tour at step ${tourProgress.currentStep + 1}`
+        : "Start interactive tour";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -249,9 +257,11 @@ export function HelpTutorialDialog() {
         </Tabs>
 
         {/* Footer Actions */}
-        <div className="mt-6 pt-4 border-t border-border/60 flex items-center justify-between">
+        <div className="mt-6 flex flex-col gap-2 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <Button
             size="sm"
+            disabled={tourProgressLoading}
+            className="w-full min-w-0 sm:w-auto"
             onClick={() => {
               const restart = tourProgress?.status === "completed";
               setOpen(false);
@@ -265,7 +275,7 @@ export function HelpTutorialDialog() {
             size="sm"
             variant="outline"
             onClick={() => setOpen(false)}
-            className="text-xs cursor-pointer"
+            className="w-full cursor-pointer text-xs sm:w-auto"
           >
             Close Guide
           </Button>

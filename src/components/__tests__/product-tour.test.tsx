@@ -51,6 +51,7 @@ describe("ProductTour", () => {
   });
 
   it("detects a target that mounts after the route transition", async () => {
+    const disconnectSpy = vi.spyOn(MutationObserver.prototype, "disconnect");
     mocks.getProductTourProgress.mockResolvedValueOnce({ currentStep: 0, status: "in_progress" });
     render(<ProductTour />);
 
@@ -70,5 +71,7 @@ describe("ProductTour", () => {
       expect(screen.queryByText(/matching control is unavailable/i)).toBeNull();
     });
     expect(target.scrollIntoView).toHaveBeenCalled();
+    expect(disconnectSpy).toHaveBeenCalled();
+    disconnectSpy.mockRestore();
   });
 });
