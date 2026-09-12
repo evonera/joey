@@ -243,7 +243,7 @@ export default function ComposePage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-16">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" data-tour="compose-overview">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Compose Post</h1>
           <p className="text-muted-foreground mt-1 text-sm">Write, preview, and publish content across your connected platforms.</p>

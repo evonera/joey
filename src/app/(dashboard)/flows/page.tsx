@@ -69,17 +69,17 @@ export default function FlowsPage() {
 
   return (
     <div className="w-full max-w-5xl mx-auto pb-24">
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4" data-tour="flows-overview">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Flows</h1>
           <p className="text-muted-foreground mt-1">Build automations with triggers, AI steps, and actions—or start from a template.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/flows/templates">
-            <Button variant="outline"><BookMarked className="mr-1.5 h-4 w-4" />Templates</Button>
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <Link href="/flows/templates" className="flex-1 sm:flex-none">
+            <Button variant="outline" className="w-full"><BookMarked className="mr-1.5 h-4 w-4" />Templates</Button>
           </Link>
           <Dialog open={newOpen} onOpenChange={setNewOpen}>
-            <DialogTrigger asChild><Button><Plus className="mr-1.5 h-4 w-4" />New flow</Button></DialogTrigger>
+            <DialogTrigger asChild><Button className="flex-1 sm:flex-none"><Plus className="mr-1.5 h-4 w-4" />New flow</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Name your flow</DialogTitle><DialogDescription>Give your automation a name you can recognize later.</DialogDescription></DialogHeader>
               <Input

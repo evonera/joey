@@ -24,9 +24,30 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { startProductTour } from "@/components/product-tour";
+import { getProductTourProgress, type ProductTourProgress } from "@/app/actions/onboarding-tour";
 
 export function HelpTutorialDialog() {
   const [open, setOpen] = React.useState(false);
+  const [tourProgress, setTourProgress] = React.useState<ProductTourProgress | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void getProductTourProgress()
+      .then((progress) => {
+        if (active) setTourProgress(progress);
+      })
+      .catch(() => {
+        if (active) setTourProgress(null);
+      });
+    return () => { active = false; };
+  }, [open]);
+
+  const tourButtonLabel = tourProgress?.status === "completed"
+    ? "Restart interactive tour"
+    : tourProgress?.status === "dismissed" || tourProgress?.status === "in_progress"
+      ? `Resume interactive tour at step ${tourProgress.currentStep + 1}`
+      : "Start interactive tour";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -55,20 +76,20 @@ export function HelpTutorialDialog() {
         </DialogHeader>
 
         <Tabs defaultValue="workflow" className="w-full mt-2">
-          <TabsList className="grid grid-cols-5 w-full h-auto p-1 bg-muted/50">
-            <TabsTrigger value="workflow" className="text-xs py-1.5">
+          <TabsList className="flex h-auto w-full justify-start overflow-x-auto p-1 bg-muted/50">
+            <TabsTrigger value="workflow" className="shrink-0 text-xs py-1.5">
               Workflow
             </TabsTrigger>
-            <TabsTrigger value="chat" className="text-xs py-1.5">
+            <TabsTrigger value="chat" className="shrink-0 text-xs py-1.5">
               Chat &amp; Models
             </TabsTrigger>
-            <TabsTrigger value="flows" className="text-xs py-1.5">
+            <TabsTrigger value="flows" className="shrink-0 text-xs py-1.5">
               Flows
             </TabsTrigger>
-            <TabsTrigger value="theme-studio" className="text-xs py-1.5">
+            <TabsTrigger value="theme-studio" className="shrink-0 text-xs py-1.5">
               Theme Studio
             </TabsTrigger>
-            <TabsTrigger value="telegram" className="text-xs py-1.5">
+            <TabsTrigger value="telegram" className="shrink-0 text-xs py-1.5">
               Telegram
             </TabsTrigger>
           </TabsList>
@@ -231,9 +252,13 @@ export function HelpTutorialDialog() {
         <div className="mt-6 pt-4 border-t border-border/60 flex items-center justify-between">
           <Button
             size="sm"
-            onClick={() => { setOpen(false); window.setTimeout(startProductTour, 150); }}
+            onClick={() => {
+              const restart = tourProgress?.status === "completed";
+              setOpen(false);
+              window.setTimeout(() => startProductTour(restart), 150);
+            }}
           >
-            Start interactive tour <ArrowRight className="size-3" />
+            {tourButtonLabel} <ArrowRight className="size-3" />
           </Button>
 
           <Button
