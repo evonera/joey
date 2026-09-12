@@ -79,4 +79,35 @@ describe("Zernio webhook body limits", () => {
     expect(response.status).toBe(413);
     expect(mocks.verifyWebhookSignature).not.toHaveBeenCalled();
   });
+
+  it("rejects a missing body as malformed before signature verification", async () => {
+    const response = await POST(webhookRequest(null));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Webhook payload is required." });
+    expect(mocks.verifyWebhookSignature).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid UTF-8 as malformed before signature verification", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0xc3, 0x28]));
+        controller.close();
+      },
+    });
+
+    const response = await POST(webhookRequest(stream));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Webhook payload must be valid UTF-8." });
+    expect(mocks.verifyWebhookSignature).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed Content-Length header as a client error", async () => {
+    const response = await POST(webhookRequest(null, "not-a-number"));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid Content-Length header." });
+    expect(mocks.verifyWebhookSignature).not.toHaveBeenCalled();
+  });
 });

@@ -50,6 +50,9 @@ export async function POST(req: NextRequest) {
     if (error instanceof WebhookBodyTooLargeError) {
       return NextResponse.json({ error: error.message }, { status: 413 });
     }
+    if (error instanceof InvalidWebhookBodyError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error("[webhooks/zernio]", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
@@ -58,14 +61,18 @@ export async function POST(req: NextRequest) {
 const ZERNIO_WEBHOOK_LIMIT_BYTES = 1024 * 1024;
 
 class WebhookBodyTooLargeError extends Error {}
+class InvalidWebhookBodyError extends Error {}
 
 async function readBoundedWebhookBody(request: Request): Promise<string> {
   const declared = request.headers.get("content-length");
-  if (declared && (!/^\d+$/.test(declared) || Number(declared) > ZERNIO_WEBHOOK_LIMIT_BYTES)) {
+  if (declared && !/^\d+$/.test(declared)) {
+    throw new InvalidWebhookBodyError("Invalid Content-Length header.");
+  }
+  if (declared && Number(declared) > ZERNIO_WEBHOOK_LIMIT_BYTES) {
     throw new WebhookBodyTooLargeError("Webhook payload exceeds the 1 MiB limit.");
   }
   const reader = request.body?.getReader();
-  if (!reader) throw new Error("Webhook payload is required.");
+  if (!reader) throw new InvalidWebhookBodyError("Webhook payload is required.");
   const chunks: Uint8Array[] = [];
   let size = 0;
   while (true) {
@@ -89,5 +96,10 @@ async function readBoundedWebhookBody(request: Request): Promise<string> {
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder("utf-8", { fatal: true }).decode(body);
+  if (body.byteLength === 0) throw new InvalidWebhookBodyError("Webhook payload is required.");
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(body);
+  } catch {
+    throw new InvalidWebhookBodyError("Webhook payload must be valid UTF-8.");
+  }
 }
