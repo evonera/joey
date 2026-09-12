@@ -1,22 +1,22 @@
-import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
+import path from "path";
 
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: 'jsdom',
+    environment: "jsdom",
     globals: true,
-    setupFiles: ['./vitest.setup.ts'],
-    exclude: ['**/node_modules/**', '**/.eve/**', '**/.next/**', 'tests/e2e/**', 'repos/**'],
+    setupFiles: ["./vitest.setup.ts"],
+    exclude: ["**/node_modules/**", "**/.eve/**", "**/.next/**", "tests/e2e/**", "tests/performance/**", "repos/**"],
     env: {
-      ENCRYPTION_KEY: 'MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=',
+      ENCRYPTION_KEY: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
     },
     testTimeout: 15000,
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      "@": path.resolve(__dirname, "./src"),
     },
   },
 });

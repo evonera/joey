@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { LandingLink as Link } from "@/components/landing-link";
 import Image from "next/image";
 import {
   ArrowRight01Icon as ArrowRight,
@@ -24,14 +24,7 @@ function GithubIcon({ className }: { className?: string }) {
   );
 }
 
-const platforms = [
-  "Twitter / X",
-  "LinkedIn",
-  "Facebook Pages",
-  "Pinterest",
-  "Instagram",
-  "Bluesky",
-];
+const platforms = ["Twitter / X", "LinkedIn", "Facebook Pages", "Pinterest", "Instagram", "Bluesky"];
 
 export default function LandingPage() {
   return (
@@ -47,9 +40,7 @@ export default function LandingPage() {
             <div className="size-4 rounded-full bg-[#ffe633]/20 flex items-center justify-center">
               <span className="size-2 rounded-full bg-[#ffe633] animate-pulse" />
             </div>
-            <span className="text-xs font-medium text-white/80">
-              Meet Joey • Autonomous Social Media on Your Terms
-            </span>
+            <span className="text-xs font-medium text-white/80">Meet Joey • Autonomous Social Media on Your Terms</span>
           </div>
 
           {/* Hero Heading */}
@@ -60,7 +51,8 @@ export default function LandingPage() {
 
           {/* Hero Subtitle */}
           <p className="mt-6 text-sm sm:text-base md:text-lg text-white/60 max-w-2xl text-balance leading-relaxed">
-            Joey monitors live industry news, curates breaking research via Exa, and drafts high-impact social posts on autopilot. Bring your own model key — you stay in 100% human control.
+            Joey monitors live industry news, curates breaking research via Exa, and drafts high-impact social posts on
+            autopilot. Bring your own model key — you stay in 100% human control.
           </p>
 
           {/* CTA Buttons */}
@@ -131,23 +123,22 @@ export default function LandingPage() {
                     </div>
 
                     <p className="text-xs sm:text-sm text-white/90 leading-relaxed font-normal">
-                      &ldquo;AI automation doesn&apos;t mean spamming feeds. The real unlock is combining semantic web search with your authentic tone, then reviewing drafts in 5 seconds from your phone.&rdquo;
+                      &ldquo;AI automation doesn&apos;t mean spamming feeds. The real unlock is combining semantic web
+                      search with your authentic tone, then reviewing drafts in 5 seconds from your phone.&rdquo;
                     </p>
 
                     <div className="flex items-center gap-2 pt-1">
-                      <button className="btn-accent text-[11px] py-1 px-3 rounded">
-                        ✓ Approve &amp; Schedule
-                      </button>
-                      <button className="btn-ghost text-[11px] py-1 px-3 rounded">
-                        Edit Draft
-                      </button>
+                      <button className="btn-accent text-[11px] py-1 px-3 rounded">✓ Approve &amp; Schedule</button>
+                      <button className="btn-ghost text-[11px] py-1 px-3 rounded">Edit Draft</button>
                       <span className="text-[11px] text-white/40 ml-auto">Twitter/X • 9:00 AM</span>
                     </div>
                   </div>
 
                   {/* Input bar preview */}
                   <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3 flex items-center justify-between text-xs text-white/40">
-                    <span>Ask Joey: &ldquo;Find trending AI agent architectures on Hacker News and draft 2 hot takes…&rdquo;</span>
+                    <span>
+                      Ask Joey: &ldquo;Find trending AI agent architectures on Hacker News and draft 2 hot takes…&rdquo;
+                    </span>
                     <span className="px-2 py-0.5 rounded bg-white/[0.06] text-[10px] font-mono">⌘ ↵</span>
                   </div>
                 </div>
@@ -210,17 +201,13 @@ export default function LandingPage() {
             >
               {/* Text Side */}
               <div className="flex-1 space-y-4">
-                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
-                  Visual Flows
-                </h3>
+                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">Visual Flows</h3>
                 <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
-                  Construct autonomous node-based pipelines. Ingest breaking news via Exa AI semantic search or RSS feeds, filter with LLM synthesis, and automatically queue platform-formatted drafts for your review.
+                  Construct autonomous node-based pipelines. Ingest breaking news via Exa AI semantic search or RSS
+                  feeds, filter with LLM synthesis, and automatically queue platform-formatted drafts for your review.
                 </p>
                 <div className="pt-2">
-                  <Link
-                    href="/flows"
-                    className="btn-outline-card inline-flex items-center gap-2"
-                  >
+                  <Link href="/flows" className="btn-outline-card inline-flex items-center gap-2">
                     <span>Open Flows Studio</span>
                     <ArrowRight className="size-4" />
                   </Link>
@@ -254,7 +241,9 @@ export default function LandingPage() {
 
                   <div className="p-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs">
                     <div className="flex items-center justify-between">
-                      <div className="text-[10px] text-purple-400 font-semibold uppercase">Synthesis &amp; Drafting</div>
+                      <div className="text-[10px] text-purple-400 font-semibold uppercase">
+                        Synthesis &amp; Drafting
+                      </div>
                       <span className="text-[10px] text-white/40">Gemini 2.5 Flash</span>
                     </div>
                     <div className="text-white font-medium mt-0.5">
@@ -272,17 +261,13 @@ export default function LandingPage() {
             >
               {/* Text Side */}
               <div className="flex-1 space-y-4">
-                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
-                  Theme Studio
-                </h3>
+                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">Theme Studio</h3>
                 <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
-                  Design custom visual templates and multi-slide social carousels rendered via SVG. Joey pairs generated copy with branded graphics, fonts, and colors for maximum feed engagement.
+                  Design custom visual templates and multi-slide social carousels rendered via SVG. Joey pairs generated
+                  copy with branded graphics, fonts, and colors for maximum feed engagement.
                 </p>
                 <div className="pt-2">
-                  <Link
-                    href="/theme-studio"
-                    className="btn-outline-card inline-flex items-center gap-2"
-                  >
+                  <Link href="/theme-studio" className="btn-outline-card inline-flex items-center gap-2">
                     <span>Open Theme Studio</span>
                     <ArrowRight className="size-4" />
                   </Link>
@@ -322,17 +307,13 @@ export default function LandingPage() {
             >
               {/* Text Side */}
               <div className="flex-1 space-y-4">
-                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
-                  BYOK Agent Chat
-                </h3>
+                <h3 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">BYOK Agent Chat</h3>
                 <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
-                  Bring your own key for Google Gemini, OpenAI GPT-5.6, or Claude Haiku 4.5. Switch models dynamically with zero markup on tokens.
+                  Bring your own key for Google Gemini, OpenAI GPT-5.6, or Claude Haiku 4.5. Switch models dynamically
+                  with zero markup on tokens.
                 </p>
                 <div className="pt-2">
-                  <Link
-                    href="/dashboard"
-                    className="btn-outline-card inline-flex items-center gap-2"
-                  >
+                  <Link href="/dashboard" className="btn-outline-card inline-flex items-center gap-2">
                     <span>Launch Chat Agent</span>
                     <ArrowRight className="size-4" />
                   </Link>
@@ -356,12 +337,8 @@ export default function LandingPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-[11px]">
-                    <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
-                      GPT-5.6 Luna
-                    </div>
-                    <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
-                      Claude Haiku 4.5
-                    </div>
+                    <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">GPT-5.6 Luna</div>
+                    <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">Claude Haiku 4.5</div>
                   </div>
                 </div>
               </div>
@@ -381,13 +358,11 @@ export default function LandingPage() {
                   1-Tap Telegram Approvals
                 </h3>
                 <p className="text-sm sm:text-base text-white/60 leading-relaxed max-w-md">
-                  Never miss an approval. Joey pings your Telegram with full post previews, image carousels, and interactive Approve/Edit/Reject buttons straight on your phone lock screen.
+                  Never miss an approval. Joey pings your Telegram with full post previews, image carousels, and
+                  interactive Approve/Edit/Reject buttons straight on your phone lock screen.
                 </p>
                 <div className="pt-2">
-                  <Link
-                    href="/settings"
-                    className="btn-outline-card inline-flex items-center gap-2"
-                  >
+                  <Link href="/settings" className="btn-outline-card inline-flex items-center gap-2">
                     <span>Configure Telegram</span>
                     <ArrowRight className="size-4" />
                   </Link>
@@ -410,7 +385,8 @@ export default function LandingPage() {
                       <span className="font-semibold text-white">Joey Dispatch Bot</span>
                     </div>
                     <p className="text-xs text-white/80 leading-relaxed">
-                      &ldquo;New draft generated from Exa Trend Digest. Target: LinkedIn &amp; Twitter at 09:00 UTC.&rdquo;
+                      &ldquo;New draft generated from Exa Trend Digest. Target: LinkedIn &amp; Twitter at 09:00
+                      UTC.&rdquo;
                     </p>
                     <div className="grid grid-cols-3 gap-2 pt-1">
                       <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-center py-1.5 rounded font-semibold text-[11px]">
@@ -448,7 +424,8 @@ export default function LandingPage() {
               </div>
               <h4 className="font-semibold text-base text-white">100% Human in the Loop</h4>
               <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                Nothing publishes to your channels without your approval. Monotonic execution locks protect against duplicate dispatches.
+                Nothing publishes to your channels without your approval. Monotonic execution locks protect against
+                duplicate dispatches.
               </p>
             </div>
 
@@ -458,7 +435,8 @@ export default function LandingPage() {
               </div>
               <h4 className="font-semibold text-base text-white">Zero AI Markup (BYOK)</h4>
               <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                Connect your Google, OpenAI, or Anthropic keys directly. You pay only standard provider token costs with 0% extra fees.
+                Connect your Google, OpenAI, or Anthropic keys directly. You pay only standard provider token costs with
+                0% extra fees.
               </p>
             </div>
 
@@ -468,7 +446,8 @@ export default function LandingPage() {
               </div>
               <h4 className="font-semibold text-base text-white">Unified Engagement Inbox</h4>
               <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                Triage comments and replies across Twitter, LinkedIn, and Facebook in one queue with brand-tuned AI reply suggestions.
+                Triage comments and replies across Twitter, LinkedIn, and Facebook in one queue with brand-tuned AI
+                reply suggestions.
               </p>
             </div>
 
@@ -478,7 +457,8 @@ export default function LandingPage() {
               </div>
               <h4 className="font-semibold text-base text-white">Visual Content Calendar</h4>
               <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                Drag-and-drop scheduling across timezones. Preview scheduled drafts in weekly or monthly visual calendars.
+                Drag-and-drop scheduling across timezones. Preview scheduled drafts in weekly or monthly visual
+                calendars.
               </p>
             </div>
 
@@ -488,7 +468,8 @@ export default function LandingPage() {
               </div>
               <h4 className="font-semibold text-base text-white">High-Res Resvg Export</h4>
               <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                Render multi-slide carousels and SVG cards at 2x retina clarity for crisp viewing on Twitter and LinkedIn.
+                Render multi-slide carousels and SVG cards at 2x retina clarity for crisp viewing on Twitter and
+                LinkedIn.
               </p>
             </div>
 
@@ -498,7 +479,8 @@ export default function LandingPage() {
               </div>
               <h4 className="font-semibold text-base text-white">100% Open Source MIT</h4>
               <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                Self-host on Neon and Vercel or your own server. Inspect the code, fork it, and own your social stack completely.
+                Self-host on Neon and Vercel or your own server. Inspect the code, fork it, and own your social stack
+                completely.
               </p>
             </div>
           </div>
@@ -527,7 +509,8 @@ export default function LandingPage() {
                   <span className="text-xs text-white/40 uppercase font-mono">/ Forever</span>
                 </div>
                 <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                  Everything you need to automate your social channels. Bring your own keys and run locally or on your cloud.
+                  Everything you need to automate your social channels. Bring your own keys and run locally or on your
+                  cloud.
                 </p>
 
                 <div className="space-y-2.5 pt-2 text-xs text-white/80">
@@ -555,10 +538,7 @@ export default function LandingPage() {
               </div>
 
               <div className="pt-4">
-                <Link
-                  href="/signup"
-                  className="btn-accent w-full text-center py-2.5 rounded-lg text-xs font-semibold"
-                >
+                <Link href="/signup" className="btn-accent w-full text-center py-2.5 rounded-lg text-xs font-semibold">
                   Start Free Now
                 </Link>
               </div>
@@ -579,7 +559,8 @@ export default function LandingPage() {
                   <span className="text-xs text-white/40 uppercase font-mono">/ Month</span>
                 </div>
                 <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                  For creators and teams who want hands-off automated background schedules without managing infrastructure.
+                  For creators and teams who want hands-off automated background schedules without managing
+                  infrastructure.
                 </p>
 
                 <div className="space-y-2.5 pt-2 text-xs text-white/80">
@@ -603,10 +584,7 @@ export default function LandingPage() {
               </div>
 
               <div className="pt-4">
-                <Link
-                  href="/signup"
-                  className="btn-ghost w-full text-center py-2.5 rounded-lg text-xs font-semibold"
-                >
+                <Link href="/signup" className="btn-ghost w-full text-center py-2.5 rounded-lg text-xs font-semibold">
                   Get Started with Cloud
                 </Link>
               </div>
@@ -629,7 +607,8 @@ export default function LandingPage() {
           </h3>
 
           <p className="mt-4 text-xs sm:text-sm text-white/60 max-w-md mx-auto leading-relaxed">
-            Deploy in under 2 minutes. Bring your own key, connect your channels, and take complete control of your social growth.
+            Deploy in under 2 minutes. Bring your own key, connect your channels, and take complete control of your
+            social growth.
           </p>
 
           <div className="mt-8 flex items-center justify-center gap-3">
@@ -647,13 +626,21 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-white/[0.06] py-10 px-6 bg-[#0a0908]">
         <div className="max-w-[1128px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 text-xs text-white/40">
-          <JoeyLogo size="sm" />
+          <JoeyLogo size="sm" prefetch={false} />
 
           <div className="flex flex-wrap items-center justify-center gap-6">
-            <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
-            <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
-            <Link href="/docs" className="hover:text-white transition-colors">Docs</Link>
-            <Link href="/blog" className="hover:text-white transition-colors">Blog</Link>
+            <Link href="/privacy" className="hover:text-white transition-colors">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-white transition-colors">
+              Terms
+            </Link>
+            <Link href="/docs" className="hover:text-white transition-colors">
+              Docs
+            </Link>
+            <Link href="/blog" className="hover:text-white transition-colors">
+              Blog
+            </Link>
             <a
               href="https://github.com/evonera/joey"
               target="_blank"

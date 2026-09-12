@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
 import { useState, useRef, useEffect } from "react";
-import Link from "next/link";
+import { LandingLink as Link } from "@/components/landing-link";
 import {
   ArrowRight01Icon as ArrowRight,
   ArrowDown01Icon as ChevronDown,
@@ -48,7 +48,7 @@ export function LandingHeader() {
       <div ref={navRef} className="max-w-[1128px] mx-auto">
         <nav className="pointer-events-auto w-full flex items-center justify-between bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-xl px-4 sm:px-5 py-2.5 shadow-2xl relative">
           {/* Brand Logo */}
-          <JoeyLogo size="sm" />
+          <JoeyLogo size="sm" prefetch={false} />
 
           {/* Center Links (Features, Pricing, Resources) */}
           <div className="hidden md:flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
@@ -277,9 +277,7 @@ export function LandingHeader() {
         {mobileMenuOpen && (
           <div className="md:hidden pointer-events-auto mt-2 bg-[#121110] border border-white/[0.08] rounded-xl p-4 shadow-2xl flex flex-col gap-3">
             <div className="space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40 px-2">
-                Features
-              </span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40 px-2">Features</span>
               <Link
                 href="/#chat"
                 onClick={() => setMobileMenuOpen(false)}

@@ -17,9 +17,12 @@ const withAnalyze = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
-  output: process.env.NEXT_OUTPUT === "export"
-    ? "export"
-    : (process.env.NEXT_OUTPUT === "server" || process.env.VERCEL ? undefined : "standalone"),
+  output:
+    process.env.NEXT_OUTPUT === "export"
+      ? "export"
+      : process.env.NEXT_OUTPUT === "server" || process.env.VERCEL
+        ? undefined
+        : "standalone",
   // resvg ships platform-native binaries and must remain a Node server
   // dependency instead of being bundled into Turbopack ESM chunks.
   serverExternalPackages: ["@resvg/resvg-js"],
@@ -66,7 +69,6 @@ const nextConfig: NextConfig = {
       "base-uri 'self'",
       "form-action 'self'",
       "object-src 'none'",
-      "upgrade-insecure-requests",
     ].join("; ");
 
     return [
@@ -80,8 +82,8 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
           {
             key: "Strict-Transport-Security",
-            value: "max-age=63072000; includeSubDomains; preload"
-          }
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
         ],
       },
     ];
