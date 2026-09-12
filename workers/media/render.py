@@ -222,9 +222,11 @@ def process_one(encoder="libx264"):
     except Exception as error:
         # Do not send presigned URLs or subprocess arguments back to logs/UI.
         with sentry_sdk.new_scope() as scope:
+            scope.clear_breadcrumbs()
             scope.set_tag("encoder", encoder)
             scope.set_tag("render_job_id", job["jobId"])
-            sentry_sdk.capture_exception(error)
+            scope.set_tag("error_type", type(error).__name__)
+            sentry_sdk.capture_message("Media render failed", level="error")
         result["error"] = f"Render failed ({type(error).__name__}). Check worker diagnostics."
     result["usage"] = {"elapsedSeconds": min(600, time.monotonic() - started), "encoder": encoder, "outputSeconds": job["spec"].get("video", {}).get("duration", 0)}
     for attempt in range(3):
