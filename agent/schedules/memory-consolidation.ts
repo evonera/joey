@@ -186,7 +186,7 @@ export default defineSchedule({
                     authenticator: "cron",
                     principalType: "user",
                     principalId: ownerUserId,
-                    attributes: { tenantId },
+                    attributes: { tenantId, automationKind: "memory_consolidation" },
                   },
                 }).then(
                   (result) => {

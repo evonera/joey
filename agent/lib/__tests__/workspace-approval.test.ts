@@ -71,9 +71,11 @@ describe("workspaceApproval", () => {
     expect(findFirst).not.toHaveBeenCalled();
   });
 
-  it("auto-approves only a verified owner automation", async () => {
+  it("auto-approves only the named, verified owner automation", async () => {
     findFirst.mockResolvedValue({ id: "membership-1" });
-    const approval = workspaceApproval({ allowOwnerAutomation: true });
+    const approval = workspaceApproval({
+      allowOwnerAutomationKind: "memory_consolidation",
+    });
     const ctx = {
       session: {
         auth: {
@@ -81,7 +83,10 @@ describe("workspaceApproval", () => {
             authenticator: "cron",
             principalId: "user-1",
             principalType: "user",
-            attributes: { tenantId: "tenant-1" },
+            attributes: {
+              tenantId: "tenant-1",
+              automationKind: "memory_consolidation",
+            },
           },
         },
       },
@@ -90,5 +95,25 @@ describe("workspaceApproval", () => {
       type: "approved",
       reason: "Authorized workspace-owner automation.",
     });
+  });
+
+  it("does not auto-approve a different owner cron session", async () => {
+    const approval = workspaceApproval({
+      allowOwnerAutomationKind: "memory_consolidation",
+    });
+    const ctx = {
+      session: {
+        auth: {
+          current: {
+            authenticator: "cron",
+            principalId: "user-1",
+            principalType: "user",
+            attributes: { tenantId: "tenant-1", automationKind: "tenant_poll" },
+          },
+        },
+      },
+    } as never;
+    await expect(approval.request(ctx)).resolves.toBe("user-approval");
+    expect(findFirst).not.toHaveBeenCalled();
   });
 });

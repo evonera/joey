@@ -44,13 +44,17 @@ async function isWorkspaceApprover(
   return Boolean(membership);
 }
 
-async function isTrustedWorkspaceAutomation(ctx: ApprovalContext): Promise<boolean> {
+async function isTrustedWorkspaceAutomation(
+  ctx: ApprovalContext,
+  automationKind: string,
+): Promise<boolean> {
   const caller = ctx.session.auth.current;
   const tenantId = caller?.attributes?.tenantId;
   if (
     caller?.authenticator !== "cron" ||
     caller.principalType !== "user" ||
     typeof tenantId !== "string" ||
+    caller.attributes?.automationKind !== automationKind ||
     !caller.principalId
   ) {
     return false;
@@ -67,11 +71,12 @@ async function isTrustedWorkspaceAutomation(ctx: ApprovalContext): Promise<boole
 }
 
 export function workspaceApproval(options?: {
-  allowOwnerAutomation?: boolean;
+  allowOwnerAutomationKind?: string;
 }): ApprovalConfiguration {
   return {
     request: async (ctx) =>
-      options?.allowOwnerAutomation && (await isTrustedWorkspaceAutomation(ctx))
+      options?.allowOwnerAutomationKind &&
+      (await isTrustedWorkspaceAutomation(ctx, options.allowOwnerAutomationKind))
         ? { type: "approved", reason: "Authorized workspace-owner automation." }
         : "user-approval",
     response: async (ctx) =>

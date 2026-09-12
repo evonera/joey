@@ -11,7 +11,7 @@ export default defineTool({
   inputSchema: z.object({
     id: z.string().min(1).max(100).describe("The memory id from list_memories."),
   }),
-  approval: workspaceApproval({ allowOwnerAutomation: true }),
+  approval: workspaceApproval({ allowOwnerAutomationKind: "memory_consolidation" }),
   execute: async ({ id }, ctx) => {
     const tenantId = ctx.session.auth.current?.attributes?.tenantId;
     if (!tenantId) throw new Error("Unable to identify tenant from session auth.");
