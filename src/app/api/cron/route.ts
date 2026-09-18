@@ -25,6 +25,7 @@ export async function GET(request: Request) {
 
   const { publishDueDrafts } = await import("@/lib/publisher-core");
   const { runFlowsTick } = await import("../../../../agent/schedules/flows-tick");
+  const { runScoutsTick } = await import("@/lib/scouts/evaluator");
   const { processTelegramOutbox } = await import("@/lib/telegram-outbox");
   const { pruneExpiredRateLimits } = await import("@/lib/rate-limit");
 
@@ -34,12 +35,13 @@ export async function GET(request: Request) {
   const results = await Promise.allSettled([
     withTimeout(publishDueDrafts({ limit: 10 }), CRON_TASK_TIMEOUT_MS, "publishDrafts"),
     withTimeout(runFlowsTick(), CRON_TASK_TIMEOUT_MS, "flowsTick"),
+    withTimeout(runScoutsTick(), CRON_TASK_TIMEOUT_MS, "scoutsTick"),
     withTimeout(processTelegramOutbox(), CRON_TASK_TIMEOUT_MS, "telegramOutbox"),
     withTimeout(pruneExpiredRateLimits(), CRON_TASK_TIMEOUT_MS, "pruneRateLimits"),
   ]);
 
   const summary = results.map((r, i) => ({
-    task: ["publishDrafts", "flowsTick", "telegramOutbox", "pruneRateLimits"][i],
+    task: ["publishDrafts", "flowsTick", "scoutsTick", "telegramOutbox", "pruneRateLimits"][i],
     status: r.status,
     ...(r.status === "rejected" ? { error: String(r.reason) } : {}),
   }));

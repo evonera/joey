@@ -38,7 +38,7 @@ export default defineAgent({
     },
   }),
   compaction: {
-    thresholdPercent: 0.9,
+    thresholdPercent: 0.75,
   },
   limits: {
     maxInputTokensPerSession: 1_000_000,

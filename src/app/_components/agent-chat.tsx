@@ -64,6 +64,13 @@ import {
 } from "@/lib/chat-sessions";
 import { ChatLibraryView } from "@/components/chat/chat-library-view";
 import { SocialPlatformSelector } from "@/components/chat/social-platform-selector";
+import {
+  SourcesPillButton,
+  DotMatrixLoader,
+  ComposerAutocompleteMenu,
+  type ChatSource,
+  type ChatSkill,
+} from "@/components/chat/chat-composer-popover";
 const AgentMessage = dynamic(() => import("./agent-message").then(module => module.AgentMessage), {
   loading: () => <div role="status" className="py-3 text-sm text-muted-foreground">Loading message…</div>,
 });
@@ -290,6 +297,10 @@ function AgentChatInner({
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Record<string, string[]>>({});
+  const [activeSourceIds, setActiveSourceIds] = useState<string[]>([]);
+  const [autocompleteType, setAutocompleteType] = useState<"sources" | "skills" | null>(null);
+  const [autocompleteQuery, setAutocompleteQuery] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const handleTogglePlatform = (platformId: string) => {
     setSelectedPlatforms((prev) =>
@@ -302,6 +313,36 @@ function AgentChatInner({
       ...prev,
       [platformId]: accountIds,
     }));
+  };
+
+  const handleToggleSource = (id: string) => {
+    setActiveSourceIds((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectSource = (source: ChatSource) => {
+    if (!activeSourceIds.includes(source.id)) {
+      setActiveSourceIds((prev) => [...prev, source.id]);
+    }
+    setAutocompleteType(null);
+    if (textareaRef.current) {
+      const value = textareaRef.current.value;
+      const cursor = textareaRef.current.selectionStart || value.length;
+      const textBefore = value.slice(0, cursor);
+      const textAfter = value.slice(cursor);
+      const replaced = textBefore.replace(/@[a-zA-Z0-9_-]*$/, `${source.tag} `);
+      textareaRef.current.value = replaced + textAfter;
+      textareaRef.current.focus();
+    }
+  };
+
+  const handleSelectSkill = (skill: ChatSkill) => {
+    setAutocompleteType(null);
+    if (textareaRef.current) {
+      textareaRef.current.value = skill.promptTemplate;
+      textareaRef.current.focus();
+    }
   };
 
   const isBusy = agent.status === "submitted" || agent.status === "streaming";
@@ -381,6 +422,11 @@ function AgentChatInner({
 
     prepareTurn();
 
+    const sourcesPreamble =
+      activeSourceIds.length > 0
+        ? `[Active Sources: ${activeSourceIds.join(", ")}]\n`
+        : "";
+
     const targetPreamble =
       selectedPlatforms.length > 0
         ? `[Target Channels: ${selectedPlatforms
@@ -394,7 +440,7 @@ function AgentChatInner({
             .join("; ")}]\n\n`
         : "";
 
-    const fullText = `${targetPreamble}${text}`.trim();
+    const fullText = `${sourcesPreamble}${targetPreamble}${text}`.trim();
 
     if (message.files.length === 0) {
       await agent.send(fullText);
@@ -422,10 +468,35 @@ function AgentChatInner({
   const composer = (
     <PromptInput onSubmit={handleSubmit}>
       <PromptInputBody>
-        <PromptInputTextarea
-          defaultValue={initialPrompt}
-          placeholder="Ask Joey to research topics, draft posts, or automate flows…"
-        />
+        <div className="relative w-full">
+          <ComposerAutocompleteMenu
+            type={autocompleteType}
+            query={autocompleteQuery}
+            onSelectSource={handleSelectSource}
+            onSelectSkill={handleSelectSkill}
+          />
+          <PromptInputTextarea
+            ref={textareaRef}
+            defaultValue={initialPrompt}
+            placeholder="Ask Joey to research topics, draft posts, or automate flows… (@ for sources, / for skills)"
+            onChange={(e) => {
+              const value = e.target.value;
+              const cursor = e.target.selectionStart || value.length;
+              const textBeforeCursor = value.slice(0, cursor);
+              const words = textBeforeCursor.split(/\s+/);
+              const currentWord = words[words.length - 1] || "";
+              if (currentWord.startsWith("@")) {
+                setAutocompleteType("sources");
+                setAutocompleteQuery(currentWord.slice(1));
+              } else if (currentWord.startsWith("/")) {
+                setAutocompleteType("skills");
+                setAutocompleteQuery(currentWord.slice(1));
+              } else {
+                setAutocompleteType(null);
+              }
+            }}
+          />
+        </div>
         <SocialPlatformSelector
           selectedPlatforms={selectedPlatforms}
           onTogglePlatform={handleTogglePlatform}
@@ -436,6 +507,10 @@ function AgentChatInner({
       </PromptInputBody>
       <PromptInputFooter>
         <PromptInputTools>
+          <SourcesPillButton
+            activeSourceIds={activeSourceIds}
+            onToggleSource={handleToggleSource}
+          />
           <PromptInputSelect value={selectedModel} onValueChange={handleModelChange}>
             <PromptInputSelectTrigger className="h-7 text-xs px-2 gap-1.5 border border-border/50 rounded-md bg-background/50 hover:bg-muted/80 transition-colors">
               <span className="font-medium text-foreground">{currentModelDef.name}</span>
@@ -815,16 +890,12 @@ function StatusDot({ status }: { readonly status: AgentStatus }) {
           ? "bg-muted-foreground"
           : "bg-muted-foreground/50";
 
+  if (isLive) {
+    return <DotMatrixLoader isLive={true} />;
+  }
+
   return (
     <span className="relative flex size-1.5">
-      {isLive ? (
-        <span
-          className={cn(
-            "absolute inline-flex size-full animate-ping rounded-full opacity-75",
-            tone
-          )}
-        />
-      ) : null}
       <span className={cn("relative inline-flex size-1.5 rounded-full transition-colors", tone)} />
     </span>
   );
