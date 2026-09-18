@@ -82,6 +82,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/cli": "^2.11.4",
     "@types/mdx": "^2.0.14",
+    "@typesafe-ai/sdk": "^0.6.0",
     "@vercel/connect": "0.4.2",
     "@xyflow/react": "^12.11.3",
     "@zernio/node": "^0.2.428",
