@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 
   const { publishDueDrafts } = await import("@/lib/publisher-core");
   const { runFlowsTick } = await import("../../../../agent/schedules/flows-tick");
-  const { runScoutsTick } = await import("../../../../agent/schedules/scout-poll");
+  const { runScoutsTick } = await import("@/lib/scouts/evaluator");
   const { processTelegramOutbox } = await import("@/lib/telegram-outbox");
   const { pruneExpiredRateLimits } = await import("@/lib/rate-limit");
 

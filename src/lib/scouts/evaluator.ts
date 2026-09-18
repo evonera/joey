@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { scouts, scoutRuns } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { scouts, scoutRuns, member, notifications } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
 import { generateText } from "ai";
 import { resolveModelForTurn } from "@/lib/agent-model-resolver";
@@ -319,4 +319,76 @@ Only trigger if a post genuinely meets the goal. Do not fabricate spikes. If non
     inFlightEvaluations.delete(scoutId);
   }
 }
+
+export interface ScoutsTickOptions {
+  dispatchAlert?: (params: {
+    scout: typeof scouts.$inferSelect;
+    alert: ScoutAlert;
+    ownerUserId: string;
+  }) => Promise<void> | void;
+}
+
+export async function runScoutsTick(options?: ScoutsTickOptions) {
+  const now = new Date();
+
+  // Find active scouts that are due for polling
+  const activeScouts = await db.query.scouts.findMany({
+    where: eq(scouts.isActive, true),
+  });
+
+  const dueScouts = activeScouts.filter((scout) => {
+    if (!scout.lastPolledAt) return true;
+    const nextDue = new Date(scout.lastPolledAt.getTime() + scout.pollIntervalMinutes * 60 * 1000);
+    return nextDue <= now;
+  });
+
+  const results: Array<{ scoutId: string; triggered: boolean; error?: string }> = [];
+
+  for (const scout of dueScouts) {
+    try {
+      const evaluation = await evaluateScout(scout.id);
+      results.push({ scoutId: scout.id, triggered: evaluation.triggered, error: evaluation.error });
+
+      if (evaluation.triggered && evaluation.alert) {
+        // Find owner member to notify
+        const ownerMember = await db.query.member.findFirst({
+          where: and(eq(member.organizationId, scout.tenantId), eq(member.role, "owner")),
+        });
+
+        // 1. Persist in-app notification
+        try {
+          await db.insert(notifications).values({
+            tenantId: scout.tenantId,
+            type: "scout_alert",
+            title: evaluation.alert.title,
+            body: `Competitor change detected for ${scout.name}: ${evaluation.alert.changes.map((c) => c.label).join(", ")}`,
+            link: "/scouts",
+            metadata: evaluation.alert,
+          });
+        } catch (notifErr) {
+          console.error(`[scout-poll] Failed creating in-app notification:`, notifErr);
+        }
+
+        // 2. Dispatch to channel if callback provided
+        if (ownerMember && options?.dispatchAlert) {
+          try {
+            await options.dispatchAlert({
+              scout,
+              alert: evaluation.alert,
+              ownerUserId: ownerMember.userId,
+            });
+          } catch (dispatchErr) {
+            console.error(`[scout-poll] Failed dispatching scout alert:`, dispatchErr);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[scout-poll] Failed evaluating scout ${scout.id}:`, err);
+      results.push({ scoutId: scout.id, triggered: false, error: String(err) });
+    }
+  }
+
+  return { checkedCount: dueScouts.length, results };
+}
+
 
