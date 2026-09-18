@@ -49,10 +49,14 @@ async function generateEditorialCopy(input: {
   if (!budget.allowed) {
     throw new Error(`Monthly LLM budget reached ($${budget.costUsd.toFixed(2)} / $${budget.budgetUsd.toFixed(2)})`);
   }
+  const rawFacts = Array.isArray(input.cluster.facts) ? input.cluster.facts : [];
+  const sourcedClaims = rawFacts.filter((fact: any) => {
+    return fact && typeof fact === "object" && fact.corroborationStatus !== "contradicted";
+  });
   const evidence = {
     sourceHeadline: input.cluster.title,
     sourceSummary: input.cluster.summary,
-    sourcedClaims: Array.isArray(input.cluster.facts) ? input.cluster.facts : [],
+    sourcedClaims,
     sources: input.sources.slice(0, 5).map((source) => ({
       title: source.title,
       excerpt: source.body?.slice(0, 600) ?? null,
