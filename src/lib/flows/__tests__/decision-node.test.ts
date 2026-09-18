@@ -80,6 +80,30 @@ describe("parseDecisionChoices", () => {
     ).toThrow('Duplicate decision choice branch "sales"');
   });
 
+  it("safely handles Object.prototype property names like constructor and toString", () => {
+    const choices = parseDecisionChoices({
+      choices: {
+        constructor: "Object constructor queries",
+        toString: "String representation inquiries",
+      },
+    });
+    expect(choices).toEqual({
+      constructor: "Object constructor queries",
+      toString: "String representation inquiries",
+    });
+
+    const fromJson = parseDecisionChoices({
+      choicesJson: JSON.stringify({
+        constructor: "Object constructor queries",
+        toString: "String representation inquiries",
+      }),
+    });
+    expect(fromJson).toEqual({
+      constructor: "Object constructor queries",
+      toString: "String representation inquiries",
+    });
+  });
+
   it("defaults to binary yes/no only when neither choices nor choicesJson is configured", () => {
     expect(parseDecisionChoices({})).toEqual({
       yes: "The condition or criteria is met",

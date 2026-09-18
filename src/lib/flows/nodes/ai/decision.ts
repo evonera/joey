@@ -18,13 +18,15 @@ export function parseDecisionChoices(raw: Record<string, unknown>): Record<strin
       throw new Error("Invalid choices: must be an object mapping branch keys to descriptions.");
     }
     const res: Record<string, string> = {};
+    const seen = new Set<string>();
     for (const [k, v] of Object.entries(raw.choices)) {
       if (typeof v === "string" && v.trim()) {
         const trimmedKey = k.trim();
         if (!trimmedKey) continue;
-        if (trimmedKey in res) {
+        if (seen.has(trimmedKey)) {
           throw new Error(`Duplicate decision choice branch "${trimmedKey}" after key normalization.`);
         }
+        seen.add(trimmedKey);
         res[trimmedKey] = v.trim();
       }
     }
@@ -45,13 +47,15 @@ export function parseDecisionChoices(raw: Record<string, unknown>): Record<strin
       throw new Error("Invalid choicesJson: must be a JSON object mapping branch keys to descriptions.");
     }
     const res: Record<string, string> = {};
+    const seen = new Set<string>();
     for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof v === "string" && v.trim()) {
         const trimmedKey = k.trim();
         if (!trimmedKey) continue;
-        if (trimmedKey in res) {
+        if (seen.has(trimmedKey)) {
           throw new Error(`Duplicate decision choice branch "${trimmedKey}" after key normalization.`);
         }
+        seen.add(trimmedKey);
         res[trimmedKey] = v.trim();
       }
     }
