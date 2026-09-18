@@ -6,6 +6,7 @@ import { sortTopNNode } from "./nodes/transform/sort-top-n";
 import { dedupeNode } from "./nodes/transform/dedupe";
 import { conditionNode } from "./nodes/logic/condition";
 import { llmTaskNode } from "./nodes/ai/llm-task";
+import { aiDecisionNode } from "./nodes/ai/decision";
 import { createDraftNode } from "./nodes/actions/create-draft";
 import { notifyNode } from "./nodes/actions/notify";
 
@@ -42,6 +43,7 @@ const definitions = {
   "logic.approval": approvalGateNode,
   "logic.split": splitNode,
   "ai.llm": llmTaskNode,
+  "ai.decision": aiDecisionNode,
   "ai.transcribe": transcribeNode,
   "ai.image": imageGenNode,
   "ai.youtube_transcript": youtubeTranscriptNode,
@@ -80,6 +82,7 @@ const _keysMatch: AssertKeysMatch = {
   "logic.approval": true,
   "logic.split": true,
   "ai.llm": true,
+  "ai.decision": true,
   "ai.transcribe": true,
   "ai.image": true,
   "ai.youtube_transcript": true,

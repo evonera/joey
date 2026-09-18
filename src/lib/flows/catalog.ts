@@ -100,6 +100,99 @@ export const llmTaskConfig = z
     return { ...data, model };
   });
 
+export const aiDecisionConfig = z
+  .object({
+    question: z
+      .string()
+      .min(1)
+      .default("Does the incoming data satisfy the criteria?")
+      .describe("The decision or classification question for TypeSafe Jev (System One)"),
+    choicesJson: z
+      .string()
+      .default(
+        '{\n  "yes": "The condition or criteria is met",\n  "no": "The condition or criteria is not met"\n}',
+      )
+      .describe(
+        'JSON object mapping branch names to criteria descriptions, e.g. {"billing": "Invoices", "tech": "Bugs"}',
+      ),
+    inputField: z
+      .string()
+      .optional()
+      .describe("Optional dot-path on incoming item to evaluate (blank = entire input)"),
+    confidenceThreshold: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.7)
+      .describe("Minimum confidence (0.0 – 1.0) required. Falls back if confidence is lower"),
+    defaultChoice: z
+      .string()
+      .default("fallback")
+      .describe("Branch taken if confidence is below threshold, or on evaluation error"),
+    timeoutMs: z
+      .number()
+      .int()
+      .min(500)
+      .max(15000)
+      .default(3000)
+      .describe("Timeout in ms for TypeSafe Jev request"),
+    fallbackOnError: z
+      .boolean()
+      .default(false)
+      .describe("If true, routes to defaultChoice on network/API failure instead of failing the run"),
+  })
+  .passthrough()
+  .refine(
+    (cfg) => {
+      if ("choices" in cfg && cfg.choices !== undefined) {
+        if (!cfg.choices || typeof cfg.choices !== "object" || Array.isArray(cfg.choices)) {
+          return false;
+        }
+        const normalizedKeys = new Set<string>();
+        for (const [k, v] of Object.entries(cfg.choices as Record<string, unknown>)) {
+          if (typeof k !== "string" || !k.trim() || typeof v !== "string" || !v.trim()) {
+            return false;
+          }
+          const trimmedKey = k.trim();
+          if (normalizedKeys.has(trimmedKey)) {
+            return false; // Collision after normalization
+          }
+          normalizedKeys.add(trimmedKey);
+        }
+        return normalizedKeys.size >= 2;
+      }
+      if (typeof cfg.choicesJson === "string" && cfg.choicesJson.trim()) {
+        try {
+          const parsed = JSON.parse(cfg.choicesJson);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return false;
+          }
+          const normalizedKeys = new Set<string>();
+          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+            if (typeof k !== "string" || !k.trim() || typeof v !== "string" || !v.trim()) {
+              return false;
+            }
+            const trimmedKey = k.trim();
+            if (normalizedKeys.has(trimmedKey)) {
+              return false; // Collision after normalization
+            }
+            normalizedKeys.add(trimmedKey);
+          }
+          return normalizedKeys.size >= 2;
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    },
+    {
+      message:
+        'choicesJson must be valid JSON with at least 2 distinct choice branches (e.g. {"yes": "...", "no": "..."})',
+      path: ["choicesJson"],
+    },
+  );
+export type AiDecisionConfigT = z.infer<typeof aiDecisionConfig>;
+
 export const transcribeConfig = z.object({
   mediaUrlField: z
     .string()
@@ -221,6 +314,7 @@ export const NODE_CATALOG: CatalogMeta[] = [
   { type: "logic.approval", category: "logic", label: "Approval gate", description: "Pauses the run until you approve or reject in the dashboard. On approve, downstream nodes execute; on reject the run ends.", inputs: ["data"], outputs: ["data"], configSchema: approvalGateConfig },
   { type: "logic.split", category: "logic", label: "A/B split", description: "Deterministically routes a run to branch a or b.", inputs: ["data"], outputs: ["a", "b"], configSchema: splitConfig },
   { type: "ai.llm", category: "ai", label: "AI Task", description: "Runs an LLM over the incoming data. Optionally forces structured JSON via a schema. Spend counts against your LLM budget.", inputs: ["data"], outputs: ["result"], configSchema: llmTaskConfig },
+  { type: "ai.decision", category: "ai", label: "AI Decision", description: "Fast (~120ms), cost-effective semantic decision or classification via TypeSafe Jev. Branches the flow based on calibrated choice.", inputs: ["data"], outputs: ["yes", "no", "fallback"], configSchema: aiDecisionConfig },
   { type: "ai.transcribe", category: "ai", label: "Transcribe", description: "Downloads an audio/video URL and transcribes it with OpenAI Whisper. Uses your OpenAI key; spend counts against budget.", inputs: ["media"], outputs: ["transcript"], configSchema: transcribeConfig },
   { type: "ai.image", category: "ai", label: "Generate image", description: "Generates and durably stores an image asset.", inputs: ["idea"], outputs: ["image"], configSchema: imageGenConfig },
   { type: "ai.youtube_transcript", category: "ai", label: "YouTube transcript", description: "Fetches a YouTube transcript through Supadata.", inputs: ["video"], outputs: ["transcript"], configSchema: youtubeTranscriptConfig },
@@ -236,6 +330,46 @@ const metaByType = new Map(NODE_CATALOG.map((m) => [m.type, m]));
 
 export function getNodeMeta(type: string): CatalogMeta | undefined {
   return metaByType.get(type);
+}
+
+/**
+ * Returns the output handle names for a node, taking into account dynamic
+ * outputs (such as ai.decision choices + fallback).
+ */
+export function getNodeOutputs(node: { type: string; config?: Record<string, unknown> }): string[] {
+  const def = getNodeMeta(node.type);
+  if (!def) return [];
+
+  if (node.type === "ai.decision" && node.config) {
+    const cfg = node.config;
+    const fallbackKey =
+      typeof cfg.defaultChoice === "string" && cfg.defaultChoice.trim()
+        ? cfg.defaultChoice.trim()
+        : "fallback";
+
+    if (typeof cfg.choicesJson === "string" && cfg.choicesJson.trim()) {
+      try {
+        const parsed = JSON.parse(cfg.choicesJson);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const keys = Object.keys(parsed)
+            .map((k) => k.trim())
+            .filter(Boolean);
+          if (keys.length > 0) {
+            return Array.from(new Set([...keys, fallbackKey]));
+          }
+        }
+      } catch {}
+    } else if (cfg.choices && typeof cfg.choices === "object" && !Array.isArray(cfg.choices)) {
+      const keys = Object.keys(cfg.choices)
+        .map((k) => k.trim())
+        .filter(Boolean);
+      if (keys.length > 0) {
+        return Array.from(new Set([...keys, fallbackKey]));
+      }
+    }
+  }
+
+  return def.outputs;
 }
 
 /** Palette data + form schemas for builder UIs (client-safe). */

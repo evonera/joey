@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { NODE_CATALOG, getNodeMeta } from "@/lib/flows/catalog";
+import { NODE_CATALOG, getNodeMeta, getNodeOutputs } from "@/lib/flows/catalog";
 import type { FlowGraphDoc, FlowGraphEdge, FlowGraphNode } from "@/lib/flows/types";
 import { defineWebMcpTool } from "@/lib/webmcp";
 
@@ -142,7 +142,7 @@ export function connectFlowGraphNodes(
   if (getNodeMeta(target.type)?.isTrigger) throw new Error("A trigger cannot receive connections");
   if (hasPath(graph, target.id, source.id)) throw new Error("This connection would create a cycle");
 
-  const outputs = getNodeMeta(source.type)?.outputs ?? [];
+  const outputs = getNodeOutputs(source);
   if (outputs.length > 1 && !input.branch) {
     throw new Error(`Source node ${source.id} requires a branch: ${outputs.join(", ")}`);
   }

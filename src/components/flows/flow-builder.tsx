@@ -71,9 +71,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { getNodeMeta as getNode } from "@/lib/flows/catalog";
+import { getNodeMeta as getNode, getNodeOutputs, catalog } from "@/lib/flows/catalog";
 import type { FlowGraphDoc } from "@/lib/flows/types";
-import { catalog } from "@/lib/flows/catalog";
 import { createFlowWebMcpTools } from "@/lib/flows/webmcp";
 import { builderStateToGraphDoc, isAgentReviewSnapshotCurrent } from "@/lib/flows/builder-state";
 import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
@@ -124,6 +123,7 @@ const NODE_VISUAL_MAP: Record<string, NodeVisualInfo> = {
 
   // AI
   "ai.llm": { icon: Sparkles, colorClass: "text-violet-500", bgClass: "bg-violet-500/10 dark:bg-violet-500/20" },
+  "ai.decision": { icon: GitBranch, colorClass: "text-violet-500", bgClass: "bg-violet-500/10 dark:bg-violet-500/20" },
   "ai.transcribe": { icon: Mic, colorClass: "text-rose-500", bgClass: "bg-rose-500/10 dark:bg-rose-500/20" },
   "ai.image": { icon: ImageIcon, colorClass: "text-fuchsia-500", bgClass: "bg-fuchsia-500/10 dark:bg-fuchsia-500/20" },
   "ai.youtube_transcript": { icon: IconBrandYoutube as unknown as React.ComponentType<{ className?: string }>, colorClass: "text-red-500", bgClass: "bg-red-500/10 dark:bg-red-500/20" },
@@ -150,7 +150,7 @@ function getNodeVisuals(nodeType: string, category: string): NodeVisualInfo {
 }
 
 function FlowNode({ data, selected }: NodeProps) {
-  const d = data as { label: string; nodeType: string; category: string };
+  const d = data as { label: string; nodeType: string; category: string; config?: Record<string, unknown> };
   const def = getNode(d.nodeType);
   const visuals = getNodeVisuals(d.nodeType, d.category);
   const IconComponent = visuals.icon;
@@ -159,7 +159,7 @@ function FlowNode({ data, selected }: NodeProps) {
     d.category === "ai" ? "border-purple-500/60" :
     d.category === "action" ? "border-emerald-500/60" : "border-border";
 
-  const outputs = def?.outputs ?? [];
+  const outputs = getNodeOutputs({ type: d.nodeType, config: d.config });
   return (
     <div
       tabIndex={0}
