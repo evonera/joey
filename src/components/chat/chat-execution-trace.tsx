@@ -38,6 +38,22 @@ export interface ExtractedSource {
   domain: string;
 }
 
+function toSafeHttpUrl(rawUrl: unknown): { url: string; domain: string } | null {
+  if (typeof rawUrl !== "string" || !rawUrl.trim()) return null;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return {
+        url: parsed.href,
+        domain: parsed.hostname.replace(/^www\./, ""),
+      };
+    }
+  } catch {
+    // Invalid or unparseable URL
+  }
+  return null;
+}
+
 export function ExecutionTrace({
   traceParts,
   isStreaming,
@@ -71,32 +87,25 @@ export function ExecutionTrace({
           Array.isArray((part.output as any).results)
         ) {
           for (const item of (part.output as any).results) {
-            if (item.url) {
-              try {
-                const domain = new URL(item.url).hostname.replace(/^www\./, "");
-                sources.push({
-                  title: item.title || item.url,
-                  url: item.url,
-                  domain,
-                });
-              } catch {
-                sources.push({ title: item.url, url: item.url, domain: "source" });
-              }
+            const safe = toSafeHttpUrl(item?.url);
+            if (safe) {
+              sources.push({
+                title: item.title || safe.url,
+                url: safe.url,
+                domain: safe.domain,
+              });
             }
           }
         }
       }
     } else if ((part as any).type === "source-url") {
-      const url = (part as any).url;
-      try {
-        const domain = new URL(url).hostname.replace(/^www\./, "");
+      const safe = toSafeHttpUrl((part as any).url);
+      if (safe) {
         sources.push({
-          title: (part as any).title || url,
-          url,
-          domain,
+          title: (part as any).title || safe.url,
+          url: safe.url,
+          domain: safe.domain,
         });
-      } catch {
-        sources.push({ title: url, url, domain: "source" });
       }
     }
   }
@@ -177,7 +186,7 @@ export function ExecutionTrace({
                     key={idx}
                     href={s.url}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noreferrer noopener"
                     className="flex flex-col p-2 rounded-lg border border-border/40 bg-card/60 hover:bg-muted/60 hover:border-border/80 transition-colors group"
                   >
                     <span className="text-[10px] font-mono text-muted-foreground truncate group-hover:text-amber-500">
