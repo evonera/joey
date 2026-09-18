@@ -25,6 +25,7 @@ import {
   IconLifebuoy,
   IconBrandGithub,
 } from "@tabler/icons-react"
+import { Binoculars } from "lucide-react"
 
 import { authClient } from "@/lib/auth-client"
 import { NavMain, type NavSection } from "@/components/nav-main"
@@ -89,6 +90,11 @@ export function AppSidebar({
           title: "Theme Studio",
           url: "/theme-studio",
           icon: SparklesIcon,
+        },
+        {
+          title: "Social Scouts",
+          url: "/scouts",
+          icon: Binoculars as any,
         },
         {
           title: "Flows",

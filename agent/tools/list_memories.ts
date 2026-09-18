@@ -31,7 +31,10 @@ export default defineTool({
 
     return {
       memories: rows.map((row) => ({
-        ...row,
+        id: row.id,
+        type: row.type,
+        content: row.content.length > 300 ? `${row.content.slice(0, 300)}...` : row.content,
+        metadata: row.metadata,
         createdAt: row.createdAt.toISOString(),
       })),
       count: rows.length,

@@ -26,23 +26,38 @@ export default defineTool({
       limit,
     });
 
-    const postsData = recentPosts.map(p => ({
-      id: p.id,
-      content: p.content.length > 200 ? p.content.slice(0, 200) + "..." : p.content,
-      publishedAt: p.publishedAt?.toISOString(),
-      metrics: p.metrics,
-    }));
+    let totalViews = 0;
+    let totalEngagements = 0;
 
-    const totalPosts = postsData.length;
-    const withMetrics = postsData.filter(p => p.metrics);
+    const postsData = recentPosts.map((p) => {
+      const m = (p.metrics as Record<string, number> | null) || {};
+      const views = m.views || m.impressions || 0;
+      const engagements = (m.likes || 0) + (m.reposts || m.retweets || 0) + (m.comments || m.replies || 0);
+      totalViews += views;
+      totalEngagements += engagements;
+
+      return {
+        id: p.id,
+        content: p.content.length > 160 ? p.content.slice(0, 160) + "..." : p.content,
+        publishedAt: p.publishedAt?.toISOString(),
+        views,
+        engagements,
+      };
+    });
+
+    // Sort by engagements to identify top performers for the model
+    const topPerformers = [...postsData].sort((a, b) => b.engagements - a.engagements).slice(0, 5);
 
     return {
       period: { days, since: since.toISOString() },
       summary: {
-        totalPosts,
-        postsWithMetrics: withMetrics.length,
+        totalPosts: postsData.length,
+        totalViews,
+        totalEngagements,
+        avgEngagementPerPost: postsData.length > 0 ? Math.round(totalEngagements / postsData.length) : 0,
       },
-      posts: postsData,
+      topPerformers,
+      samplePosts: postsData.slice(0, 8),
     };
   },
 });
