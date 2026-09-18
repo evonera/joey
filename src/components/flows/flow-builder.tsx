@@ -71,9 +71,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { getNodeMeta as getNode } from "@/lib/flows/catalog";
+import { getNodeMeta as getNode, getNodeOutputs, catalog } from "@/lib/flows/catalog";
 import type { FlowGraphDoc } from "@/lib/flows/types";
-import { catalog } from "@/lib/flows/catalog";
 import { createFlowWebMcpTools } from "@/lib/flows/webmcp";
 import { builderStateToGraphDoc, isAgentReviewSnapshotCurrent } from "@/lib/flows/builder-state";
 import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
@@ -160,32 +159,7 @@ function FlowNode({ data, selected }: NodeProps) {
     d.category === "ai" ? "border-purple-500/60" :
     d.category === "action" ? "border-emerald-500/60" : "border-border";
 
-  let outputs = def?.outputs ?? [];
-  if (d.nodeType === "ai.decision" && d.config) {
-    const cfg = d.config;
-    if (typeof cfg.choicesJson === "string" && cfg.choicesJson.trim()) {
-      try {
-        const parsed = JSON.parse(cfg.choicesJson);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          const keys = Object.keys(parsed);
-          if (keys.length > 0) {
-            const fallbackKey = typeof cfg.defaultChoice === "string" && cfg.defaultChoice.trim()
-              ? cfg.defaultChoice.trim()
-              : "fallback";
-            outputs = Array.from(new Set([...keys, fallbackKey]));
-          }
-        }
-      } catch {}
-    } else if (cfg.choices && typeof cfg.choices === "object" && !Array.isArray(cfg.choices)) {
-      const keys = Object.keys(cfg.choices);
-      if (keys.length > 0) {
-        const fallbackKey = typeof cfg.defaultChoice === "string" && cfg.defaultChoice.trim()
-          ? cfg.defaultChoice.trim()
-          : "fallback";
-        outputs = Array.from(new Set([...keys, fallbackKey]));
-      }
-    }
-  }
+  const outputs = getNodeOutputs({ type: d.nodeType, config: d.config });
   return (
     <div
       tabIndex={0}

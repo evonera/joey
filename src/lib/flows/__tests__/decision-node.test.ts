@@ -45,20 +45,49 @@ describe("parseDecisionChoices", () => {
     });
   });
 
-  it("falls back to default yes/no criteria when invalid or fewer than 2 choices", () => {
-    const fromInvalidJson = parseDecisionChoices({ choicesJson: "{invalid-json" });
-    expect(fromInvalidJson).toEqual({
-      yes: "The condition or criteria is met",
-      no: "The condition or criteria is not met",
-    });
+  it("throws on invalid JSON syntax in choicesJson", () => {
+    expect(() => parseDecisionChoices({ choicesJson: "{invalid-json" })).toThrow(
+      "Invalid JSON syntax in choicesJson",
+    );
+  });
 
-    const fromSingleChoice = parseDecisionChoices({
-      choices: { only_one: "Not enough choices" },
-    });
-    expect(fromSingleChoice).toEqual({
+  it("throws when choices contains fewer than 2 valid criteria", () => {
+    expect(() => parseDecisionChoices({ choices: { only_one: "Not enough choices" } })).toThrow(
+      "at least 2 choices are required",
+    );
+    expect(() =>
+      parseDecisionChoices({ choicesJson: JSON.stringify({ only_one: "Not enough choices" }) }),
+    ).toThrow("at least 2 choices are required");
+  });
+
+  it("defaults to binary yes/no only when neither choices nor choicesJson is configured", () => {
+    expect(parseDecisionChoices({})).toEqual({
       yes: "The condition or criteria is met",
       no: "The condition or criteria is not met",
     });
+  });
+});
+
+describe("aiDecisionConfig and getNodeOutputs", () => {
+  it("rejects invalid choicesJson with schema error", () => {
+    const res = aiDecisionConfig.safeParse({
+      choicesJson: "{invalid-json",
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it("rejects choicesJson with fewer than 2 choices", () => {
+    const res = aiDecisionConfig.safeParse({
+      choicesJson: JSON.stringify({ one: "Only one choice" }),
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it("accepts valid choicesJson", () => {
+    const res = aiDecisionConfig.safeParse({
+      choicesJson: JSON.stringify({ sales: "Sales inquiry", support: "Technical bug" }),
+    });
+    expect(res.success).toBe(true);
   });
 });
 

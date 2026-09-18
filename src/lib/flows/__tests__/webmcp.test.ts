@@ -91,6 +91,28 @@ describe("WebMCP flow graph operations", () => {
     })).toThrow("A trigger cannot receive connections");
   });
 
+  it("allows connecting custom dynamic branches for ai.decision node", () => {
+    const decisionGraph = addFlowGraphNode(emptyGraph(), {
+      type: "ai.decision",
+      config: {
+        choicesJson: JSON.stringify({ sales: "Sales inquiry", support: "Technical bug" }),
+        defaultChoice: "unrouted",
+      },
+    }, "classifier").graph;
+    const withTargets = addFlowGraphNode(
+      addFlowGraphNode(decisionGraph, { type: "action.notify" }, "sales-action").graph,
+      { type: "action.notify" },
+      "support-action",
+    ).graph;
+
+    const connected = connectFlowGraphNodes(withTargets, {
+      fromNodeId: "classifier",
+      toNodeId: "sales-action",
+      branch: "sales",
+    });
+    expect(connected.edges).toEqual([{ from: "classifier", to: "sales-action", branch: "sales" }]);
+  });
+
   it("serializes every named React Flow handle, including A/B branches", () => {
     const graph = builderStateToGraphDoc([
       { id: "split", position: { x: 0, y: 0 }, data: { nodeType: "logic.split", config: {} } },

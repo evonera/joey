@@ -9,34 +9,46 @@ const configSchema = aiDecisionConfig;
 /**
  * Extracts decision choices from node config.
  * Supports programmatic `choices` record or form-provided `choicesJson` string.
- * Falls back to binary yes/no if fewer than 2 valid criteria are provided.
+ * Strictly throws if provided choices are invalid or contain fewer than 2 valid criteria.
+ * Defaults to binary yes/no only when neither choices nor choicesJson is configured.
  */
 export function parseDecisionChoices(raw: Record<string, unknown>): Record<string, string> {
-  if (raw.choices && typeof raw.choices === "object" && !Array.isArray(raw.choices)) {
+  if (raw.choices !== undefined) {
+    if (!raw.choices || typeof raw.choices !== "object" || Array.isArray(raw.choices)) {
+      throw new Error("Invalid choices: must be an object mapping branch keys to descriptions.");
+    }
     const res: Record<string, string> = {};
     for (const [k, v] of Object.entries(raw.choices)) {
       if (typeof v === "string" && v.trim()) {
-        res[k] = v.trim();
+        res[k.trim()] = v.trim();
       }
     }
-    if (Object.keys(res).length >= 2) return res;
+    if (Object.keys(res).length < 2) {
+      throw new Error(`Invalid decision choices: at least 2 choices are required, but found ${Object.keys(res).length}.`);
+    }
+    return res;
   }
 
   if (typeof raw.choicesJson === "string" && raw.choicesJson.trim()) {
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(raw.choicesJson);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        const res: Record<string, string> = {};
-        for (const [k, v] of Object.entries(parsed)) {
-          if (typeof v === "string" && v.trim()) {
-            res[k] = v.trim();
-          }
-        }
-        if (Object.keys(res).length >= 2) return res;
-      }
-    } catch {
-      // Invalid JSON syntax in choicesJson
+      parsed = JSON.parse(raw.choicesJson);
+    } catch (err: any) {
+      throw new Error(`Invalid JSON syntax in choicesJson: ${err?.message || String(err)}`);
     }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Invalid choicesJson: must be a JSON object mapping branch keys to descriptions.");
+    }
+    const res: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "string" && v.trim()) {
+        res[k.trim()] = v.trim();
+      }
+    }
+    if (Object.keys(res).length < 2) {
+      throw new Error(`Invalid decision choices: at least 2 choices are required in choicesJson, but found ${Object.keys(res).length}.`);
+    }
+    return res;
   }
 
   return {

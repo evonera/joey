@@ -141,7 +141,42 @@ export const aiDecisionConfig = z
       .default(false)
       .describe("If true, routes to defaultChoice on network/API failure instead of failing the run"),
   })
-  .passthrough();
+  .passthrough()
+  .refine(
+    (cfg) => {
+      if ("choices" in cfg && cfg.choices !== undefined) {
+        if (!cfg.choices || typeof cfg.choices !== "object" || Array.isArray(cfg.choices)) {
+          return false;
+        }
+        const entries = Object.entries(cfg.choices as Record<string, unknown>);
+        if (entries.length < 2) return false;
+        return entries.every(
+          ([k, v]) => typeof k === "string" && k.trim() && typeof v === "string" && v.trim(),
+        );
+      }
+      if (typeof cfg.choicesJson === "string" && cfg.choicesJson.trim()) {
+        try {
+          const parsed = JSON.parse(cfg.choicesJson);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return false;
+          }
+          const entries = Object.entries(parsed);
+          if (entries.length < 2) return false;
+          return entries.every(
+            ([k, v]) => typeof k === "string" && k.trim() && typeof v === "string" && (v as string).trim(),
+          );
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    },
+    {
+      message:
+        'choicesJson must be valid JSON with at least 2 choice branches (e.g. {"yes": "...", "no": "..."})',
+      path: ["choicesJson"],
+    },
+  );
 export type AiDecisionConfigT = z.infer<typeof aiDecisionConfig>;
 
 export const transcribeConfig = z.object({
@@ -281,6 +316,46 @@ const metaByType = new Map(NODE_CATALOG.map((m) => [m.type, m]));
 
 export function getNodeMeta(type: string): CatalogMeta | undefined {
   return metaByType.get(type);
+}
+
+/**
+ * Returns the output handle names for a node, taking into account dynamic
+ * outputs (such as ai.decision choices + fallback).
+ */
+export function getNodeOutputs(node: { type: string; config?: Record<string, unknown> }): string[] {
+  const def = getNodeMeta(node.type);
+  if (!def) return [];
+
+  if (node.type === "ai.decision" && node.config) {
+    const cfg = node.config;
+    const fallbackKey =
+      typeof cfg.defaultChoice === "string" && cfg.defaultChoice.trim()
+        ? cfg.defaultChoice.trim()
+        : "fallback";
+
+    if (typeof cfg.choicesJson === "string" && cfg.choicesJson.trim()) {
+      try {
+        const parsed = JSON.parse(cfg.choicesJson);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const keys = Object.keys(parsed)
+            .map((k) => k.trim())
+            .filter(Boolean);
+          if (keys.length > 0) {
+            return Array.from(new Set([...keys, fallbackKey]));
+          }
+        }
+      } catch {}
+    } else if (cfg.choices && typeof cfg.choices === "object" && !Array.isArray(cfg.choices)) {
+      const keys = Object.keys(cfg.choices)
+        .map((k) => k.trim())
+        .filter(Boolean);
+      if (keys.length > 0) {
+        return Array.from(new Set([...keys, fallbackKey]));
+      }
+    }
+  }
+
+  return def.outputs;
 }
 
 /** Palette data + form schemas for builder UIs (client-safe). */
