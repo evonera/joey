@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
 import { generateText } from "ai";
 import { resolveModelForTurn } from "@/lib/agent-model-resolver";
+import { evaluateScoutTriggerSemantically } from "@/lib/typesafe";
 
 export interface ScoutAlert {
   title: string;
@@ -24,6 +25,12 @@ export interface ScoutAlert {
     views?: number;
     likes?: number;
     detectedFormat?: string;
+  };
+  actionPayload?: {
+    type: "remix_theme_studio";
+    topicQuery: string;
+    suggestedFormat?: string;
+    remixDraftUrl?: string;
   };
 }
 
@@ -46,7 +53,7 @@ const inFlightEvaluations = new Map<string, Promise<EvaluateScoutResult>>();
  */
 export async function evaluateScout(
   scoutId: string,
-  options?: { force?: boolean }
+  options?: { tenantId?: string; force?: boolean }
 ): Promise<EvaluateScoutResult> {
   const existing = inFlightEvaluations.get(scoutId);
   if (existing) {
@@ -60,6 +67,10 @@ export async function evaluateScout(
 
     if (!scout) {
       throw new Error(`Scout with id ${scoutId} not found.`);
+    }
+
+    if (options?.tenantId && scout.tenantId !== options.tenantId) {
+      throw new Error(`Unauthorized: Scout ${scoutId} does not belong to tenant ${options.tenantId}.`);
     }
 
     // Debounce recent executions (within 15 seconds) unless forced
@@ -106,18 +117,33 @@ export async function evaluateScout(
           body: JSON.stringify(input),
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          if (Array.isArray(data)) {
-            items = data.slice(0, 15).map((row: any, i: number) => ({
-              id: String(row.id || i),
-              url: row.url || row.postUrl || scout.targetUrl,
-              text: row.caption || row.text || row.description || "",
-              views: row.videoViewCount || row.playCount || row.views || 0,
-              likes: row.likesCount || row.diggCount || row.likes || 0,
-              timestamp: row.timestamp || row.createTimeISO || new Date().toISOString(),
-            }));
-          }
+        if (!response.ok) {
+          const errBody = await response.text().catch(() => "");
+          const errorMsg = `Apify scraper returned HTTP ${response.status}: ${errBody.slice(0, 200)}`;
+          await db.insert(scoutRuns).values({
+            scoutId: scout.id,
+            tenantId: scout.tenantId,
+            status: "failed",
+            itemsFound: 0,
+            error: errorMsg,
+          });
+          return {
+            triggered: false,
+            itemsFound: 0,
+            error: errorMsg,
+          };
+        }
+
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          items = data.slice(0, 15).map((row: any, i: number) => ({
+            id: String(row.id || i),
+            url: row.url || row.postUrl || scout.targetUrl,
+            text: row.caption || row.text || row.description || "",
+            views: row.videoViewCount || row.playCount || row.views || 0,
+            likes: row.likesCount || row.diggCount || row.likes || 0,
+            timestamp: row.timestamp || row.createTimeISO || new Date().toISOString(),
+          }));
         }
       } else {
         const isMockAllowed = process.env.NODE_ENV === "test" || process.env.ENABLE_MOCK_SCOUTS === "true";
@@ -177,7 +203,39 @@ export async function evaluateScout(
         };
       }
 
-    // 2. Evaluate items against goal condition using LLM
+    // 2. Fast Pre-Gate: Evaluate items against goal condition using TypeSafe Jev System One
+    const jevGate = await evaluateScoutTriggerSemantically(
+      scout.goalCondition,
+      scout.targetUrl,
+      scout.platform,
+      items,
+      scout.tenantId,
+    );
+
+    if (jevGate && !jevGate.triggered && jevGate.confidence >= 0.85) {
+      // Jev verified with >=85% confidence that no post triggered the goal!
+      // Skip Gemini completely, saving 100% of generative LLM tokens and latency.
+      await db.insert(scoutRuns).values({
+        scoutId: scout.id,
+        tenantId: scout.tenantId,
+        status: "no_change",
+        itemsFound: items.length,
+      });
+      await db
+        .update(scouts)
+        .set({
+          lastPolledAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(scouts.id, scout.id));
+
+      return {
+        triggered: false,
+        itemsFound: items.length,
+      };
+    }
+
+    // 3. Evaluate items against goal condition using LLM (System Two)
     let alert: ScoutAlert | undefined;
     let triggered = false;
 
@@ -238,6 +296,11 @@ Only trigger if a post genuinely meets the goal. Do not fabricate spikes. If non
                 detectedFormat: "Short-form Hook Reel",
               }
             : undefined,
+          actionPayload: {
+            type: "remix_theme_studio",
+            topicQuery: (topPost?.text || parsed.title || scout.name).slice(0, 120),
+            suggestedFormat: "image",
+          },
         };
       }
     } catch (llmErr) {
@@ -267,6 +330,11 @@ Only trigger if a post genuinely meets the goal. Do not fabricate spikes. If non
             views: spikeItem.views,
             likes: spikeItem.likes,
             detectedFormat: "Spike Format",
+          },
+          actionPayload: {
+            type: "remix_theme_studio",
+            topicQuery: (spikeItem.text || scout.name).slice(0, 120),
+            suggestedFormat: "image",
           },
         };
       }
@@ -346,7 +414,7 @@ export async function runScoutsTick(options?: ScoutsTickOptions) {
 
   for (const scout of dueScouts) {
     try {
-      const evaluation = await evaluateScout(scout.id);
+      const evaluation = await evaluateScout(scout.id, { tenantId: scout.tenantId });
       results.push({ scoutId: scout.id, triggered: evaluation.triggered, error: evaluation.error });
 
       if (evaluation.triggered && evaluation.alert) {
