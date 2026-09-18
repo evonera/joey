@@ -202,3 +202,118 @@ export async function matchCommentRuleSemantically<T extends DmRuleCandidate>(
     return null;
   }
 }
+
+export type StoryRelationship = "same_event" | "related_topic" | "unrelated";
+export type StoryCorroboration = "corroborates" | "neutral_or_additive" | "contradicts";
+
+export interface StoryAffinityResult {
+  relationship: StoryRelationship;
+  relationshipConfidence: number;
+  relationshipProbability: number;
+  corroboration: StoryCorroboration;
+  corroborationConfidence: number;
+  corroborationProbability: number;
+}
+
+export interface StoryArticleInput {
+  id?: string;
+  title?: string | null;
+  body?: string | null;
+}
+
+/**
+ * Evaluates the semantic affinity and fact corroboration between two news/feed stories
+ * using TypeSafe's Jev System One model.
+ *
+ * Runs two parallel questions:
+ * 1. relationship: Does candidate report on the exact same event, a related topic, or an unrelated topic?
+ * 2. corroboration: Does candidate corroborate, add supplementary context, or contradict key claims?
+ */
+export async function evaluateStoryAffinitySemantically(
+  primary: StoryArticleInput,
+  candidate: StoryArticleInput,
+  tenantId?: string | null,
+  options?: {
+    client?: TypeSafeClient;
+    pageContext?: ThemePageContext;
+  },
+): Promise<StoryAffinityResult | null> {
+  if (!primary.title?.trim() || !candidate.title?.trim()) {
+    return null;
+  }
+
+  const client = options?.client ?? (await getTypesafeClient(tenantId));
+  if (!client) {
+    return null;
+  }
+
+  try {
+    const response = await client.systemOne({
+      state: {
+        primaryStory: {
+          title: primary.title.trim().slice(0, 300),
+          excerpt: primary.body ? primary.body.trim().slice(0, 600) : null,
+        },
+        candidateStory: {
+          title: candidate.title.trim().slice(0, 300),
+          excerpt: candidate.body ? candidate.body.trim().slice(0, 600) : null,
+        },
+        ...(options?.pageContext
+          ? {
+              page: {
+                name: options.pageContext.name || null,
+                niche: options.pageContext.niche || null,
+                audience: options.pageContext.audience || null,
+              },
+            }
+          : {}),
+      },
+      questions: {
+        relationship: choice(
+          "What is the editorial relationship between the primary story and the candidate story?",
+          {
+            same_event: "Both articles report on the exact same underlying news event, breaking incident, announcement, match, or release.",
+            related_topic: "Both articles share the same entity, league, domain, or subject, but report on different specific events, games, or incidents.",
+            unrelated: "The articles are about completely distinct topics, entities, or domains.",
+          },
+        ),
+        corroboration: choice(
+          "How do the factual claims in the candidate story compare with the primary story?",
+          {
+            corroborates: "The candidate article confirms, supports, or aligns with the core factual claims of the primary story.",
+            neutral_or_additive: "The candidate article adds new angles, commentary, or context without disputing the primary claims.",
+            contradicts: "The candidate article directly disputes, refutes, or contradicts key factual claims made in the primary story.",
+          },
+        ),
+      },
+    });
+
+    const relAnswer = response.answers.relationship;
+    const corAnswer = response.answers.corroboration;
+
+    if (!relAnswer || !corAnswer) {
+      return null;
+    }
+
+    const relationship = (relAnswer.choice in { same_event: 1, related_topic: 1, unrelated: 1 }
+      ? relAnswer.choice
+      : "unrelated") as StoryRelationship;
+
+    const corroboration = (corAnswer.choice in { corroborates: 1, neutral_or_additive: 1, contradicts: 1 }
+      ? corAnswer.choice
+      : "neutral_or_additive") as StoryCorroboration;
+
+    return {
+      relationship,
+      relationshipConfidence: relAnswer.confidence ?? 0,
+      relationshipProbability: relAnswer.probabilities[relationship] ?? 0,
+      corroboration,
+      corroborationConfidence: corAnswer.confidence ?? 0,
+      corroborationProbability: corAnswer.probabilities[corroboration] ?? 0,
+    };
+  } catch (error) {
+    console.warn("[typesafe] Story affinity evaluation failed gracefully:", error);
+    return null;
+  }
+}
+
