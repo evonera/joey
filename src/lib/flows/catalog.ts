@@ -148,11 +148,18 @@ export const aiDecisionConfig = z
         if (!cfg.choices || typeof cfg.choices !== "object" || Array.isArray(cfg.choices)) {
           return false;
         }
-        const entries = Object.entries(cfg.choices as Record<string, unknown>);
-        if (entries.length < 2) return false;
-        return entries.every(
-          ([k, v]) => typeof k === "string" && k.trim() && typeof v === "string" && v.trim(),
-        );
+        const normalizedKeys = new Set<string>();
+        for (const [k, v] of Object.entries(cfg.choices as Record<string, unknown>)) {
+          if (typeof k !== "string" || !k.trim() || typeof v !== "string" || !v.trim()) {
+            return false;
+          }
+          const trimmedKey = k.trim();
+          if (normalizedKeys.has(trimmedKey)) {
+            return false; // Collision after normalization
+          }
+          normalizedKeys.add(trimmedKey);
+        }
+        return normalizedKeys.size >= 2;
       }
       if (typeof cfg.choicesJson === "string" && cfg.choicesJson.trim()) {
         try {
@@ -160,11 +167,18 @@ export const aiDecisionConfig = z
           if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
             return false;
           }
-          const entries = Object.entries(parsed);
-          if (entries.length < 2) return false;
-          return entries.every(
-            ([k, v]) => typeof k === "string" && k.trim() && typeof v === "string" && (v as string).trim(),
-          );
+          const normalizedKeys = new Set<string>();
+          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+            if (typeof k !== "string" || !k.trim() || typeof v !== "string" || !v.trim()) {
+              return false;
+            }
+            const trimmedKey = k.trim();
+            if (normalizedKeys.has(trimmedKey)) {
+              return false; // Collision after normalization
+            }
+            normalizedKeys.add(trimmedKey);
+          }
+          return normalizedKeys.size >= 2;
         } catch {
           return false;
         }
@@ -173,7 +187,7 @@ export const aiDecisionConfig = z
     },
     {
       message:
-        'choicesJson must be valid JSON with at least 2 choice branches (e.g. {"yes": "...", "no": "..."})',
+        'choicesJson must be valid JSON with at least 2 distinct choice branches (e.g. {"yes": "...", "no": "..."})',
       path: ["choicesJson"],
     },
   );

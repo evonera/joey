@@ -53,11 +53,31 @@ describe("parseDecisionChoices", () => {
 
   it("throws when choices contains fewer than 2 valid criteria", () => {
     expect(() => parseDecisionChoices({ choices: { only_one: "Not enough choices" } })).toThrow(
-      "at least 2 choices are required",
+      "at least 2 distinct choices are required",
     );
     expect(() =>
       parseDecisionChoices({ choicesJson: JSON.stringify({ only_one: "Not enough choices" }) }),
-    ).toThrow("at least 2 choices are required");
+    ).toThrow("at least 2 distinct choices are required");
+  });
+
+  it("throws when normalized choice keys collide", () => {
+    expect(() =>
+      parseDecisionChoices({
+        choices: {
+          sales: "Sales inquiries",
+          " sales ": "Duplicate sales after trimming",
+        },
+      }),
+    ).toThrow('Duplicate decision choice branch "sales"');
+
+    expect(() =>
+      parseDecisionChoices({
+        choicesJson: JSON.stringify({
+          sales: "Sales inquiries",
+          " sales ": "Duplicate sales after trimming",
+        }),
+      }),
+    ).toThrow('Duplicate decision choice branch "sales"');
   });
 
   it("defaults to binary yes/no only when neither choices nor choicesJson is configured", () => {
@@ -79,6 +99,13 @@ describe("aiDecisionConfig and getNodeOutputs", () => {
   it("rejects choicesJson with fewer than 2 choices", () => {
     const res = aiDecisionConfig.safeParse({
       choicesJson: JSON.stringify({ one: "Only one choice" }),
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it("rejects choicesJson when keys collide after normalization", () => {
+    const res = aiDecisionConfig.safeParse({
+      choicesJson: JSON.stringify({ sales: "Sales inquiry", " sales ": "Colliding sales" }),
     });
     expect(res.success).toBe(false);
   });

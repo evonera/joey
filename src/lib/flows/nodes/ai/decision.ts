@@ -20,11 +20,16 @@ export function parseDecisionChoices(raw: Record<string, unknown>): Record<strin
     const res: Record<string, string> = {};
     for (const [k, v] of Object.entries(raw.choices)) {
       if (typeof v === "string" && v.trim()) {
-        res[k.trim()] = v.trim();
+        const trimmedKey = k.trim();
+        if (!trimmedKey) continue;
+        if (trimmedKey in res) {
+          throw new Error(`Duplicate decision choice branch "${trimmedKey}" after key normalization.`);
+        }
+        res[trimmedKey] = v.trim();
       }
     }
     if (Object.keys(res).length < 2) {
-      throw new Error(`Invalid decision choices: at least 2 choices are required, but found ${Object.keys(res).length}.`);
+      throw new Error(`Invalid decision choices: at least 2 distinct choices are required, but found ${Object.keys(res).length}.`);
     }
     return res;
   }
@@ -42,11 +47,16 @@ export function parseDecisionChoices(raw: Record<string, unknown>): Record<strin
     const res: Record<string, string> = {};
     for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof v === "string" && v.trim()) {
-        res[k.trim()] = v.trim();
+        const trimmedKey = k.trim();
+        if (!trimmedKey) continue;
+        if (trimmedKey in res) {
+          throw new Error(`Duplicate decision choice branch "${trimmedKey}" after key normalization.`);
+        }
+        res[trimmedKey] = v.trim();
       }
     }
     if (Object.keys(res).length < 2) {
-      throw new Error(`Invalid decision choices: at least 2 choices are required in choicesJson, but found ${Object.keys(res).length}.`);
+      throw new Error(`Invalid decision choices: at least 2 distinct choices are required in choicesJson, but found ${Object.keys(res).length}.`);
     }
     return res;
   }
