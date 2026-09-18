@@ -124,6 +124,7 @@ const NODE_VISUAL_MAP: Record<string, NodeVisualInfo> = {
 
   // AI
   "ai.llm": { icon: Sparkles, colorClass: "text-violet-500", bgClass: "bg-violet-500/10 dark:bg-violet-500/20" },
+  "ai.decision": { icon: GitBranch, colorClass: "text-violet-500", bgClass: "bg-violet-500/10 dark:bg-violet-500/20" },
   "ai.transcribe": { icon: Mic, colorClass: "text-rose-500", bgClass: "bg-rose-500/10 dark:bg-rose-500/20" },
   "ai.image": { icon: ImageIcon, colorClass: "text-fuchsia-500", bgClass: "bg-fuchsia-500/10 dark:bg-fuchsia-500/20" },
   "ai.youtube_transcript": { icon: IconBrandYoutube as unknown as React.ComponentType<{ className?: string }>, colorClass: "text-red-500", bgClass: "bg-red-500/10 dark:bg-red-500/20" },
@@ -150,7 +151,7 @@ function getNodeVisuals(nodeType: string, category: string): NodeVisualInfo {
 }
 
 function FlowNode({ data, selected }: NodeProps) {
-  const d = data as { label: string; nodeType: string; category: string };
+  const d = data as { label: string; nodeType: string; category: string; config?: Record<string, unknown> };
   const def = getNode(d.nodeType);
   const visuals = getNodeVisuals(d.nodeType, d.category);
   const IconComponent = visuals.icon;
@@ -159,7 +160,32 @@ function FlowNode({ data, selected }: NodeProps) {
     d.category === "ai" ? "border-purple-500/60" :
     d.category === "action" ? "border-emerald-500/60" : "border-border";
 
-  const outputs = def?.outputs ?? [];
+  let outputs = def?.outputs ?? [];
+  if (d.nodeType === "ai.decision" && d.config) {
+    const cfg = d.config;
+    if (typeof cfg.choicesJson === "string" && cfg.choicesJson.trim()) {
+      try {
+        const parsed = JSON.parse(cfg.choicesJson);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const keys = Object.keys(parsed);
+          if (keys.length > 0) {
+            const fallbackKey = typeof cfg.defaultChoice === "string" && cfg.defaultChoice.trim()
+              ? cfg.defaultChoice.trim()
+              : "fallback";
+            outputs = Array.from(new Set([...keys, fallbackKey]));
+          }
+        }
+      } catch {}
+    } else if (cfg.choices && typeof cfg.choices === "object" && !Array.isArray(cfg.choices)) {
+      const keys = Object.keys(cfg.choices);
+      if (keys.length > 0) {
+        const fallbackKey = typeof cfg.defaultChoice === "string" && cfg.defaultChoice.trim()
+          ? cfg.defaultChoice.trim()
+          : "fallback";
+        outputs = Array.from(new Set([...keys, fallbackKey]));
+      }
+    }
+  }
   return (
     <div
       tabIndex={0}

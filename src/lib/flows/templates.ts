@@ -218,4 +218,48 @@ export const officialTemplates: OfficialTemplate[] = [
       node("d1", "action.create_draft", 960, { platform: "twitter" }), node("d2", "action.create_draft", 960, { platform: "twitter" }),
     ], edges: [edge("t1", "a1"), edge("a1", "sp"), edge("sp", "d1", "a"), edge("sp", "v1", "b"), edge("v1", "d2")] },
   },
+  {
+    slug: "smart-inquiry-triage",
+    name: "Smart Inbound Triage",
+    description:
+      "Classifies incoming comments or messages in ~120ms with TypeSafe Jev: routes high-intent sales inquiries to draft personalized replies, and alerts team on critical issues.",
+    category: "engagement",
+    graph: {
+      nodes: [
+        node("t1", "trigger.webhook", 0, { eventName: "comment.received" }),
+        node("dec1", "ai.decision", 260, {
+          question: "What is the primary intent of this inbound message?",
+          choicesJson: JSON.stringify(
+            {
+              sales: "The sender is asking about pricing, demo, checkout, or showing strong purchase intent",
+              support: "The sender is reporting a bug, outage, technical problem, or seeking urgent customer help",
+              casual: "General reaction, compliment, praise, emoji, or casual remark with no action needed",
+            },
+            null,
+            2,
+          ),
+          confidenceThreshold: 0.75,
+          defaultChoice: "casual",
+        }),
+        node("a1", "ai.llm", 560, {
+          provider: "openai",
+          model: "gpt-5.6-luna",
+          systemPrompt:
+            "Draft an urgent, warm, conversion-focused response answering the prospect's question and offering a direct booking link. Plain text only.",
+          userTemplate: "Lead inquiry:\n{{input}}",
+        }),
+        node("d1", "action.create_draft", 840, { platform: "twitter" }),
+        node("n1", "action.notify", 560, {
+          title: "Urgent Support Alert",
+          messageTemplate: "Priority customer support issue detected:\n{{input}}",
+        }),
+      ],
+      edges: [
+        edge("t1", "dec1"),
+        edge("dec1", "a1", "sales"),
+        edge("a1", "d1"),
+        edge("dec1", "n1", "support"),
+      ],
+    },
+  },
 ];
