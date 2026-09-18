@@ -28,11 +28,17 @@ export async function resolveTypesafeApiKey(tenantId?: string | null): Promise<s
         ),
       });
 
-      if (keyRow?.encryptedKey) {
+      if (keyRow) {
+        if (!keyRow.encryptedKey) {
+          console.warn(`[typesafe] Active tenant key row found for tenant ${tenantId} but encryptedKey is empty`);
+          return null;
+        }
         return decrypt(keyRow.encryptedKey, tenantId);
       }
     } catch (err) {
-      console.warn("[typesafe] Failed to read tenant BYOK key:", err);
+      console.error(`[typesafe] Failed to read/decrypt configured BYOK key for tenant ${tenantId}:`, err);
+      // Do not silently mask a broken tenant credential by falling back to process.env
+      return null;
     }
   }
 
@@ -76,26 +82,29 @@ export function hasCommentIntentMarkers(commentText: string, customKeywords: str
   }
 
   // 3. Multi-lingual request verbs, question words, and offer markers
+  // Uses Unicode letter lookaround (?<!\p{L}) and (?!\p{L}) rather than ASCII \b so non-ASCII words like "où" match properly
   const INTENT_MARKERS_REGEX = new RegExp(
-    [
-      // Universal & English: questions, request verbs, resource nouns
-      "\\b(how|where|what|which|can|could|would|will|send|sent|dm|pm|link|links|drop|share|get|got|want|wants|need|needs|please|pls|plz|info|information|details|price|cost|how much|code|coupon|discount|template|sheet|recipe|guide|pdf|ebook|download|access|free|source|tutorial|step|steps|checkout|buy|purchase|order)\\b",
-      // Spanish: ¿dónde, cómo, enviar, mandar, enlace, quiero, receta, guía, precio, por favor...
-      "\\b(donde|dónde|como|cómo|cual|cuál|cuanto|cuánto|enviar|envia|envía|enviame|envíame|manda|mandame|mándame|pasa|pasame|pásame|enlace|quiero|necesito|info|informacion|información|detalles|precio|receta|guia|guía|plantilla|cupon|cupón|descuento|por favor|xfa)\\b",
-      // Portuguese: onde, como, mandar, me manda, link, quero, preço, receita, guia, por favor...
-      "\\b(onde|como|qual|quanto|enviar|envia|enviame|manda|mandame|me manda|mande|passa|passame|quero|preciso|info|informacao|informações|preco|preço|receita|guia|modelo|cupom|desconto|por favor|pfv|pfr)\\b",
-      // French: comment, où, envoyer, lien, je veux, prix, recette, guide, svp...
-      "\\b(comment|ou|où|quel|combien|envoyer|envoie|envoiemoi|partager|lien|veux|besoin|infos|information|prix|recette|guide|modele|modèle|reduction|réduction|svp|stp)\\b",
-      // German: wie, wo, schicken, schick, bitte, link, rezept, rabatt...
-      "\\b(wie|wo|welche|wieviel|schicken|schick|sende|will|brauche|infos|kosten|rezept|anleitung|vorlage|rabatt|gutschein|bitte)\\b",
-      // Italian: come, dove, mandare, manda, voglio, ricetta, guida, sconto...
-      "\\b(come|dove|quale|quanto|mandare|manda|mandami|inviare|invia|inviami|voglio|bisogno|informazioni|prezzo|ricetta|guida|modello|sconto|codice|per favore)\\b",
-      // Hindi / Hinglish: bhejo, bhejna, kahan, kaise, chahiye, dedo, batana...
-      "\\b(bhejo|bhejna|kahan|kaise|chahiye|dedo|batao|batana|kitna|dam)\\b",
-      // Indonesian / Malay: gimana, cara, kirim, bagi, mau, info, resep, panduan...
-      "\\b(gimana|cara|kirim|bagi|mau|butuh|harga|resep|panduan|diskon|tolong)\\b",
-    ].join("|"),
-    "i",
+    "(?<!\\p{L})(" +
+      [
+        // Universal & English: questions, request verbs, resource nouns
+        "how|where|what|which|can|could|would|will|send|sent|dm|pm|link|links|drop|share|get|got|want|wants|need|needs|please|pls|plz|info|information|details|price|cost|how much|code|coupon|discount|template|sheet|recipe|guide|pdf|ebook|download|access|free|source|tutorial|step|steps|checkout|buy|purchase|order",
+        // Spanish: ¿dónde, cómo, enviar, mandar, enlace, quiero, receta, guía, precio, por favor...
+        "donde|dónde|como|cómo|cual|cuál|cuanto|cuánto|enviar|envia|envía|enviame|envíame|manda|mandame|mándame|pasa|pasame|pásame|enlace|quiero|necesito|info|informacion|información|detalles|precio|receta|guia|guía|plantilla|cupon|cupón|descuento|por favor|xfa",
+        // Portuguese: onde, como, mandar, me manda, link, quero, preço, receita, guia, por favor...
+        "onde|como|qual|quanto|enviar|envia|enviame|manda|mandame|me manda|mande|passa|passame|quero|preciso|info|informacao|informações|preco|preço|receita|guia|modelo|cupom|desconto|por favor|pfv|pfr",
+        // French: comment, où, envoyer, lien, je veux, prix, recette, guide, svp...
+        "comment|ou|où|quel|combien|envoyer|envoie|envoiemoi|partager|lien|veux|besoin|infos|information|prix|recette|guide|modele|modèle|reduction|réduction|svp|stp",
+        // German: wie, wo, schicken, schick, bitte, link, rezept, rabatt...
+        "wie|wo|welche|wieviel|schicken|schick|sende|will|brauche|infos|kosten|rezept|anleitung|vorlage|rabatt|gutschein|bitte",
+        // Italian: come, dove, mandare, manda, voglio, ricetta, guida, sconto...
+        "come|dove|quale|quanto|mandare|manda|mandami|inviare|invia|inviami|voglio|bisogno|informazioni|prezzo|ricetta|guida|modello|sconto|codice|per favore",
+        // Hindi / Hinglish: bhejo, bhejna, kahan, kaise, chahiye, dedo, batana...
+        "bhejo|bhejna|kahan|kaise|chahiye|dedo|batao|batana|kitna|dam",
+        // Indonesian / Malay: gimana, cara, kirim, bagi, mau, info, resep, panduan...
+        "gimana|cara|kirim|bagi|mau|butuh|harga|resep|panduan|diskon|tolong",
+      ].join("|") +
+      ")(?!\\p{L})",
+    "iu",
   );
 
   return INTENT_MARKERS_REGEX.test(commentText);

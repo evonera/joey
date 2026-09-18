@@ -91,6 +91,7 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
       // French
       expect(hasCommentIntentMarkers("comment avoir le guide svp?")).toBe(true);
       expect(hasCommentIntentMarkers("je veux le lien")).toBe(true);
+      expect(hasCommentIntentMarkers("le livre est où")).toBe(true);
 
       // German
       expect(hasCommentIntentMarkers("schick mir bitte das rezept")).toBe(true);
@@ -345,6 +346,34 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
 
       expect(result.matched).toBe(false);
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe("resolveTypesafeApiKey credential isolation", () => {
+    it("does not fall back to process.env.TYPESAFE_API_KEY if tenant key row is empty or decryption fails", async () => {
+      const { resolveTypesafeApiKey } = await import("@/lib/typesafe");
+      const { db } = await import("@/lib/db");
+
+      // Set environment fallback
+      const prevEnv = process.env.TYPESAFE_API_KEY;
+      process.env.TYPESAFE_API_KEY = "env-typesafe-key-123";
+
+      try {
+        // Tenant row exists but decryption fails/empty
+        (db.query as any).apiKeys = {
+          findFirst: vi.fn().mockResolvedValue({
+            tenantId: "broken-tenant",
+            provider: "typesafe",
+            status: "active",
+            encryptedKey: null,
+          }),
+        };
+
+        const resolved = await resolveTypesafeApiKey("broken-tenant");
+        expect(resolved).toBeNull();
+      } finally {
+        process.env.TYPESAFE_API_KEY = prevEnv;
+      }
     });
   });
 });
