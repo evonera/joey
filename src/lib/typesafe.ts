@@ -317,3 +317,92 @@ export async function evaluateStoryAffinitySemantically(
   }
 }
 
+export interface ScoutItemInput {
+  id?: string;
+  url: string;
+  text: string;
+  views?: number;
+  likes?: number;
+  timestamp?: string;
+}
+
+export interface ScoutTriggerResult {
+  triggered: boolean;
+  confidence: number;
+  probability: number;
+}
+
+/**
+ * Evaluates whether scraped posts meet a user's Scout Goal condition using TypeSafe Jev.
+ * Acts as a fast (~150ms), low-cost pre-gate to skip calling generative LLMs on routine "no change" runs.
+ */
+export async function evaluateScoutTriggerSemantically(
+  goalCondition: string,
+  targetUrl: string,
+  platform: string,
+  items: ScoutItemInput[],
+  tenantId?: string | null,
+  options?: {
+    client?: TypeSafeClient;
+    confidenceThreshold?: number;
+  },
+): Promise<ScoutTriggerResult | null> {
+  if (!goalCondition?.trim() || !items || items.length === 0) {
+    return null;
+  }
+
+  const client = options?.client ?? (await getTypesafeClient(tenantId));
+  if (!client) {
+    return null;
+  }
+
+  try {
+    const response = await client.systemOne({
+      state: {
+        goal: goalCondition.trim(),
+        targetAccount: {
+          url: targetUrl,
+          platform,
+        },
+        posts: items.slice(0, 15).map((item, idx) => ({
+          index: idx,
+          caption: item.text ? item.text.slice(0, 300) : "",
+          views: item.views ?? 0,
+          likes: item.likes ?? 0,
+          timestamp: item.timestamp ?? null,
+        })),
+      },
+      questions: {
+        is_triggered: choice(
+          `Based on the user's goal condition ("${goalCondition.trim()}"), does any of the recent posts satisfy or trigger this goal?`,
+          {
+            triggered:
+              "At least one post clearly satisfies the goal condition (e.g. viral view spike, major price cut, new product/service announcement, breaking milestone).",
+            not_triggered:
+              "None of the posts satisfy the goal condition. These are ordinary, routine, baseline posts that do not meet the user's specific trigger criteria.",
+          },
+        ),
+      },
+    });
+
+    const answer = response.answers.is_triggered;
+    if (!answer) {
+      return null;
+    }
+
+    const isTriggered = answer.choice === "triggered";
+    const confidence = answer.confidence ?? 0;
+    const probability = answer.probabilities[answer.choice] ?? 0;
+
+    return {
+      triggered: isTriggered,
+      confidence,
+      probability,
+    };
+  } catch (error) {
+    console.warn("[typesafe] Scout trigger evaluation failed gracefully:", error);
+    return null;
+  }
+}
+
+

@@ -15,6 +15,17 @@ vi.mock("@/lib/db", () => ({
       member: {
         findFirst: vi.fn().mockResolvedValue({ userId: "owner-1", role: "owner" }),
       },
+      usageTracking: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "u-1",
+          tenantId: "tenant-1",
+          inputTokensUsed: 0,
+          outputTokensUsed: 0,
+          estimatedCostUsd: "0",
+          reservedCostUsd: "0",
+          budgetLimitUsd: "100.00",
+        }),
+      },
     },
     insert: () => ({
       values: (...args: unknown[]) => {
@@ -43,8 +54,39 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+vi.mock("@/lib/agent-model-resolver", () => ({
+  resolveModelForTurn: vi.fn().mockResolvedValue({
+    model: { modelId: "test-model" },
+    modelContextWindowTokens: 8000,
+  }),
+}));
+
+vi.mock("ai", () => ({
+  generateText: vi.fn().mockResolvedValue({
+    text: JSON.stringify({
+      triggered: true,
+      summary: "Viral spike detected on recent post with 125,000 views.",
+      changes: [
+        {
+          metric: "views",
+          before: "12,000 avg",
+          after: "125,000 spike",
+          detail: "Stop scrolling hook drove 10x normal views",
+        },
+      ],
+      recommendedAction: "Remix hook into Theme Studio reel.",
+    }),
+  }),
+}));
+
 vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({
   resolveToken: vi.fn().mockRejectedValue(new Error("No Apify token")),
+}));
+
+const mockEvaluateScoutTriggerSemantically = vi.fn().mockResolvedValue(null);
+
+vi.mock("@/lib/typesafe", () => ({
+  evaluateScoutTriggerSemantically: (...args: any[]) => mockEvaluateScoutTriggerSemantically(...args),
 }));
 
 describe("Scouts Evaluator and Tool", () => {
@@ -56,6 +98,16 @@ describe("Scouts Evaluator and Tool", () => {
     mockScoutFindFirst.mockResolvedValueOnce(null);
     const { evaluateScout } = await import("../evaluator");
     await expect(evaluateScout("non-existent")).rejects.toThrow("not found");
+  });
+
+  it("throws when tenantId does not match", async () => {
+    mockScoutFindFirst.mockResolvedValueOnce({
+      id: "scout-1",
+      tenantId: "tenant-other",
+      name: "Competitor",
+    });
+    const { evaluateScout } = await import("../evaluator");
+    await expect(evaluateScout("scout-1", { tenantId: "tenant-mine" })).rejects.toThrow("does not belong to tenant");
   });
 
   it("evaluates a scout and detects simulated viral spike", async () => {
@@ -76,6 +128,32 @@ describe("Scouts Evaluator and Tool", () => {
     expect(res.alert).toBeDefined();
     expect(res.alert?.changes.length).toBeGreaterThan(0);
     expect(res.itemsFound).toBeGreaterThan(0);
+  });
+
+  it("short-circuits routine runs via TypeSafe Jev pre-gate and skips Gemini LLM call", async () => {
+    mockScoutFindFirst.mockResolvedValueOnce({
+      id: "scout-quiet",
+      tenantId: "tenant-1",
+      name: "Quiet Competitor",
+      targetUrl: "https://instagram.com/quiet",
+      platform: "instagram",
+      goalCondition: "Alert when views > 100k",
+      latestAlert: null,
+    });
+
+    mockEvaluateScoutTriggerSemantically.mockResolvedValueOnce({
+      triggered: false,
+      confidence: 0.95,
+      probability: 0.98,
+    });
+
+    const { generateText } = await import("ai");
+    const { evaluateScout } = await import("../evaluator");
+    const res = await evaluateScout("scout-quiet", { force: true });
+
+    expect(res.triggered).toBe(false);
+    expect(generateText).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalled();
   });
 
   it("manage_scouts tool handles list and create actions", async () => {
@@ -137,24 +215,37 @@ describe("Scouts Evaluator and Tool", () => {
     }
   });
 
-  it("deduplicates concurrent in-flight evaluations for the same scout", async () => {
-    mockScoutFindFirst.mockResolvedValue({
-      id: "scout-concurrent",
-      tenantId: "tenant-1",
-      name: "Concurrent Test",
-      targetUrl: "https://instagram.com/concurrent",
-      platform: "instagram",
-      goalCondition: "Alert when views > 50k",
-      latestAlert: null,
-    });
+  it("records failed status when Apify returns non-2xx HTTP status", async () => {
+    const { resolveToken } = await import("@/lib/flows/nodes/data/apify-actor");
+    (resolveToken as any).mockResolvedValueOnce("apify_token_test");
 
-    const { evaluateScout } = await import("../evaluator");
-    const [res1, res2] = await Promise.all([
-      evaluateScout("scout-concurrent", { force: true }),
-      evaluateScout("scout-concurrent", { force: true }),
-    ]);
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 402,
+        text: vi.fn().mockResolvedValue("Payment Required: Monthly Apify compute units exhausted"),
+      }) as any;
 
-    expect(res1).toEqual(res2);
+      mockScoutFindFirst.mockResolvedValueOnce({
+        id: "scout-apify-fail",
+        tenantId: "tenant-1",
+        name: "Rate Limited Competitor",
+        targetUrl: "https://instagram.com/ratelimited",
+        platform: "instagram",
+        goalCondition: "Alert when views > 50k",
+        latestAlert: null,
+      });
+
+      const { evaluateScout } = await import("../evaluator");
+      const res = await evaluateScout("scout-apify-fail", { force: true });
+
+      expect(res.triggered).toBe(false);
+      expect(res.itemsFound).toBe(0);
+      expect(res.error).toContain("Apify scraper returned HTTP 402");
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });
 

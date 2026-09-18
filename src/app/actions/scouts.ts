@@ -69,7 +69,7 @@ export async function runScoutNow(scoutId: string) {
   });
   if (!scout) throw new Error("Scout not found.");
 
-  const result = await evaluateScout(scoutId, { force: true });
+  const result = await evaluateScout(scoutId, { tenantId, force: true });
   revalidatePath("/scouts");
   return result;
 }
@@ -94,3 +94,18 @@ export async function deleteScout(scoutId: string) {
   revalidatePath("/scouts");
   return { success: true };
 }
+
+export async function remixScoutAlertAction(input: { scoutId: string; themePageId?: string }) {
+  const tenantId = await getActiveTenantId();
+  const { remixScoutAlertToThemeStudio } = await import("@/lib/scouts/remix-pipeline");
+  const result = await remixScoutAlertToThemeStudio({
+    tenantId,
+    scoutId: input.scoutId,
+    themePageId: input.themePageId,
+  });
+
+  revalidatePath("/scouts");
+  revalidatePath("/drafts");
+  return result;
+}
+
