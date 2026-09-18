@@ -52,8 +52,58 @@ export async function getTypesafeClient(tenantId?: string | null): Promise<TypeS
   });
 }
 
+export interface ThemePageContext {
+  name?: string | null;
+  niche?: string | null;
+  audience?: string | null;
+}
+
+/**
+ * Fast multi-lingual intent filter. Tests if a comment exhibits inquiry or request markers
+ * across English, Spanish, Portuguese, French, German, Italian, Hindi/Hinglish, and Indonesian.
+ * Drops purely conversational, emoji-only, or vanity praise comments locally in 0ms before calling Jev.
+ */
+export function hasCommentIntentMarkers(commentText: string, customKeywords: string[] = []): boolean {
+  if (!commentText || !commentText.trim()) return false;
+
+  // 1. Any question punctuation across languages (English, Spanish, Greek, Arabic, etc.)
+  if (/[?¿؟]/.test(commentText)) return true;
+
+  // 2. Check if any rule's specific trigger keyword is present anywhere in the comment
+  const lower = commentText.toLowerCase();
+  for (const kw of customKeywords) {
+    if (kw && lower.includes(kw.toLowerCase())) return true;
+  }
+
+  // 3. Multi-lingual request verbs, question words, and offer markers
+  const INTENT_MARKERS_REGEX = new RegExp(
+    [
+      // Universal & English: questions, request verbs, resource nouns
+      "\\b(how|where|what|which|can|could|would|will|send|sent|dm|pm|link|links|drop|share|get|got|want|wants|need|needs|please|pls|plz|info|information|details|price|cost|how much|code|coupon|discount|template|sheet|recipe|guide|pdf|ebook|download|access|free|source|tutorial|step|steps|checkout|buy|purchase|order)\\b",
+      // Spanish: ¿dónde, cómo, enviar, mandar, enlace, quiero, receta, guía, precio, por favor...
+      "\\b(donde|dónde|como|cómo|cual|cuál|cuanto|cuánto|enviar|envia|envía|enviame|envíame|manda|mandame|mándame|pasa|pasame|pásame|enlace|quiero|necesito|info|informacion|información|detalles|precio|receta|guia|guía|plantilla|cupon|cupón|descuento|por favor|xfa)\\b",
+      // Portuguese: onde, como, mandar, me manda, link, quero, preço, receita, guia, por favor...
+      "\\b(onde|como|qual|quanto|enviar|envia|enviame|manda|mandame|me manda|mande|passa|passame|quero|preciso|info|informacao|informações|preco|preço|receita|guia|modelo|cupom|desconto|por favor|pfv|pfr)\\b",
+      // French: comment, où, envoyer, lien, je veux, prix, recette, guide, svp...
+      "\\b(comment|ou|où|quel|combien|envoyer|envoie|envoiemoi|partager|lien|veux|besoin|infos|information|prix|recette|guide|modele|modèle|reduction|réduction|svp|stp)\\b",
+      // German: wie, wo, schicken, schick, bitte, link, rezept, rabatt...
+      "\\b(wie|wo|welche|wieviel|schicken|schick|sende|will|brauche|infos|kosten|rezept|anleitung|vorlage|rabatt|gutschein|bitte)\\b",
+      // Italian: come, dove, mandare, manda, voglio, ricetta, guida, sconto...
+      "\\b(come|dove|quale|quanto|mandare|manda|mandami|inviare|invia|inviami|voglio|bisogno|informazioni|prezzo|ricetta|guida|modello|sconto|codice|per favore)\\b",
+      // Hindi / Hinglish: bhejo, bhejna, kahan, kaise, chahiye, dedo, batana...
+      "\\b(bhejo|bhejna|kahan|kaise|chahiye|dedo|batao|batana|kitna|dam)\\b",
+      // Indonesian / Malay: gimana, cara, kirim, bagi, mau, info, resep, panduan...
+      "\\b(gimana|cara|kirim|bagi|mau|butuh|harga|resep|panduan|diskon|tolong)\\b",
+    ].join("|"),
+    "i",
+  );
+
+  return INTENT_MARKERS_REGEX.test(commentText);
+}
+
 /**
  * Evaluates an incoming comment against active DM automation rules using TypeSafe's Jev System One model.
+ * Employs a zero-cost local multilingual intent pre-filter to drop non-inquiries before calling Jev.
  * Returns the matching rule if confidence is high (>= 0.85), or null if no rule matches or on error.
  */
 export async function matchCommentRuleSemantically<T extends DmRuleCandidate>(
@@ -63,9 +113,16 @@ export async function matchCommentRuleSemantically<T extends DmRuleCandidate>(
   options?: {
     confidenceThreshold?: number;
     client?: TypeSafeClient;
+    pageContext?: ThemePageContext;
   },
 ): Promise<T | null> {
   if (!commentText || !commentText.trim() || rules.length === 0) {
+    return null;
+  }
+
+  // 0-Cost Local Pre-Filter: Drop comments that lack inquiry markers, question marks, or rule keywords
+  const customKeywords = rules.map((r) => r.triggerValue);
+  if (!hasCommentIntentMarkers(commentText, customKeywords)) {
     return null;
   }
 
@@ -79,16 +136,33 @@ export async function matchCommentRuleSemantically<T extends DmRuleCandidate>(
   const criteria: ChoiceCriteria = {};
   for (const rule of rules) {
     const concept = rule.triggerValue.toLowerCase();
+    const templateSnippet = rule.responseTemplate
+      ? rule.responseTemplate
+          .replace(/\{\{[^}]+\}\}/g, "")
+          .replace(/https?:\/\/\S+/g, "")
+          .trim()
+          .slice(0, 80)
+      : "";
+    const hint = templateSnippet ? ` (delivering: "${templateSnippet}")` : "";
     criteria[`rule_${rule.id}`] =
-      `The commenter is specifically requesting or showing interest in "${concept}" (e.g. asking for details, links, guide, steps, or resources about "${concept}")`;
+      `The commenter is specifically requesting, asking for, or showing interest in the "${concept}" offer${hint}`;
   }
   criteria["none"] =
-    "The commenter is not requesting any of these specific resources (general reaction, compliments, emoji, casual remark, praise, or unrelated question)";
+    "The commenter is not requesting any of these specific resources (general reaction, compliments, emoji, casual remark, praise, or unrelated comment)";
 
   try {
     const response = await client.systemOne({
       state: {
         comment: commentText.trim(),
+        ...(options?.pageContext
+          ? {
+              page: {
+                name: options.pageContext.name || null,
+                niche: options.pageContext.niche || null,
+                audience: options.pageContext.audience || null,
+              },
+            }
+          : {}),
       },
       questions: {
         intent: choice(

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { dmAutomationRules } from "@/lib/db/schema";
+import { dmAutomationRules, themePages } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getZernioClientForTenant } from "@/lib/publisher-core";
 import { createHash } from "node:crypto";
@@ -147,7 +147,14 @@ export async function handleCommentWebhook(event: CommentWebhookEvent): Promise<
   }
 
   // 2. Semantic fallback: evaluate comment intent via TypeSafe Jev System One
-  const semanticMatch = await matchCommentRuleSemantically(commentText, rules, tenantId);
+  const page = await db.query.themePages.findFirst({
+    where: and(eq(themePages.id, themePageId), eq(themePages.tenantId, tenantId)),
+    columns: { name: true, niche: true, audience: true },
+  });
+
+  const semanticMatch = await matchCommentRuleSemantically(commentText, rules, tenantId, {
+    pageContext: page ? { name: page.name, niche: page.niche, audience: page.audience } : undefined,
+  });
   if (semanticMatch) {
     return dispatchDmReply(event, semanticMatch, `${semanticMatch.triggerValue} (semantic)`);
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { matchCommentRuleSemantically } from "@/lib/typesafe";
+import { matchCommentRuleSemantically, hasCommentIntentMarkers } from "@/lib/typesafe";
 import { handleCommentWebhook, CommentWebhookEvent } from "../dm-automation/comment-webhook-handler";
 
 // Mock DB and Zernio
@@ -8,6 +8,13 @@ vi.mock("@/lib/db", () => ({
     query: {
       dmAutomationRules: {
         findMany: vi.fn(),
+      },
+      themePages: {
+        findFirst: vi.fn().mockResolvedValue({
+          name: "Healthy Gourmet",
+          niche: "Cooking & Nutrition",
+          audience: "Home cooks",
+        }),
       },
     },
     update: vi.fn(() => ({
@@ -64,6 +71,65 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
     vi.clearAllMocks();
   });
 
+  describe("hasCommentIntentMarkers multi-lingual intent gate", () => {
+    it("recognizes inquiry and request markers across languages", () => {
+      // English
+      expect(hasCommentIntentMarkers("can you please send me the recipe?")).toBe(true);
+      expect(hasCommentIntentMarkers("where can I get this template")).toBe(true);
+      expect(hasCommentIntentMarkers("link pls")).toBe(true);
+      expect(hasCommentIntentMarkers("how much does this cost?")).toBe(true);
+
+      // Spanish
+      expect(hasCommentIntentMarkers("¿dónde puedo conseguir la receta?")).toBe(true);
+      expect(hasCommentIntentMarkers("mándame el enlace por favor")).toBe(true);
+      expect(hasCommentIntentMarkers("quiero info del descuento")).toBe(true);
+
+      // Portuguese
+      expect(hasCommentIntentMarkers("me manda o link pfv")).toBe(true);
+      expect(hasCommentIntentMarkers("onde vejo essa receita?")).toBe(true);
+
+      // French
+      expect(hasCommentIntentMarkers("comment avoir le guide svp?")).toBe(true);
+      expect(hasCommentIntentMarkers("je veux le lien")).toBe(true);
+
+      // German
+      expect(hasCommentIntentMarkers("schick mir bitte das rezept")).toBe(true);
+      expect(hasCommentIntentMarkers("wo finde ich die anleitung?")).toBe(true);
+
+      // Italian
+      expect(hasCommentIntentMarkers("mandami la ricetta per favore")).toBe(true);
+      expect(hasCommentIntentMarkers("dove trovo il link?")).toBe(true);
+
+      // Hindi / Hinglish
+      expect(hasCommentIntentMarkers("link bhejo bhai")).toBe(true);
+      expect(hasCommentIntentMarkers("kaise milega ye?")).toBe(true);
+
+      // Indonesian
+      expect(hasCommentIntentMarkers("bagi resepnya dong")).toBe(true);
+      expect(hasCommentIntentMarkers("gimana cara dapatnya?")).toBe(true);
+
+      // Question marks in any language
+      expect(hasCommentIntentMarkers("what?")).toBe(true);
+      expect(hasCommentIntentMarkers("¿esto sirve para hornear?")).toBe(true);
+    });
+
+    it("matches custom trigger keywords from active rules even without standard request words", () => {
+      expect(hasCommentIntentMarkers("I love RECIPE ideas", ["RECIPE"])).toBe(true);
+      expect(hasCommentIntentMarkers("discount applied", ["DISCOUNT"])).toBe(true);
+    });
+
+    it("rejects purely conversational, emoji-only, or vanity praise comments in 0ms", () => {
+      expect(hasCommentIntentMarkers("🔥🔥🔥")).toBe(false);
+      expect(hasCommentIntentMarkers("Amazing photo!")).toBe(false);
+      expect(hasCommentIntentMarkers("love this so much")).toBe(false);
+      expect(hasCommentIntentMarkers("first!!")).toBe(false);
+      expect(hasCommentIntentMarkers("Hermosa foto")).toBe(false);
+      expect(hasCommentIntentMarkers("Magnifique")).toBe(false);
+      expect(hasCommentIntentMarkers("so true bro lol")).toBe(false);
+      expect(hasCommentIntentMarkers("")).toBe(false);
+    });
+  });
+
   describe("matchCommentRuleSemantically unit tests", () => {
     it("returns matching rule when Jev selects it with high confidence", async () => {
       const mockClient = {
@@ -88,7 +154,11 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
         "Where can I find the ingredients and cooking instructions for this dish?",
         sampleRules,
         "tenant-1",
-        { client: mockClient, confidenceThreshold: 0.85 },
+        {
+          client: mockClient,
+          confidenceThreshold: 0.85,
+          pageContext: { name: "Healthy Gourmet", niche: "Cooking", audience: "Foodies" },
+        },
       );
 
       expect(matched).toBeDefined();
@@ -96,7 +166,24 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
       expect(matched?.triggerValue).toBe("RECIPE");
     });
 
-    it("returns null when Jev selects 'none'", async () => {
+    it("drops low-signal praise comments locally before calling Jev", async () => {
+      const mockClient = {
+        systemOne: vi.fn(),
+      } as any;
+
+      const matched = await matchCommentRuleSemantically(
+        "This looks absolutely gorgeous, great work!",
+        sampleRules,
+        "tenant-1",
+        { client: mockClient, confidenceThreshold: 0.85 },
+      );
+
+      // Never contacted Jev!
+      expect(mockClient.systemOne).not.toHaveBeenCalled();
+      expect(matched).toBeNull();
+    });
+
+    it("returns null when Jev selects 'none' on an inquiry comment", async () => {
       const mockClient = {
         systemOne: vi.fn().mockResolvedValue({
           model: "jev-1.13.0",
@@ -116,12 +203,13 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
       } as any;
 
       const matched = await matchCommentRuleSemantically(
-        "This looks absolutely gorgeous, great work!",
+        "Can you tell me what camera did you use to film this video?",
         sampleRules,
         "tenant-1",
         { client: mockClient, confidenceThreshold: 0.85 },
       );
 
+      expect(mockClient.systemOne).toHaveBeenCalled();
       expect(matched).toBeNull();
     });
 
@@ -160,7 +248,7 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
       } as any;
 
       const matched = await matchCommentRuleSemantically(
-        "send recipe",
+        "send recipe please",
         sampleRules,
         "tenant-1",
         { client: mockClient },
@@ -223,6 +311,9 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
         "Where can I get the full list of ingredients and preparation steps?",
         sampleRules,
         "tenant-1",
+        expect.objectContaining({
+          pageContext: expect.objectContaining({ name: "Healthy Gourmet" }),
+        }),
       );
       expect(result.matched).toBe(true);
       expect(result.success).toBe(true);
