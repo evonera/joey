@@ -12,6 +12,13 @@ import {
 const mockFindFirstPage = vi.fn();
 const mockFindManyItems = vi.fn();
 const mockInsertValues = vi.fn().mockResolvedValue(undefined);
+const mockDbUpdateWhere = vi.fn().mockResolvedValue([]);
+const mockDbUpdateSet = vi.fn(() => ({
+  where: mockDbUpdateWhere,
+}));
+const mockDbUpdate = vi.fn(() => ({
+  set: mockDbUpdateSet,
+}));
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -26,6 +33,7 @@ vi.mock("@/lib/db", () => ({
         findMany: (...args: any[]) => mockFindManyItems(...args),
       },
     },
+    update: (...args: any[]) => (mockDbUpdate as any)(...args),
     transaction: vi.fn(async (cb: (tx: any) => Promise<any>) => {
       const mockTx = {
         update: vi.fn(() => ({
@@ -54,7 +62,7 @@ describe("TypeSafe Jev Story Clustering & Fact Gate (Shadow Mode)", () => {
       tenantId: "tenant-1",
       name: "Tech Pulse Daily",
       niche: "Consumer Electronics & AI",
-      targetAudience: "Tech enthusiasts and developers",
+      audience: "Tech enthusiasts and developers",
     });
   });
 
@@ -364,8 +372,11 @@ describe("TypeSafe Jev Story Clustering & Fact Gate (Shadow Mode)", () => {
       });
 
       const insertedCluster = mockInsertValues.mock.calls[0][0];
-      expect(insertedCluster.facts[1].corroborationStatus).toBe("contradicted");
-      expect(insertedCluster.facts[1].semanticConfidence).toBe(0.93);
+      // Contradicted claims must be filtered out so angle synthesis never receives them
+      expect(insertedCluster.facts).toHaveLength(1);
+      expect(insertedCluster.facts[0].corroborationStatus).toBe("verified");
+      expect(insertedCluster.facts[0].claim).toBe("Company X reports record quarterly revenue earnings of 15 billion dollars");
+      expect(insertedCluster.facts.some((f: any) => f.corroborationStatus === "contradicted")).toBe(false);
     });
 
     it("actively merges false negative candidates into cluster when mode is 'active'", async () => {
@@ -459,6 +470,33 @@ describe("TypeSafe Jev Story Clustering & Fact Gate (Shadow Mode)", () => {
       expect(res.clusteredCount).toBe(2);
       expect(res.clustersCreated).toBe(1);
       expect(mockInsertValues).toHaveBeenCalledTimes(1);
+    });
+
+    it("rolls back claimed items to raw if clustering throws or is aborted", async () => {
+      const rawItems = [
+        {
+          id: "item-abort-1",
+          tenantId: "tenant-1",
+          themePageId: "page-tech-1",
+          title: "Quantum breakthrough announced",
+          body: "Details of quantum computation.",
+          url: "https://science.example.com/quantum",
+          publishedAt: new Date(),
+          status: "raw",
+        },
+      ];
+      mockFindManyItems.mockResolvedValue(rawItems);
+
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        clusterSourceItems("tenant-1", "page-tech-1", controller.signal, { mode: "off" }),
+      ).rejects.toThrow();
+
+      // Ensure db.update was called to rollback items to 'raw'
+      expect(mockDbUpdate).toHaveBeenCalled();
+      expect(mockDbUpdateSet).toHaveBeenCalledWith({ status: "raw" });
     });
   });
 });
