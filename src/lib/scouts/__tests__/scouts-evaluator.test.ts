@@ -111,4 +111,50 @@ describe("Scouts Evaluator and Tool", () => {
     );
     expect(createRes.message).toContain("created successfully");
   });
+
+  it("fails cleanly without generating fake posts in production when Apify is unconfigured", async () => {
+    const originalEnv = process.env.NODE_ENV;
+    try {
+      (process.env as any).NODE_ENV = "production";
+      mockScoutFindFirst.mockResolvedValueOnce({
+        id: "scout-prod",
+        tenantId: "tenant-prod",
+        name: "Real Competitor",
+        targetUrl: "https://instagram.com/real",
+        platform: "instagram",
+        goalCondition: "Alert when views > 50k",
+        latestAlert: null,
+      });
+
+      const { evaluateScout } = await import("../evaluator");
+      const res = await evaluateScout("scout-prod", { force: true });
+
+      expect(res.triggered).toBe(false);
+      expect(res.itemsFound).toBe(0);
+      expect(res.error).toContain("Apify integration not configured");
+    } finally {
+      (process.env as any).NODE_ENV = originalEnv;
+    }
+  });
+
+  it("deduplicates concurrent in-flight evaluations for the same scout", async () => {
+    mockScoutFindFirst.mockResolvedValue({
+      id: "scout-concurrent",
+      tenantId: "tenant-1",
+      name: "Concurrent Test",
+      targetUrl: "https://instagram.com/concurrent",
+      platform: "instagram",
+      goalCondition: "Alert when views > 50k",
+      latestAlert: null,
+    });
+
+    const { evaluateScout } = await import("../evaluator");
+    const [res1, res2] = await Promise.all([
+      evaluateScout("scout-concurrent", { force: true }),
+      evaluateScout("scout-concurrent", { force: true }),
+    ]);
+
+    expect(res1).toEqual(res2);
+  });
 });
+

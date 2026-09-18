@@ -34,89 +34,148 @@ export interface EvaluateScoutResult {
   error?: string;
 }
 
+export interface EvaluateScoutOptions {
+  force?: boolean;
+}
+
+const inFlightEvaluations = new Map<string, Promise<EvaluateScoutResult>>();
+
 /**
  * Evaluates a scout against its goal condition by scraping the target and running an LLM diff judge.
+ * Deduplicates concurrent in-flight evaluations for the same scout ID.
  */
-export async function evaluateScout(scoutId: string): Promise<EvaluateScoutResult> {
-  const scout = await db.query.scouts.findFirst({
-    where: eq(scouts.id, scoutId),
-  });
-
-  if (!scout) {
-    throw new Error(`Scout with id ${scoutId} not found.`);
+export async function evaluateScout(
+  scoutId: string,
+  options?: { force?: boolean }
+): Promise<EvaluateScoutResult> {
+  const existing = inFlightEvaluations.get(scoutId);
+  if (existing) {
+    return existing;
   }
 
-  try {
-    // 1. Resolve posts / items from Apify or fallback
-    let items: Array<{ id: string; url: string; text: string; views?: number; likes?: number; timestamp?: string }> = [];
+  const evalPromise = (async () => {
+    const scout = await db.query.scouts.findFirst({
+      where: eq(scouts.id, scoutId),
+    });
 
-    let apifyToken: string | null = null;
-    try {
-      apifyToken = await resolveToken(scout.tenantId);
-    } catch {
-      apifyToken = null;
+    if (!scout) {
+      throw new Error(`Scout with id ${scoutId} not found.`);
     }
 
-    if (apifyToken) {
-      // Map platform to common Apify actors
-      const actorId =
-        scout.platform === "instagram"
-          ? "apify/instagram-reel-scraper"
-          : scout.platform === "tiktok"
-            ? "clockworks/tiktok-scraper"
-            : "apify/web-scraper";
+    // Debounce recent executions (within 15 seconds) unless forced
+    if (!options?.force && scout.lastPolledAt && Date.now() - scout.lastPolledAt.getTime() < 15_000) {
+      return {
+        triggered: Boolean(scout.latestAlert),
+        alert: (scout.latestAlert as ScoutAlert | null) ?? undefined,
+        itemsFound: 0,
+      };
+    }
 
-      const scrapeUrl =
-        `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}` +
-        `/run-sync-get-dataset-items?token=${encodeURIComponent(apifyToken)}&timeout=45`;
+    try {
+      // 1. Resolve posts / items from Apify or fallback
+      let items: Array<{ id: string; url: string; text: string; views?: number; likes?: number; timestamp?: string }> = [];
 
-      const input =
-        scout.platform === "instagram"
-          ? { usernames: [scout.targetUrl.replace(/^.*instagram\.com\//, "").replace(/\/.*$/, "")] }
-          : { directUrls: [scout.targetUrl] };
+      let apifyToken: string | null = null;
+      try {
+        apifyToken = await resolveToken(scout.tenantId);
+      } catch {
+        apifyToken = null;
+      }
 
-      const response = await fetch(scrapeUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      });
+      if (apifyToken) {
+        // Map platform to common Apify actors
+        const actorId =
+          scout.platform === "instagram"
+            ? "apify/instagram-reel-scraper"
+            : scout.platform === "tiktok"
+              ? "clockworks/tiktok-scraper"
+              : "apify/web-scraper";
 
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          items = data.slice(0, 15).map((row: any, i: number) => ({
-            id: String(row.id || i),
-            url: row.url || row.postUrl || scout.targetUrl,
-            text: row.caption || row.text || row.description || "",
-            views: row.videoViewCount || row.playCount || row.views || 0,
-            likes: row.likesCount || row.diggCount || row.likes || 0,
-            timestamp: row.timestamp || row.createTimeISO || new Date().toISOString(),
-          }));
+        const scrapeUrl =
+          `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}` +
+          `/run-sync-get-dataset-items?token=${encodeURIComponent(apifyToken)}&timeout=45`;
+
+        const input =
+          scout.platform === "instagram"
+            ? { usernames: [scout.targetUrl.replace(/^.*instagram\.com\//, "").replace(/\/.*$/, "")] }
+            : { directUrls: [scout.targetUrl] };
+
+        const response = await fetch(scrapeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            items = data.slice(0, 15).map((row: any, i: number) => ({
+              id: String(row.id || i),
+              url: row.url || row.postUrl || scout.targetUrl,
+              text: row.caption || row.text || row.description || "",
+              views: row.videoViewCount || row.playCount || row.views || 0,
+              likes: row.likesCount || row.diggCount || row.likes || 0,
+              timestamp: row.timestamp || row.createTimeISO || new Date().toISOString(),
+            }));
+          }
+        }
+      } else {
+        const isMockAllowed = process.env.NODE_ENV === "test" || process.env.ENABLE_MOCK_SCOUTS === "true";
+        if (isMockAllowed) {
+          items = [
+            {
+              id: "sim-1",
+              url: `${scout.targetUrl}/p/recent-viral-hook`,
+              text: "Stop scrolling: The 1 reason 90% of creators fail before reaching 10k followers. [Split-screen reaction with bold subtitle captions]",
+              views: 125000,
+              likes: 8400,
+              timestamp: new Date(Date.now() - 3600000).toISOString(),
+            },
+            {
+              id: "sim-2",
+              url: `${scout.targetUrl}/p/standard-post`,
+              text: "Quick reminder to take a break this weekend.",
+              views: 12000,
+              likes: 800,
+              timestamp: new Date(Date.now() - 86400000).toISOString(),
+            },
+          ];
+        } else {
+          const errorMsg = "Apify integration not configured. Please add an Apify API token in Integrations to enable live scout monitoring.";
+          await db.insert(scoutRuns).values({
+            scoutId: scout.id,
+            tenantId: scout.tenantId,
+            status: "failed",
+            itemsFound: 0,
+            error: errorMsg,
+          });
+          return {
+            triggered: false,
+            itemsFound: 0,
+            error: errorMsg,
+          };
         }
       }
-    }
 
-    // If no Apify token configured or empty dataset, create a simulated post set for dev/preview
-    if (items.length === 0) {
-      items = [
-        {
-          id: "sim-1",
-          url: `${scout.targetUrl}/p/recent-viral-hook`,
-          text: "Stop scrolling: The 1 reason 90% of creators fail before reaching 10k followers. [Split-screen reaction with bold subtitle captions]",
-          views: 125000,
-          likes: 8400,
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-        },
-        {
-          id: "sim-2",
-          url: `${scout.targetUrl}/p/standard-post`,
-          text: "Quick reminder to take a break this weekend.",
-          views: 12000,
-          likes: 800,
-          timestamp: new Date(Date.now() - 86400000).toISOString(),
-        },
-      ];
-    }
+      if (items.length === 0) {
+        await db.insert(scoutRuns).values({
+          scoutId: scout.id,
+          tenantId: scout.tenantId,
+          status: "no_change",
+          itemsFound: 0,
+        });
+        await db
+          .update(scouts)
+          .set({
+            lastPolledAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(scouts.id, scout.id));
+        return {
+          triggered: false,
+          itemsFound: 0,
+        };
+      }
 
     // 2. Evaluate items against goal condition using LLM
     let alert: ScoutAlert | undefined;
@@ -231,24 +290,33 @@ Only trigger if a post genuinely meets the goal. Do not fabricate spikes. If non
       })
       .where(eq(scouts.id, scout.id));
 
-    return {
-      triggered,
-      alert,
-      itemsFound: items.length,
-    };
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    await db.insert(scoutRuns).values({
-      scoutId: scout.id,
-      tenantId: scout.tenantId,
-      status: "failed",
-      itemsFound: 0,
-      error: errorMsg,
-    });
-    return {
-      triggered: false,
-      itemsFound: 0,
-      error: errorMsg,
-    };
+      return {
+        triggered,
+        alert,
+        itemsFound: items.length,
+      };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      await db.insert(scoutRuns).values({
+        scoutId: scout.id,
+        tenantId: scout.tenantId,
+        status: "failed",
+        itemsFound: 0,
+        error: errorMsg,
+      });
+      return {
+        triggered: false,
+        itemsFound: 0,
+        error: errorMsg,
+      };
+    }
+  })();
+
+  inFlightEvaluations.set(scoutId, evalPromise);
+  try {
+    return await evalPromise;
+  } finally {
+    inFlightEvaluations.delete(scoutId);
   }
 }
+

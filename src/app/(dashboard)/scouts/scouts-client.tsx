@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,17 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
+  // Synchronize state when server props update
+  useEffect(() => {
+    setScoutsList(initialScouts);
+  }, [initialScouts]);
+
+  useEffect(() => {
+    if (initialScouts.length > 0 && (!selectedId || !initialScouts.some((s) => s.id === selectedId))) {
+      setSelectedId(initialScouts[0].id);
+    }
+  }, [initialScouts, selectedId]);
+
   // New scout form state
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
@@ -96,6 +107,19 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
     setIsRunning(true);
     try {
       const res = await runScoutNow(scoutId);
+      // Immediately reflect updated alert and timestamp in local state
+      setScoutsList((prev) =>
+        prev.map((s) =>
+          s.id === scoutId
+            ? {
+                ...s,
+                latestAlert: res.alert !== undefined ? res.alert : s.latestAlert,
+                lastPolledAt: new Date(),
+              }
+            : s
+        )
+      );
+
       if (res.triggered) {
         toast.success(`Scout triggered an alert!`);
       } else {

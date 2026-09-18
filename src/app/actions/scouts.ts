@@ -69,7 +69,7 @@ export async function runScoutNow(scoutId: string) {
   });
   if (!scout) throw new Error("Scout not found.");
 
-  const result = await evaluateScout(scoutId);
+  const result = await evaluateScout(scoutId, { force: true });
   revalidatePath("/scouts");
   return result;
 }

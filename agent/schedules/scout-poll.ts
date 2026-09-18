@@ -1,11 +1,19 @@
 import { defineSchedule } from "eve/schedules";
 import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
-import { scouts, member } from "@/lib/db/schema";
-import { eq, and, or, isNull, lte } from "drizzle-orm";
-import { evaluateScout } from "@/lib/scouts/evaluator";
+import { scouts, member, notifications } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
+import { evaluateScout, type ScoutAlert } from "@/lib/scouts/evaluator";
 
-export async function runScoutsTick() {
+export interface ScoutsTickOptions {
+  dispatchAlert?: (params: {
+    scout: typeof scouts.$inferSelect;
+    alert: ScoutAlert;
+    ownerUserId: string;
+  }) => Promise<void> | void;
+}
+
+export async function runScoutsTick(options?: ScoutsTickOptions) {
   const now = new Date();
 
   // Find active scouts that are due for polling
@@ -32,8 +40,31 @@ export async function runScoutsTick() {
           where: and(eq(member.organizationId, scout.tenantId), eq(member.role, "owner")),
         });
 
-        if (ownerMember) {
-          console.log(`[scout-poll] Alert triggered for scout ${scout.name} (${scout.id})`);
+        // 1. Persist in-app notification
+        try {
+          await db.insert(notifications).values({
+            tenantId: scout.tenantId,
+            type: "scout_alert",
+            title: evaluation.alert.title,
+            body: `Competitor change detected for ${scout.name}: ${evaluation.alert.changes.map((c) => c.label).join(", ")}`,
+            link: "/scouts",
+            metadata: evaluation.alert,
+          });
+        } catch (notifErr) {
+          console.error(`[scout-poll] Failed creating in-app notification:`, notifErr);
+        }
+
+        // 2. Dispatch to channel if callback provided
+        if (ownerMember && options?.dispatchAlert) {
+          try {
+            await options.dispatchAlert({
+              scout,
+              alert: evaluation.alert,
+              ownerUserId: ownerMember.userId,
+            });
+          } catch (dispatchErr) {
+            console.error(`[scout-poll] Failed dispatching scout alert:`, dispatchErr);
+          }
         }
       }
     } catch (err) {
@@ -46,14 +77,33 @@ export async function runScoutsTick() {
 }
 
 export default defineSchedule({
-  cron: "0 5 * * *",
+  cron: "*/15 * * * *",
   async run({ to, waitUntil }) {
-    const tickResult = await runScoutsTick();
-
-    // Notify channel for any triggered alert
-    const triggered = tickResult.results.filter((r) => r.triggered);
-    if (triggered.length > 0) {
-      console.log(`[scout-poll] ${triggered.length} scouts triggered alerts.`);
-    }
+    await runScoutsTick({
+      dispatchAlert: ({ scout, alert, ownerUserId }) => {
+        const summaryChanges = alert.changes
+          .slice(0, 3)
+          .map((c) => `• **${c.label}**: ${c.after} (${c.rationale})`)
+          .join("\n");
+        waitUntil(
+          to(eveChannel, {}).send(
+            `🚨 **Social Scout Alert: ${alert.title}**\n\n` +
+              `Target: ${scout.targetUrl} (${scout.platform})\n` +
+              `Goal: ${scout.goalCondition}\n\n` +
+              `**Key observations:**\n${summaryChanges}\n\n` +
+              `👉 View details or generate a remix response at /scouts`,
+            {
+              auth: {
+                authenticator: "cron",
+                principalType: "user",
+                principalId: ownerUserId,
+                attributes: { tenantId: scout.tenantId },
+              },
+            }
+          )
+        );
+      },
+    });
   },
 });
+
