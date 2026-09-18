@@ -1,6 +1,14 @@
 import { db } from "@/lib/db";
-import { scouts, themePages, storyClusters, contentPackages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import {
+  scouts,
+  themePages,
+  storyClusters,
+  contentPackages,
+  themeContentFormats,
+  themeVisualTemplates,
+  themeSlots,
+} from "@/lib/db/schema";
+import { and, eq, desc } from "drizzle-orm";
 import { searchWithExa } from "@/lib/search/exa-client";
 import { renderPackageMedia } from "@/lib/theme-studio/renderers/media-assembler";
 import type { ScoutAlert } from "./evaluator";
@@ -59,7 +67,7 @@ export async function remixScoutAlertToThemeStudio(
     return { success: false, error: "No active alert on this Scout to remix" };
   }
 
-  // Resolve target Theme Page
+  // Resolve target Theme Page: prioritize requested page, or latest active page
   let targetPage;
   if (options.themePageId) {
     targetPage = await db.query.themePages.findFirst({
@@ -67,14 +75,15 @@ export async function remixScoutAlertToThemeStudio(
     });
   } else {
     targetPage = await db.query.themePages.findFirst({
-      where: eq(themePages.tenantId, options.tenantId),
+      where: and(eq(themePages.tenantId, options.tenantId), eq(themePages.status, "active")),
+      orderBy: [desc(themePages.updatedAt)],
     });
   }
 
   if (!targetPage) {
     return {
       success: false,
-      error: "No active Theme Page found for this workspace. Please create a Theme Page first.",
+      error: "No active Theme Page found for this workspace. Please create or activate a Theme Page first.",
     };
   }
 
@@ -100,11 +109,21 @@ export async function remixScoutAlertToThemeStudio(
     );
   } catch (err) {
     console.warn("[scouts-remix] Exa research query failed:", err);
-    searchRes = { results: [], images: [] };
+    return {
+      success: false,
+      error: "Exa research could not find verified source stories or facts for this topic.",
+    };
+  }
+
+  if (!searchRes || !searchRes.results || searchRes.results.length === 0) {
+    return {
+      success: false,
+      error: "Exa research could not find verified source stories or facts for this topic.",
+    };
   }
 
   const primaryResult = searchRes.results.find((r) => r.heroImage) || searchRes.results[0];
-  const heroImage = primaryResult?.heroImage || searchRes.images[0] || alert.samplePost?.url;
+  const heroImage = primaryResult?.heroImage || searchRes.images?.[0] || alert.samplePost?.url;
 
   // Build structured facts from Exa results
   const facts = searchRes.results.slice(0, 4).map((r) => ({
@@ -113,6 +132,68 @@ export async function remixScoutAlertToThemeStudio(
     entity: r.title.split(" ")[0],
     corroborationStatus: "verified" as const,
   }));
+
+  // Resolve format and visual template scoped to targetPage first
+  const slot = await db.query.themeSlots.findFirst({
+    where: and(
+      eq(themeSlots.themePageId, targetPage.id),
+      eq(themeSlots.tenantId, options.tenantId),
+      eq(themeSlots.isActive, true),
+    ),
+    orderBy: [themeSlots.priority],
+  });
+
+  let format = null;
+  if (slot?.formatId) {
+    format = await db.query.themeContentFormats.findFirst({
+      where: and(
+        eq(themeContentFormats.id, slot.formatId),
+        eq(themeContentFormats.tenantId, options.tenantId),
+      ),
+    });
+  }
+
+  if (!format) {
+    format = await db.query.themeContentFormats.findFirst({
+      where: eq(themeContentFormats.tenantId, options.tenantId),
+    });
+  }
+
+  if (!format) {
+    return {
+      success: false,
+      error: "No active content format found for this workspace. Please configure a format first.",
+    };
+  }
+
+  let template = null;
+  if (slot?.overrideTemplateId) {
+    template = await db.query.themeVisualTemplates.findFirst({
+      where: and(
+        eq(themeVisualTemplates.id, slot.overrideTemplateId),
+        eq(themeVisualTemplates.tenantId, options.tenantId),
+      ),
+    });
+  }
+
+  if (!template) {
+    template = await db.query.themeVisualTemplates.findFirst({
+      where: and(
+        eq(themeVisualTemplates.themePageId, targetPage.id),
+        eq(themeVisualTemplates.formatId, format.id),
+        eq(themeVisualTemplates.tenantId, options.tenantId),
+      ),
+    });
+  }
+
+  if (!template) {
+    template = await db.query.themeVisualTemplates.findFirst({
+      where: and(
+        eq(themeVisualTemplates.formatId, format.id),
+        eq(themeVisualTemplates.tenantId, options.tenantId),
+      ),
+    });
+  }
 
   // Create Story Cluster in Theme Studio
   const clusterTitle = primaryResult?.title || alert.title || `Trending: ${scout.name}`;
@@ -135,15 +216,6 @@ export async function remixScoutAlertToThemeStudio(
     })
     .returning();
 
-  // Find format and visual template
-  const format = await db.query.themeContentFormats.findFirst({
-    where: eq(themeContentFormats.tenantId, options.tenantId),
-  });
-
-  const template = await db.query.themeVisualTemplates.findFirst({
-    where: eq(themeVisualTemplates.tenantId, options.tenantId),
-  });
-
   // Generate punchy editorial title and caption in page brand voice
   const postTitle = clusterTitle.length > 90 ? clusterTitle.slice(0, 87) + "..." : clusterTitle;
   const postCaption = `${clusterSummary}\n\nWhat are your thoughts on this? Drop a comment below.`;
@@ -156,7 +228,7 @@ export async function remixScoutAlertToThemeStudio(
       tenantId: options.tenantId,
       themePageId: targetPage.id,
       clusterId: cluster.id,
-      formatId: format?.id || "default_card",
+      formatId: format.id,
       templateId: template?.id,
       title: postTitle,
       caption: postCaption,
@@ -184,9 +256,27 @@ export async function remixScoutAlertToThemeStudio(
       options.tenantId,
       `scout_remix_${Date.now()}`,
     );
-    renderedUrls = renderRes.renderedUrls;
-  } catch (renderErr) {
-    console.warn("[scouts-remix] Media card rendering deferred:", renderErr);
+    renderedUrls = renderRes?.renderedUrls || [];
+    if (renderedUrls.length === 0) {
+      return {
+        success: false,
+        packageId: pkg.id,
+        clusterId: cluster.id,
+        title: pkg.title,
+        status: pkg.status,
+        error: "Media rendering produced no output assets.",
+      };
+    }
+  } catch (renderErr: any) {
+    console.warn("[scouts-remix] Media card rendering failed:", renderErr);
+    return {
+      success: false,
+      packageId: pkg.id,
+      clusterId: cluster.id,
+      title: pkg.title,
+      status: pkg.status,
+      error: `Media rendering failed: ${renderErr?.message || String(renderErr)}`,
+    };
   }
 
   return {
