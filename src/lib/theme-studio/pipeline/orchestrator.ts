@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { contentPackages, themeSources } from "@/lib/db/schema";
 import { eq, and, or, sql, asc } from "drizzle-orm";
 import { pollAndIngestSource } from "./source-poller";
-import { clusterSourceItems } from "./story-clusterer";
+import { clusterSourceItems, type ClusteringShadowReport } from "./story-clusterer";
 import { synthesizeAndAllocatePackages, PackageGenerationResult } from "./angle-synthesizer";
 import { renderPackageMedia } from "../renderers/media-assembler";
 
@@ -13,6 +13,7 @@ export interface PipelineExecutionReport {
   totalDuplicatesFiltered: number;
   sourceErrors: Array<{ sourceId: string; error: string }>;
   clustersCreated: number;
+  clusteringShadowReport?: ClusteringShadowReport;
   packageResult: PackageGenerationResult;
   packagesRendered: number;
   packagesRetried: number;
@@ -121,6 +122,7 @@ export async function runEditorialPipeline(
     totalDuplicatesFiltered,
     sourceErrors,
     clustersCreated: clusterRes.clustersCreated,
+    clusteringShadowReport: clusterRes.shadowReport,
     packageResult,
     packagesRendered,
     packagesRetried: retryPackageIds.length,
