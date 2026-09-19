@@ -344,6 +344,13 @@
       "when": 1788900000010,
       "tag": "0048_onboarding_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789710797774,
+      "tag": "0049_nappy_captain_cross",
+      "breakpoints": true
     }
   ]
 }

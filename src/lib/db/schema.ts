@@ -908,3 +908,35 @@ export const mediaTranscripts = pgTable("media_transcripts", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, table => [uniqueIndex("media_transcripts_tenant_id_input_hash_key").on(table.tenantId, table.inputHash)]);
+
+export const scouts = pgTable("scouts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  targetUrl: text("target_url").notNull(),
+  platform: varchar("platform", { length: 30 }).notNull().default("instagram"), // 'instagram' | 'tiktok' | 'twitter' | 'youtube' | 'web'
+  goalCondition: text("goal_condition").notNull(),
+  pollIntervalMinutes: integer("poll_interval_minutes").default(120).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  lastPolledAt: timestamp("last_polled_at"),
+  latestAlert: jsonb("latest_alert"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("scouts_tenant_id_idx").on(table.tenantId),
+  activeIdx: index("scouts_active_idx").on(table.isActive, table.lastPolledAt),
+}));
+
+export const scoutRuns = pgTable("scout_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  scoutId: text("scout_id").notNull().references(() => scouts.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 30 }).notNull(), // 'success' | 'alert_triggered' | 'no_change' | 'failed'
+  itemsFound: integer("items_found").default(0).notNull(),
+  alertData: jsonb("alert_data"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  scoutIdx: index("scout_runs_scout_id_idx").on(table.scoutId),
+  tenantIdx: index("scout_runs_tenant_id_idx").on(table.tenantId),
+}));

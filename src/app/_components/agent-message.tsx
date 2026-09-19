@@ -47,6 +47,7 @@ import {
 import { Task } from "@/components/ai-elements/task";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ExecutionTrace } from "@/components/chat/chat-execution-trace";
 
 export type AgentInputResponse = {
   readonly optionId?: string;
@@ -67,7 +68,27 @@ export function AgentMessage({
   readonly message: EveMessage;
   readonly onInputResponses: (responses: readonly AgentInputResponse[]) => void | Promise<void>;
 }) {
-  const lastTextIndex = message.parts.reduce(
+  const isAssistant = message.role === "assistant";
+
+  const traceParts = isAssistant
+    ? message.parts.filter(
+        (part) =>
+          part.type === "reasoning" ||
+          part.type === "dynamic-tool" ||
+          (part as any).type === "source-url"
+      )
+    : [];
+
+  const mainParts = isAssistant
+    ? message.parts.filter(
+        (part) =>
+          part.type !== "reasoning" &&
+          part.type !== "dynamic-tool" &&
+          (part as any).type !== "source-url"
+      )
+    : message.parts;
+
+  const lastTextIndex = mainParts.reduce(
     (last, part, index) => (part.type === "text" ? index : last),
     -1,
   );
@@ -78,7 +99,22 @@ export function AgentMessage({
       from={message.role}
     >
       <MessageContent>
-        {message.parts.map((part, index) => (
+        {traceParts.length > 0 && (
+          <ExecutionTrace
+            traceParts={traceParts}
+            isStreaming={isStreaming}
+            canRespond={canRespond}
+            onInputResponses={onInputResponses}
+            renderActions={(part) => (
+              <InputRequestActions
+                canRespond={canRespond}
+                part={part}
+                onInputResponses={onInputResponses}
+              />
+            )}
+          />
+        )}
+        {mainParts.map((part, index) => (
           <AgentMessagePart
             canRespond={canRespond}
             key={partKey(part, index)}
