@@ -133,7 +133,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                         <Link 
                             href={`/theme-studio/${platformOpts.themePageId}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 text-xs font-medium bg-[#ffe633]/15 text-[#ffe633] border border-[#ffe633]/30 px-2.5 py-1 rounded-md hover:bg-[#ffe633]/25 transition-colors cursor-pointer"
+                            className="inline-flex items-center gap-1.5 text-xs font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-md hover:bg-amber-500/20 transition-colors cursor-pointer"
                             title="View Theme Page in Theme Studio"
                         >
                             <span>Theme: {platformOpts.themePageName || "Theme Channel"}</span>

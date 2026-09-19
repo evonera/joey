@@ -92,8 +92,8 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
 
   const getIcon = (type: string) => {
     switch (type) {
-      case 'draft_ready': return <IconEdit className="h-5 w-5 text-[#ffe633]" />;
-      case 'engagement_reply_needed': return <IconMessageDots className="h-5 w-5 text-[#ffe633]" />;
+      case 'draft_ready': return <IconEdit className="h-5 w-5 text-amber-500 dark:text-amber-400" />;
+      case 'engagement_reply_needed': return <IconMessageDots className="h-5 w-5 text-amber-500 dark:text-amber-400" />;
       case 'api_failure': return <IconAlertTriangle className="h-5 w-5 text-amber-500" />;
       case 'publish_success': return <IconBroadcast className="h-5 w-5 text-green-500" />;
       case 'publish_failed': return <IconAlertTriangle className="h-5 w-5 text-red-500" />;
@@ -105,13 +105,15 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
     <div className="relative" ref={dropdownRef}>
       <button 
         onClick={handleToggle}
+        aria-label="Notifications"
+        aria-expanded={isOpen}
         className="relative p-2 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       >
         <IconBell className="h-5 w-5" />
         {unreadCount > 0 ? (
           <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ffe633] opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ffe633]"></span>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 dark:bg-amber-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500 dark:bg-amber-400"></span>
           </span>
         ) : (
           <LiveblocksUnreadDot />
@@ -126,13 +128,13 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
                 onClick={() => setActiveTab('system')}
                 className={`flex-1 py-2.5 px-3 text-xs font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
                   activeTab === 'system' 
-                    ? 'border-[#ffe633] text-[#ffe633] bg-background/50' 
+                    ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-background/50' 
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
                 <span>Updates</span>
                 {unreadCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-[#ffe633]/20 text-[#ffe633] text-[10px] font-bold">
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
                     {unreadCount}
                   </span>
                 )}
@@ -141,7 +143,7 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
                 onClick={() => setActiveTab('team')}
                 className={`flex-1 py-2.5 px-3 text-xs font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
                   activeTab === 'team' 
-                    ? 'border-[#ffe633] text-[#ffe633] bg-background/50' 
+                    ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-background/50' 
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -189,7 +191,7 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
                     <div 
                       key={notif.id}
                       onClick={() => handleNotificationClick(notif)}
-                      className={`p-4 flex gap-3 cursor-pointer hover:bg-muted/50 transition-colors ${!notif.isRead ? 'bg-[#ffe633]/5' : ''}`}
+                      className={`p-4 flex gap-3 cursor-pointer hover:bg-muted/50 transition-colors ${!notif.isRead ? 'bg-amber-500/5' : ''}`}
                     >
                       <div className="flex-shrink-0 mt-1">
                         {getIcon(notif.type)}
@@ -207,7 +209,7 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
                       </div>
                       {!notif.isRead && (
                         <div className="flex-shrink-0 flex items-center">
-                          <div className="h-2 w-2 rounded-full bg-[#ffe633]"></div>
+                          <div className="h-2 w-2 rounded-full bg-amber-500 dark:bg-amber-400"></div>
                         </div>
                       )}
                     </div>
@@ -221,7 +223,7 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
             <Link 
               href="/notifications" 
               onClick={() => setIsOpen(false)}
-              className="text-sm text-foreground hover:text-[#ffe633] font-medium block w-full transition-colors"
+              className="text-sm text-foreground hover:text-amber-600 dark:hover:text-amber-400 font-medium block w-full transition-colors"
             >
               View all notifications
             </Link>

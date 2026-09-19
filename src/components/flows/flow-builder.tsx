@@ -41,6 +41,8 @@ import {
 } from "hugeicons-react";
 
 import {
+  PanelLeftClose,
+  PanelLeftOpen,
   Play as PlayLucide,
   Clock as ClockLucide,
   Zap as ZapLucide,
@@ -238,6 +240,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
   const colorMode = (resolvedTheme === "dark" ? "dark" : "light") as "dark" | "light";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runsOpen, setRunsOpen] = useState(false);
+  const [isPaletteCollapsed, setIsPaletteCollapsed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [webhookOpen, setWebhookOpen] = useState(false);
@@ -494,44 +497,76 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
       {/* Palette */}
-      <aside className="w-56 shrink-0 border-r p-3 space-y-4 overflow-y-auto">
-        <Link href="/flows" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-3.5 w-3.5" /> All flows
-        </Link>
-        {Object.entries(grouped).map(([category, entries]) => (
-          <div key={category}>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{category}</p>
-            <div className="space-y-1.5">
-              {entries.map((entry) => {
-                const visuals = getNodeVisuals(entry.type, entry.category);
-                const IconComponent = visuals.icon;
-                return (
-                  <button
-                    key={entry.type}
-                    title={entry.description}
-                    draggable
-                    onDragStart={(e) => e.dataTransfer.setData("application/flow-node", entry.type)}
-                    onClick={() => addNodeType(entry.type)}
-                    className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-left text-xs font-medium hover:border-primary/50 hover:bg-accent/50 transition-all cursor-grab active:cursor-grabbing shadow-xs"
-                  >
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-md ${visuals.bgClass} ${visuals.colorClass} shrink-0`}>
-                      <IconComponent className="h-3 w-3" />
-                    </span>
-                    <span className="truncate text-foreground font-medium">{entry.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+      {isPaletteCollapsed ? (
+        <aside className="w-12 shrink-0 border-r p-2 flex flex-col items-center gap-3 bg-card/40 transition-all">
+          <Link href="/flows" className="p-1.5 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted" title="All flows">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={() => setIsPaletteCollapsed(false)}
+            title="Expand node palette"
+            aria-label="Expand node palette"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </Button>
+        </aside>
+      ) : (
+        <aside className="w-56 shrink-0 border-r p-3 space-y-4 overflow-y-auto transition-all">
+          <div className="flex items-center justify-between">
+            <Link href="/flows" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="h-3.5 w-3.5" /> All flows
+            </Link>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => setIsPaletteCollapsed(true)}
+              title="Collapse node palette"
+              aria-label="Collapse node palette"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
           </div>
-        ))}
-      </aside>
+          {Object.entries(grouped).map(([category, entries]) => (
+            <div key={category}>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{category}</p>
+              <div className="space-y-1.5">
+                {entries.map((entry) => {
+                  const visuals = getNodeVisuals(entry.type, entry.category);
+                  const IconComponent = visuals.icon;
+                  return (
+                    <button
+                      key={entry.type}
+                      title={entry.description}
+                      draggable
+                      onDragStart={(e) => e.dataTransfer.setData("application/flow-node", entry.type)}
+                      onClick={() => addNodeType(entry.type)}
+                      className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-left text-xs font-medium hover:border-primary/50 hover:bg-accent/50 transition-all cursor-grab active:cursor-grabbing shadow-xs"
+                    >
+                      <span className={`flex h-5 w-5 items-center justify-center rounded-md ${visuals.bgClass} ${visuals.colorClass} shrink-0`}>
+                        <IconComponent className="h-3 w-3" />
+                      </span>
+                      <span className="truncate text-foreground font-medium">{entry.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </aside>
+      )}
 
       {/* Canvas + toolbar */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b px-4 py-2.5">
-          <Input value={name} onChange={(e)=>setName(e.target.value)} className="h-8 w-56 text-sm font-semibold border-none shadow-none px-1" />
-          <Badge variant={status === "active" ? "default" : "secondary"} className="text-[10px]">{status}</Badge>
-          <div className="ml-auto flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 bg-card/20">
+          <div className="flex items-center gap-2 min-w-0">
+            <Input value={name} onChange={(e)=>setName(e.target.value)} className="h-8 w-44 sm:w-56 text-sm font-semibold border-none shadow-none px-1" />
+            <Badge variant={status === "active" ? "default" : "secondary"} className="text-[10px] shrink-0">{status}</Badge>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
             <Button size="sm" variant="outline" disabled={busy} onClick={handleValidate}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>Validate</Button>
             <Button size="sm" variant={isDirty ? "default" : "outline"} disabled={busy} onClick={handleSave}>
               <Save className="mr-1 h-3.5 w-3.5"/>
@@ -547,9 +582,12 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
             >
               {status === "active" ? <><Pause className="mr-1 h-3.5 w-3.5"/>Pause</> : <><Rocket className="mr-1 h-3.5 w-3.5"/>Activate</>}
             </Button>
+
+            <div className="h-4 w-px bg-border mx-0.5 hidden sm:block" />
+
             <Dialog open={webhookOpen} onOpenChange={(open) => { setWebhookOpen(open); if (!open) setRevealedWebhookSecret(null); }}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="ghost"><Globe className="mr-1 h-3.5 w-3.5"/>Webhook</Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><Globe className="mr-1 h-3.5 w-3.5"/>Webhook</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Incoming webhook</DialogTitle></DialogHeader>
@@ -579,7 +617,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
             </Dialog>
             <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="ghost"><BookMarked className="mr-1 h-3.5 w-3.5"/>Publish</Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><BookMarked className="mr-1 h-3.5 w-3.5"/>Publish</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Publish as template</DialogTitle></DialogHeader>
@@ -591,7 +629,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
                 </div>
               </DialogContent>
             </Dialog>
-            <Button size="sm" variant="ghost" onClick={()=>setRunsOpen(true)}><History className="mr-1 h-3.5 w-3.5"/>Runs</Button>
+            <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs" onClick={()=>setRunsOpen(true)}><History className="mr-1 h-3.5 w-3.5"/>Runs</Button>
           </div>
         </div>
 

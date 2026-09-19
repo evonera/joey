@@ -134,13 +134,14 @@ export default function ComposePage() {
 
   const exceedsCharLimit = activeLimits.some(l => charCount > l.limit);
   const exceedsMediaLimit = mediaUrls.length > maxAllowedMedia;
+  const platformError = validatePostForPlatforms(content, mediaUrls, selectedAccounts.map(a => a.platform));
 
   const canSubmit = selectedAccountIds.length > 0 &&
     (content.trim().length > 0 || mediaUrls.length > 0) &&
     !isSubmitting &&
     !isSavingDraft &&
     !exceedsCharLimit && !exceedsMediaLimit && !uploading && !loadingDraft && !draftLoadError &&
-    !validatePostForPlatforms(content, mediaUrls, selectedAccounts.map(a => a.platform));
+    !platformError;
 
   const addExternalUrl = () => {
     const url = externalUrl.trim();
@@ -248,16 +249,6 @@ export default function ComposePage() {
           <h1 className="text-2xl font-bold tracking-tight">Compose Post</h1>
           <p className="text-muted-foreground mt-1 text-sm">Write, preview, and publish content across your connected platforms.</p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleSaveDraft}
-          disabled={selectedAccountIds.length === 0 || (!content.trim() && mediaUrls.length === 0) || isSavingDraft || isSubmitting || uploading || loadingDraft}
-          className="self-start gap-1.5"
-        >
-          {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save as Draft
-        </Button>
       </div>
 
       {/* Autopilot Discovery Banner */}
@@ -375,6 +366,7 @@ export default function ComposePage() {
                   multiple
                   onChange={(e) => void handleFileUpload(e.target.files)}
                   className="hidden"
+                  aria-label="Upload media files"
                 />
                 <Button
                   type="button"
@@ -489,6 +481,12 @@ export default function ComposePage() {
 
       {/* 5. Submit Action */}
       <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2">
+        {platformError && selectedAccountIds.length > 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5 self-start sm:self-center sm:mr-auto">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            {platformError}
+          </p>
+        )}
         <Button
           type="button"
           variant="outline"
