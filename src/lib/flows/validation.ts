@@ -136,7 +136,7 @@ export function validateGraph(doc: FlowGraphDoc): ValidationResult {
     }
   }
 
-  // Warnings: condition node branching handles
+  // Warnings: condition and AI decision node branching handles
   for (const node of doc.nodes) {
     if (node.type === "logic.condition") {
       const outgoing = doc.edges.filter((e) => e.from === node.id);
@@ -144,6 +144,15 @@ export function validateGraph(doc: FlowGraphDoc): ValidationResult {
         issues.push({
           nodeId: node.id,
           message: `Condition node has outgoing connections without a designated 'true' or 'false' branch.`,
+          severity: "warning",
+        });
+      }
+    } else if (node.type === "ai.decision") {
+      const outgoing = doc.edges.filter((e) => e.from === node.id);
+      if (outgoing.length > 0 && outgoing.some((e) => !e.branch)) {
+        issues.push({
+          nodeId: node.id,
+          message: `AI Decision node has outgoing connections without a designated branch handle.`,
           severity: "warning",
         });
       }

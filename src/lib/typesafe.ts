@@ -46,15 +46,18 @@ export async function resolveTypesafeApiKey(tenantId?: string | null): Promise<s
 }
 
 /**
- * Returns an authenticated TypeSafeClient instance with a default 2500ms timeout for webhooks.
+ * Returns an authenticated TypeSafeClient instance with configurable timeout (default 2500ms).
  */
-export async function getTypesafeClient(tenantId?: string | null): Promise<TypeSafeClient | null> {
+export async function getTypesafeClient(
+  tenantId?: string | null,
+  options?: { timeout?: number },
+): Promise<TypeSafeClient | null> {
   const apiKey = await resolveTypesafeApiKey(tenantId);
   if (!apiKey) return null;
 
   return new TypeSafeClient({
     apiKey,
-    timeout: 2500,
+    timeout: options?.timeout ?? 2500,
   });
 }
 
