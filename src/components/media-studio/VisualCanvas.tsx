@@ -17,7 +17,7 @@ export interface VisualCanvasProps {
 
 export interface VisualCanvasHandle {
   exportBlob: (quality?: number) => Promise<Blob | null>;
-  exportDataUrl: (quality?: number) => string | null;
+  exportDataUrl: (quality?: number) => Promise<string | null>;
   getCanvas: () => HTMLCanvasElement | null;
 }
 
@@ -34,9 +34,13 @@ export const VisualCanvas = forwardRef<VisualCanvasHandle, VisualCanvasProps>(
   ) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+    // Tracks the Promise of the currently-running render cycle so that export
+    // methods never capture a stale frame when config/image has just changed.
+    const renderPromiseRef = useRef<Promise<void>>(Promise.resolve());
 
     const exportBlob = useCallback(
-      (quality = 0.92): Promise<Blob | null> => {
+      async (quality = 0.92): Promise<Blob | null> => {
+        await renderPromiseRef.current;
         return new Promise((resolve) => {
           const canvas = canvasRef.current;
           if (!canvas) {
@@ -55,16 +59,20 @@ export const VisualCanvas = forwardRef<VisualCanvasHandle, VisualCanvasProps>(
       [],
     );
 
-    const exportDataUrl = useCallback((quality = 0.92): string | null => {
-      const canvas = canvasRef.current;
-      if (!canvas) return null;
-      try {
-        return canvas.toDataURL("image/jpeg", quality);
-      } catch (err) {
-        console.warn("Failed to export data URL from canvas (possible CORS taint):", err);
-        return null;
-      }
-    }, []);
+    const exportDataUrl = useCallback(
+      async (quality = 0.92): Promise<string | null> => {
+        await renderPromiseRef.current;
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        try {
+          return canvas.toDataURL("image/jpeg", quality);
+        } catch (err) {
+          console.warn("Failed to export data URL from canvas (possible CORS taint):", err);
+          return null;
+        }
+      },
+      [],
+    );
 
     const getCanvas = useCallback(() => canvasRef.current, []);
 
@@ -104,6 +112,9 @@ export const VisualCanvas = forwardRef<VisualCanvasHandle, VisualCanvasProps>(
 
     useEffect(() => {
       let isCancelled = false;
+
+      let resolve: () => void;
+      renderPromiseRef.current = new Promise<void>((res) => { resolve = res; });
 
       async function render() {
         const canvas = canvasRef.current;
@@ -203,10 +214,14 @@ export const VisualCanvas = forwardRef<VisualCanvasHandle, VisualCanvasProps>(
         }
       }
 
-      void render();
+      void render().finally(() => {
+        resolve?.();
+      });
 
       return () => {
         isCancelled = true;
+        // Ensure any in-flight await in exportDataUrl/exportBlob resolves promptly
+        resolve?.();
       };
     }, [config, imageUrl, solidColor, loadImage, onRendered]);
 

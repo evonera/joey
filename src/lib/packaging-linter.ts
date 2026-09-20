@@ -25,8 +25,8 @@ export type PackagingLintResult = {
 };
 
 const HARD_CUTOFF = 100;
-const DESKTOP_CUTOFF = 60;
-const MOBILE_CUTOFF = 40;
+const DESKTOP_CUTOFF = 70;
+const MOBILE_CUTOFF = 50;
 
 const STOP_WORDS = new Set([
   "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
@@ -162,7 +162,7 @@ export function lintPackaging(title: string, thumbnailText?: string): PackagingL
       good.push("Visual graphic and title use complementary words without wasteful duplication");
     }
 
-    if (thumbWords.length > 4) {
+    if (thumbWords.length > 3) {
       issues.push({
         type: "thumb-length",
         message: `${thumbWords.length} words on visual — 3 words is the recommended ceiling at feed size`,

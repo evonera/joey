@@ -182,7 +182,18 @@ install_ego_lite() {
 		find_ego_browser_in_app "$staged_app" >/dev/null ||
 			die "installed $APP_NAME does not contain $EGO_BROWSER_HELPER_NAME"
 
-		# Strip quarantine attributes to prevent Gatekeeper from blocking the first launch.
+		# Verify the app bundle's code signature before removing Gatekeeper protection.
+		# This ensures the binary is properly signed and notarized; if either check
+		# fails the installer aborts — quarantine is never removed from a bad bundle.
+		log "Verifying code signature of $APP_NAME ..."
+		codesign --verify --deep --strict "$staged_app" >/dev/null 2>&1 ||
+			die "Code signature verification failed for $staged_app — aborting install"
+
+		log "Verifying Gatekeeper acceptance of $APP_NAME ..."
+		spctl --assess --type execute "$staged_app" >/dev/null 2>&1 ||
+			die "Gatekeeper assessment failed for $staged_app — aborting install"
+
+		# Strip quarantine attributes only after both checks pass.
 		log "Removing quarantine attributes from $APP_NAME ..."
 		xattr -dr com.apple.quarantine "$staged_app" \
 			>/dev/null 2>&1 || true

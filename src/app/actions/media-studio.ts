@@ -3,7 +3,7 @@
 import { getActiveTenantId } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
-import { uploadBufferToR2, isR2Configured, buildPublicUrl } from "@/lib/storage";
+import { uploadBufferToR2, isR2Configured, assertAllowedUpload, R2_MAX_ASSET_BYTES } from "@/lib/storage";
 import { generateText } from "ai";
 import { resolveModelForTurn } from "@/lib/agent-model-resolver";
 
@@ -34,6 +34,14 @@ export async function saveMediaStudioAsset(input: {
 
     const ext = mimeType.includes("png") ? "png" : "jpg";
     const filename = input.filename || `visual-hook-${Date.now()}.${ext}`;
+
+    // Validate MIME type and extension against the site-wide allowlist
+    assertAllowedUpload(filename, mimeType);
+
+    // Enforce upload size cap (same limit as the regular asset upload path)
+    if (buffer.length > R2_MAX_ASSET_BYTES) {
+      return { success: false, publicUrl: "", error: "Image exceeds the 50 MB size limit" };
+    }
 
     if (isR2Configured()) {
       const customKey = `${tenantId}/media-studio/${crypto.randomUUID()}.${ext}`;

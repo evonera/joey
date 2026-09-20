@@ -61,11 +61,38 @@ describe("lintPackaging", () => {
     expect(result.good.some((g) => g.includes("complementary words"))).toBe(true);
   });
 
-  it("flags thumbnail text exceeding 4 words", () => {
-    const result = lintPackaging(
-      "Secret growth hack for founders",
-      "THIS IS WAY TOO MANY WORDS TO READ FAST"
-    );
-    expect(result.issues.some((i) => i.type === "thumb-length")).toBe(true);
+  it("flags thumbnail text exceeding 3 words", () => {
+    const exactlyThree = lintPackaging("Secret growth hack", "THREE WORDS ONLY");
+    expect(exactlyThree.issues.some((i) => i.type === "thumb-length")).toBe(false);
+    expect(exactlyThree.good.some((g) => g.includes("ideal high-CTR"))).toBe(true);
+
+    const fourWords = lintPackaging("Secret growth hack", "THIS IS FOUR WORDS");
+    expect(fourWords.issues.some((i) => i.type === "thumb-length")).toBe(true);
+  });
+
+  it("checks exact boundary conditions for 50-char mobile and 70-char desktop cutoffs", () => {
+    // 50 chars exactly - no mobile cutoff
+    const exactly50 = "A".repeat(50);
+    const res50 = lintPackaging(exactly50);
+    expect(res50.issues.some((i) => i.type === "mobile-cut")).toBe(false);
+    expect(res50.issues.some((i) => i.type === "desktop-cut")).toBe(false);
+
+    // 51 chars - triggers mobile cutoff, but not desktop cutoff
+    const exactly51 = "A".repeat(51);
+    const res51 = lintPackaging(exactly51);
+    expect(res51.issues.some((i) => i.type === "mobile-cut")).toBe(true);
+    expect(res51.issues.some((i) => i.type === "desktop-cut")).toBe(false);
+
+    // 70 chars exactly - triggers mobile cutoff, but not desktop cutoff
+    const exactly70 = "A".repeat(70);
+    const res70 = lintPackaging(exactly70);
+    expect(res70.issues.some((i) => i.type === "mobile-cut")).toBe(true);
+    expect(res70.issues.some((i) => i.type === "desktop-cut")).toBe(false);
+
+    // 71 chars - triggers both mobile and desktop cutoff
+    const exactly71 = "A".repeat(71);
+    const res71 = lintPackaging(exactly71);
+    expect(res71.issues.some((i) => i.type === "mobile-cut")).toBe(true);
+    expect(res71.issues.some((i) => i.type === "desktop-cut")).toBe(true);
   });
 });

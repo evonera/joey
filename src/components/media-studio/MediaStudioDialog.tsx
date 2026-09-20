@@ -180,7 +180,7 @@ export function MediaStudioDialog({
     if (!handle) return;
     setIsSaving(true);
     try {
-      const dataUrl = handle.exportDataUrl(0.92);
+      const dataUrl = await handle.exportDataUrl(0.92);
       if (!dataUrl) throw new Error("Could not export canvas data");
 
       const dim = ASPECT_RATIO_DIMENSIONS[config.aspectRatio];
@@ -191,7 +191,9 @@ export function MediaStudioDialog({
         height: dim.height,
       });
 
-      if (!res.success) throw new Error(res.error || "Save failed");
+      if (!res.success || !res.publicUrl) {
+        throw new Error(res.error || "Save failed");
+      }
 
       onSavedAsset?.(res.publicUrl);
       toast.success("Saved visual hook to Joey Assets!");
@@ -208,7 +210,7 @@ export function MediaStudioDialog({
     if (!handle) return;
     setIsSaving(true);
     try {
-      const dataUrl = handle.exportDataUrl(0.92);
+      const dataUrl = await handle.exportDataUrl(0.92);
       if (!dataUrl) throw new Error("Could not export canvas data");
 
       const dim = ASPECT_RATIO_DIMENSIONS[config.aspectRatio];
@@ -219,10 +221,12 @@ export function MediaStudioDialog({
         height: dim.height,
       });
 
-      const finalUrl = res.success && res.publicUrl ? res.publicUrl : dataUrl;
+      if (!res.success || !res.publicUrl) {
+        throw new Error(res.error || "Failed to persist visual hook to storage for post attachment");
+      }
 
       if (onAttachToPost) {
-        onAttachToPost(finalUrl, packagingLint.score);
+        onAttachToPost(res.publicUrl, packagingLint.score);
       }
       toast.success("Attached visual hook to post!");
       onOpenChange(false);
