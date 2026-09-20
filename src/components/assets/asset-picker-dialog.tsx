@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listAssets } from "@/app/actions/assets";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Image01Icon as ImageIcon, Search01Icon as Search, Loading03Icon as Loader2, Tick01Icon as Check } from "hugeicons-react";
@@ -74,6 +74,9 @@ export function AssetPickerDialog({
       <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Select Media</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Choose an uploaded image or video from your asset library to attach.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="relative flex-1 max-w-sm mb-4">

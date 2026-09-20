@@ -209,6 +209,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="text-base font-semibold">Deploy New Social Scout</DialogTitle>
+                <DialogDescription>Configure a competitor or account to monitor for content and activity changes.</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleCreate} className="space-y-4 pt-2">
                 <div className="space-y-1.5">

@@ -71,7 +71,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { getNodeMeta as getNode, getNodeOutputs, catalog } from "@/lib/flows/catalog";
 import type { FlowGraphDoc } from "@/lib/flows/types";
@@ -590,7 +590,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
                 <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><Globe className="mr-1 h-3.5 w-3.5"/>Webhook</Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle>Incoming webhook</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>Incoming webhook</DialogTitle><DialogDescription>Trigger this flow from external services by sending a signed HTTP request to the endpoint below.</DialogDescription></DialogHeader>
                 <div className="space-y-4 text-sm">
                   <div>
                     <p className="mb-1 text-xs font-medium text-muted-foreground">Endpoint</p>
@@ -620,7 +620,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
                 <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><BookMarked className="mr-1 h-3.5 w-3.5"/>Publish</Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle>Publish as template</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>Publish as template</DialogTitle><DialogDescription>Share this flow as a reusable template in the marketplace for others to install.</DialogDescription></DialogHeader>
                 <div className="space-y-3">
                   <Input placeholder="Template name" value={publishMeta.name} onChange={(e)=>setPublishMeta(p=>({...p,name:e.target.value}))}/>
                   <Input placeholder="Short description" value={publishMeta.description} onChange={(e)=>setPublishMeta(p=>({...p,description:e.target.value}))}/>
