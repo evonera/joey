@@ -16,6 +16,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/calendar": "Calendar",
   "/engagement": "Engagement",
   "/theme-studio": "Theme Studio",
+  "/scouts": "Social Scouts",
   "/flows": "Flows",
   "/flows/templates": "Flow Templates",
   "/assets": "Assets",

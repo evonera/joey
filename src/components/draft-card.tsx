@@ -212,6 +212,8 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                         <div className="italic text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed text-xs">
                             Multiple draft variations generated. Click <strong>Review & Edit Variants</strong> to select and adjust copy.
                         </div>
+                    ) : mediaUrls.length > 0 ? (
+                        <span className="italic text-muted-foreground">Media post (no caption)</span>
                     ) : (
                         <span className="italic text-muted-foreground">No text content available</span>
                     )}

@@ -253,6 +253,7 @@ export default function DraftsPage() {
                 <div className="relative flex-1 w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
+                        aria-label="Search drafts by content or title"
                         placeholder="Search drafts by content or title..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}

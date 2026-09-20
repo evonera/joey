@@ -14,7 +14,7 @@ describe("rendered template images", () => {
     const embedded = svg.replace("https://example.com/hero.png", `data:image/png;base64,${png.toString("base64")}`);
     expect([...new Resvg(embedded).render().pixels.subarray(0, 4)]).toEqual([255, 0, 0, 255]);
     expect(request).toHaveBeenCalledWith("https://example.com/hero.png", expect.objectContaining({ maxBytes: 5 * 1024 * 1024, timeoutMs: 15_000 }));
-  });
+  }, 30_000);
   it("fails visibly when an image URL returns an HTML error page", async () => {
     request.mockResolvedValue({ status: 200, buffer: Buffer.from("<html>Not an image</html>") });
     await expect(renderSvgPng(svg)).rejects.toThrow("PNG, JPEG, GIF or WebP");

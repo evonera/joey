@@ -112,38 +112,44 @@ export function DmRulesBuilder({ themePageId, initialRules }: DmRulesBuilderProp
           <h3 className="text-sm font-semibold">Create DM Funnel Trigger</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+              <label htmlFor="dm-trigger-keyword" className="block text-xs font-medium text-muted-foreground mb-1.5">
                 Trigger Keyword (e.g. GUIDE, STATS, FREE)
               </label>
               <input
+                id="dm-trigger-keyword"
                 type="text"
                 value={triggerValue}
                 onChange={(e) => setTriggerValue(e.target.value)}
                 placeholder="GUIDE"
+                aria-label="Trigger Keyword"
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background font-mono font-bold uppercase"
                 required
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+              <label htmlFor="dm-response-link" className="block text-xs font-medium text-muted-foreground mb-1.5">
                 Destination / Lead Magnet Link
               </label>
               <input
+                id="dm-response-link"
                 type="url"
                 value={responseLink}
                 onChange={(e) => setResponseLink(e.target.value)}
                 placeholder="https://yourpage.com/resource"
+                aria-label="Destination / Lead Magnet Link"
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background font-mono text-xs"
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+              <label htmlFor="dm-response-template" className="block text-xs font-medium text-muted-foreground mb-1.5">
                 Automated DM Response Message
               </label>
               <textarea
+                id="dm-response-template"
                 rows={3}
                 value={responseTemplate}
                 onChange={(e) => setResponseTemplate(e.target.value)}
+                aria-label="Automated DM Response Message"
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background"
                 required
               />
@@ -203,6 +209,9 @@ export function DmRulesBuilder({ themePageId, initialRules }: DmRulesBuilderProp
                     </span>
                     <button
                       onClick={() => handleToggle(rule.id)}
+                      role="switch"
+                      aria-checked={rule.isActive}
+                      aria-label={`Toggle rule ${rule.triggerValue}, currently ${rule.isActive ? "active" : "disabled"}`}
                       className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
                         rule.isActive
                           ? "bg-emerald-500/10 text-emerald-600"
@@ -214,6 +223,7 @@ export function DmRulesBuilder({ themePageId, initialRules }: DmRulesBuilderProp
                   </div>
                   <button
                     onClick={() => handleDelete(rule.id)}
+                    aria-label={`Delete rule ${rule.triggerValue}`}
                     className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
                   >
                     <IconTrash className="w-4 h-4" />

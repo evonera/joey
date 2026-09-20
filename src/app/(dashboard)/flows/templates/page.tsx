@@ -73,7 +73,12 @@ export default function FlowTemplatesPage() {
             {t.description && <p className="mt-1 text-sm text-muted-foreground flex-1">{t.description}</p>}
             <div className="mt-4 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">{t.installs} installs</span>
-              <Button size="sm" disabled={installing !== null} onClick={() => handleInstall(t.id)}>
+              <Button
+                size="sm"
+                aria-label={`Install ${t.name} template`}
+                disabled={installing !== null}
+                onClick={() => handleInstall(t.id)}
+              >
                 <Download className="mr-1 h-3.5 w-3.5" />
                 {installing === t.id ? "Installing…" : "Install"}
               </Button>

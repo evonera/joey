@@ -107,6 +107,7 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
         onClick={handleToggle}
         aria-label="Notifications"
         aria-expanded={isOpen}
+        aria-haspopup="menu"
         className="relative p-2 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       >
         <IconBell className="h-5 w-5" />

@@ -362,10 +362,11 @@ function SettingsContent() {
               </div>
               <div className="p-6 space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
+                  <label htmlFor="settings-brand-voice" className="block text-sm font-medium text-foreground mb-2">
                     Brand Voice
                   </label>
                   <textarea
+                    id="settings-brand-voice"
                     value={brandVoice}
                     onChange={(e) => setBrandVoice(e.target.value)}
                     placeholder="e.g. Professional yet conversational. We use emojis sparingly. We always focus on providing actionable value to developers."
@@ -374,10 +375,11 @@ function SettingsContent() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
+                  <label htmlFor="settings-posting-goals" className="block text-sm font-medium text-foreground mb-2">
                     Posting Goals & Content Strategy
                   </label>
                   <textarea
+                    id="settings-posting-goals"
                     value={postingGoals}
                     onChange={(e) => setPostingGoals(e.target.value)}
                     placeholder="e.g. Our main goal is to drive signups for our SaaS. We want to share 1 technical tip, 1 industry news piece, and 1 product update per week."
@@ -394,10 +396,11 @@ function SettingsContent() {
               </div>
               <div className="p-6 space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
+                  <label htmlFor="settings-timezone" className="block text-sm font-medium text-foreground mb-2">
                     Timezone
                   </label>
                   <select
+                    id="settings-timezone"
                     value={timezone}
                     onChange={(e) => setTimezone(e.target.value)}
                     className="w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -438,10 +441,11 @@ function SettingsContent() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
+                  <label htmlFor="settings-times-text" className="block text-sm font-medium text-foreground mb-2">
                     Times to Post (24h format, comma separated)
                   </label>
                   <input
+                    id="settings-times-text"
                     type="text"
                     value={timesText}
                     onChange={(e) => setTimesText(e.target.value)}
@@ -703,10 +707,11 @@ function SettingsContent() {
               {notificationPrefs ? (
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
+                    <label htmlFor="settings-notif-email" className="block text-sm font-medium text-foreground mb-2">
                       Email Address
                     </label>
                     <input
+                      id="settings-notif-email"
                       type="email"
                       value={notificationPrefs.emailAddress || ""}
                       onChange={(e) => setNotificationPrefs({ ...notificationPrefs, emailAddress: e.target.value })}
@@ -738,6 +743,7 @@ function SettingsContent() {
                             <td className="px-4 py-3 text-center">
                               <input
                                 type="checkbox"
+                                aria-label={`${item.label} in-app notification`}
                                 checked={notificationPrefs[`inApp${item.key}`]}
                                 onChange={(e) => setNotificationPrefs({ ...notificationPrefs, [`inApp${item.key}`]: e.target.checked })}
                                 className="h-4 w-4 rounded border-input text-primary focus-visible:ring-1 focus-visible:ring-ring"
@@ -746,6 +752,7 @@ function SettingsContent() {
                             <td className="px-4 py-3 text-center">
                               <input
                                 type="checkbox"
+                                aria-label={`${item.label} email notification`}
                                 checked={notificationPrefs[`email${item.key}`]}
                                 onChange={(e) => setNotificationPrefs({ ...notificationPrefs, [`email${item.key}`]: e.target.checked })}
                                 className="h-4 w-4 rounded border-input text-primary focus-visible:ring-1 focus-visible:ring-ring"

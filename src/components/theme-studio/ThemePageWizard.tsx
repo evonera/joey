@@ -258,8 +258,9 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
 
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium mb-1">Page Name *</label>
+              <label htmlFor="wizard-page-name" className="block text-xs font-medium mb-1">Page Name *</label>
               <input
+                id="wizard-page-name"
                 type="text"
                 value={name}
                 onChange={(e) => {
@@ -274,8 +275,9 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
               />
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1">Specific Niche</label>
+              <label htmlFor="wizard-niche" className="block text-xs font-medium mb-1">Specific Niche</label>
               <input
+                id="wizard-niche"
                 type="text"
                 value={niche}
                 onChange={(e) => setNiche(e.target.value)}
@@ -284,8 +286,9 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
               />
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1">Target Audience</label>
+              <label htmlFor="wizard-audience" className="block text-xs font-medium mb-1">Target Audience</label>
               <input
+                id="wizard-audience"
                 type="text"
                 value={audience}
                 onChange={(e) => setAudience(e.target.value)}
@@ -294,8 +297,9 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
               />
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1">Tone & Voice Guide</label>
+              <label htmlFor="wizard-voice" className="block text-xs font-medium mb-1">Tone & Voice Guide</label>
               <textarea
+                id="wizard-voice"
                 rows={2}
                 value={voice}
                 onChange={(e) => setVoice(e.target.value)}
@@ -557,8 +561,9 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
             </div>
 
             <div>
-              <label className="block text-xs font-medium mb-1.5">Brand Mark Initial</label>
+              <label htmlFor="wizard-brand-initial" className="block text-xs font-medium mb-1.5">Brand Mark Initial</label>
               <input
+                id="wizard-brand-initial"
                 type="text"
                 value={brandInitial}
                 maxLength={3}
@@ -569,8 +574,9 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
             </div>
 
             <div>
-              <label className="block text-xs font-medium mb-1.5">Top Badge Style</label>
+              <label htmlFor="wizard-top-badge" className="block text-xs font-medium mb-1.5">Top Badge Style</label>
               <select
+                id="wizard-top-badge"
                 value={topBadge}
                 onChange={(e) => setTopBadge(e.target.value as any)}
                 className="w-full px-3 py-2 text-xs border rounded-xl bg-background"
@@ -583,8 +589,9 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
             </div>
 
             <div className="col-span-2">
-              <label className="block text-xs font-medium mb-1.5">Watermark / Handle</label>
+              <label htmlFor="wizard-watermark" className="block text-xs font-medium mb-1.5">Watermark / Handle</label>
               <input
+                id="wizard-watermark"
                 type="text"
                 value={watermark}
                 onChange={(e) => setWatermark(e.target.value)}
