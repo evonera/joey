@@ -14,6 +14,7 @@ import { PlatformSelector } from "@/components/compose/platform-selector";
 import { SchedulePicker, type ScheduleType } from "@/components/compose/schedule-picker";
 import { PlatformPreviews } from "@/components/compose/platform-previews";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
+import { MediaStudioDialog } from "@/components/media-studio/MediaStudioDialog";
 import {
   Loading03Icon as Loader2,
   SentIcon as Send,
@@ -24,7 +25,8 @@ import {
   Cancel01Icon as X,
   Upload01Icon as Upload,
   FloppyDiskIcon as Save,
-  AlertCircleIcon as AlertCircle
+  AlertCircleIcon as AlertCircle,
+  SparklesIcon as Sparkles,
 } from "hugeicons-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -53,6 +55,8 @@ export default function ComposePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [mediaStudioOpen, setMediaStudioOpen] = useState(false);
+  const [packagingScore, setPackagingScore] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -390,8 +394,47 @@ export default function ComposePage() {
                     });
                   }}
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMediaStudioOpen(true)}
+                  className="h-8 gap-1 text-xs border-primary/40 bg-primary/10 hover:bg-primary/20 text-foreground font-semibold"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  Design Visual Hook
+                </Button>
+                <MediaStudioDialog
+                  open={mediaStudioOpen}
+                  onOpenChange={setMediaStudioOpen}
+                  postContent={content}
+                  onAttachToPost={(url, score) => {
+                    setMediaUrls((prev) => [...prev, url]);
+                    setPackagingScore(score);
+                  }}
+                />
               </div>
             </div>
+
+            {packagingScore !== null && (
+              <div className="flex items-center gap-2 pt-1 text-xs">
+                <Badge
+                  variant="outline"
+                  className={`text-[11px] font-mono font-bold ${
+                    packagingScore >= 80
+                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                      : packagingScore >= 55
+                        ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                        : "bg-red-500/15 text-red-400 border-red-500/30"
+                  }`}
+                >
+                  Visual Packaging Score: {packagingScore}/100
+                </Badge>
+                <span className="text-muted-foreground text-[11px]">
+                  Visual hook attached and optimized for social feeds
+                </span>
+              </div>
+            )}
 
             {mediaUrls.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
