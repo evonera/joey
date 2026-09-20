@@ -30,6 +30,7 @@ export default defineConfig({
       ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || 'MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=',
       DATABASE_URL: process.env.DATABASE_URL || 'postgres://dummy:dummy@localhost:5432/dummy',
       NEXT_OUTPUT: 'server',
+      JOEY_E2E: '1',
       NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN: process.env.NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN || 'WEBMCP_ORIGIN_TRIAL_DUMMY_TOKEN_FOR_E2E',
     }
   },

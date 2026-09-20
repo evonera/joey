@@ -14,6 +14,18 @@ export interface VisualConceptSuggestion {
   explanation: string;
 }
 
+function isValidBase64(value: string): boolean {
+  return value.length > 0 && value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value);
+}
+
+function assertJpegBytes(buffer: Buffer): void {
+  // Media Studio currently exports JPEG only. Verify the decoded bytes instead
+  // of trusting a caller-controlled data URL MIME type before public storage.
+  if (buffer.length < 3 || buffer[0] !== 0xff || buffer[1] !== 0xd8 || buffer[2] !== 0xff) {
+    throw new Error("Visual hook data is not a valid JPEG image");
+  }
+}
+
 export async function saveMediaStudioAsset(input: {
   base64Data: string;
   filename?: string;
@@ -28,11 +40,15 @@ export async function saveMediaStudioAsset(input: {
       return { success: false, publicUrl: "", error: "Invalid base64 image data" };
     }
 
-    const mimeType = matches[1];
+    const mimeType = matches[1].toLowerCase();
     const base64Content = matches[2];
+    if (mimeType !== "image/jpeg" || !isValidBase64(base64Content)) {
+      return { success: false, publicUrl: "", error: "Media Studio accepts JPEG image data only" };
+    }
     const buffer = Buffer.from(base64Content, "base64");
+    assertJpegBytes(buffer);
 
-    const ext = mimeType.includes("png") ? "png" : "jpg";
+    const ext = "jpg";
     const filename = input.filename || `visual-hook-${Date.now()}.${ext}`;
 
     // Validate MIME type and extension against the site-wide allowlist

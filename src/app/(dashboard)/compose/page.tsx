@@ -247,7 +247,7 @@ export default function ComposePage() {
   if (draftLoadError) return <div role="alert" className="space-y-4"><p>{draftLoadError}</p><Button asChild><Link href="/drafts">Back to drafts</Link></Button></div>;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 pb-16">
+    <div className="mx-auto min-w-0 max-w-3xl space-y-6 pb-16">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" data-tour="compose-overview">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Compose Post</h1>
@@ -256,22 +256,22 @@ export default function ComposePage() {
       </div>
 
       {/* Autopilot Discovery Banner */}
-      <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl flex-wrap border border-primary/20 bg-primary/5 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span>
+      <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-3 rounded-xl flex-wrap border border-primary/20 bg-primary/5 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="min-w-0">
             <strong className="text-foreground">Compose:</strong> Create a single post here. Use Theme Studio for recurring content around a topic.
           </span>
         </div>
         <Link
           href="/theme-studio"
-          className="font-medium text-primary hover:underline shrink-0 inline-flex items-center gap-1"
+          className="max-w-full shrink-0 font-medium text-primary hover:underline inline-flex items-center gap-1"
         >
           Open Theme Studio →
         </Link>
       </div>
 
       {/* 1. Accounts */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="h-4 w-4" />
@@ -298,7 +298,7 @@ export default function ComposePage() {
       </Card>
 
       {/* 2. Content */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-base">
             <span className="flex items-center gap-2">

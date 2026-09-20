@@ -57,6 +57,12 @@ const authBaseURL =
 export const auth = betterAuth({
     secret: authSecret,
     baseURL: authBaseURL,
+    // E2E runs use disposable local accounts and must be able to retry a
+    // failed test without consuming the production sign-up limiter. This is
+    // only enabled by the Playwright web server and never in deployed builds.
+    rateLimit: {
+        enabled: process.env.JOEY_E2E !== "1",
+    },
     database: drizzleAdapter(db, {
         provider: "pg",
         schema: {

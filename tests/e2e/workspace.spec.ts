@@ -1,12 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { test, expect } from "@playwright/test";
+import { test, expect, type TestInfo } from "@playwright/test";
 
-test("authenticated workspace routes remain usable on desktop and mobile", async ({ page, context, baseURL }) => {
+function signupHeaders(testInfo: TestInfo) {
+  // Better Auth intentionally limits sign-up attempts to three per IP per
+  // ten-second window. Give each test/retry its own documentation-range IPv6
+  // address so retries test the application rather than the auth limiter.
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 8);
+  return { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8::${suffix}` };
+}
+
+test("authenticated workspace routes remain usable on desktop and mobile", async ({ page, context }, testInfo) => {
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const signup = await context.request.post("/api/auth/sign-up/email", {
-    headers: { origin: baseURL! },
+    headers: signupHeaders(testInfo),
     data: { name: "E2E Workspace", email: `workspace-${randomUUID()}@example.test`, password: "Local-E2E-Only-2026!" },
   });
   expect(signup.ok(), await signup.text()).toBe(true);
@@ -33,10 +41,10 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
   await expect(page).toHaveURL(/\/compose\?date=\d{4}-\d{2}-\d{2}/);
 });
 
-test("a new workspace can create a theme page and open every setup tab", async ({ page, context, baseURL }) => {
+test("a new workspace can create a theme page and open every setup tab", async ({ page, context }, testInfo) => {
   test.setTimeout(180_000);
   const signup = await context.request.post("/api/auth/sign-up/email", {
-    headers: { origin: baseURL! },
+    headers: signupHeaders(testInfo),
     data: { name: "Theme E2E", email: `theme-${randomUUID()}@example.test`, password: "Local-E2E-Only-2026!" },
   });
   expect(signup.ok(), await signup.text()).toBe(true);
@@ -55,10 +63,10 @@ test("a new workspace can create a theme page and open every setup tab", async (
 });
 
 
-test("Instagram and TikTok templates are available and install as editable flows", async ({ page, context, baseURL }) => {
+test("Instagram and TikTok templates are available and install as editable flows", async ({ page, context }, testInfo) => {
   test.setTimeout(120_000);
   const signup = await context.request.post("/api/auth/sign-up/email", {
-    headers: { origin: baseURL! },
+    headers: signupHeaders(testInfo),
     data: { name: "Template E2E", email: `templates-${randomUUID()}@example.test`, password: "Local-E2E-Only-2026!" },
   });
   expect(signup.ok(), await signup.text()).toBe(true);

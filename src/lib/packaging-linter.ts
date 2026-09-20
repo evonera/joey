@@ -78,11 +78,11 @@ export function lintPackaging(title: string, thumbnailText?: string): PackagingL
   } else if (n > DESKTOP_CUTOFF) {
     issues.push({
       type: "desktop-cut",
-      message: `${n} characters — desktop feed truncates around 60 characters`,
+      message: `${n} characters — desktop feed truncates around ${DESKTOP_CUTOFF} characters`,
       severity: "warning",
     });
   } else if (n > 0) {
-    good.push(`${n} characters, clean within the 60-character desktop cut`);
+    good.push(`${n} characters, clean within the ${DESKTOP_CUTOFF}-character desktop cut`);
   }
 
   const mobileSnippet = n > MOBILE_CUTOFF ? t.slice(0, MOBILE_CUTOFF).replace(/\s+\S*$/, "") : t;
@@ -95,7 +95,7 @@ export function lintPackaging(title: string, thumbnailText?: string): PackagingL
       severity: "warning",
     });
   } else if (n > 0) {
-    good.push("Front-loaded and fully visible on mobile feeds (<40 characters)");
+    good.push(`Front-loaded and fully visible on mobile feeds (<${MOBILE_CUTOFF} characters)`);
   }
 
   const rawWords = t.split(/\s+/).filter(Boolean);
