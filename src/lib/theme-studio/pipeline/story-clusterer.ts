@@ -4,6 +4,8 @@ import { eq, and, desc, gte, inArray } from "drizzle-orm";
 import {
   evaluateStoryAffinitySemantically,
   getTypesafeClient,
+  getClusteringMode,
+  checkJevBudget,
   type ThemePageContext,
 } from "@/lib/typesafe";
 import type { TypeSafeClient } from "@typesafe-ai/sdk";
@@ -150,11 +152,13 @@ export async function clusterSourceItems(
   }
 
   try {
-    // Resolve TypeSafe client & clustering mode
+    // Resolve TypeSafe client & clustering mode (default OFF to avoid credit compound).
     const client = options?.client ?? (await getTypesafeClient(tenantId));
-    const configuredMode = (options?.mode ?? process.env.THEME_STUDIO_CLUSTERING_MODE ?? (client ? "shadow" : "off")) as "shadow" | "active" | "off";
-    const runSemanticEvaluation = client && configuredMode !== "off";
-    const maxSemanticEvals = options?.maxSemanticEvaluations ?? 15;
+    const configuredMode = (options?.mode ?? getClusteringMode()) as "shadow" | "active" | "off";
+    const budget = checkJevBudget(tenantId);
+    const runSemanticEvaluation = client && configuredMode !== "off" && budget.allowed;
+    // Strict sampling: at most 3 semantic evaluations per run unless explicitly overridden.
+    const maxSemanticEvals = options?.maxSemanticEvaluations ?? 3;
 
     const shadowReport: ClusteringShadowReport = {
       mode: configuredMode,
@@ -204,7 +208,7 @@ export async function clusterSourceItems(
               { id: item.id, title: item.title, body: item.body },
               { id: candidate.id, title: candidate.title, body: candidate.body },
               tenantId,
-              { client, pageContext },
+              { client, pageContext, force: true },
             );
 
             if (affinity) {

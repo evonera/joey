@@ -61,6 +61,159 @@ export async function getTypesafeClient(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Cautious Jev guards: feature flags, budget caps, structured logging.
+// Jev is cheap per-call but compounds across Scouts, comments, and flows.
+// Only Scout pre-gate + DM fallback are enabled by default. Clustering
+// defaults to OFF (opt-in shadow with strict sampling).
+// ---------------------------------------------------------------------------
+
+export type JevFeature = "scout" | "dm" | "cluster" | "decision";
+export type ClusteringMode = "shadow" | "active" | "off";
+
+export function getClusteringMode(override?: string | null): ClusteringMode {
+  const raw = (override ?? process.env.THEME_STUDIO_CLUSTERING_MODE ?? "off")
+    .toString()
+    .trim()
+    .toLowerCase();
+  if (raw === "active" || raw === "shadow" || raw === "off") return raw;
+  return "off";
+}
+
+export function isJevFeatureEnabled(feature: JevFeature): boolean {
+  if (feature === "scout") return process.env.TYPESAFE_SCOUT_GATE !== "false";
+  if (feature === "dm") return process.env.TYPESAFE_DM_FALLBACK !== "false";
+  if (feature === "cluster") return getClusteringMode() !== "off";
+  return true; // decision node: allowed only when user explicitly adds it
+}
+
+export function getJevCaps(): { daily: number; monthly: number } {
+  const daily = Number.parseInt(process.env.JEV_DAILY_CAP ?? "500", 10);
+  const monthly = Number.parseInt(process.env.JEV_MONTHLY_CAP ?? "10000", 10);
+  return {
+    daily: Number.isFinite(daily) && daily > 0 ? daily : 500,
+    monthly: Number.isFinite(monthly) && monthly > 0 ? monthly : 10000,
+  };
+}
+
+interface JevBudgetState {
+  day: string;
+  dayCount: number;
+  month: string;
+  monthCount: number;
+}
+
+const jevBudgetMemory = new Map<string, JevBudgetState>();
+
+export function resetJevBudgetForTests(): void {
+  jevBudgetMemory.clear();
+}
+
+/** In-memory tenant budget check. DB event log is best-effort (see recordJevUsage). */
+export function checkJevBudget(tenantId?: string | null): {
+  allowed: boolean;
+  reason?: string;
+} {
+  const caps = getJevCaps();
+  if (!tenantId) return { allowed: true };
+  const now = new Date();
+  const day = now.toISOString().slice(0, 10);
+  const month = now.toISOString().slice(0, 7);
+  const state = jevBudgetMemory.get(tenantId);
+  if (!state || state.day !== day) {
+    jevBudgetMemory.set(tenantId, {
+      day,
+      dayCount: state?.day === day ? state.dayCount : 0,
+      month: state?.month === month ? state.month : month,
+      monthCount: state?.month === month ? state.monthCount : 0,
+    });
+  }
+  const current = jevBudgetMemory.get(tenantId)!;
+  if (current.dayCount >= caps.daily) {
+    return { allowed: false, reason: `daily cap ${caps.daily} reached` };
+  }
+  if (current.monthCount >= caps.monthly) {
+    return { allowed: false, reason: `monthly cap ${caps.monthly} reached` };
+  }
+  return { allowed: true };
+}
+
+export function passesJevThresholds(
+  confidence: number,
+  probability: number,
+  minConfidence: number,
+  minProbability: number,
+): boolean {
+  return confidence >= minConfidence && probability >= minProbability;
+}
+
+export interface JevLogFields {
+  feature: JevFeature;
+  tenantId?: string | null;
+  latencyMs: number;
+  confidence?: number;
+  probability?: number;
+  fallbackReason?: string;
+  triggered?: boolean;
+}
+
+export function logJevCall(fields: JevLogFields): void {
+  console.info(
+    JSON.stringify({
+      event: "jev_call",
+      ...fields,
+    }),
+  );
+}
+
+/** Best-effort persistent usage event (kind='jev'). Never throws. */
+export async function recordJevUsage(args: {
+  tenantId?: string | null;
+  feature: JevFeature;
+  latencyMs: number;
+  confidence?: number;
+  probability?: number;
+  fallbackReason?: string;
+  modelId?: string;
+  triggered?: boolean;
+}): Promise<void> {
+  const { tenantId, feature, latencyMs, confidence, probability, fallbackReason, modelId, triggered } = args;
+  // In-memory cap accounting (works even when DB is mocked/unavailable).
+  if (tenantId) {
+    const now = new Date();
+    const day = now.toISOString().slice(0, 10);
+    const month = now.toISOString().slice(0, 7);
+    const prev = jevBudgetMemory.get(tenantId) ?? { day, dayCount: 0, month, monthCount: 0 };
+    jevBudgetMemory.set(tenantId, {
+      day,
+      dayCount: (prev.day === day ? prev.dayCount : 0) + 1,
+      month,
+      monthCount: (prev.month === month ? prev.monthCount : 0) + 1,
+    });
+  }
+  logJevCall({ feature, tenantId, latencyMs, confidence, probability, fallbackReason, triggered });
+  try {
+    const { db } = await import("@/lib/db");
+    const { agentUsageEvents } = await import("@/lib/db/schema");
+    const { randomUUID } = await import("node:crypto");
+    await db
+      .insert(agentUsageEvents)
+      .values({
+        id: randomUUID(),
+        tenantId: tenantId ?? "unknown",
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: "0",
+        kind: "jev",
+        modelId: modelId ?? "jev",
+        metadata: { feature, latencyMs, confidence, probability, fallbackReason, triggered },
+      })
+      .onConflictDoNothing({ target: agentUsageEvents.id });
+  } catch {
+    // Best-effort only: in-memory counters + log line above are the source of truth in tests.
+  }
+}
+
 export interface ThemePageContext {
   name?: string | null;
   niche?: string | null;
@@ -124,6 +277,7 @@ export async function matchCommentRuleSemantically<T extends DmRuleCandidate>(
   tenantId?: string | null,
   options?: {
     confidenceThreshold?: number;
+    probabilityThreshold?: number;
     client?: TypeSafeClient;
     pageContext?: ThemePageContext;
   },
@@ -138,12 +292,27 @@ export async function matchCommentRuleSemantically<T extends DmRuleCandidate>(
     return null;
   }
 
+  if (!isJevFeatureEnabled("dm")) {
+    return null;
+  }
+  const budget = checkJevBudget(tenantId);
+  if (!budget.allowed) {
+    await recordJevUsage({
+      tenantId,
+      feature: "dm",
+      latencyMs: 0,
+      fallbackReason: budget.reason ?? "budget exceeded",
+    });
+    return null;
+  }
+
   const client = options?.client ?? (await getTypesafeClient(tenantId));
   if (!client) {
     return null;
   }
 
-  const threshold = options?.confidenceThreshold ?? 0.85;
+  const confidenceThreshold = options?.confidenceThreshold ?? 0.85;
+  const probabilityThreshold = options?.probabilityThreshold ?? 0.75;
 
   const criteria: ChoiceCriteria = {};
   for (const rule of rules) {
@@ -163,6 +332,7 @@ export async function matchCommentRuleSemantically<T extends DmRuleCandidate>(
     "The commenter is not requesting any of these specific resources (general reaction, compliments, emoji, casual remark, praise, or unrelated comment)";
 
   try {
+    const startedAt = Date.now();
     const response = await client.systemOne({
       state: {
         comment: commentText.trim(),
@@ -185,23 +355,53 @@ export async function matchCommentRuleSemantically<T extends DmRuleCandidate>(
     });
 
     const answer = response.answers.intent;
+    const latencyMs = Date.now() - startedAt;
     if (!answer || answer.choice === "none") {
-      return null;
-    }
-
-    if (answer.confidence < threshold) {
+      await recordJevUsage({
+        tenantId,
+        feature: "dm",
+        latencyMs,
+        confidence: answer?.confidence,
+        probability: answer ? (answer.probabilities[answer.choice] ?? 0) : undefined,
+        fallbackReason: !answer ? "no-answer" : "choice-none",
+        modelId: (response as { model?: string }).model ?? "jev",
+      });
       return null;
     }
 
     const selectedProbability = answer.probabilities[answer.choice] ?? 0;
-    if (selectedProbability < 0.75) {
+    if (!passesJevThresholds(answer.confidence, selectedProbability, confidenceThreshold, probabilityThreshold)) {
+      await recordJevUsage({
+        tenantId,
+        feature: "dm",
+        latencyMs,
+        confidence: answer.confidence,
+        probability: selectedProbability,
+        fallbackReason: "below-threshold",
+        modelId: (response as { model?: string }).model ?? "jev",
+      });
       return null;
     }
 
     const matchedRuleId = answer.choice.replace(/^rule_/, "");
-    return rules.find((r) => r.id === matchedRuleId) ?? null;
+    const matched = rules.find((r) => r.id === matchedRuleId) ?? null;
+    await recordJevUsage({
+      tenantId,
+      feature: "dm",
+      latencyMs,
+      confidence: answer.confidence,
+      probability: selectedProbability,
+      modelId: (response as { model?: string }).model ?? "jev",
+    });
+    return matched;
   } catch (error) {
     console.warn("[typesafe] Semantic DM match failed gracefully:", error);
+    await recordJevUsage({
+      tenantId,
+      feature: "dm",
+      latencyMs: 0,
+      fallbackReason: error instanceof Error ? error.message.slice(0, 200) : "provider-error",
+    });
     return null;
   }
 }
@@ -239,9 +439,25 @@ export async function evaluateStoryAffinitySemantically(
   options?: {
     client?: TypeSafeClient;
     pageContext?: ThemePageContext;
+    /** Set by clusterSourceItems when mode is explicitly shadow/active (mode + budget already checked). */
+    force?: boolean;
   },
 ): Promise<StoryAffinityResult | null> {
   if (!primary.title?.trim() || !candidate.title?.trim()) {
+    return null;
+  }
+
+  if (!options?.force && !isJevFeatureEnabled("cluster")) {
+    return null;
+  }
+  const budget = checkJevBudget(tenantId);
+  if (!budget.allowed) {
+    await recordJevUsage({
+      tenantId,
+      feature: "cluster",
+      latencyMs: 0,
+      fallbackReason: budget.reason ?? "budget exceeded",
+    });
     return null;
   }
 
@@ -251,6 +467,7 @@ export async function evaluateStoryAffinitySemantically(
   }
 
   try {
+    const startedAt = Date.now();
     const response = await client.systemOne({
       state: {
         primaryStory: {
@@ -293,8 +510,16 @@ export async function evaluateStoryAffinitySemantically(
 
     const relAnswer = response.answers.relationship;
     const corAnswer = response.answers.corroboration;
+    const latencyMs = Date.now() - startedAt;
 
     if (!relAnswer || !corAnswer) {
+      await recordJevUsage({
+        tenantId,
+        feature: "cluster",
+        latencyMs,
+        fallbackReason: "no-answer",
+        modelId: (response as { model?: string }).model ?? "jev",
+      });
       return null;
     }
 
@@ -306,16 +531,32 @@ export async function evaluateStoryAffinitySemantically(
       ? corAnswer.choice
       : "neutral_or_additive") as StoryCorroboration;
 
+    const relationshipProbability = relAnswer.probabilities[relationship] ?? 0;
+    const corroborationProbability = corAnswer.probabilities[corroboration] ?? 0;
+    await recordJevUsage({
+      tenantId,
+      feature: "cluster",
+      latencyMs,
+      confidence: relAnswer.confidence ?? 0,
+      probability: relationshipProbability,
+      modelId: (response as { model?: string }).model ?? "jev",
+    });
     return {
       relationship,
       relationshipConfidence: relAnswer.confidence ?? 0,
-      relationshipProbability: relAnswer.probabilities[relationship] ?? 0,
+      relationshipProbability,
       corroboration,
       corroborationConfidence: corAnswer.confidence ?? 0,
-      corroborationProbability: corAnswer.probabilities[corroboration] ?? 0,
+      corroborationProbability,
     };
   } catch (error) {
     console.warn("[typesafe] Story affinity evaluation failed gracefully:", error);
+    await recordJevUsage({
+      tenantId,
+      feature: "cluster",
+      latencyMs: 0,
+      fallbackReason: error instanceof Error ? error.message.slice(0, 200) : "provider-error",
+    });
     return null;
   }
 }
@@ -348,9 +589,24 @@ export async function evaluateScoutTriggerSemantically(
   options?: {
     client?: TypeSafeClient;
     confidenceThreshold?: number;
+    probabilityThreshold?: number;
   },
 ): Promise<ScoutTriggerResult | null> {
   if (!goalCondition?.trim() || !items || items.length === 0) {
+    return null;
+  }
+
+  if (!isJevFeatureEnabled("scout")) {
+    return null;
+  }
+  const budget = checkJevBudget(tenantId);
+  if (!budget.allowed) {
+    await recordJevUsage({
+      tenantId,
+      feature: "scout",
+      latencyMs: 0,
+      fallbackReason: budget.reason ?? "budget exceeded",
+    });
     return null;
   }
 
@@ -360,6 +616,7 @@ export async function evaluateScoutTriggerSemantically(
   }
 
   try {
+    const startedAt = Date.now();
     const response = await client.systemOne({
       state: {
         goal: goalCondition.trim(),
@@ -389,7 +646,15 @@ export async function evaluateScoutTriggerSemantically(
     });
 
     const answer = response.answers.is_triggered;
+    const latencyMs = Date.now() - startedAt;
     if (!answer) {
+      await recordJevUsage({
+        tenantId,
+        feature: "scout",
+        latencyMs,
+        fallbackReason: "no-answer",
+        modelId: (response as { model?: string }).model ?? "jev",
+      });
       return null;
     }
 
@@ -397,6 +662,15 @@ export async function evaluateScoutTriggerSemantically(
     const confidence = answer.confidence ?? 0;
     const probability = answer.probabilities[answer.choice] ?? 0;
 
+    await recordJevUsage({
+      tenantId,
+      feature: "scout",
+      latencyMs,
+      confidence,
+      probability,
+      triggered: isTriggered,
+      modelId: (response as { model?: string }).model ?? "jev",
+    });
     return {
       triggered: isTriggered,
       confidence,
@@ -404,6 +678,12 @@ export async function evaluateScoutTriggerSemantically(
     };
   } catch (error) {
     console.warn("[typesafe] Scout trigger evaluation failed gracefully:", error);
+    await recordJevUsage({
+      tenantId,
+      feature: "scout",
+      latencyMs: 0,
+      fallbackReason: error instanceof Error ? error.message.slice(0, 200) : "provider-error",
+    });
     return null;
   }
 }

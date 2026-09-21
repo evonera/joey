@@ -4,7 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { getZernioClientForTenant } from "@/lib/publisher-core";
 import { createHash } from "node:crypto";
 
-import { matchCommentRuleSemantically } from "@/lib/typesafe";
+import { matchCommentRuleSemantically, isJevFeatureEnabled } from "@/lib/typesafe";
 
 class PermanentDmDispatchError extends Error {}
 
@@ -147,6 +147,11 @@ export async function handleCommentWebhook(event: CommentWebhookEvent): Promise<
   }
 
   // 2. Semantic fallback: evaluate comment intent via TypeSafe Jev System One
+  // Flag-gated + budget-gated inside matchCommentRuleSemantically. Skip the
+  // page fetch entirely when disabled to avoid unnecessary DB work.
+  if (!isJevFeatureEnabled("dm")) {
+    return { matched: false, success: true };
+  }
   const page = await db.query.themePages.findFirst({
     where: and(eq(themePages.id, themePageId), eq(themePages.tenantId, tenantId)),
     columns: { name: true, niche: true, audience: true },

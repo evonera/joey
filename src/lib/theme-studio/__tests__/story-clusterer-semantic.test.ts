@@ -107,7 +107,7 @@ describe("TypeSafe Jev Story Clustering & Fact Gate (Shadow Mode)", () => {
         { title: "SpaceX Starship Flight 5 catches Super Heavy booster at launchpad", body: "Historic catch by Mechazilla arms." },
         { title: "SpaceX achieves orbital feat catching giant rocket booster", body: "Super Heavy caught in midair." },
         "tenant-1",
-        { client: mockClient },
+        { client: mockClient, force: true },
       );
 
       expect(result).not.toBeNull();

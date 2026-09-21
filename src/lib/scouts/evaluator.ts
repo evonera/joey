@@ -204,6 +204,8 @@ export async function evaluateScout(
       }
 
     // 2. Fast Pre-Gate: Evaluate items against goal condition using TypeSafe Jev System One
+    // Cautious default: flag-gated, budget-gated inside evaluateScoutTriggerSemantically,
+    // and requires BOTH confidence >= 0.85 AND probability >= 0.75 to skip Gemini.
     const jevGate = await evaluateScoutTriggerSemantically(
       scout.goalCondition,
       scout.targetUrl,
@@ -212,7 +214,7 @@ export async function evaluateScout(
       scout.tenantId,
     );
 
-    if (jevGate && !jevGate.triggered && jevGate.confidence >= 0.85) {
+    if (jevGate && !jevGate.triggered && jevGate.confidence >= 0.85 && jevGate.probability >= 0.75) {
       // Jev verified with >=85% confidence that no post triggered the goal!
       // Skip Gemini completely, saving 100% of generative LLM tokens and latency.
       await db.insert(scoutRuns).values({

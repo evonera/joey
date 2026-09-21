@@ -1,6 +1,6 @@
 import { defineNode } from "../../node-contract";
 import { aiDecisionConfig } from "../../catalog";
-import { getTypesafeClient } from "@/lib/typesafe";
+import { checkJevBudget, getTypesafeClient, passesJevThresholds, recordJevUsage } from "@/lib/typesafe";
 import { choice, type ChoiceCriteria, type EntryType } from "@typesafe-ai/sdk";
 import { getField } from "../transform/filter";
 
@@ -133,11 +133,28 @@ export const aiDecisionNode = defineNode({
     const criteria = parseDecisionChoices(config as unknown as Record<string, unknown>);
 
     const defaultChoice = config.defaultChoice?.trim() || "fallback";
-    const threshold = config.confidenceThreshold ?? 0.7;
+    const threshold = config.confidenceThreshold ?? 0.75;
 
     // Resolve target data for evaluation
     const targetData = config.inputField ? getField(input, config.inputField) : input;
     const state = buildJevState(targetData);
+
+    const budget = checkJevBudget(ctx.tenantId);
+    if (!budget.allowed) {
+      await recordJevUsage({
+        tenantId: ctx.tenantId,
+        feature: "decision",
+        latencyMs: 0,
+        fallbackReason: budget.reason ?? "budget exceeded",
+      });
+      if (config.fallbackOnError) {
+        return {
+          output: wrapDecisionOutput(input, defaultChoice, 0, {}),
+          branch: defaultChoice,
+        };
+      }
+      throw new Error(`Jev budget exceeded (${budget.reason}).`);
+    }
 
     const client = await getTypesafeClient(ctx.tenantId, { timeout: config.timeoutMs });
     if (!client) {
@@ -156,6 +173,7 @@ export const aiDecisionNode = defineNode({
     }
 
     try {
+      const startedAt = Date.now();
       const response = await client.systemOne(
         {
           state,
@@ -177,15 +195,34 @@ export const aiDecisionNode = defineNode({
       const selected = answer.choice;
       const confidence = typeof answer.confidence === "number" ? answer.confidence : 0;
       const probabilities = (answer.probabilities as Record<string, number>) || {};
+      const selectedProbability = probabilities[selected] ?? 0;
 
-      // If confidence falls below the calibrated threshold, route to defaultChoice
-      const finalBranch = confidence >= threshold ? selected : defaultChoice;
+      // Require BOTH confidence and selected probability to meet threshold; else defaultChoice.
+      const finalBranch = passesJevThresholds(confidence, selectedProbability, threshold, threshold)
+        ? selected
+        : defaultChoice;
+
+      await recordJevUsage({
+        tenantId: ctx.tenantId,
+        feature: "decision",
+        latencyMs: Date.now() - startedAt,
+        confidence,
+        probability: selectedProbability,
+        fallbackReason: finalBranch === defaultChoice && selected !== defaultChoice ? "below-threshold" : undefined,
+        modelId: (response as { model?: string }).model ?? "jev",
+      });
 
       return {
         output: wrapDecisionOutput(input, finalBranch, confidence, probabilities, selected),
         branch: finalBranch,
       };
     } catch (err) {
+      await recordJevUsage({
+        tenantId: ctx.tenantId,
+        feature: "decision",
+        latencyMs: 0,
+        fallbackReason: err instanceof Error ? err.message.slice(0, 200) : "provider-error",
+      });
       if (config.fallbackOnError) {
         console.warn(
           `[ai.decision] Jev decision evaluation failed. Routing to fallback branch "${defaultChoice}":`,
