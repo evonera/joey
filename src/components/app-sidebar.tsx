@@ -209,7 +209,9 @@ export function AppSidebar({
         <OrganizationSwitcher className="w-full mt-1.5" />
       </SidebarHeader>
       <SidebarContent className="px-1">
-        <NavMain sections={navSections} />
+        <nav aria-label="Primary">
+          <NavMain sections={navSections} />
+        </nav>
       </SidebarContent>
       <SidebarFooter>
         <NavSecondary items={secondaryItems} className="mt-auto" />

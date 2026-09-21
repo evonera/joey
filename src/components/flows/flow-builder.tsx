@@ -59,6 +59,7 @@ import {
   ShieldCheck,
   Split,
   Sparkles,
+  MoreHorizontal,
   Image as ImageIcon,
   Mic,
   FileEdit,
@@ -73,6 +74,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { getNodeMeta as getNode, getNodeOutputs, catalog } from "@/lib/flows/catalog";
 import type { FlowGraphDoc } from "@/lib/flows/types";
 import { createFlowWebMcpTools } from "@/lib/flows/webmcp";
@@ -241,6 +245,12 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runsOpen, setRunsOpen] = useState(false);
   const [isPaletteCollapsed, setIsPaletteCollapsed] = useState(false);
+  // Default to collapsed palette on small screens (avoids hydration mismatch).
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setIsPaletteCollapsed(true);
+    }
+  }, []);
   const [busy, setBusy] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [webhookOpen, setWebhookOpen] = useState(false);
@@ -514,7 +524,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
           </Button>
         </aside>
       ) : (
-        <aside className="w-56 shrink-0 border-r p-3 space-y-4 overflow-y-auto transition-all">
+        <aside className="w-56 shrink-0 border-r p-3 space-y-4 overflow-y-auto transition-all max-md:absolute max-md:z-20 max-md:h-full max-md:bg-background max-md:shadow-xl">
           <div className="flex items-center justify-between">
             <Link href="/flows" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" /> All flows
@@ -563,11 +573,11 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 bg-card/20">
           <div className="flex items-center gap-2 min-w-0">
-            <Input value={name} onChange={(e)=>setName(e.target.value)} className="h-8 w-44 sm:w-56 text-sm font-semibold border-none shadow-none px-1" />
+            <Input value={name} onChange={(e)=>setName(e.target.value)} className="h-8 w-32 sm:w-44 text-sm font-semibold border-none shadow-none px-1" />
             <Badge variant={status === "active" ? "default" : "secondary"} className="text-[10px] shrink-0">{status}</Badge>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Button size="sm" variant="outline" disabled={busy} onClick={handleValidate}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>Validate</Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={handleValidate} className="hidden sm:inline-flex"><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>Validate</Button>
             <Button size="sm" variant={isDirty ? "default" : "outline"} disabled={busy} onClick={handleSave}>
               <Save className="mr-1 h-3.5 w-3.5"/>
               Save{isDirty ? " *" : ""}
@@ -587,7 +597,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
 
             <Dialog open={webhookOpen} onOpenChange={(open) => { setWebhookOpen(open); if (!open) setRevealedWebhookSecret(null); }}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><Globe className="mr-1 h-3.5 w-3.5"/>Webhook</Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs hidden sm:inline-flex"><Globe className="mr-1 h-3.5 w-3.5"/>Webhook</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Incoming webhook</DialogTitle><DialogDescription>Trigger this flow from external services by sending a signed HTTP request to the endpoint below.</DialogDescription></DialogHeader>
@@ -617,7 +627,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
             </Dialog>
             <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><BookMarked className="mr-1 h-3.5 w-3.5"/>Publish</Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs hidden sm:inline-flex"><BookMarked className="mr-1 h-3.5 w-3.5"/>Publish</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Publish as template</DialogTitle><DialogDescription>Share this flow as a reusable template in the marketplace for others to install.</DialogDescription></DialogHeader>
@@ -629,7 +639,35 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
                 </div>
               </DialogContent>
             </Dialog>
-            <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs" onClick={()=>setRunsOpen(true)}><History className="mr-1 h-3.5 w-3.5"/>Runs</Button>
+            <Button size="sm" variant="ghost" className="h-8 px-2.5 text-xs hidden sm:inline-flex" onClick={()=>setRunsOpen(true)}><History className="mr-1 h-3.5 w-3.5"/>Runs</Button>
+            {/* Mobile overflow menu for secondary toolbar actions */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-11 w-11 p-0 sm:hidden"
+                  aria-label="More flow actions"
+                  disabled={busy}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => handleValidate()} disabled={busy}>
+                  <CheckCircle2 className="mr-2 h-3.5 w-3.5" />Validate
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setWebhookOpen(true)}>
+                  <Globe className="mr-2 h-3.5 w-3.5" />Webhook
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setPublishOpen(true)}>
+                  <BookMarked className="mr-2 h-3.5 w-3.5" />Publish
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setRunsOpen(true)}>
+                  <History className="mr-2 h-3.5 w-3.5" />Runs
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -717,10 +755,10 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
 
           {/* Config drawer */}
           {selectedDef && selectedNode && (
-            <div className="absolute right-4 top-4 z-10 w-80 max-w-[calc(100%-2rem)] rounded-xl border bg-background p-4 shadow-lg space-y-3 max-h-[80%] overflow-y-auto">
+            <div className="absolute right-4 top-4 z-10 w-80 max-w-[calc(100%-2rem)] rounded-xl border bg-background p-4 shadow-lg space-y-3 max-h-[80%] overflow-y-auto max-sm:inset-x-4 max-sm:w-auto">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">{selectedDef.label}</p>
-                <button aria-label="Close node settings" className="text-xs text-muted-foreground hover:text-foreground p-1" onClick={()=>setSelectedId(null)}><Cancel01Icon size={14} /></button>
+                <button aria-label="Close node settings" className="text-xs text-muted-foreground hover:text-foreground p-1 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center" onClick={()=>setSelectedId(null)}><Cancel01Icon size={14} /></button>
               </div>
               <p className="text-xs text-muted-foreground">{selectedDef.description}</p>
               {selectedDef.type === "action.create_draft" && accounts.length === 0 && <p className="text-xs text-muted-foreground">
@@ -745,7 +783,15 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
                   }}
                 />
               )}
-              <div className="pt-3 border-t flex justify-end">
+              <div className="pt-3 border-t flex flex-col sm:flex-row gap-2 sm:justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-11 sm:h-7 text-xs sm:hidden"
+                  onClick={()=>setSelectedId(null)}
+                >
+                  Done
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"

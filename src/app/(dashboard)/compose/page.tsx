@@ -215,7 +215,7 @@ export default function ComposePage() {
     await submitPost("draft");
   };
 
-  const submitPost = async (mode: "now" | "scheduled" | "draft") => {
+  const submitPost = async (mode: "now" | "scheduled" | "draft", opts?: { confirmedAt?: string }) => {
     if (mode === "draft") setIsSavingDraft(true);
     else setIsSubmitting(true);
     try {
@@ -229,6 +229,7 @@ export default function ComposePage() {
       const res = await createManualPost({
         draftId: draftIdParam || undefined,
         content, mediaUrls, accountIds: selectedAccountIds, scheduleType: mode, scheduledFor,
+        confirmedAt: opts?.confirmedAt,
       });
       if (res.error) {
         toast.error(res.error);
@@ -569,7 +570,7 @@ export default function ComposePage() {
         onOpenChange={setConfirmDialogOpen}
         onConfirm={async () => {
           setConfirmDialogOpen(false);
-          await submitPost("now");
+          await submitPost("now", { confirmedAt: new Date().toISOString() });
         }}
         isPublishing={isSubmitting}
         accounts={accounts

@@ -11,10 +11,20 @@ export const manualPostSchema = z.object({
     .refine(ids => new Set(ids).size === ids.length, "Select each account only once."),
   scheduleType: z.enum(["now", "scheduled", "draft"]),
   scheduledFor: z.iso.datetime({ offset: true }).optional(),
+  // Explicit user confirmation timestamp for immediate publishing.
+  // Required when scheduleType === "now" so no client-side bypass,
+  // double-fire, or stale ref can dispatch without the confirm dialog.
+  confirmedAt: z.iso.datetime({ offset: true }).optional(),
 }).superRefine((data, ctx) => {
   if (!data.content.trim() && !data.mediaUrls.length) ctx.addIssue({ code: "custom", message: "Add post content or media." });
   if (data.scheduleType === "scheduled" && (!data.scheduledFor || Date.parse(data.scheduledFor) <= Date.now())) {
     ctx.addIssue({ code: "custom", message: "Select a future date and time." });
+  }
+  if (data.scheduleType === "now") {
+    const confirmedMs = data.confirmedAt ? Date.parse(data.confirmedAt) : NaN;
+    if (!Number.isFinite(confirmedMs) || Date.now() - confirmedMs > 10 * 60 * 1000 || confirmedMs > Date.now() + 60 * 1000) {
+      ctx.addIssue({ code: "custom", message: "Please confirm live publication before publishing." });
+    }
   }
   if (data.draftId && data.accountIds.length !== 1) ctx.addIssue({ code: "custom", message: "An existing draft belongs to one account. Select one account to update it." });
 });

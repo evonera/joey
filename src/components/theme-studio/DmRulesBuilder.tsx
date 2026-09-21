@@ -158,18 +158,18 @@ export function DmRulesBuilder({ themePageId, initialRules }: DmRulesBuilderProp
               </p>
             </div>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setIsAdding(false)}
-              className="px-3 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted"
+              className="flex-1 sm:flex-none px-3 py-1.5 min-h-[44px] sm:min-h-0 text-xs font-medium border rounded-lg hover:bg-muted"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-1.5 min-h-[44px] sm:min-h-0 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               {loading && <IconLoader2 className="w-3.5 h-3.5 animate-spin" />}
               Save Funnel
@@ -202,9 +202,9 @@ export function DmRulesBuilder({ themePageId, initialRules }: DmRulesBuilderProp
               className="p-5 border rounded-2xl bg-card flex flex-col justify-between space-y-4 shadow-sm"
             >
               <div>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-lg text-xs font-extrabold font-mono bg-primary/15 text-primary border border-primary/20">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <span className="px-3 py-1 rounded-lg text-xs font-extrabold font-mono bg-primary/15 text-primary border border-primary/20 truncate max-w-[180px]" title={rule.triggerValue}>
                       "{rule.triggerValue}"
                     </span>
                     <button
@@ -212,7 +212,7 @@ export function DmRulesBuilder({ themePageId, initialRules }: DmRulesBuilderProp
                       role="switch"
                       aria-checked={rule.isActive}
                       aria-label={`Toggle rule ${rule.triggerValue}, currently ${rule.isActive ? "active" : "disabled"}`}
-                      className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                      className={`px-2 py-0.5 min-h-[44px] sm:min-h-0 rounded text-[11px] font-semibold ${
                         rule.isActive
                           ? "bg-emerald-500/10 text-emerald-600"
                           : "bg-muted text-muted-foreground"
@@ -224,7 +224,7 @@ export function DmRulesBuilder({ themePageId, initialRules }: DmRulesBuilderProp
                   <button
                     onClick={() => handleDelete(rule.id)}
                     aria-label={`Delete rule ${rule.triggerValue}`}
-                    className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                    className="p-1.5 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
                   >
                     <IconTrash className="w-4 h-4" />
                   </button>
@@ -239,9 +239,11 @@ export function DmRulesBuilder({ themePageId, initialRules }: DmRulesBuilderProp
                     href={rule.responseLink}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline mt-2"
+                    title={rule.responseLink}
+                    className="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline mt-2 max-w-full"
                   >
-                    <IconExternalLink className="w-3 h-3" /> {rule.responseLink}
+                    <IconExternalLink className="w-3 h-3 shrink-0" />
+                    <span className="truncate inline-block max-w-full break-all">{rule.responseLink}</span>
                   </a>
                 )}
               </div>

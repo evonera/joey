@@ -19,6 +19,16 @@ describe("composer input validation", () => {
   it("prevents an edited draft from being duplicated across multiple accounts", () => {
     expect(manualPostSchema.safeParse({ ...valid, draftId: "draft-1", accountIds: ["a", "b"] }).success).toBe(false);
   });
+  it("requires a fresh user confirmation for immediate publishing", () => {
+    const base = { ...valid, scheduleType: "now" };
+    expect(manualPostSchema.safeParse(base).success).toBe(false);
+    expect(
+      manualPostSchema.safeParse({ ...base, confirmedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString() }).success,
+    ).toBe(false);
+    expect(
+      manualPostSchema.safeParse({ ...base, confirmedAt: new Date().toISOString() }).success,
+    ).toBe(true);
+  });
   it("enforces the strictest selected platform and required media", () => {
     expect(validatePostForPlatforms("a".repeat(281), [], ["linkedin", "twitter"])).toContain("280");
     expect(validatePostForPlatforms("caption", [], ["instagram"])).toContain("requires a media");

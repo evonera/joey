@@ -15,6 +15,7 @@ export async function createManualPost(data: {
     accountIds: string[];
     scheduleType: "now" | "scheduled" | "draft";
     scheduledFor?: string; // ISO date string
+    confirmedAt?: string; // ISO date string; required for immediate publish (confirm dialog)
 }) {
     try {
         const parsed = manualPostSchema.safeParse(data);

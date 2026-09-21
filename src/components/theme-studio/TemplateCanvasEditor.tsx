@@ -223,6 +223,8 @@ export function TemplateCanvasEditor({
   );
 
   const [activeTab, setActiveTab] = React.useState<"design" | "content" | "clips">("design");
+  // Mobile (<lg): toggle between settings and live preview instead of stacking.
+  const [canvasView, setCanvasView] = React.useState<"edit" | "preview">("edit");
   const [activeSlide, setActiveSlide] = React.useState<1 | 2 | 3 | 4>(1);
   const [saving, setSaving] = React.useState(false);
   const [r2Configured, setR2Configured] = React.useState<boolean | null>(null);
@@ -649,7 +651,7 @@ export function TemplateCanvasEditor({
           </span>
           <span className="text-[11px] text-muted-foreground">1-click switch between high-retention formats</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        <div className="flex gap-2 overflow-x-auto pb-2 snap-x sm:grid sm:grid-cols-4 lg:grid-cols-7 sm:overflow-visible sm:pb-0 sm:snap-none [&>button]:snap-start [&>button]:shrink-0 [&>button]:min-w-[150px] sm:[&>button]:min-w-0">
           <button
             type="button"
             onClick={() => applyPreset("pubity_hero")}
@@ -744,8 +746,33 @@ export function TemplateCanvasEditor({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Mobile Edit | Preview toggle */}
+        <div className="lg:hidden inline-flex self-start rounded-xl border border-border/40 p-1 text-xs font-semibold" role="tablist" aria-label="Editor view">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={canvasView === "edit"}
+            onClick={() => setCanvasView("edit")}
+            className={`px-4 min-h-[44px] rounded-lg transition-colors ${
+              canvasView === "edit" ? "bg-primary/15 text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            Edit Style
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={canvasView === "preview"}
+            onClick={() => setCanvasView("preview")}
+            className={`px-4 min-h-[44px] rounded-lg transition-colors ${
+              canvasView === "preview" ? "bg-primary/15 text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            Live Preview
+          </button>
+        </div>
         {/* Left / Settings Sidebar (5 cols) */}
-        <div className="lg:col-span-5 space-y-6">
+        <div className={`lg:col-span-5 space-y-6 ${canvasView === "preview" ? "hidden lg:block" : "block"}`}>
           <div className="flex border-b">
             <button
               onClick={() => setActiveTab("design")}
@@ -1281,7 +1308,7 @@ export function TemplateCanvasEditor({
         </div>
 
         {/* Right / Live Artboard Preview (7 cols) */}
-        <div className="lg:col-span-7 flex flex-col items-center justify-center p-8 bg-muted/30 border rounded-2xl">
+        <div className={`lg:col-span-7 flex-col items-center justify-center p-4 sm:p-8 bg-muted/30 border rounded-2xl ${canvasView === "edit" ? "hidden lg:flex" : "flex"}`}>
           <div className="w-full flex items-center justify-between mb-4">
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
               <IconEye className="w-4 h-4" /> Live High-Fidelity Canvas

@@ -305,7 +305,7 @@ function PackageCard({
                     onClick={() => setActiveSlide((prev) => Math.max(0, prev - 1))}
                     disabled={activeSlide === 0}
                     aria-label="Previous slide"
-                    className="p-1.5 rounded-lg border text-xs font-medium hover:bg-muted disabled:opacity-40"
+                    className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1.5 rounded-lg border text-xs font-medium hover:bg-muted disabled:opacity-40"
                   >
                     <IconChevronLeft className="w-4 h-4" />
                   </button>
@@ -317,8 +317,10 @@ function PackageCard({
                         onClick={() => setActiveSlide(i)}
                         aria-label={`Slide ${i + 1}${i === activeSlide ? ", current" : ""}`}
                         style={{ backgroundColor: i === activeSlide ? accentColor : undefined }}
-                        className={`w-2 h-2 rounded-full transition-all ${i === activeSlide ? "w-5" : "bg-muted-foreground/30"}`}
-                      />
+                        className={`min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-full transition-all`}
+                      >
+                        <span className={`block h-2 rounded-full transition-all ${i === activeSlide ? "w-5" : "w-2 bg-muted-foreground/30"}`} />
+                      </button>
                     ))}
                   </div>
 
@@ -326,7 +328,7 @@ function PackageCard({
                     onClick={() => setActiveSlide((prev) => Math.min(pkg.slides!.length - 1, prev + 1))}
                     disabled={activeSlide === pkg.slides.length - 1}
                     aria-label="Next slide"
-                    className="p-1.5 rounded-lg border text-xs font-medium hover:bg-muted disabled:opacity-40"
+                    className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1.5 rounded-lg border text-xs font-medium hover:bg-muted disabled:opacity-40"
                   >
                     <IconChevronRight className="w-4 h-4" />
                   </button>

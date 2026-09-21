@@ -21,6 +21,7 @@ import {
   runScoutNow,
   toggleScout,
   deleteScout,
+  getScoutRuns,
 } from "@/app/actions/scouts";
 import { toast } from "sonner";
 import {
@@ -32,6 +33,7 @@ import {
   ExternalLink,
   Sparkles,
   ArrowRight,
+  ArrowLeft,
   Clock,
   CheckCircle2,
   AlertTriangle,
@@ -63,6 +65,15 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const [isRunning, setIsRunning] = useState(false);
   const [scoutToDelete, setScoutToDelete] = useState<ScoutItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Mobile (<lg) master-detail: show list or detail, never both stacked.
+  const [mobileView, setMobileView] = useState<"list" | "details">("list");
+  // Last scan result for the selected scout (status stays visible after toasts fade).
+  const [lastRun, setLastRun] = useState<{
+    status: string;
+    createdAt: Date | string;
+    error?: string | null;
+    itemsFound?: number | null;
+  } | null>(null);
 
   // Synchronize state when server props update
   useEffect(() => {
@@ -83,6 +94,25 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const [newInterval, setNewInterval] = useState(120);
 
   const selectedScout = scoutsList.find((s) => s.id === selectedId) || scoutsList[0];
+  const selectedScoutId = selectedScout?.id;
+
+  useEffect(() => {
+    if (!selectedScoutId) {
+      setLastRun(null);
+      return;
+    }
+    let cancelled = false;
+    getScoutRuns(selectedScoutId)
+      .then((runs) => {
+        if (!cancelled) setLastRun((runs[0] as typeof lastRun) ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setLastRun(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedScoutId]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +128,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
       setIsNewOpen(false);
       setScoutsList((prev) => [created as any, ...prev]);
       setSelectedId(created.id);
+      setMobileView("details");
       setNewName("");
       setNewUrl("");
       setNewGoal("");
@@ -129,6 +160,9 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
       } else {
         toast.info("Scout completed. No new changes matched the goal.");
       }
+      getScoutRuns(scoutId)
+        .then((runs) => setLastRun((runs[0] as typeof lastRun) ?? null))
+        .catch(() => {});
       router.refresh();
     } catch (err: any) {
       toast.error(err.message || "Failed running scout");
@@ -306,13 +340,24 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           </Button>
         </div>
       ) : (
-        /* Scira 2-Style Split View */
+        /* Scira 2-Style Split View — stacked on mobile via List|Details toggle */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Column: Scout List */}
-          <div className="lg:col-span-5 space-y-3">
+          {/* Left Column: Scout List (hidden on mobile when viewing details) */}
+          <div className={cn("lg:col-span-5 space-y-3", mobileView === "details" && "hidden lg:block")}>
             <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
               <span>
                 {activeCount} active · {pausedCount} paused · {scoutsList.length} total
+              </span>
+              {/* Mobile List|Details segmented toggle */}
+              <span className="lg:hidden inline-flex rounded-lg border border-border/40 p-0.5 text-[11px] font-medium">
+                <span className="px-2.5 py-1.5 rounded-md bg-primary/15 text-foreground">List</span>
+                <button
+                  type="button"
+                  onClick={() => selectedScout && setMobileView("details")}
+                  className="px-2.5 py-1.5 rounded-md text-muted-foreground min-h-[44px]"
+                >
+                  Details
+                </button>
               </span>
             </div>
 
@@ -323,9 +368,22 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                 return (
                   <div
                     key={scout.id}
-                    onClick={() => setSelectedId(scout.id)}
+                    onClick={() => {
+                      setSelectedId(scout.id);
+                      setMobileView("details");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedId(scout.id);
+                        setMobileView("details");
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`View ${scout.name} details`}
                     className={cn(
-                      "group relative flex flex-col p-4 rounded-xl border transition-all cursor-pointer",
+                      "group relative flex flex-col p-4 rounded-xl border transition-all cursor-pointer min-h-[44px]",
                       isSelected
                         ? "border-amber-500/40 bg-card/90 shadow-xs"
                         : "border-border/40 bg-card/40 hover:border-border/80 hover:bg-card/60"
@@ -371,22 +429,48 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           </div>
 
           {/* Right Column: Detailed Alert & Goal Diff (Scira 2 Style) */}
-          <div className="lg:col-span-7">
+          <div className={cn("lg:col-span-7", mobileView === "list" && "hidden lg:block")}>
             {selectedScout ? (
               <div className="rounded-2xl border border-border/50 bg-card/60 p-5 sm:p-6 space-y-6">
+                {/* Mobile List|Details toggle + back */}
+                <div className="lg:hidden flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setMobileView("list")}
+                    aria-label="Back to scout list"
+                    className="inline-flex items-center gap-1.5 min-h-[44px] min-w-[44px] px-2 -ml-2 rounded-lg text-sm font-medium text-muted-foreground active:text-foreground"
+                  >
+                    <ArrowLeft className="size-4" />
+                    <span>Back to Scouts</span>
+                  </button>
+                  <span className="inline-flex rounded-lg border border-border/40 p-0.5 text-[11px] font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setMobileView("list")}
+                      className="px-2.5 py-1.5 rounded-md text-muted-foreground min-h-[44px]"
+                    >
+                      List
+                    </button>
+                    <span className="px-2.5 py-1.5 rounded-md bg-primary/15 text-foreground">
+                      Details
+                    </span>
+                  </span>
+                </div>
                 {/* Header & Controls */}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
-                  <div>
+                  <div className="min-w-0">
                     <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400/90 font-semibold">
                       {selectedScout.latestAlert ? "LATEST ALERT" : "MONITOR CONFIGURATION"}
                     </span>
-                    <h2 className="text-base sm:text-lg font-bold text-foreground mt-0.5">
+                    <h2 className="text-base sm:text-lg font-bold text-foreground mt-0.5 truncate">
                       {selectedScout.latestAlert?.title || selectedScout.name}
                     </h2>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                      <span>Target: {selectedScout.targetUrl}</span>
-                      <span>·</span>
-                      <span className="capitalize">{selectedScout.platform}</span>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1 min-w-0">
+                      <span className="truncate max-w-[220px] sm:max-w-xs break-all" title={selectedScout.targetUrl}>
+                        Target: {selectedScout.targetUrl}
+                      </span>
+                      <span className="shrink-0">·</span>
+                      <span className="capitalize shrink-0">{selectedScout.platform}</span>
                     </div>
                   </div>
 
@@ -396,36 +480,67 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       size="sm"
                       onClick={() => handleRunNow(selectedScout.id)}
                       disabled={isRunning}
-                      className="h-8 px-2.5 text-xs gap-1"
+                      className="h-11 w-11 p-0 sm:h-8 sm:w-auto sm:px-2.5 text-xs gap-1"
                       title="Run scout scan right now"
+                      aria-label="Run scout scan right now"
                     >
-                      <RefreshCw className={cn("size-3", isRunning && "animate-spin")} />
-                      <span>{isRunning ? "Scanning…" : "Check Now"}</span>
+                      <RefreshCw className={cn("size-4 sm:size-3", isRunning && "animate-spin")} />
+                      <span className="hidden sm:inline">{isRunning ? "Scanning…" : "Check Now"}</span>
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleToggle(selectedScout.id, selectedScout.isActive)}
-                      className="h-8 px-2 text-xs"
+                      className="h-11 w-11 p-0 sm:h-8 sm:w-auto sm:px-2 text-xs"
                       title={selectedScout.isActive ? "Pause Scout" : "Resume Scout"}
+                      aria-label={selectedScout.isActive ? "Pause Scout" : "Resume Scout"}
                     >
                       {selectedScout.isActive ? (
-                        <Pause className="size-3.5 text-muted-foreground" />
+                        <Pause className="size-4 sm:size-3.5 text-muted-foreground" />
                       ) : (
-                        <Play className="size-3.5 text-emerald-500" />
+                        <Play className="size-4 sm:size-3.5 text-emerald-500" />
                       )}
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setScoutToDelete(selectedScout)}
-                      className="h-8 px-2 text-xs text-destructive hover:text-destructive"
+                      className="h-11 w-11 p-0 sm:h-8 sm:w-auto sm:px-2 text-xs text-destructive hover:text-destructive"
                       title="Delete Scout"
+                      aria-label="Delete Scout"
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2 className="size-4 sm:size-3.5" />
                     </Button>
                   </div>
                 </div>
+
+                {/* Section: Last scan (persists after toasts fade) */}
+                {lastRun && (
+                  <div
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-xs",
+                      lastRun.status === "failed"
+                        ? "border-destructive/40 bg-destructive/5 text-destructive"
+                        : "border-border/30 bg-background/50 text-muted-foreground"
+                    )}
+                    role="status"
+                  >
+                    <span className="font-semibold">
+                      Last scan{" "}
+                      {new Date(lastRun.createdAt).toLocaleString()}:{" "}
+                      {lastRun.status === "alert_triggered"
+                        ? "alert triggered"
+                        : lastRun.status === "no_change"
+                          ? `no change${typeof lastRun.itemsFound === "number" ? ` · ${lastRun.itemsFound} posts checked` : ""}`
+                          : lastRun.status === "failed"
+                            ? "scan failed"
+                            : lastRun.status}
+                    </span>
+                    {lastRun.status === "failed" && lastRun.error && (
+                      <span className="block mt-0.5 break-words">{lastRun.error}</span>
+                    )}
+                  </div>
+                )}
 
                 {/* Section: Goal */}
                 <div className="space-y-1.5">
