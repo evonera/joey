@@ -464,6 +464,8 @@ function AgentChatInner({
   };
 
   const currentModelDef = getModelById(selectedModel);
+  const recommendedModels = getRecommendedModels();
+  const recommendedModelIds = new Set(recommendedModels.map((m) => m.id));
 
   const composer = (
     <PromptInput onSubmit={handleSubmit}>
@@ -478,6 +480,7 @@ function AgentChatInner({
           <PromptInputTextarea
             ref={textareaRef}
             defaultValue={initialPrompt}
+            aria-label="Ask Joey to research topics, draft posts, or automate flows"
             placeholder="Ask Joey to research topics, draft posts, or automate flows… (@ for sources, / for skills)"
             onChange={(e) => {
               const value = e.target.value;
@@ -493,6 +496,7 @@ function AgentChatInner({
                 setAutocompleteQuery(currentWord.slice(1));
               } else {
                 setAutocompleteType(null);
+                setAutocompleteQuery("");
               }
             }}
           />
@@ -512,13 +516,16 @@ function AgentChatInner({
             onToggleSource={handleToggleSource}
           />
           <PromptInputSelect value={selectedModel} onValueChange={handleModelChange}>
-            <PromptInputSelectTrigger className="h-7 text-xs px-2 gap-1.5 border border-border/50 rounded-md bg-background/50 hover:bg-muted/80 transition-colors">
+            <PromptInputSelectTrigger 
+              aria-label="Select AI model"
+              className="h-7 text-xs px-2 gap-1.5 border border-border/50 rounded-md bg-background/50 hover:bg-muted/80 transition-colors"
+            >
               <span className="font-medium text-foreground">{currentModelDef.name}</span>
             </PromptInputSelectTrigger>
             <PromptInputSelectContent className="max-h-96 w-[min(20rem,calc(100vw-2rem))]">
               <PromptInputSelectGroup>
                 <PromptInputSelectLabel>Recommended</PromptInputSelectLabel>
-                {getRecommendedModels().map((m) => {
+                {recommendedModels.map((m) => {
                   const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
                   return (
                     <PromptInputSelectItem key={m.id} value={m.id} disabled={!hasKey} className="py-2 text-xs">
@@ -549,7 +556,9 @@ function AgentChatInner({
                 <PromptInputSelectLabel>
                   Google Gemini {configuredProviders.includes("google") ? "• BYOK Active" : ""}
                 </PromptInputSelectLabel>
-                {getModelsByProvider("google").map((m) => {
+                {getModelsByProvider("google")
+                  .filter((m) => !recommendedModelIds.has(m.id))
+                  .map((m) => {
                   const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
                   return (
                     <PromptInputSelectItem key={m.id} value={m.id} disabled={!hasKey} className="py-1.5 text-xs">
@@ -577,7 +586,9 @@ function AgentChatInner({
                 <PromptInputSelectLabel>
                   OpenAI {configuredProviders.includes("openai") ? "• BYOK Active" : ""}
                 </PromptInputSelectLabel>
-                {getModelsByProvider("openai").map((m) => {
+                {getModelsByProvider("openai")
+                  .filter((m) => !recommendedModelIds.has(m.id))
+                  .map((m) => {
                   const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
                   return (
                     <PromptInputSelectItem key={m.id} value={m.id} disabled={!hasKey} className="py-1.5 text-xs">
@@ -605,7 +616,9 @@ function AgentChatInner({
                 <PromptInputSelectLabel>
                   Anthropic {configuredProviders.includes("anthropic") ? "• BYOK Active" : ""}
                 </PromptInputSelectLabel>
-                {getModelsByProvider("anthropic").map((m) => {
+                {getModelsByProvider("anthropic")
+                  .filter((m) => !recommendedModelIds.has(m.id))
+                  .map((m) => {
                   const hasKey = configuredProviders.includes(m.provider) || hasEnvKeys[m.provider];
                   return (
                     <PromptInputSelectItem key={m.id} value={m.id} disabled={!hasKey} className="py-1.5 text-xs">

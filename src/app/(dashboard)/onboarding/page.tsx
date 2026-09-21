@@ -298,11 +298,12 @@ export default function OnboardingPage() {
             </div>
 
             <div className="space-y-3 pt-2">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <label htmlFor="onboarding-ai-key" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Enter {selectedProvider.toUpperCase()} API Key (Optional)
               </label>
               <div className="flex gap-2">
                 <input
+                  id="onboarding-ai-key"
                   type="password"
                   placeholder={
                     selectedProvider === "google"
@@ -383,10 +384,11 @@ export default function OnboardingPage() {
             </div>
 
             <div className="space-y-2 pt-2">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <label htmlFor="onboarding-audience" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Who is your target audience? (Optional)
               </label>
               <input
+                id="onboarding-audience"
                 type="text"
                 placeholder="e.g. Early-stage founders, software engineers, marketing leaders"
                 value={audienceInput}
@@ -441,10 +443,11 @@ export default function OnboardingPage() {
                 )}
 
                 <div className="space-y-2">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor="onboarding-zernio-key" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Zernio API Key
                   </label>
                   <input
+                    id="onboarding-zernio-key"
                     type="password"
                     placeholder="sk_..."
                     value={zernioKey}

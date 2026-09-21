@@ -14,6 +14,8 @@ const eslintConfig = [
       "test-results/**",
       "src-tauri/target/**",
       "src-tauri/ui/**",
+      "workers/**",
+      ".agents/**",
     ],
   },
   ...nextConfig,

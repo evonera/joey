@@ -200,11 +200,12 @@ export default function BrandKitPage() {
 
         <div className="p-6 space-y-5">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">Brand Voice & Persona</label>
+            <label htmlFor="brand-voice" className="text-xs font-semibold text-foreground">Brand Voice & Persona</label>
             <p className="text-[11px] text-muted-foreground">
               Define the tone, sentence style, vocabulary, and perspective (e.g. conversational, technical, minimal emojis).
             </p>
             <Textarea
+              id="brand-voice"
               value={brandVoice}
               onChange={(e) => setBrandVoice(e.target.value)}
               placeholder="e.g. Professional yet conversational. Direct sentences with high information density. Focus on actionable insights for engineers."
@@ -214,11 +215,12 @@ export default function BrandKitPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">Posting Goals & Editorial Themes</label>
+            <label htmlFor="posting-goals" className="text-xs font-semibold text-foreground">Posting Goals & Editorial Themes</label>
             <p className="text-[11px] text-muted-foreground">
               Specify what content Joey should prioritize (e.g. product build-in-public updates, technical deep dives, weekly recaps).
             </p>
             <Textarea
+              id="posting-goals"
               value={postingGoals}
               onChange={(e) => setPostingGoals(e.target.value)}
               placeholder="e.g. Drive awareness for our open-source tools. Share 1 architectural case study, 1 quick terminal tip, and 1 community highlight each week."

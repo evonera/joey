@@ -114,4 +114,43 @@ describe("agent-model-resolver", () => {
 
     expect(assertTrialQuota).toHaveBeenCalledWith("tenant-free-trial", 3);
   });
+
+  it("falls back to google/gemini when preferred openai model has no key", async () => {
+    const { db } = await import("@/lib/db");
+    const tenantId = "tenant-openai-missing";
+
+    // First call: openai key lookup → null
+    // Second call: google key lookup → null (BYOK)
+    // But env has GOOGLE_GENERATIVE_AI_API_KEY set
+    (db.query.apiKeys.findFirst as any)
+      .mockResolvedValueOnce(null) // openai BYOK — not found
+      .mockResolvedValueOnce(null) // google BYOK — not found (will fall through to env)
+      .mockResolvedValueOnce(null); // anthropic BYOK — not found
+
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "AIzaSyFallbackGeminiKey";
+
+    const result = await resolveModelForTurn({
+      preferredModel: "openai/gpt-5.6-luna",
+      tenantId,
+    });
+
+    // Should resolve via Gemini fallback
+    expect(result.model).toBeDefined();
+    expect(result.modelContextWindowTokens).toBeGreaterThan(0);
+  });
+
+  it("throws when no provider has any key available", async () => {
+    const { db } = await import("@/lib/db");
+    (db.query.apiKeys.findFirst as any).mockResolvedValue(null);
+    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    await expect(
+      resolveModelForTurn({ preferredModel: "openai/gpt-5.6-luna", tenantId: "tenant-no-keys" })
+    ).rejects.toThrow(/No active API key found/);
+  });
 });

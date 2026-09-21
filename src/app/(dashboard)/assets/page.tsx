@@ -163,6 +163,7 @@ export default function AssetsPage() {
           <input
             ref={fileInputRef}
             type="file"
+            aria-label="Upload asset file"
             className="hidden"
             accept="image/*,video/*,audio/mpeg,application/pdf"
             onChange={(e) => {
@@ -189,6 +190,7 @@ export default function AssetsPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
+            aria-label="Search assets"
             placeholder="Search assets..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}

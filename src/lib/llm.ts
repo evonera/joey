@@ -66,29 +66,68 @@ export async function runLlm(opts: {
   maxTokens?: number;
   signal?: AbortSignal;
 }): Promise<LlmResult> {
-  const apiKey = await resolveKey(opts.tenantId, opts.provider);
+  // Resolve key with automatic provider fallback.
+  // openrouter is treated as its own provider with no cross-provider fallback.
+  let apiKey!: string;  // definite-assignment: either resolveKey succeeds or we throw
+  let effectiveProvider = opts.provider;
+  let effectiveModel = opts.model;
+
+  try {
+    apiKey = await resolveKey(opts.tenantId, opts.provider);
+  } catch (keyErr: any) {
+    // Only attempt fallback for BYOK providers (not openrouter)
+    if (opts.provider === "openrouter") throw keyErr;
+
+    const fallbackOrder: Array<"google" | "anthropic" | "openai"> = (["google", "anthropic", "openai"] as const)
+      .filter((p) => p !== opts.provider);
+
+    let found = false;
+    for (const fp of fallbackOrder) {
+      try {
+        apiKey = await resolveKey(opts.tenantId, fp);
+        effectiveProvider = fp;
+        // Use that provider's default model since the requested model is provider-specific
+        const fallbackDef = fp === "google"
+          ? getModelById("google/gemini-3.8-flash")
+          : fp === "anthropic"
+            ? getModelById("anthropic/claude-haiku-4.5")
+            : getModelById("openai/gpt-5.6-luna");
+        effectiveModel = fallbackDef.providerModelId;
+        console.warn(
+          `[runLlm] No key for provider "${opts.provider}". Falling back to "${fp}" (${fallbackDef.id}).`
+        );
+        found = true;
+        break;
+      } catch {
+        // try next
+      }
+    }
+    if (!found) throw keyErr;
+  }
+
   const maxTokens = opts.maxTokens ?? 2048;
   const requestedModel = findModelById(opts.model);
-  const providerDefault = opts.provider === "google"
+  const providerDefault = effectiveProvider === "google"
     ? getModelById("google/gemini-3.8-flash")
-    : opts.provider === "anthropic"
+    : effectiveProvider === "anthropic"
       ? getModelById("anthropic/claude-haiku-4.5")
       : getModelById("openai/gpt-5.6-luna");
-  const effectiveModel = opts.provider === "openrouter"
-    ? opts.model
-    : requestedModel?.provider === opts.provider
+  // Only recalculate effectiveModel if it wasn't already overridden by the fallback path
+  if (effectiveModel === opts.model && effectiveProvider !== "openrouter") {
+    effectiveModel = requestedModel?.provider === effectiveProvider
       ? requestedModel.providerModelId
       : providerDefault.providerModelId;
+  }
   const reservation = await reserveUsageBudget({
     tenantId: opts.tenantId,
     kind: "text",
     modelId: effectiveModel,
     estimatedCostUsd: estimateTextCallCost(effectiveModel, opts.messages, maxTokens),
-    metadata: { provider: opts.provider, source: "runLlm" },
+    metadata: { provider: effectiveProvider, source: "runLlm" },
   });
 
   try {
-    if (opts.provider === "anthropic") {
+    if (effectiveProvider === "anthropic") {
       const { default: Anthropic } = await import("@anthropic-ai/sdk");
       const client = new Anthropic({ apiKey });
       const system = opts.messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
@@ -150,8 +189,8 @@ export async function runLlm(opts: {
     }
 
     const { default: OpenAI } = await import("openai");
-    const isGoogle = opts.provider === "google";
-    const isOpenRouter = opts.provider === "openrouter";
+    const isGoogle = effectiveProvider === "google";
+    const isOpenRouter = effectiveProvider === "openrouter";
     const client = new OpenAI({
       apiKey,
       ...(isGoogle

@@ -268,7 +268,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
         <aside className={`${mobileDetailOpen ? "hidden" : "flex"} min-h-[34rem] flex-col border-b lg:flex lg:border-b-0 lg:border-r`}>
           <div className="space-y-3 border-b bg-muted/15 p-3">
             <form className="relative" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()); }}>
-              <IconSearch className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search people or messages" className="pl-9" />
+              <IconSearch className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input aria-label="Search people or messages" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search people or messages" className="pl-9" />
             </form>
             <div className="flex items-center gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1" aria-label="Conversation filters">
               {["all", "dm", "comment", "review"].map((value) => <Button key={value} size="sm" variant="ghost" onClick={() => setKind(value)} className={`h-7 shrink-0 capitalize ${kind === value ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"}`}>{value === "dm" ? "Messages" : value}</Button>)}

@@ -109,6 +109,7 @@ export function SpeechInput({
           isListening && "bg-red-500 hover:bg-red-600 text-white animate-pulse"
         )}
         title={isListening ? "Stop listening" : "Voice input"}
+        aria-label={isListening ? "Stop listening" : "Voice input"}
       >
         {isListening ? <StopIcon className="size-4" /> : <MicIcon className="size-4 text-muted-foreground hover:text-foreground" />}
       </Button>

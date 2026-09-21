@@ -476,3 +476,18 @@ export async function bulkDeleteDrafts(draftIds: string[]) {
     for (const id of new Set(draftIds)) if ((await deleteDraft(id)).success) count++;
     return { success: true, count };
 }
+
+/**
+ * Trigger on-demand recovery of stuck 'publishing' drafts for the current tenant.
+ * Resets stranded drafts to 'failed' so users can inspect and retry.
+ */
+export async function reconcileStuckDrafts() {
+    const tenantId = await getActiveTenantId();
+    try {
+        const { recoverStalePublishingDrafts } = await import("@/lib/publisher-core");
+        const recovered = await recoverStalePublishingDrafts({ tenantId, staleAfterMs: 2 * 60 * 1000 });
+        return { success: true, recovered };
+    } catch (err: any) {
+        return { error: err.message || "Failed to recover stuck drafts." };
+    }
+}

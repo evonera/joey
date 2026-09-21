@@ -788,8 +788,9 @@ export function TemplateCanvasEditor({
           {activeTab === "design" && (
             <div className="space-y-4 text-xs">
               <div>
-                <label className="block font-medium text-muted-foreground mb-1">Target Format</label>
+                <label htmlFor="canvas-target-format" className="block font-medium text-muted-foreground mb-1">Target Format</label>
                 <select
+                  id="canvas-target-format"
                   value={formatId}
                   onChange={(e) => setFormatId(e.target.value)}
                   className="w-full px-3 py-2 text-xs border rounded-lg bg-background"
@@ -926,8 +927,9 @@ export function TemplateCanvasEditor({
               {/* Top Badge & Brand Mark */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium text-muted-foreground mb-1">Top Badge Style</label>
+                  <label htmlFor="canvas-top-badge" className="block font-medium text-muted-foreground mb-1">Top Badge Style</label>
                   <select
+                    id="canvas-top-badge"
                     value={spec.topBadge || "yellow_logo"}
                     onChange={(e) => setSpec({ ...spec, topBadge: e.target.value as any })}
                     className="w-full px-3 py-1.5 text-xs border rounded-lg bg-background"
@@ -939,8 +941,9 @@ export function TemplateCanvasEditor({
                   </select>
                 </div>
                 <div>
-                  <label className="block font-medium text-muted-foreground mb-1">Brand Initial Mark</label>
+                  <label htmlFor="canvas-brand-initial" className="block font-medium text-muted-foreground mb-1">Brand Initial Mark</label>
                   <input
+                    id="canvas-brand-initial"
                     type="text"
                     maxLength={3}
                     value={spec.brandInitial || "🅟"}
@@ -1041,8 +1044,9 @@ export function TemplateCanvasEditor({
 
               {/* Watermark Handle */}
               <div>
-                <label className="block font-medium text-muted-foreground mb-1">Watermark Handle</label>
+                <label htmlFor="canvas-watermark-text" className="block font-medium text-muted-foreground mb-1">Watermark Handle</label>
                 <input
+                  id="canvas-watermark-text"
                   type="text"
                   value={spec.watermarkText || ""}
                   onChange={(e) => setSpec({ ...spec, watermarkText: e.target.value })}
@@ -1058,7 +1062,7 @@ export function TemplateCanvasEditor({
               {/* Highlight Keywords */}
               <div className="space-y-2 p-3.5 border rounded-xl bg-amber-500/5 border-amber-500/20">
                 <div className="flex items-center justify-between">
-                  <label className="block font-bold text-foreground flex items-center gap-1.5">
+                  <label htmlFor="canvas-highlight-keywords" className="block font-bold text-foreground flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Highlight Keywords
                   </label>
                   <span className="text-[10px] text-muted-foreground">Comma-separated</span>
@@ -1067,6 +1071,7 @@ export function TemplateCanvasEditor({
                   Signature high-retention look highlights punchy words in your accent color ({spec.accentColor || "#ffe633"}).
                 </p>
                 <input
+                  id="canvas-highlight-keywords"
                   type="text"
                   value={highlightInput}
                   onChange={(e) => setHighlightInput(e.target.value)}

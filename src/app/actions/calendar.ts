@@ -20,22 +20,25 @@ export type CalendarPost = {
   source?: "draft" | "theme";
 };
 
-export async function getCalendarPosts(startDate: Date, endDate: Date) {
+export async function getCalendarPosts(startDate: Date | string, endDate: Date | string) {
     try {
         const tenantId = await getActiveTenantId();
         
-        if (!(startDate instanceof Date) || !(endDate instanceof Date) || !Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate || endDate.getTime() - startDate.getTime() > 366 * 86_400_000) return { error: "Choose a valid calendar range of up to one year." };
+        const start = startDate instanceof Date ? startDate : new Date(startDate);
+        const end = endDate instanceof Date ? endDate : new Date(endDate);
+
+        if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end < start || end.getTime() - start.getTime() > 366 * 86_400_000) return { error: "Choose a valid calendar range of up to one year." };
         const [scheduledDrafts, publishedPosts, accounts, packages, formats] = await Promise.all([
             db.query.drafts.findMany({
-                where: and(eq(drafts.tenantId, tenantId), isNotNull(drafts.scheduledFor), gte(drafts.scheduledFor, startDate), lte(drafts.scheduledFor, endDate), inArray(drafts.status, ["draft", "pending_review", "approved", "scheduled", "publishing", "failed"])),
+                where: and(eq(drafts.tenantId, tenantId), isNotNull(drafts.scheduledFor), gte(drafts.scheduledFor, start), lte(drafts.scheduledFor, end), inArray(drafts.status, ["draft", "pending_review", "approved", "scheduled", "publishing", "failed"])),
             }),
             db.query.posts.findMany({
-                where: and(eq(posts.tenantId, tenantId), eq(posts.status, "published"), gte(posts.publishedAt, startDate), lte(posts.publishedAt, endDate)),
+                where: and(eq(posts.tenantId, tenantId), eq(posts.status, "published"), gte(posts.publishedAt, start), lte(posts.publishedAt, end)),
             }),
             db.query.socialAccounts.findMany({ where: eq(socialAccounts.tenantId, tenantId) }),
             db.query.contentPackages.findMany({ where: and(eq(contentPackages.tenantId, tenantId), or(
-                and(eq(contentPackages.status, "published"), gte(contentPackages.publishedAt, startDate), lte(contentPackages.publishedAt, endDate)),
-                and(inArray(contentPackages.status, ["pending_review", "approved", "publishing", "failed"]), gte(contentPackages.scheduledFor, startDate), lte(contentPackages.scheduledFor, endDate)),
+                and(eq(contentPackages.status, "published"), gte(contentPackages.publishedAt, start), lte(contentPackages.publishedAt, end)),
+                and(inArray(contentPackages.status, ["pending_review", "approved", "publishing", "failed"]), gte(contentPackages.scheduledFor, start), lte(contentPackages.scheduledFor, end)),
             )) }),
             db.query.themeContentFormats.findMany({ where: eq(themeContentFormats.tenantId, tenantId), columns: { id: true, platform: true } }),
         ]);
@@ -137,13 +140,14 @@ export async function getCalendarPosts(startDate: Date, endDate: Date) {
  * Reschedule an approved (or pending) scheduled draft by setting a new
  * scheduledFor time. Only edits drafts, not already-published posts.
  */
-export async function rescheduleDraft(draftId: string, scheduledFor: Date) {
+export async function rescheduleDraft(draftId: string, scheduledFor: Date | string) {
     try {
         const tenantId = await getActiveTenantId();
 
-        if (!(scheduledFor instanceof Date) || !Number.isFinite(scheduledFor.getTime()) || scheduledFor <= new Date()) return { error: "Choose a future date and time." };
+        const scheduledDate = scheduledFor instanceof Date ? scheduledFor : new Date(scheduledFor);
+        if (!Number.isFinite(scheduledDate.getTime()) || scheduledDate <= new Date()) return { error: "Choose a future date and time." };
         const changed = await db.update(drafts)
-            .set({ scheduledFor })
+            .set({ scheduledFor: scheduledDate })
             .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), isNotNull(drafts.scheduledFor),
                 inArray(drafts.status, ["draft", "pending_review", "approved", "scheduled"]),
                 or(isNull(drafts.errorMessage), sql`${drafts.errorMessage} NOT LIKE 'verify:%'`)))

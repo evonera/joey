@@ -14,6 +14,8 @@ import { PlatformSelector } from "@/components/compose/platform-selector";
 import { SchedulePicker, type ScheduleType } from "@/components/compose/schedule-picker";
 import { PlatformPreviews } from "@/components/compose/platform-previews";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
+import { MediaStudioDialog } from "@/components/media-studio/MediaStudioDialog";
+import { PublishConfirmDialog } from "@/components/compose/publish-confirm-dialog";
 import {
   Loading03Icon as Loader2,
   SentIcon as Send,
@@ -24,7 +26,8 @@ import {
   Cancel01Icon as X,
   Upload01Icon as Upload,
   FloppyDiskIcon as Save,
-  AlertCircleIcon as AlertCircle
+  AlertCircleIcon as AlertCircle,
+  SparklesIcon as Sparkles,
 } from "hugeicons-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -53,6 +56,9 @@ export default function ComposePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [mediaStudioOpen, setMediaStudioOpen] = useState(false);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [packagingScore, setPackagingScore] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -134,13 +140,14 @@ export default function ComposePage() {
 
   const exceedsCharLimit = activeLimits.some(l => charCount > l.limit);
   const exceedsMediaLimit = mediaUrls.length > maxAllowedMedia;
+  const platformError = validatePostForPlatforms(content, mediaUrls, selectedAccounts.map(a => a.platform));
 
   const canSubmit = selectedAccountIds.length > 0 &&
     (content.trim().length > 0 || mediaUrls.length > 0) &&
     !isSubmitting &&
     !isSavingDraft &&
     !exceedsCharLimit && !exceedsMediaLimit && !uploading && !loadingDraft && !draftLoadError &&
-    !validatePostForPlatforms(content, mediaUrls, selectedAccounts.map(a => a.platform));
+    !platformError;
 
   const addExternalUrl = () => {
     const url = externalUrl.trim();
@@ -237,46 +244,43 @@ export default function ComposePage() {
     } finally { setIsSavingDraft(false); setIsSubmitting(false); }
   };
 
-  const handleSubmit = async () => { if (canSubmit) await submitPost(scheduleType === "scheduled" ? "scheduled" : "now"); };
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    if (scheduleType === "now") {
+      setConfirmDialogOpen(true);
+      return;
+    }
+    await submitPost("scheduled");
+  };
 
   if (draftLoadError) return <div role="alert" className="space-y-4"><p>{draftLoadError}</p><Button asChild><Link href="/drafts">Back to drafts</Link></Button></div>;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 pb-16">
+    <div className="mx-auto min-w-0 max-w-3xl space-y-6 pb-16">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" data-tour="compose-overview">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Compose Post</h1>
           <p className="text-muted-foreground mt-1 text-sm">Write, preview, and publish content across your connected platforms.</p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleSaveDraft}
-          disabled={selectedAccountIds.length === 0 || (!content.trim() && mediaUrls.length === 0) || isSavingDraft || isSubmitting || uploading || loadingDraft}
-          className="self-start gap-1.5"
-        >
-          {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save as Draft
-        </Button>
       </div>
 
       {/* Autopilot Discovery Banner */}
-      <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl flex-wrap border border-primary/20 bg-primary/5 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span>
+      <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-3 rounded-xl flex-wrap border border-primary/20 bg-primary/5 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="min-w-0">
             <strong className="text-foreground">Compose:</strong> Create a single post here. Use Theme Studio for recurring content around a topic.
           </span>
         </div>
         <Link
           href="/theme-studio"
-          className="font-medium text-primary hover:underline shrink-0 inline-flex items-center gap-1"
+          className="max-w-full shrink-0 font-medium text-primary hover:underline inline-flex items-center gap-1"
         >
           Open Theme Studio →
         </Link>
       </div>
 
       {/* 1. Accounts */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="h-4 w-4" />
@@ -303,7 +307,7 @@ export default function ComposePage() {
       </Card>
 
       {/* 2. Content */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-base">
             <span className="flex items-center gap-2">
@@ -367,7 +371,7 @@ export default function ComposePage() {
                   <span className="text-muted-foreground font-normal text-xs">({mediaUrls.length})</span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -375,6 +379,7 @@ export default function ComposePage() {
                   multiple
                   onChange={(e) => void handleFileUpload(e.target.files)}
                   className="hidden"
+                  aria-label="Upload media files"
                 />
                 <Button
                   type="button"
@@ -398,8 +403,47 @@ export default function ComposePage() {
                     });
                   }}
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMediaStudioOpen(true)}
+                  className="h-8 gap-1 text-xs border-primary/40 bg-primary/10 hover:bg-primary/20 text-foreground font-semibold"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  Design Visual Hook
+                </Button>
+                <MediaStudioDialog
+                  open={mediaStudioOpen}
+                  onOpenChange={setMediaStudioOpen}
+                  postContent={content}
+                  onAttachToPost={(url, score) => {
+                    setMediaUrls((prev) => [...prev, url]);
+                    setPackagingScore(score);
+                  }}
+                />
               </div>
             </div>
+
+            {packagingScore !== null && (
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                <Badge
+                  variant="outline"
+                  className={`text-[11px] font-mono font-bold ${
+                    packagingScore >= 80
+                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                      : packagingScore >= 55
+                        ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                        : "bg-red-500/15 text-red-400 border-red-500/30"
+                  }`}
+                >
+                  Visual Packaging Score: {packagingScore}/100
+                </Badge>
+                <span className="text-muted-foreground text-[11px]">
+                  Visual hook attached and optimized for social feeds
+                </span>
+              </div>
+            )}
 
             {mediaUrls.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
@@ -445,7 +489,7 @@ export default function ComposePage() {
                 value={externalUrl}
                 onChange={(e) => setExternalUrl(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExternalUrl(); } }}
-                className="h-8 text-xs bg-background"
+                className="h-8 text-xs bg-background min-w-0 flex-1"
               />
               <Button variant="outline" size="sm" onClick={addExternalUrl} disabled={!externalUrl.trim()} className="h-8 text-xs">
                 Add URL
@@ -489,6 +533,12 @@ export default function ComposePage() {
 
       {/* 5. Submit Action */}
       <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2">
+        {platformError && selectedAccountIds.length > 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5 self-start sm:self-center sm:mr-auto">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            {platformError}
+          </p>
+        )}
         <Button
           type="button"
           variant="outline"
@@ -513,6 +563,27 @@ export default function ComposePage() {
           )}
         </Button>
       </div>
+
+      <PublishConfirmDialog
+        open={confirmDialogOpen}
+        onOpenChange={setConfirmDialogOpen}
+        onConfirm={async () => {
+          setConfirmDialogOpen(false);
+          await submitPost("now");
+        }}
+        isPublishing={isSubmitting}
+        accounts={accounts
+          .filter((a) => selectedAccountIds.includes(a.id))
+          .map((a) => ({
+            id: a.id,
+            accountName: a.accountName,
+            platform: a.platform,
+            avatarUrl: a.avatarUrl,
+          }))}
+        content={content}
+        mediaCount={mediaUrls.length}
+        actionLabel="Publish Now"
+      />
     </div>
   );
 }

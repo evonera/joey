@@ -10,6 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -59,6 +61,8 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   );
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [scoutToDelete, setScoutToDelete] = useState<ScoutItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Synchronize state when server props update
   useEffect(() => {
@@ -145,17 +149,22 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
     }
   };
 
-  const handleDelete = async (scoutId: string) => {
-    if (!confirm("Are you sure you want to delete this scout?")) return;
+  const confirmDelete = async () => {
+    if (!scoutToDelete) return;
+    setIsDeleting(true);
     try {
-      await deleteScout(scoutId);
-      setScoutsList((prev) => prev.filter((s) => s.id !== scoutId));
-      if (selectedId === scoutId) {
-        setSelectedId(scoutsList.filter((s) => s.id !== scoutId)[0]?.id ?? "");
+      await deleteScout(scoutToDelete.id);
+      const remaining = scoutsList.filter((s) => s.id !== scoutToDelete.id);
+      setScoutsList(remaining);
+      if (selectedId === scoutToDelete.id) {
+        setSelectedId(remaining[0]?.id ?? "");
       }
       toast.success("Scout deleted");
+      setScoutToDelete(null);
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -200,6 +209,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="text-base font-semibold">Deploy New Social Scout</DialogTitle>
+                <DialogDescription>Configure a competitor or account to monitor for content and activity changes.</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleCreate} className="space-y-4 pt-2">
                 <div className="space-y-1.5">
@@ -408,7 +418,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDelete(selectedScout.id)}
+                      onClick={() => setScoutToDelete(selectedScout)}
                       className="h-8 px-2 text-xs text-destructive hover:text-destructive"
                       title="Delete Scout"
                     >
@@ -513,6 +523,34 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!scoutToDelete} onOpenChange={(open) => !open && setScoutToDelete(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Scout</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <span className="font-semibold text-foreground">&ldquo;{scoutToDelete?.name}&rdquo;</span>? This will stop all monitoring and remove its change history. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setScoutToDelete(null)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting..." : "Delete Scout"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -24,6 +24,7 @@ export async function proxy(request: NextRequest) {
 		request.nextUrl.pathname.startsWith('/engagement') ||
 		request.nextUrl.pathname.startsWith('/notifications') ||
 		request.nextUrl.pathname.startsWith('/theme-studio') ||
+		request.nextUrl.pathname.startsWith('/scouts') ||
 		request.nextUrl.pathname.startsWith('/operations');
 
 	// Short-circuit public routes (e.g. /, /docs, /blog, /about) to avoid DB session queries

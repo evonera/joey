@@ -197,8 +197,8 @@ export default function DraftsPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Drafts Queue</h1>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground">Drafts Queue</h1>
+                    <p className="text-sm text-muted-foreground">
                         Universal review hub — approve, edit, and schedule drafts from Compose, Theme Studio, and Flows in one place.
                     </p>
                 </div>
@@ -219,30 +219,33 @@ export default function DraftsPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b overflow-x-auto scrollbar-none gap-1">
-                {tabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => {
-                            setStatusFilter(tab.id);
-                            setSelectedIds(new Set());
-                        }}
-                        className={`flex items-center gap-2 px-4 py-2.5 border-b-2 whitespace-nowrap text-sm font-medium transition-colors ${
-                            statusFilter === tab.id 
-                                ? "border-primary text-primary font-semibold" 
-                                : "border-transparent text-muted-foreground hover:text-foreground"
-                        }`}
-                    >
-                        <span>{tab.label}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-mono font-medium ${
-                            statusFilter === tab.id
-                                ? "bg-primary/10 text-primary"
-                                : "bg-muted text-muted-foreground"
-                        }`}>
-                            {tab.count ?? 0}
-                        </span>
-                    </button>
-                ))}
+            <div className="relative">
+                <div className="flex border-b overflow-x-auto scrollbar-none gap-1">
+                    {tabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => {
+                                setStatusFilter(tab.id);
+                                setSelectedIds(new Set());
+                            }}
+                            className={`flex items-center gap-2 px-4 py-2.5 border-b-2 whitespace-nowrap text-sm font-medium transition-colors ${
+                                statusFilter === tab.id 
+                                    ? "border-primary text-primary font-semibold" 
+                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                            }`}
+                        >
+                            <span>{tab.label}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-mono font-medium ${
+                                statusFilter === tab.id
+                                    ? "bg-primary/10 text-primary"
+                                    : "bg-muted text-muted-foreground"
+                            }`}>
+                                {tab.count ?? 0}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+                <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent sm:hidden" />
             </div>
 
             {/* Filter & Search Bar */}
@@ -250,6 +253,7 @@ export default function DraftsPage() {
                 <div className="relative flex-1 w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
+                        aria-label="Search drafts by content or title"
                         placeholder="Search drafts by content or title..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}

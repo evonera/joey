@@ -1,5 +1,5 @@
 import type { LanguageModel } from "ai";
-import { getModelById, type ModelDefinition } from "@/lib/models";
+import { getModelById, DEFAULT_MODEL_ID, FALLBACK_MODEL_ID, type ModelDefinition } from "@/lib/models";
 import { db } from "@/lib/db";
 import { apiKeys } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -98,6 +98,7 @@ export async function resolveLanguageModel(
 
 /**
  * Main entry point for dynamic model resolution in Eve agent turns.
+ * Falls back through available providers when the preferred model's key is missing.
  */
 export async function resolveModelForTurn(
   options: ResolveModelOptions
@@ -105,29 +106,61 @@ export async function resolveModelForTurn(
   if (options.tenantId && !(await assertBudget(options.tenantId)).allowed) {
     throw new Error("Workspace monthly AI budget reached. Review usage in Settings.");
   }
-  const modelDef = getModelById(options.preferredModel);
-  const keyInfo = await resolveProviderKeyInfo(modelDef.provider, options.tenantId);
 
-  if (!keyInfo.key) {
-    throw new Error(
-      `No active API key found for ${modelDef.name} (${modelDef.provider.toUpperCase()}). Please add your key in Settings → AI Providers or select a different model.`
-    );
+  const preferredModelDef = getModelById(options.preferredModel);
+  const preferredKeyInfo = await resolveProviderKeyInfo(preferredModelDef.provider, options.tenantId);
+
+  // Happy path: preferred model's provider has a key
+  if (preferredKeyInfo.key) {
+    await _enforceTrialQuotaIfNeeded(options.tenantId, preferredKeyInfo);
+    const model = await resolveLanguageModel(preferredModelDef, preferredKeyInfo.key);
+    return { model, modelContextWindowTokens: preferredModelDef.contextWindowTokens };
   }
 
-  // If using platform fallback key and workspace is on free tier without an active subscription,
-  // enforce the 3-attempt trial limit.
-  if (options.tenantId && !keyInfo.isByok) {
+  // Fallback: try other providers in preference order (google → anthropic → openai)
+  const fallbackOrder: Array<"google" | "anthropic" | "openai"> = ["google", "anthropic", "openai"]
+    .filter((p) => p !== preferredModelDef.provider) as Array<"google" | "anthropic" | "openai">;
+
+  for (const provider of fallbackOrder) {
+    const fallbackKeyInfo = await resolveProviderKeyInfo(provider, options.tenantId);
+    if (!fallbackKeyInfo.key) continue;
+
+    // Pick best available model for this provider
+    const fallbackModelId = provider === "google"
+      ? DEFAULT_MODEL_ID
+      : provider === "anthropic"
+        ? "anthropic/claude-haiku-4.5"
+        : FALLBACK_MODEL_ID;
+    const fallbackModelDef = getModelById(fallbackModelId);
+
+    console.warn(
+      `[agent-model-resolver] Preferred model "${preferredModelDef.id}" (${preferredModelDef.provider}) has no API key. ` +
+      `Falling back to "${fallbackModelDef.id}" (${provider}).`
+    );
+
+    await _enforceTrialQuotaIfNeeded(options.tenantId, fallbackKeyInfo);
+    const model = await resolveLanguageModel(fallbackModelDef, fallbackKeyInfo.key);
+    return { model, modelContextWindowTokens: fallbackModelDef.contextWindowTokens };
+  }
+
+  // No provider has a key — surface a clear, actionable error
+  throw new Error(
+    `No active API key found for ${preferredModelDef.name} (${preferredModelDef.provider.toUpperCase()}). ` +
+    `Please add your key in Settings → AI Providers or select a different model.`
+  );
+}
+
+/** Enforce the 3-attempt trial quota when using a platform (non-BYOK) key. */
+async function _enforceTrialQuotaIfNeeded(
+  tenantId: string | null | undefined,
+  keyInfo: { isByok: boolean }
+): Promise<void> {
+  if (tenantId && !keyInfo.isByok) {
     const { isProTenant } = await import("@/lib/billing");
-    const isPro = await isProTenant(options.tenantId);
+    const isPro = await isProTenant(tenantId);
     if (!isPro) {
       const { assertTrialQuota } = await import("@/lib/usage");
-      await assertTrialQuota(options.tenantId, 3);
+      await assertTrialQuota(tenantId, 3);
     }
   }
-
-  const model = await resolveLanguageModel(modelDef, keyInfo.key);
-  return {
-    model,
-    modelContextWindowTokens: modelDef.contextWindowTokens,
-  };
 }

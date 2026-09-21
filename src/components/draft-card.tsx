@@ -23,6 +23,7 @@ import {
 } from "hugeicons-react";
 import { DraftReviewRoom, useDraftCollaboration } from "@/components/drafts/draft-review-room";
 import { DraftComments } from "@/components/drafts/draft-comments";
+import { PublishConfirmDialog } from "@/components/compose/publish-confirm-dialog";
 import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
 import { useThreads, useIsInsideRoom } from "@liveblocks/react";
 
@@ -64,6 +65,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
     const [loading, setLoading] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+    const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
 
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
@@ -90,12 +92,15 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
         setIsSheetOpen(false);
         toast.success("Draft approved"); broadcastApproval(variantName); onActionComplete();
     });
-    const handlePublish = () => runAction(async () => {
+    const executePublish = () => runAction(async () => {
         const res = await publishDraft(draft.id, isScheduled);
         if (res.error) throw new Error(res.error);
         toast.success(res.status === "published" ? "Post published" : "Post submitted. Publishing is in progress.");
         onActionComplete();
     });
+    const handlePublish = () => {
+        setPublishConfirmOpen(true);
+    };
     const handleReject = () => runAction(async () => {
         if (!feedback.trim()) return;
         const res = await rejectDraft(draft.id, feedback);
@@ -133,7 +138,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                         <Link 
                             href={`/theme-studio/${platformOpts.themePageId}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 text-xs font-medium bg-[#ffe633]/15 text-[#ffe633] border border-[#ffe633]/30 px-2.5 py-1 rounded-md hover:bg-[#ffe633]/25 transition-colors cursor-pointer"
+                            className="inline-flex items-center gap-1.5 text-xs font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-md hover:bg-amber-500/20 transition-colors cursor-pointer"
                             title="View Theme Page in Theme Studio"
                         >
                             <span>Theme: {platformOpts.themePageName || "Theme Channel"}</span>
@@ -212,6 +217,8 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                         <div className="italic text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed text-xs">
                             Multiple draft variations generated. Click <strong>Review & Edit Variants</strong> to select and adjust copy.
                         </div>
+                    ) : mediaUrls.length > 0 ? (
+                        <span className="italic text-muted-foreground">Media post (no caption)</span>
                     ) : (
                         <span className="italic text-muted-foreground">No text content available</span>
                     )}
@@ -418,6 +425,25 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                     <DraftComments draftId={draft.id} />
                 </SheetContent>
             </Sheet>
+
+            {/* Pre-flight Publish Confirmation Dialog */}
+            <PublishConfirmDialog
+                open={publishConfirmOpen}
+                onOpenChange={setPublishConfirmOpen}
+                onConfirm={async () => {
+                    setPublishConfirmOpen(false);
+                    await executePublish();
+                }}
+                isPublishing={loading}
+                accounts={[{
+                    id: platformOpts?.accountId || draft.id,
+                    accountName: platformOpts?.accountName || platform,
+                    platform: platform,
+                }]}
+                content={currentVariantContent || content}
+                mediaCount={mediaUrls.length}
+                actionLabel={isScheduled ? "Publish Early" : "Publish Now"}
+            />
         </div>
     );
 }

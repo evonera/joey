@@ -130,6 +130,7 @@ export function ApiTokensPanel() {
             >
               <input
                 type="checkbox"
+                aria-label={`Scope ${scope.label}: ${scope.hint}`}
                 checked={scopes.includes(scope.id)}
                 onChange={() => toggleScope(scope.id)}
                 disabled={scope.locked}
