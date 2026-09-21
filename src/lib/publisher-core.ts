@@ -269,13 +269,39 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
  * posts retain their recorded status. Unknown outcomes require verification;
  * resetting a claim for a later retry could cross Zernio's idempotency window.
  */
-export async function recoverStalePublishingDrafts(options: { limit?: number; staleAfterMs?: number } = {}): Promise<number> {
+export async function recoverStalePublishingDrafts(options: { limit?: number; staleAfterMs?: number; tenantId?: string } = {}): Promise<number> {
     const now = Date.now();
     const staleAfterMs = options.staleAfterMs ?? 2 * 60 * 1000;
     const staleCutoffDate = new Date(now - staleAfterMs);
     const staleCutoffTimestamp = now - staleAfterMs;
     const staleClaimBound = `claimed:${staleCutoffTimestamp}`;
     const batchLimit = options.limit ?? 10;
+
+    const conditions = [
+        eq(drafts.status, "publishing"),
+        or(
+            // Claimed with a timestamp at or older than stale cutoff
+            and(
+                sql`${drafts.errorMessage} LIKE 'claimed:%'`,
+                sql`${drafts.errorMessage} <= ${staleClaimBound}`
+            ),
+            // Or legacy/unmarked claim whose scheduledFor or createdAt has expired
+            and(
+                or(
+                    isNull(drafts.errorMessage),
+                    sql`${drafts.errorMessage} NOT LIKE 'claimed:%'`
+                ),
+                or(
+                    lte(drafts.scheduledFor, staleCutoffDate),
+                    lte(drafts.createdAt, staleCutoffDate)
+                )
+            )
+        )
+    ];
+
+    if (options.tenantId) {
+        conditions.push(eq(drafts.tenantId, options.tenantId));
+    }
 
     const stranded = await db.select({
         id: drafts.id,
@@ -286,29 +312,7 @@ export async function recoverStalePublishingDrafts(options: { limit?: number; st
         createdAt: drafts.createdAt,
     })
     .from(drafts)
-    .where(
-        and(
-            eq(drafts.status, "publishing"),
-            or(
-                // Claimed with a timestamp at or older than stale cutoff
-                and(
-                    sql`${drafts.errorMessage} LIKE 'claimed:%'`,
-                    sql`${drafts.errorMessage} <= ${staleClaimBound}`
-                ),
-                // Or legacy/unmarked claim whose scheduledFor or createdAt has expired
-                and(
-                    or(
-                        isNull(drafts.errorMessage),
-                        sql`${drafts.errorMessage} NOT LIKE 'claimed:%'`
-                    ),
-                    or(
-                        lte(drafts.scheduledFor, staleCutoffDate),
-                        lte(drafts.createdAt, staleCutoffDate)
-                    )
-                )
-            )
-        )
-    )
+    .where(and(...conditions))
     .orderBy(asc(drafts.createdAt))
     .limit(batchLimit);
 

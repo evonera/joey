@@ -15,6 +15,7 @@ import { SchedulePicker, type ScheduleType } from "@/components/compose/schedule
 import { PlatformPreviews } from "@/components/compose/platform-previews";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { MediaStudioDialog } from "@/components/media-studio/MediaStudioDialog";
+import { PublishConfirmDialog } from "@/components/compose/publish-confirm-dialog";
 import {
   Loading03Icon as Loader2,
   SentIcon as Send,
@@ -56,6 +57,7 @@ export default function ComposePage() {
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [mediaStudioOpen, setMediaStudioOpen] = useState(false);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [packagingScore, setPackagingScore] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -242,7 +244,14 @@ export default function ComposePage() {
     } finally { setIsSavingDraft(false); setIsSubmitting(false); }
   };
 
-  const handleSubmit = async () => { if (canSubmit) await submitPost(scheduleType === "scheduled" ? "scheduled" : "now"); };
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    if (scheduleType === "now") {
+      setConfirmDialogOpen(true);
+      return;
+    }
+    await submitPost("scheduled");
+  };
 
   if (draftLoadError) return <div role="alert" className="space-y-4"><p>{draftLoadError}</p><Button asChild><Link href="/drafts">Back to drafts</Link></Button></div>;
 
@@ -362,7 +371,7 @@ export default function ComposePage() {
                   <span className="text-muted-foreground font-normal text-xs">({mediaUrls.length})</span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -417,7 +426,7 @@ export default function ComposePage() {
             </div>
 
             {packagingScore !== null && (
-              <div className="flex items-center gap-2 pt-1 text-xs">
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                 <Badge
                   variant="outline"
                   className={`text-[11px] font-mono font-bold ${
@@ -480,7 +489,7 @@ export default function ComposePage() {
                 value={externalUrl}
                 onChange={(e) => setExternalUrl(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExternalUrl(); } }}
-                className="h-8 text-xs bg-background"
+                className="h-8 text-xs bg-background min-w-0 flex-1"
               />
               <Button variant="outline" size="sm" onClick={addExternalUrl} disabled={!externalUrl.trim()} className="h-8 text-xs">
                 Add URL
@@ -554,6 +563,27 @@ export default function ComposePage() {
           )}
         </Button>
       </div>
+
+      <PublishConfirmDialog
+        open={confirmDialogOpen}
+        onOpenChange={setConfirmDialogOpen}
+        onConfirm={async () => {
+          setConfirmDialogOpen(false);
+          await submitPost("now");
+        }}
+        isPublishing={isSubmitting}
+        accounts={accounts
+          .filter((a) => selectedAccountIds.includes(a.id))
+          .map((a) => ({
+            id: a.id,
+            accountName: a.accountName,
+            platform: a.platform,
+            avatarUrl: a.avatarUrl,
+          }))}
+        content={content}
+        mediaCount={mediaUrls.length}
+        actionLabel="Publish Now"
+      />
     </div>
   );
 }
