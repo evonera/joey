@@ -19,6 +19,9 @@ Joey is a multi-tenant, autonomous social media management platform built on Nex
 
 - [WebMCP tools](docs/webmcp.md): page-scoped tools agents can use and their human-approval boundaries.
 - [Theme Studio implementation guide](docs/theme-studio.md): the current static-card editorial pipeline, its Eve/Zernio boundaries, safeguards, and remaining roadmap.
+- [Self-hosting guide](docs/self-hosting.md): Docker setup, migrations, required secrets, and common recovery steps.
+- [Security policy](SECURITY.md): how to report a security issue privately.
+- [Contributing](CONTRIBUTING.md): local setup and checks for pull requests.
 
 ## Tech Stack
 
@@ -32,17 +35,19 @@ Joey is a multi-tenant, autonomous social media management platform built on Nex
 
 ## Deployment
 
-### Docker (Self-Host) — Includes database
+### Docker self-hosting
 
 ```bash
 git clone https://github.com/evonera/joey.git
 cd joey
 cp .env.example .env
-# Edit .env — set BETTER_AUTH_SECRET, ENCRYPTION_KEY
-docker compose up -d
+# Set BETTER_AUTH_SECRET, ENCRYPTION_KEY, and a URL-safe POSTGRES_PASSWORD in .env.
+# Generate secret values with: openssl rand -base64 32
+docker compose up --build -d
+docker compose logs -f migrate
 ```
 
-Joey uses PostgreSQL with pgvector. The Docker setup includes a database automatically.
+The Compose stack starts PostgreSQL with pgvector, applies the checked-in versioned migrations, and then starts Joey. The database container is persistent across restarts. Set `NEXT_PUBLIC_APP_URL` in `.env` before the first build when exposing Joey on a non-local URL. Provider integrations (Google OAuth, R2, AI providers, Zernio, email, and billing) are optional until their feature is enabled. See [self-hosting](docs/self-hosting.md) for upgrades and troubleshooting.
 
 ### Vercel (Hosted) — Requires external database
 
@@ -66,7 +71,7 @@ Same env vars as Vercel above.
 
 > **Note on Background Tasks & Crons:** On Vercel Hobby accounts, scheduled cron jobs (`vercel.json`) run at most once per day. For sub-daily post publishing (e.g. 5-minute or hourly polling), use an external cron pinger (such as [cron-job.org](https://cron-job.org) or Upstash QStash) to invoke `GET /api/cron` with `Authorization: Bearer <CRON_SECRET>` at your desired interval, or deploy on Vercel Pro. Netlify also requires an external cron pinger.
 
-### Required Environment Variables
+### Environment variables
 
 | Variable                | Required       | Description                                         |
 | ----------------------- | -------------- | --------------------------------------------------- |
@@ -75,11 +80,13 @@ Same env vars as Vercel above.
 | `BETTER_AUTH_SECRET`    | Yes            | Random string for session signing                   |
 | `ENCRYPTION_KEY`        | Yes            | 32-byte base64 string for API key encryption        |
 | `NEXT_PUBLIC_APP_URL`   | Yes            | Your app's public URL                               |
-| `CLOUDFLARE_ACCOUNT_ID` | Yes            | For asset storage (R2)                              |
-| `R2_ACCESS_KEY_ID`      | Yes            | R2 access key                                       |
-| `R2_SECRET_ACCESS_KEY`  | Yes            | R2 secret key                                       |
-| `R2_BUCKET_NAME`        | Yes            | R2 bucket name                                      |
+| `CLOUDFLARE_ACCOUNT_ID` | Media features | For asset storage (R2)                              |
+| `R2_ACCESS_KEY_ID`      | Media features | R2 access key                                       |
+| `R2_SECRET_ACCESS_KEY`  | Media features | R2 secret key                                       |
+| `R2_BUCKET_NAME`        | Media features | R2 bucket name                                      |
 | `CRON_SECRET`           | Vercel/Netlify | Secures `/api/cron` background tasks                |
+
+The complete environment template is [.env.example](.env.example). Optional providers are only needed for the feature that uses them.
 
 ## Getting Started
 
@@ -104,10 +111,10 @@ npm install
 cp .env.example .env
 ```
 
-3. Run database migrations:
+3. Apply the versioned database migrations:
 
 ```bash
-npx drizzle-kit push
+npm run db:migrate
 ```
 
 4. Start the development server:
@@ -116,11 +123,13 @@ npx drizzle-kit push
 npm run dev
 ```
 
-5. Run Agent Evals:
+5. Run Agent Evals locally:
 
 ```bash
 npm run eval
 ```
+
+The workflow in `.github/workflows/ci.yml` is the source of truth for checks required in CI.
 
 ## License
 

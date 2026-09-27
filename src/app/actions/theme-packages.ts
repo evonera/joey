@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { assets, contentPackages } from "@/lib/db/schema";
 import { assertThemeRenderCurrent, queueThemeRender } from "@/lib/media-engine/theme-adapter";
@@ -14,7 +14,10 @@ export async function reviewThemePackage(
   decision: "approve" | "reject",
   feedback?: string,
 ) {
-  const tenantId = await getActiveTenantId();
+  if (feedback !== undefined && (typeof feedback !== "string" || feedback.length > 5_000)) {
+    return { error: "Feedback must be 5,000 characters or fewer." };
+  }
+  const tenantId = await requireRole(["owner", "admin"]);
   const pkg = await db.query.contentPackages.findFirst({
     where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)),
   });
@@ -42,7 +45,7 @@ export async function reviewThemePackage(
 }
 
 export async function publishThemePackage(packageId: string) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin"]);
   return publishContentPackage(packageId, tenantId);
 }
 

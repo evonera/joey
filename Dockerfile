@@ -17,12 +17,24 @@ COPY . .
 
 # Environment variables must be present at build time
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 # A placeholder for Docker builds so Next doesn't fail
 ENV DATABASE_URL="postgresql://placeholder" 
 ENV BETTER_AUTH_SECRET="placeholder"
 
 RUN npx eve build
 RUN npm run build
+
+# Separate migration image: the standalone web image does not contain source
+# migrations or Drizzle's runtime dependencies.
+FROM base AS migrator
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./package.json
+COPY scripts/migrate-db.mjs ./scripts/migrate-db.mjs
+COPY src/lib/db/migrations ./src/lib/db/migrations
+CMD ["node", "scripts/migrate-db.mjs"]
 
 # Production image, copy all the files and run next
 FROM base AS runner

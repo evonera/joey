@@ -5,7 +5,7 @@ import { drafts, socialAccounts } from "@/lib/db/schema";
 import { manualPostSchema, validatePostForPlatforms } from "@/lib/compose-validation";
 import { revalidatePath } from "next/cache";
 import { publishDraft } from "./publisher";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, getActiveTenantMembership, requireRole } from "@/lib/auth";
 import { eq, and, inArray } from "drizzle-orm";
 
 export async function createManualPost(data: {
@@ -22,7 +22,9 @@ export async function createManualPost(data: {
         if (!parsed.success) return { error: parsed.error.issues[0].message };
         data = parsed.data;
 
-        const tenantId = await getActiveTenantId(); // auth check
+        const { tenantId, role } = await getActiveTenantMembership(
+            data.scheduleType === "draft" ? undefined : ["owner", "admin"],
+        );
         
         // Fetch active account info to store platformOptions
         const accounts = await db.query.socialAccounts.findMany({
@@ -55,7 +57,9 @@ export async function createManualPost(data: {
                 if (data.draftId) {
                     const [updated] = await tx.update(drafts).set(values).where(and(
                         eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId),
-                        inArray(drafts.status, ["pending_review", "approved", "rejected", "scheduled"]),
+                        inArray(drafts.status, role === "owner" || role === "admin"
+                            ? ["draft", "pending_review", "approved", "rejected", "scheduled"]
+                            : ["draft", "pending_review", "rejected"]),
                     )).returning({ id: drafts.id });
                     if (!updated) throw new Error("This draft cannot be edited. It may already be publishing or published.");
                     ids.push(updated.id);

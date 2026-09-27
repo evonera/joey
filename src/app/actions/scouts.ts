@@ -1,6 +1,6 @@
 'use server';
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, getActiveTenantMembership, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { scouts, scoutRuns } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -55,6 +55,7 @@ export async function createScout(input: CreateScoutInput) {
       platform: input.platform || "instagram",
       goalCondition: input.goalCondition.trim(),
       pollIntervalMinutes: input.pollIntervalMinutes || 120,
+      isActive: false,
     })
     .returning();
 
@@ -63,7 +64,7 @@ export async function createScout(input: CreateScoutInput) {
 }
 
 export async function runScoutNow(scoutId: string) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin"]);
   const scout = await db.query.scouts.findFirst({
     where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
   });
@@ -75,7 +76,7 @@ export async function runScoutNow(scoutId: string) {
 }
 
 export async function toggleScout(scoutId: string, isActive: boolean) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = isActive ? await requireRole(["owner", "admin"]) : await getActiveTenantId();
   await db
     .update(scouts)
     .set({ isActive, updatedAt: new Date() })
@@ -86,10 +87,22 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
 }
 
 export async function deleteScout(scoutId: string) {
-  const tenantId = await getActiveTenantId();
-  await db
+  const { tenantId, role } = await getActiveTenantMembership();
+  const existing = await db.query.scouts.findFirst({
+    where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
+    columns: { isActive: true },
+  });
+  if (!existing) return { error: "Scout not found" };
+  if (existing.isActive && role !== "owner" && role !== "admin") {
+    return { error: "Only workspace admins can remove an active Scout." };
+  }
+  const conditions = [eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)];
+  if (role !== "owner" && role !== "admin") conditions.push(eq(scouts.isActive, false));
+  const [deleted] = await db
     .delete(scouts)
-    .where(and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)));
+    .where(and(...conditions))
+    .returning({ id: scouts.id });
+  if (!deleted) return { error: "Scout changed before it could be removed. Refresh and try again." };
 
   revalidatePath("/scouts");
   return { success: true };
@@ -108,4 +121,3 @@ export async function remixScoutAlertAction(input: { scoutId: string; themePageI
   revalidatePath("/drafts");
   return result;
 }
-

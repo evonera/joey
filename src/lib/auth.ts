@@ -57,11 +57,15 @@ const authBaseURL =
 export const auth = betterAuth({
     secret: authSecret,
     baseURL: authBaseURL,
-    // E2E runs use disposable local accounts and must be able to retry a
-    // failed test without consuming the production sign-up limiter. This is
-    // only enabled by the Playwright web server and never in deployed builds.
+    account: {
+        // OAuth provider tokens are credentials, not profile metadata. Keep
+        // them encrypted at rest in the auth account table.
+        encryptOAuthTokens: true,
+    },
+    // E2E may disable throttling only outside production. A deployed build
+    // always keeps rate limiting on, even if JOEY_E2E is accidentally set.
     rateLimit: {
-        enabled: process.env.JOEY_E2E !== "1",
+        enabled: process.env.NODE_ENV === "production" || process.env.JOEY_E2E !== "1",
     },
     database: drizzleAdapter(db, {
         provider: "pg",
@@ -114,7 +118,7 @@ export const auth = betterAuth({
                     const { Resend } = await import("resend");
                     const resend = new Resend(resendApiKey);
                     await resend.emails.send({
-                        from: process.env.EMAIL_FROM || "Joey <no-reply@joey.evonera.com>",
+                        from: process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || "Joey <noreply@joey.app>",
                         to: user.email,
                         subject: "Reset your Joey password",
                         html: `<p>Hello ${user.name || "there"},</p><p>You requested a password reset. Click the link below to set a new password:</p><p><a href="${url}">${url}</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
@@ -127,12 +131,14 @@ export const auth = betterAuth({
             }
         },
     },
-    socialProviders: {
-        google: {
-            clientId: (process.env.GOOGLE_CLIENT_ID || "mock-google-client-id") as string,
-            clientSecret: (process.env.GOOGLE_CLIENT_SECRET || "mock-google-client-secret") as string,
-        },
-    },
+    socialProviders: process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+                clientId: process.env.GOOGLE_CLIENT_ID,
+                clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            },
+        }
+        : {},
     plugins: [
         organization({
             schema: {

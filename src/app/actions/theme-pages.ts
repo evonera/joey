@@ -1,7 +1,7 @@
 'use server';
 
 import { invalidateThemeMedia } from "@/lib/media-engine/invalidation";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
 import { eq, and, desc, like, inArray, sql } from "drizzle-orm";
@@ -151,7 +151,7 @@ export async function getThemePageById(id: string) {
 
 export async function createThemePage(data: CreateThemePageInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     if (!data.name || !data.name.trim()) {
       return { error: "Page name is required" };
@@ -164,51 +164,8 @@ export async function createThemePage(data: CreateThemePageInput) {
     const connectedAccounts = await validateConnectedAccounts(tenantId, data.connectedAccounts);
 
     const id = crypto.randomUUID();
-    const isNeonHttp = process.env.DATABASE_PROVIDER === 'neon-http';
-
-    let page: typeof themePages.$inferSelect;
-
-    if (isNeonHttp) {
-      // neon-http driver executes each query over an independent stateless HTTP call,
-      // so session-level locks and multi-statement transactions are not preserved.
-      // To strictly serialize concurrent creation requests in a single roundtrip,
-      // we acquire a row lock on the tenant row via `SELECT ... FOR UPDATE` inside a CTE.
-      // Postgres serializes concurrent statements locking the same tenant row: the second
-      // request waits, then reads the committed count, preventing duplicate creation.
-      const { checkUsageLimits } = await import("@/lib/billing");
-      const limits = await checkUsageLimits(tenantId);
-      const limit = limits.themePageLimit;
-      const result = await db.execute(sql`
-        WITH locked_tenant AS (
-          SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE
-        )
-        INSERT INTO theme_pages (
-          id, tenant_id, name, niche, audience, voice,
-          brand_kit, connected_accounts, default_rights_policy, status
-        )
-        SELECT
-          ${id}, ${tenantId}, ${name},
-          ${normalizeText(data.niche, 240)},
-          ${normalizeText(data.audience, 500)},
-          ${normalizeText(data.voice, 2_000)},
-          ${JSON.stringify(sanitizeBrandKit(data.brandKit))}::jsonb,
-          ${JSON.stringify(connectedAccounts)}::jsonb,
-          ${data.defaultRightsPolicy || 'strict'}, 'draft'
-        FROM locked_tenant
-        WHERE (
-          SELECT count(*) FROM theme_pages WHERE tenant_id = ${tenantId}
-        ) < ${limit}
-        RETURNING *
-      `);
-      const inserted = (result as any).rows?.[0] ?? (result as any)[0];
-      if (!inserted) {
-        throw new Error(`Workspace limit reached (${limit} theme pages).${limits.isPro ? " Upgrade your plan to create more theme pages." : " Upgrade to a paid plan to create more theme pages."}`);
-      }
-      page = inserted;
-    } else {
-      // postgres-js and neon-serverless Pool: use advisory lock inside a
-      // transaction so the count check and insert are fully serialized.
-      page = await db.transaction(async (tx) => {
+    // Theme-page quotas depend on the tenant lock and insert sharing one transaction.
+    const page = await db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`);
         await assertThemePageQuota(tenantId, tx);
         const [inserted] = await tx
@@ -228,7 +185,6 @@ export async function createThemePage(data: CreateThemePageInput) {
           .returning();
         return inserted;
       });
-    }
 
     return { page };
   } catch (error: any) {
@@ -266,7 +222,7 @@ export async function createThemePageFromWizard(data: CreateThemePageFromWizardI
 
 export async function updateThemePage(id: string, data: UpdateThemePageInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     if (data.defaultRightsPolicy !== undefined && !["strict", "moderate", "permissive"].includes(data.defaultRightsPolicy)) {
       return { error: "Invalid rights policy" };
     }
@@ -308,7 +264,7 @@ export async function updateThemePage(id: string, data: UpdateThemePageInput) {
 
 export async function deleteThemePage(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     await db.delete(themePages)
       .where(and(eq(themePages.id, id), eq(themePages.tenantId, tenantId)));
 
@@ -321,7 +277,7 @@ export async function deleteThemePage(id: string) {
 
 export async function activateThemePage(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     const compilation = await syncThemePageFlow(tenantId, id);
     if (!compilation.compiled.isValid) {
       return { error: `Theme recipe is invalid: ${compilation.compiled.validationIssues.join("; ")}` };
@@ -355,7 +311,7 @@ export async function activateThemePage(id: string) {
 
 export async function pauseThemePage(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     const [updated] = await db.update(themePages)
       .set({
         status: 'paused',

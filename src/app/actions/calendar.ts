@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts, contentPackages, themeContentFormats } from "@/lib/db/schema";
 import { and, eq, gte, lte, isNotNull, inArray, or, sql, isNull } from "drizzle-orm";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 
 export type CalendarPost = {
   id: string;
@@ -142,7 +142,7 @@ export async function getCalendarPosts(startDate: Date | string, endDate: Date |
  */
 export async function rescheduleDraft(draftId: string, scheduledFor: Date | string) {
     try {
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
 
         const scheduledDate = scheduledFor instanceof Date ? scheduledFor : new Date(scheduledFor);
         if (!Number.isFinite(scheduledDate.getTime()) || scheduledDate <= new Date()) return { error: "Choose a future date and time." };

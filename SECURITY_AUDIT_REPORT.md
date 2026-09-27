@@ -1,16 +1,25 @@
 # Security Audit Report
 
+> Historical snapshot, not a current security certification. Findings below were not
+> independently revalidated for the current branch and may be stale or incorrect.
+> For current disclosure and response policy, see [SECURITY.md](SECURITY.md). Re-run
+> dependency and code review checks against the exact release commit before relying
+> on any severity or remediation status in this document.
+
 ## Summary
+
 - **Overall Risk:** High
 - **Findings:** 0 Critical, 2 High, 2 Medium, 3 Low
 - **Standards:** CWE Top 25 (2025), OWASP Top 10 (2025), CVSS 4.0
 
 ## Critical Findings
-*None identified.*
+
+_None identified._
 
 ## High Findings
 
 ### 1. Lack of Tenant/User Isolation in Composio Connect (Cross-Tenant Data Leak & IDOR)
+
 - **Severity:** High | CVSS 4.0: ~8.7
 - **CWE:** CWE-639 (Authorization Bypass Through User-Controlled Key)
 - **OWASP:** A01:2025 Broken Access Control
@@ -46,6 +55,7 @@
 - **Fix:** Use Composio's entity-scoping features by passing a unique tenant ID (e.g., `tenantId`) in the connection headers or arguments to isolate accounts per tenant.
 
 ### 2. Transitive Dependency Vulnerability in `sharp` (Runtime Image Optimization)
+
 - **Severity:** High | CVSS 4.0: ~7.5
 - **CWE:** CWE-1395 (Use of Vulnerable Third-Party Component)
 - **OWASP:** A03:2025 Software and Data Supply Chain Failures
@@ -60,32 +70,34 @@
 ## Medium Findings
 
 ### 3. Missing `SameSite` Attribute on Custom OAuth Cookies
+
 - **Severity:** Medium | CVSS 4.0: ~4.3
 - **CWE:** CWE-384 (Session Fixation)
 - **OWASP:** A07:2025 Authentication Failures
 - **File:** [zernio.ts](src/app/actions/zernio.ts#L48-L54)
 - **Evidence:**
   ```typescript
-          cookieStore.set('zernio_oauth_state', state, {
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production',
-              maxAge: 10 * 60, // 10 mins
-              path: '/'
-          });
+  cookieStore.set("zernio_oauth_state", state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 10 * 60, // 10 mins
+    path: "/",
+  });
   ```
   And [zernio.ts](src/app/actions/zernio.ts#L137-L142):
   ```typescript
-              cookieStore.set('zernio_oauth_session', encrypt(JSON.stringify({ tempToken, userProfile })), {
-                  httpOnly: true,
-                  secure: process.env.NODE_ENV === 'production',
-                  maxAge: 10 * 60,
-                  path: '/'
-              });
+  cookieStore.set("zernio_oauth_session", encrypt(JSON.stringify({ tempToken, userProfile })), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 10 * 60,
+    path: "/",
+  });
   ```
 - **Risk:** The application stores transient OAuth state and session parameters in custom cookies (`zernio_oauth_state` and `zernio_oauth_session`) but does not explicitly set a `SameSite` attribute. If a user navigates to the application from an external link, browsers that do not default to `SameSite=Lax` could leak these cookies or expose them to Cross-Site Request Forgery (CSRF).
 - **Fix:** Explicitly set `sameSite: 'lax'` or `sameSite: 'strict'` when setting these cookies.
 
 ### 4. Missing Content Security Policy (CSP) and HSTS Headers
+
 - **Severity:** Medium | CVSS 4.0: ~4.0
 - **CWE:** CWE-693 (Protection Mechanism Failure)
 - **OWASP:** A02:2025 Security Misconfiguration
@@ -111,6 +123,7 @@
 ## Low Findings
 
 ### 5. Non-Standard IV Size for AES-GCM Encryption
+
 - **Severity:** Low | CVSS 4.0: ~2.1
 - **CWE:** CWE-327 (Use of a Broken or Risky Cryptographic Algorithm)
 - **OWASP:** A04:2025 Cryptographic Failures
@@ -123,21 +136,23 @@
 - **Fix:** Change the IV length to 12 bytes (`crypto.randomBytes(12)`) and update the corresponding decryption slice offsets.
 
 ### 6. Hardcoded Database Credentials in Compose Configuration
+
 - **Severity:** Low | CVSS 4.0: ~1.5
 - **CWE:** CWE-798 (Use of Hardcoded Credentials)
 - **OWASP:** A07:2025 Authentication Failures
 - **File:** [docker-compose.yml](docker-compose.yml#L23-L25)
 - **Evidence:**
   ```yaml
-      environment:
-        - POSTGRES_USER=postgres
-        - POSTGRES_PASSWORD=postgres
-        - POSTGRES_DB=joey
+  environment:
+    - POSTGRES_USER=postgres
+    - POSTGRES_PASSWORD=postgres
+    - POSTGRES_DB=joey
   ```
 - **Risk:** Plaintext local PostgreSQL credentials are saved in the tracked `docker-compose.yml` file. If this configuration is used directly or modified for deployments/staging without overriding the environment, default credentials could be exposed.
 - **Fix:** Reference environment variables (e.g., `POSTGRES_PASSWORD: ${DB_PASSWORD}`) to fetch credentials dynamically at runtime.
 
 ### 7. Missing Healthcheck in Container Definition
+
 - **Severity:** Low | CVSS 4.0: ~1.0
 - **CWE:** CWE-16 (Configuration)
 - **OWASP:** A02:2025 Security Misconfiguration

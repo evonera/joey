@@ -3,6 +3,12 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import { z } from "zod";
+import { readBoundedJson } from "@/lib/http/read-bounded-json";
+
+const requestSchema = z.object({
+  userIds: z.array(z.string().min(1).max(128)).max(100),
+}).strict();
 
 /**
  * Resolves user information for Liveblocks components (AvatarStack, Threads, Mentions).
@@ -21,9 +27,14 @@ export async function POST(request: Request) {
   }
 
   try {
+    const parsed = await readBoundedJson<unknown>(request, 32 * 1024);
+    if (!parsed.ok) return Response.json({ error: parsed.reason === "too_large" ? "Request body is too large" : "Invalid JSON body" }, { status: parsed.reason === "too_large" ? 413 : 400 });
+    const body = requestSchema.safeParse(parsed.value);
+    if (!body.success) return Response.json({ error: "Invalid user lookup request" }, { status: 400 });
+
     const membership = await getActiveTenantMembership().catch(() => null);
     const tenantId = membership?.tenantId;
-    const { userIds } = (await request.json()) as { userIds?: string[] };
+    const { userIds } = body.data;
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return Response.json([]);
     }
@@ -41,6 +52,7 @@ export async function POST(request: Request) {
       columns: {
         userId: true,
       },
+      limit: 100,
     });
 
     const authorizedUserIds = new Set((memberships || []).map((m) => m.userId));
@@ -99,6 +111,7 @@ export async function GET(request: Request) {
       columns: {
         userId: true,
       },
+      limit: 200,
     });
 
     const memberIds = memberships.map((m) => m.userId);

@@ -42,7 +42,7 @@ export async function processTelegramOutbox(limit = 20) {
     try {
       const installation = await db.query.telegramBotInstallations.findFirst({ where: and(eq(telegramBotInstallations.id, row.installationId), eq(telegramBotInstallations.tenantId, row.tenantId), eq(telegramBotInstallations.status, "active")) });
       if (!installation) throw new Error("Telegram installation is inactive.");
-      const message = await new Bot(decrypt(installation.encryptedToken), { client: { timeoutSeconds: 10 } }).api.sendMessage(row.chatId, row.text, row.replyMarkup ? { reply_markup: row.replyMarkup as InlineKeyboardMarkup } : undefined);
+      const message = await new Bot(decrypt(installation.encryptedToken, installation.tenantId), { client: { timeoutSeconds: 10 } }).api.sendMessage(row.chatId, row.text, row.replyMarkup ? { reply_markup: row.replyMarkup as InlineKeyboardMarkup } : undefined);
       await db.update(telegramOutbox).set({ status: "sent", telegramMessageId: message.message_id, sentAt: new Date(), updatedAt: new Date(), error: null }).where(and(eq(telegramOutbox.id, row.id), eq(telegramOutbox.status, "sending")));
       operationalEvent("info", "telegram_outbox.sent", { tenantId: row.tenantId, outboxId: row.id });
     } catch (error) {

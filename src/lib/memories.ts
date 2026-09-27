@@ -29,19 +29,19 @@ export async function insertMemory(
   content: string,
   type: MemoryType,
   metadata?: Record<string, unknown>,
-) {
+): Promise<Awaited<ReturnType<typeof insertMemoryWithEmbedding>> | null> {
   const prepared = prepareMemoryContent(content);
-  let embedding: number[];
   const canEmbed = await hasOpenAIKey(tenantId);
-  if (canEmbed) {
-    try {
-      embedding = await generateEmbedding(prepared, tenantId);
-    } catch (err) {
-      console.warn("[memories] Embedding generation failed, falling back to zero-vector:", err);
-      embedding = new Array(1536).fill(0);
-    }
-  } else {
-    embedding = new Array(1536).fill(0);
+  if (!canEmbed) {
+    console.info("[memories] Skipping memory persistence because no embedding provider is configured.");
+    return null;
+  }
+  let embedding: number[];
+  try {
+    embedding = await generateEmbedding(prepared, tenantId);
+  } catch (err) {
+    console.warn("[memories] Embedding generation failed; memory was not persisted:", err);
+    return null;
   }
   return insertMemoryWithEmbedding(tenantId, prepared, type, metadata, embedding);
 }
@@ -60,6 +60,9 @@ export async function insertMemoryWithEmbedding(
   client: InsertClient = db,
 ) {
   assertEmbeddingDimensions(embedding);
+  if (embedding.some((value) => !Number.isFinite(value)) || embedding.every((value) => value === 0)) {
+    throw new Error("Memory embeddings must contain finite, non-zero values.");
+  }
   const [memory] = await client.insert(memories).values({
     tenantId,
     content,
@@ -155,7 +158,11 @@ export async function searchMemories(
       const embedding = await generateEmbedding(query, tenantId);
       const embeddingStr = `[${embedding.join(",")}]`;
 
-      const conditions = [sql`${memories.tenantId} = ${tenantId}`];
+      const zeroVector = `[${new Array(1536).fill(0).join(",")}]`;
+      const conditions = [
+        sql`${memories.tenantId} = ${tenantId}`,
+        sql`${memories.embedding} <> ${zeroVector}::vector`,
+      ];
       if (type) {
         conditions.push(sql`${memories.type} = ${type}`);
       }

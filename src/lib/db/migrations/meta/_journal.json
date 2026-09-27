@@ -351,6 +351,13 @@
       "when": 1789710797774,
       "tag": "0049_nappy_captain_cross",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790184024242,
+      "tag": "0050_secrets_migration_state",
+      "breakpoints": true
     }
   ]
 }

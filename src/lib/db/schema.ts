@@ -113,6 +113,11 @@ export const apiKeys = pgTable("api_keys", {
   encryptedKey: text("encrypted_key").notNull(),
   status: varchar("status", { length: 50 }).default('active').notNull(), // 'active', 'revoked'
   createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({ tenantProviderUniqueIdx: uniqueIndex("api_keys_tenant_provider_unique_idx").on(table.tenantId, table.provider) }));
+
+export const joeyDataMigrations = pgTable("joey_data_migrations", {
+  id: text("id").primaryKey(),
+  completedAt: timestamp("completed_at").defaultNow().notNull(),
 });
 
 export const publicApiTokens = pgTable("public_api_tokens", {
