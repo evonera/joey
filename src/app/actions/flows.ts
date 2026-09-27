@@ -81,7 +81,9 @@ async function requireFlowOperator(): Promise<
 export async function provisionFlowWebhookSecret(
   id: string,
 ): Promise<{ secret?: string; configured?: boolean; error?: string }> {
-  const tenantId = await requireRole(["owner", "admin"]);
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const secret = generateWebhookSecret();
   const [updated] = await db
     .update(flows)
@@ -102,7 +104,9 @@ export async function provisionFlowWebhookSecret(
 export async function rotateFlowWebhookSecret(
   id: string,
 ): Promise<{ secret?: string; error?: string }> {
-  const tenantId = await requireRole(["owner", "admin"]);
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const secret = generateWebhookSecret();
   const [updated] = await db
     .update(flows)
@@ -133,7 +137,11 @@ export async function saveFlow(
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
   if (!existing) return { error: "Flow not found" };
-  if (existing.status !== "draft") await requireRole(["owner", "admin"]);
+  if (existing.status !== "draft") {
+    const authorization = await requireFlowOperator();
+    if (!authorization.authorized) return { error: authorization.error };
+    if (authorization.tenantId !== tenantId) return { error: "Workspace changed. Refresh and try again." };
+  }
 
   if (data.graph !== undefined) {
     const result = await validateFlowGraph(data.graph);
@@ -175,7 +183,11 @@ export async function setFlowStatus(
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
   if (!existing) return { error: "Flow not found" };
-  if (status !== "draft" || existing.status !== "draft") await requireRole(["owner", "admin"]);
+  if (status !== "draft" || existing.status !== "draft") {
+    const authorization = await requireFlowOperator();
+    if (!authorization.authorized) return { error: authorization.error };
+    if (authorization.tenantId !== tenantId) return { error: "Workspace changed. Refresh and try again." };
+  }
 
   if (status === "active") {
     const result = await validateFlowGraph(existing.graph);
@@ -364,7 +376,9 @@ export async function publishTemplate(
   flowId: string,
   meta: { name: string; description?: string; category?: string },
 ): Promise<{ slug?: string; error?: string }> {
-  const tenantId = await requireRole(["owner", "admin"]);
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const flow = await db.query.flows.findFirst({
     where: and(eq(flows.id, flowId), eq(flows.tenantId, tenantId)),
   });

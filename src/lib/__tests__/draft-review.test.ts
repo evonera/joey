@@ -65,4 +65,23 @@ describe("reviewDraft missing-row handling", () => {
     })).resolves.toEqual({ error: "Variant name cannot be empty." });
     expect(mocks.findFirst).not.toHaveBeenCalled();
   });
+
+  it("uses a non-empty variant when the stored draft content is only whitespace", async () => {
+    mocks.findFirst.mockResolvedValueOnce({
+      id: "draft-1",
+      content: "   ",
+      variants: [{ name: "Selected", content: "Usable variant content" }],
+    });
+    const set = vi.fn(() => ({
+      where: () => ({ returning: async () => [{ id: "draft-1" }] }),
+    }));
+    mocks.update.mockReturnValueOnce({ set });
+
+    await expect(reviewDraft({ tenantId: "tenant-1", draftId: "draft-1", decision: "approve" }))
+      .resolves.toEqual({ success: true });
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({
+      content: "Usable variant content",
+      selectedVariantId: "Selected",
+    }));
+  });
 });

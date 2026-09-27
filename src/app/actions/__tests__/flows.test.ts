@@ -54,7 +54,7 @@ describe("saveFlow concurrency handling", () => {
   });
 
   it("returns handled authorization errors for run approval and restart actions", async () => {
-    const { resumeRun, restartRun } = await import("@/app/actions/flows");
+    const { resumeRun, restartRun, setFlowStatus, publishTemplate } = await import("@/app/actions/flows");
     mockRequireRole.mockRejectedValueOnce(new Error("Forbidden: Action requires role owner or admin"));
     await expect(resumeRun("run-1", true)).resolves.toEqual({
       error: "Forbidden: Action requires role owner or admin",
@@ -62,6 +62,16 @@ describe("saveFlow concurrency handling", () => {
 
     mockRequireRole.mockRejectedValueOnce(new Error("Forbidden: Action requires role owner or admin"));
     await expect(restartRun("run-1")).resolves.toEqual({
+      error: "Forbidden: Action requires role owner or admin",
+    });
+
+    mockRequireRole.mockRejectedValueOnce(new Error("Forbidden: Action requires role owner or admin"));
+    await expect(setFlowStatus("flow_1", "active")).resolves.toEqual({
+      error: "Forbidden: Action requires role owner or admin",
+    });
+
+    mockRequireRole.mockRejectedValueOnce(new Error("Forbidden: Action requires role owner or admin"));
+    await expect(publishTemplate("flow_1", { name: "Template" })).resolves.toEqual({
       error: "Forbidden: Action requires role owner or admin",
     });
   });

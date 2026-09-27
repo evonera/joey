@@ -64,15 +64,15 @@ export async function reviewDraft(input: DraftReviewInput): Promise<{ success?: 
   let selectedVariant = input.variantName;
   let content = input.content;
   if (input.decision === "approve") {
-    if (!content && existing.content) content = existing.content;
-    if (!content) {
+    if (!content?.trim() && existing.content?.trim()) content = existing.content;
+    if (!content?.trim()) {
       const variant = firstVariant(existing.variants);
       if (variant) {
         selectedVariant ??= variant.name;
         content = variant.content;
       }
     }
-    if (!content) return { error: "Cannot approve a draft without content. Please select a variant." };
+    if (!content?.trim()) return { error: "Cannot approve a draft without content. Please select a variant." };
   }
 
   const set = input.decision === "approve"
