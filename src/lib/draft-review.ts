@@ -42,6 +42,9 @@ export async function reviewDraft(input: DraftReviewInput): Promise<{ success?: 
   if (input.decision === "approve" && (input.variantName === undefined) !== (input.content === undefined)) {
     return { error: "Variant name and content must be provided together." };
   }
+  if (input.decision === "approve" && input.variantName !== undefined && !input.variantName.trim()) {
+    return { error: "Variant name cannot be empty." };
+  }
   if (input.decision === "approve" && input.variantName !== undefined && !input.content?.trim()) {
     return { error: "Variant content cannot be empty." };
   }
@@ -82,6 +85,8 @@ export async function reviewDraft(input: DraftReviewInput): Promise<{ success?: 
       eq(drafts.id, input.draftId),
       eq(drafts.tenantId, input.tenantId),
       inArray(drafts.status, REVIEWABLE_STATUSES),
+      sql`${drafts.content} IS NOT DISTINCT FROM ${existing.content}`,
+      sql`${drafts.variants} IS NOT DISTINCT FROM ${JSON.stringify(existing.variants ?? null)}::jsonb`,
       or(isNull(drafts.errorMessage), sql`${drafts.errorMessage} NOT LIKE 'verify:%'`),
       sql`NOT EXISTS (SELECT 1 FROM posts p WHERE p.draft_id = ${drafts.id} AND p.tenant_id = ${drafts.tenantId})`,
     ))

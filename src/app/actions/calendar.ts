@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts, contentPackages, themeContentFormats } from "@/lib/db/schema";
 import { and, eq, gte, lte, isNotNull, inArray, or, sql, isNull } from "drizzle-orm";
-import { getActiveTenantId, requireRole } from "@/lib/auth";
+import { getActiveTenantMembership, requireRole } from "@/lib/auth";
 
 export type CalendarPost = {
   id: string;
@@ -22,7 +22,7 @@ export type CalendarPost = {
 
 export async function getCalendarPosts(startDate: Date | string, endDate: Date | string) {
     try {
-        const tenantId = await getActiveTenantId();
+        const { tenantId, role } = await getActiveTenantMembership();
         
         const start = startDate instanceof Date ? startDate : new Date(startDate);
         const end = endDate instanceof Date ? endDate : new Date(endDate);
@@ -72,7 +72,7 @@ export async function getCalendarPosts(startDate: Date | string, endDate: Date |
                 calendarEvents.push({
                     id: draft.id,
                     source: "draft",
-                    canReschedule: ["draft", "pending_review", "approved", "scheduled"].includes(draft.status),
+                    canReschedule: (role === "owner" || role === "admin") && ["draft", "pending_review", "approved", "scheduled"].includes(draft.status),
                     editUrl: `/compose?draftId=${draft.id}`,
                     title: draft.content || "Draft variants pending review",
                     start: new Date(draft.scheduledFor),

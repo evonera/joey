@@ -7,7 +7,7 @@ import { apiErrorResponse } from '@/lib/api-error-response';
 
 const bodySchema = z.object({
     id: z.string().min(1).max(128),
-    variantName: z.string().max(500).optional(),
+    variantName: z.string().trim().min(1).max(500).optional(),
     content: z.string().max(50_000).optional(),
 }).strict().refine(
     (body) => (body.variantName === undefined) === (body.content === undefined),

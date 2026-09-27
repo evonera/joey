@@ -54,4 +54,15 @@ describe("reviewDraft missing-row handling", () => {
     })).resolves.toEqual({ error: "Variant content cannot be empty." });
     expect(mocks.findFirst).not.toHaveBeenCalled();
   });
+
+  it("rejects whitespace-only variant names", async () => {
+    await expect(reviewDraft({
+      tenantId: "tenant-1",
+      draftId: "draft-1",
+      decision: "approve",
+      variantName: "   ",
+      content: "Approved text",
+    })).resolves.toEqual({ error: "Variant name cannot be empty." });
+    expect(mocks.findFirst).not.toHaveBeenCalled();
+  });
 });

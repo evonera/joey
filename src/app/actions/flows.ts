@@ -63,6 +63,20 @@ function generateWebhookSecret(): string {
   return `wf_${randomBytes(32).toString("base64url")}`;
 }
 
+async function requireFlowOperator(): Promise<
+  | { authorized: true; tenantId: string }
+  | { authorized: false; error: string }
+> {
+  try {
+    return { authorized: true, tenantId: await requireRole(["owner", "admin"]) };
+  } catch (error) {
+    return {
+      authorized: false,
+      error: error instanceof Error ? error.message : "You do not have permission to manage flow runs.",
+    };
+  }
+}
+
 /** Provisions once. A concurrent loser never receives a secret that was not persisted. */
 export async function provisionFlowWebhookSecret(
   id: string,
@@ -202,7 +216,9 @@ export async function runFlow(
   id: string,
   triggerPayload?: unknown,
 ): Promise<{ runId?: string; error?: string }> {
-  const tenantId = await requireRole(["owner", "admin"]);
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const flow = await db.query.flows.findFirst({
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
@@ -220,14 +236,18 @@ export async function resumeRun(
   runId: string,
   approve: boolean,
 ): Promise<{ ok?: boolean; status?: RunStatus; error?: string }> {
-  const tenantId = await requireRole(["owner", "admin"]);
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const { resumeFlowRunInternal } = await import("@/lib/flows/resume-flow");
   return resumeFlowRunInternal(tenantId, runId, approve);
 }
 
 /** Re-runs a failed/finished run reusing succeeded node outputs. */
 export async function restartRun(runId: string): Promise<{ runId?: string; error?: string }> {
-  const tenantId = await requireRole(["owner", "admin"]);
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
 
   // Atomically claim the original run and insert the replacement run in a single transaction
   let newRunId: string;
