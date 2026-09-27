@@ -103,7 +103,7 @@ export async function getDraftForCompose(draftId: string) {
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId))
         });
         if (!draft) return { error: "Draft not found" };
-        if (!["pending_review", "approved", "rejected", "scheduled"].includes(draft.status)) return { error: "This draft cannot be edited while publishing or after publication." };
+        if (!["draft", "pending_review", "approved", "rejected", "scheduled"].includes(draft.status)) return { error: "This draft cannot be edited while publishing or after publication." };
         return { draft };
     } catch (error: any) {
         return { error: error.message || "Failed to fetch draft" };

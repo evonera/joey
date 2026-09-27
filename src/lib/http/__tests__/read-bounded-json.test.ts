@@ -34,4 +34,15 @@ describe("readBoundedJson", () => {
       reason: "invalid_json",
     });
   });
+
+  it("rejects malformed UTF-8 instead of silently replacing request bytes", async () => {
+    const request = new Request("http://localhost", {
+      method: "POST",
+      body: new Uint8Array([123, 34, 105, 100, 34, 58, 34, 255, 34, 125]),
+    });
+    await expect(readBoundedJson(request, 32)).resolves.toEqual({
+      ok: false,
+      reason: "invalid_json",
+    });
+  });
 });

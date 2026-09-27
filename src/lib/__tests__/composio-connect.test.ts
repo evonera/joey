@@ -41,4 +41,11 @@ describe("Composio Connect client", () => {
     await expect(manageConnections("tenant-1", [{ name: "github", action: "list" }]))
       .rejects.toThrow("Composio Connect request timed out");
   });
+
+  it("preserves the actionable missing API key configuration error", async () => {
+    vi.stubEnv("COMPOSIO_API_KEY", "");
+    await expect(manageConnections("tenant-1", [{ name: "github", action: "list" }]))
+      .rejects.toThrow("COMPOSIO_API_KEY is not set");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

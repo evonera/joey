@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { makeNextCursor, parsePageRequest } from "../cursor-pagination";
+import { cursorTimestamp, makeNextCursor, parsePageRequest } from "../cursor-pagination";
+import { socialAccounts } from "@/lib/db/schema";
 
 describe("cursor pagination", () => {
   it("defaults to 50 and caps accepted page sizes at 100", () => {
@@ -19,5 +20,10 @@ describe("cursor pagination", () => {
   it("rejects malformed and oversized cursors", () => {
     expect(parsePageRequest(new URLSearchParams("cursor=not-valid-json"))).toMatchObject({ ok: false });
     expect(parsePageRequest(new URLSearchParams(`cursor=${"a".repeat(513)}`))).toMatchObject({ ok: false });
+  });
+
+  it("normalizes PostgreSQL timestamp precision to the precision preserved by Date", () => {
+    const query = cursorTimestamp(socialAccounts.createdAt);
+    expect((query.queryChunks[0] as { value: string[] }).value[0]).toBe("date_trunc('milliseconds', ");
   });
 });

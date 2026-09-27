@@ -9,7 +9,10 @@ const bodySchema = z.object({
     id: z.string().min(1).max(128),
     variantName: z.string().max(500).optional(),
     content: z.string().max(50_000).optional(),
-}).strict();
+}).strict().refine(
+    (body) => (body.variantName === undefined) === (body.content === undefined),
+    { message: "variantName and content must be provided together" },
+);
 
 export async function POST(request: Request) {
     try {

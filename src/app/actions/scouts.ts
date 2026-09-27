@@ -76,7 +76,10 @@ export async function runScoutNow(scoutId: string) {
 }
 
 export async function toggleScout(scoutId: string, isActive: boolean) {
-  const tenantId = isActive ? await requireRole(["owner", "admin"]) : await getActiveTenantId();
+  // Members can delete Scouts only when they were already inactive. Requiring
+  // an admin for both transitions prevents pausing an active Scout as a way to
+  // bypass the active-Scout deletion restriction.
+  const tenantId = await requireRole(["owner", "admin"]);
   await db
     .update(scouts)
     .set({ isActive, updatedAt: new Date() })

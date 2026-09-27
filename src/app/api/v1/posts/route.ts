@@ -3,7 +3,7 @@ import { authenticateApiRequest, requireScope, withRateLimitHeaders } from '@/li
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
 import { and, desc, eq, lt, or } from 'drizzle-orm';
-import { makeNextCursor, parsePageRequest } from '@/lib/http/cursor-pagination';
+import { cursorTimestamp, makeNextCursor, parsePageRequest } from '@/lib/http/cursor-pagination';
 import { apiErrorResponse } from '@/lib/api-error-response';
 
 export async function GET(request: Request) {
@@ -13,14 +13,15 @@ export async function GET(request: Request) {
         const page = parsePageRequest(new URL(request.url).searchParams);
         if (!page.ok) return withRateLimitHeaders(NextResponse.json({ error: page.error }, { status: 400 }), rateLimit);
 
+        const cursorDate = cursorTimestamp(posts.publishedAt);
         const conditions = [eq(posts.tenantId, tenantId)];
         if (page.cursor) conditions.push(or(
-            lt(posts.publishedAt, page.cursor.createdAt),
-            and(eq(posts.publishedAt, page.cursor.createdAt), lt(posts.id, page.cursor.id)),
+            lt(cursorDate, page.cursor.createdAt),
+            and(eq(cursorDate, page.cursor.createdAt), lt(posts.id, page.cursor.id)),
         )!);
         const rows = await db.query.posts.findMany({
             where: and(...conditions),
-            orderBy: [desc(posts.publishedAt), desc(posts.id)],
+            orderBy: [desc(cursorDate), desc(posts.id)],
             limit: page.limit + 1,
         });
         const data = rows.slice(0, page.limit);

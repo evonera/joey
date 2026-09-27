@@ -42,6 +42,7 @@ function apiKey(): string {
 }
 
 async function mcpFetch(tenantId: string, body: object, sessionId?: string): Promise<Response> {
+  const key = apiKey();
   try {
     return await fetch(MCP_URL, {
       method: "POST",
@@ -50,7 +51,7 @@ async function mcpFetch(tenantId: string, body: object, sessionId?: string): Pro
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
-        "x-consumer-api-key": apiKey(),
+        "x-consumer-api-key": key,
         "x-composio-entity-id": tenantId,
         "x-composio-user-id": tenantId,
         ...(sessionId ? { "mcp-session-id": sessionId } : {}),

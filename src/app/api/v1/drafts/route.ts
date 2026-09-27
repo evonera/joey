@@ -5,7 +5,7 @@ import { drafts } from '@/lib/db/schema';
 import { eq, and, desc, lt, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { validateSafeUrl } from '@/lib/flows/nodes/ai/transcribe';
-import { makeNextCursor, parsePageRequest } from '@/lib/http/cursor-pagination';
+import { cursorTimestamp, makeNextCursor, parsePageRequest } from '@/lib/http/cursor-pagination';
 import { readBoundedJson } from '@/lib/http/read-bounded-json';
 import { apiErrorResponse } from '@/lib/api-error-response';
 
@@ -30,14 +30,15 @@ export async function GET(request: Request) {
         if (status) {
             conditions.push(eq(drafts.status, status));
         }
+        const cursorDate = cursorTimestamp(drafts.createdAt);
         if (page.cursor) conditions.push(or(
-            lt(drafts.createdAt, page.cursor.createdAt),
-            and(eq(drafts.createdAt, page.cursor.createdAt), lt(drafts.id, page.cursor.id)),
+            lt(cursorDate, page.cursor.createdAt),
+            and(eq(cursorDate, page.cursor.createdAt), lt(drafts.id, page.cursor.id)),
         )!);
 
         const rows = await db.query.drafts.findMany({
             where: and(...conditions),
-            orderBy: [desc(drafts.createdAt), desc(drafts.id)],
+            orderBy: [desc(cursorDate), desc(drafts.id)],
             limit: page.limit + 1,
         });
         const data = rows.slice(0, page.limit);

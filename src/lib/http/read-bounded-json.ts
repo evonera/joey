@@ -44,7 +44,7 @@ export async function readBoundedJson<T = unknown>(
   }
 
   try {
-    return { ok: true, value: JSON.parse(new TextDecoder().decode(bytes)) as T };
+    return { ok: true, value: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as T };
   } catch {
     return { ok: false, reason: "invalid_json" };
   }

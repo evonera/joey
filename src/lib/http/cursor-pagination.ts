@@ -1,7 +1,20 @@
+import { sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 
 export type Cursor = { createdAt: Date; id: string };
+
+/**
+ * PostgreSQL timestamps retain microseconds, while JavaScript Date cursors
+ * retain only milliseconds. Normalize the database sort key to milliseconds
+ * so rows sharing a JS timestamp are ordered and paged by the id tie-breaker
+ * instead of being skipped by a precision mismatch.
+ */
+export function cursorTimestamp(column: AnyPgColumn) {
+  return sql<Date>`date_trunc('milliseconds', ${column})`;
+}
 
 export function parsePageRequest(params: URLSearchParams):
   | { ok: true; limit: number; cursor: Cursor | null }

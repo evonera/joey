@@ -41,7 +41,7 @@ export async function insertMemory(
     embedding = await generateEmbedding(prepared, tenantId);
   } catch (err) {
     console.warn("[memories] Embedding generation failed; memory was not persisted:", err);
-    return null;
+    throw err;
   }
   return insertMemoryWithEmbedding(tenantId, prepared, type, metadata, embedding);
 }

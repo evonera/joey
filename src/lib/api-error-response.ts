@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withRateLimitHeaders } from "@/lib/api-auth";
+import { RateLimitError, withRateLimitHeaders } from "@/lib/api-auth";
 
 export function apiErrorResponse(error: unknown, rateLimit?: Parameters<typeof withRateLimitHeaders>[1]) {
   const message = error instanceof Error ? error.message : "Unexpected server error";
@@ -17,5 +17,9 @@ export function apiErrorResponse(error: unknown, rateLimit?: Parameters<typeof w
     : 500;
   const safeMessage = status === 500 ? "Internal server error" : message;
   const response = NextResponse.json({ error: safeMessage }, { status });
-  return rateLimit ? withRateLimitHeaders(response, rateLimit) : response;
+  const errorRateLimit = error instanceof RateLimitError
+    ? { remaining: 0, resetAt: error.resetAt }
+    : undefined;
+  const headers = rateLimit ?? errorRateLimit;
+  return headers ? withRateLimitHeaders(response, headers) : response;
 }

@@ -39,6 +39,12 @@ function firstVariant(variants: unknown): { name: string; content: string } | nu
  * be reset by a stale review request.
  */
 export async function reviewDraft(input: DraftReviewInput): Promise<{ success?: true; error?: string }> {
+  if (input.decision === "approve" && (input.variantName === undefined) !== (input.content === undefined)) {
+    return { error: "Variant name and content must be provided together." };
+  }
+  if (input.decision === "approve" && input.variantName !== undefined && !input.content?.trim()) {
+    return { error: "Variant content cannot be empty." };
+  }
   if (input.decision === "approve" && input.content !== undefined && input.content.length > 50_000) {
     return { error: "Content exceeds maximum length of 50,000 characters" };
   }
@@ -46,14 +52,15 @@ export async function reviewDraft(input: DraftReviewInput): Promise<{ success?: 
     return { error: "Feedback exceeds maximum length of 5,000 characters" };
   }
 
+  const existing = await db.query.drafts.findFirst({
+    where: and(eq(drafts.id, input.draftId), eq(drafts.tenantId, input.tenantId)),
+    columns: { id: true, content: true, variants: true },
+  });
+  if (!existing) return { error: "Draft not found" };
+
   let selectedVariant = input.variantName;
   let content = input.content;
   if (input.decision === "approve") {
-    const existing = await db.query.drafts.findFirst({
-      where: and(eq(drafts.id, input.draftId), eq(drafts.tenantId, input.tenantId)),
-      columns: { content: true, variants: true },
-    });
-    if (!existing) return { error: "Draft not found" };
     if (!content && existing.content) content = existing.content;
     if (!content) {
       const variant = firstVariant(existing.variants);
@@ -80,5 +87,14 @@ export async function reviewDraft(input: DraftReviewInput): Promise<{ success?: 
     ))
     .returning({ id: drafts.id });
 
-  return updated ? { success: true } : { error: "This draft is already publishing or requires publication verification. Refresh before reviewing it." };
+  if (updated) return { success: true };
+
+  // Distinguish a concurrent delete from a row that still exists but has moved
+  // into a non-reviewable/publishing state.
+  const stillExists = await db.query.drafts.findFirst({
+    where: and(eq(drafts.id, input.draftId), eq(drafts.tenantId, input.tenantId)),
+    columns: { id: true },
+  });
+  if (!stillExists) return { error: "Draft not found" };
+  return { error: "This draft is already publishing or requires publication verification. Refresh before reviewing it." };
 }
