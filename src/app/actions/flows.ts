@@ -129,7 +129,7 @@ export async function saveFlow(
   const writeConditions = [eq(flows.id, id), eq(flows.tenantId, tenantId)];
   if (existing.status === "draft") writeConditions.push(eq(flows.status, "draft"));
 
-  await db
+  const [updated] = await db
     .update(flows)
     .set({
       ...(data.name !== undefined ? { name: data.name.trim().slice(0, 120) || existing.name } : {}),
@@ -142,7 +142,12 @@ export async function saveFlow(
         : {}),
       updatedAt: new Date(),
     })
-    .where(and(...writeConditions));
+    .where(and(...writeConditions))
+    .returning({ id: flows.id });
+
+  if (!updated) {
+    return { error: "Flow changed before it could be saved. Refresh and try again." };
+  }
 
   return { ok: true };
 }

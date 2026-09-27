@@ -187,7 +187,11 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
     if (!scoutToDelete) return;
     setIsDeleting(true);
     try {
-      await deleteScout(scoutToDelete.id);
+      const result = await deleteScout(scoutToDelete.id);
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
       const remaining = scoutsList.filter((s) => s.id !== scoutToDelete.id);
       setScoutsList(remaining);
       if (selectedId === scoutToDelete.id) {
