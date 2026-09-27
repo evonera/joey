@@ -10,7 +10,7 @@ services:
     ports:
       - "${JOEY_PORT:-3000}:3000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-joey}
+      DATABASE_URL: ${JOEY_DATABASE_URL:?Set JOEY_DATABASE_URL in .env to the URL-encoded internal db connection string}
       NODE_ENV: production
     depends_on:
       migrate:
@@ -26,7 +26,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-joey}
+      DATABASE_URL: ${JOEY_DATABASE_URL:?Set JOEY_DATABASE_URL in .env to the URL-encoded internal db connection string}
       NODE_ENV: production
     depends_on:
       db:

@@ -41,13 +41,14 @@ Joey is a multi-tenant, autonomous social media management platform built on Nex
 git clone https://github.com/evonera/joey.git
 cd joey
 cp .env.example .env
-# Set BETTER_AUTH_SECRET, ENCRYPTION_KEY, and a URL-safe POSTGRES_PASSWORD in .env.
+# Set BETTER_AUTH_SECRET, ENCRYPTION_KEY, POSTGRES_PASSWORD, and JOEY_DATABASE_URL in .env.
+# JOEY_DATABASE_URL must point to db:5432 and URL-encode its credentials.
 # Generate secret values with: openssl rand -base64 32
 docker compose up --build -d
 docker compose logs -f migrate
 ```
 
-The Compose stack starts PostgreSQL with pgvector, applies the checked-in versioned migrations, and then starts Joey. The database container is persistent across restarts. Set `NEXT_PUBLIC_APP_URL` in `.env` before the first build when exposing Joey on a non-local URL. Provider integrations (Google OAuth, R2, AI providers, Zernio, email, and billing) are optional until their feature is enabled. See [self-hosting](docs/self-hosting.md) for upgrades and troubleshooting.
+The Compose stack starts PostgreSQL with pgvector, applies the checked-in versioned migrations, and then starts Joey. The database container is persistent across restarts. Compose uses `JOEY_DATABASE_URL` for the container-network connection to `db`; `DATABASE_URL` remains the host-side connection used for local development. Set `NEXT_PUBLIC_APP_URL` in `.env` before the first build when exposing Joey on a non-local URL. Provider integrations (Google OAuth, R2, AI providers, Zernio, email, and billing) are optional until their feature is enabled. See [self-hosting](docs/self-hosting.md) for upgrades and troubleshooting.
 
 ### Vercel (Hosted) — Requires external database
 

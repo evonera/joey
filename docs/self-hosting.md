@@ -4,7 +4,7 @@
 
 1. Install Docker Compose and clone the repository.
 2. Copy `.env.example` to `.env`.
-3. Set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to independent values generated with `openssl rand -base64 32`. Set `POSTGRES_PASSWORD` to a URL-safe value such as `openssl rand -hex 24`.
+3. Set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to independent values generated with `openssl rand -base64 32`. Set `POSTGRES_PASSWORD`, then set `JOEY_DATABASE_URL` to the internal Compose URL (`db:5432`) with URL-encoded credentials. For example, with the defaults: `postgresql://postgres:<percent-encoded-password>@db:5432/joey`.
 4. Set `NEXT_PUBLIC_APP_URL` to the URL users will open. It is used during the Docker build, so rebuild after changing it.
 5. Start Joey with `docker compose up --build -d` and inspect migration startup with `docker compose logs -f migrate`.
 
