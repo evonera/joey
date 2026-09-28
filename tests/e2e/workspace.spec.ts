@@ -74,7 +74,7 @@ test("Instagram and TikTok templates are available and install as editable flows
     await page.goto("/flows/templates");
     const heading = page.getByRole("heading", { name, exact: true });
     await expect(heading).toBeVisible();
-    await heading.locator("..").getByRole("button", { name: "Install", exact: true }).click();
+    await page.getByRole("button", { name: `Install ${name} template`, exact: true }).click();
     await expect(page).toHaveURL(/\/flows\/[0-9a-f-]{36}$/);
     await expect(page.getByText("Create Draft", { exact: true }).first()).toBeVisible();
     await page.getByText("Create Draft", { exact: true }).first().click();

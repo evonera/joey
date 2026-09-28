@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { defineWebMcpTool } from "@/lib/webmcp";
+import { isRightsCategoryAllowed } from "@/lib/theme-studio/pipeline/fact-rights-verifier";
 
 const emptyInput = z.object({}).strict();
 
@@ -24,6 +25,25 @@ export interface ThemeStudioWebMcpState {
   }>;
   slots: Array<{ id: string; label: string | null; cadence: string; isActive: boolean; platform?: string }>;
   packages: Array<{ id: string; title: string; status: string }>;
+}
+
+export function getThemeStudioReadinessIssues(state: ThemeStudioWebMcpState): string[] {
+  const activeSources = state.sources.filter((source) => source.isActive);
+  const policy = state.page.rightsPolicy === "moderate" || state.page.rightsPolicy === "permissive"
+    ? state.page.rightsPolicy : "strict";
+  const usableSources = activeSources.filter((source) => isRightsCategoryAllowed(source.rightsCategory, policy));
+  const connectedPlatforms = new Set(state.page.connectedPlatforms);
+  const missingPlatforms = Array.from(new Set(
+    state.slots.filter((slot) => slot.isActive && slot.platform)
+      .map((slot) => slot.platform!)
+      .filter((platform) => !connectedPlatforms.has(platform)),
+  ));
+  return [
+    ...(activeSources.length === 0 ? ["Add at least one active source"] : []),
+    ...(activeSources.length > 0 && usableSources.length === 0 ? ["Review source rights: no active source is allowed by this page's policy"] : []),
+    ...(state.slots.some((slot) => slot.isActive) ? [] : ["Add at least one active content slot"]),
+    ...missingPlatforms.map((platform) => `Select an active ${platform} publishing account`),
+  ];
 }
 
 export function createThemeStudioWebMcpTools(
@@ -56,24 +76,7 @@ export function createThemeStudioWebMcpTools(
       emptyInput,
       () => {
         const state = getState();
-        const activeSources = state.sources.filter((source) => source.isActive);
-        const unresolvedRights = activeSources.filter((source) => source.rightsCategory === "unknown");
-        const connectedPlatforms = new Set(state.page.connectedPlatforms);
-        const missingPlatforms = Array.from(new Set(
-          state.slots
-            .filter((slot) => slot.isActive && slot.platform)
-            .map((slot) => slot.platform!)
-            .filter((platform) => !connectedPlatforms.has(platform)),
-        ));
-        const issues = [
-          ...(activeSources.length === 0 ? ["Add at least one active source"] : []),
-          ...(state.slots.some((slot) => slot.isActive) ? [] : ["Add at least one active content slot"]),
-          ...(state.page.connectedAccountCount > 0 ? [] : ["Select at least one connected publishing account"]),
-          ...missingPlatforms.map((platform) => `Select an active ${platform} publishing account`),
-          ...(state.page.rightsPolicy === "strict" && unresolvedRights.length > 0
-            ? [`Review rights for ${unresolvedRights.length} active source(s)`]
-            : []),
-        ];
+        const issues = getThemeStudioReadinessIssues(state);
         return {
           viewOnly: true,
           ready: issues.length === 0,

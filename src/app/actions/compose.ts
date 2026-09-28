@@ -5,8 +5,13 @@ import { drafts, socialAccounts } from "@/lib/db/schema";
 import { manualPostSchema, validatePostForPlatforms } from "@/lib/compose-validation";
 import { revalidatePath } from "next/cache";
 import { publishDraft } from "./publisher";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, getActiveTenantMembership } from "@/lib/auth";
 import { eq, and, inArray } from "drizzle-orm";
+
+export async function getComposeAutosaveScope() {
+    const { userId, tenantId } = await getActiveTenantMembership();
+    return `${userId}:${tenantId}`;
+}
 
 export async function createManualPost(data: {
     draftId?: string;
@@ -41,21 +46,30 @@ export async function createManualPost(data: {
             const error = validatePostForPlatforms(data.content, data.mediaUrls, selectedAccounts.map(a => a.platform));
             if (error) return { error };
         }
-        const initialStatus = data.scheduleType === "draft" ? "pending_review" : data.scheduleType === "scheduled" ? "scheduled" : "approved";
+        const initialStatus = data.scheduleType === "draft" ? "draft" : data.scheduleType === "scheduled" ? "scheduled" : "approved";
         const createdDraftIds = await db.transaction(async (tx) => {
             const ids: string[] = [];
-            for (const account of selectedAccounts) {
+            const targets: Array<typeof selectedAccounts[number] | null> = selectedAccounts.length > 0 ? selectedAccounts : [null];
+            for (const account of targets) {
                 const values = {
                     content: data.content,
                     status: initialStatus,
-                    platformOptions: { accountId: account.id, platform: account.platform, mediaUrls: data.mediaUrls, source: "compose" },
+                    platformOptions: { ...(account ? { accountId: account.id, platform: account.platform } : {}), mediaUrls: data.mediaUrls, source: "compose" },
                     scheduledFor: data.scheduleType === "scheduled" ? new Date(data.scheduledFor!) : null,
                     errorMessage: null,
                 };
                 if (data.draftId) {
+                    const existing = await tx.query.drafts.findFirst({
+                        where: and(eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId)),
+                    });
+                    if (!existing) throw new Error("Draft not found.");
+                    const currentAccountId = (existing.platformOptions as { accountId?: unknown } | null)?.accountId;
+                    if (typeof currentAccountId === "string" && currentAccountId !== account?.id) {
+                        throw new Error("This draft belongs to a different account. Start a new post to change its destination.");
+                    }
                     const [updated] = await tx.update(drafts).set(values).where(and(
                         eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId),
-                        inArray(drafts.status, ["pending_review", "approved", "rejected", "scheduled"]),
+                        inArray(drafts.status, ["draft", "pending_review", "approved", "rejected", "scheduled"]),
                     )).returning({ id: drafts.id });
                     if (!updated) throw new Error("This draft cannot be edited. It may already be publishing or published.");
                     ids.push(updated.id);
@@ -99,7 +113,7 @@ export async function getDraftForCompose(draftId: string) {
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId))
         });
         if (!draft) return { error: "Draft not found" };
-        if (!["pending_review", "approved", "rejected", "scheduled"].includes(draft.status)) return { error: "This draft cannot be edited while publishing or after publication." };
+        if (!["draft", "pending_review", "approved", "rejected", "scheduled"].includes(draft.status)) return { error: "This draft cannot be edited while publishing or after publication." };
         return { draft };
     } catch (error: any) {
         return { error: error.message || "Failed to fetch draft" };

@@ -1,22 +1,28 @@
 'use client';
 
 import { Checkbox } from "@/components/ui/checkbox";
+import Link from "next/link";
 
 interface PlatformSelectorProps {
   accounts: any[];
   selectedAccountIds: string[];
   onSelectionChange: (ids: string[]) => void;
+  maxSelection?: number;
+  lockedAccountId?: string | null;
 }
 
 export function PlatformSelector({
   accounts,
   selectedAccountIds,
   onSelectionChange,
+  maxSelection,
+  lockedAccountId,
 }: PlatformSelectorProps) {
   
   const handleToggle = (id: string, checked: boolean) => {
+    if (lockedAccountId) return;
     if (checked) {
-      onSelectionChange([...selectedAccountIds, id]);
+      onSelectionChange(maxSelection === 1 ? [id] : [...selectedAccountIds, id]);
     } else {
       onSelectionChange(selectedAccountIds.filter((accountId) => accountId !== id));
     }
@@ -24,8 +30,13 @@ export function PlatformSelector({
 
   return (
     <div className="space-y-4">
+      {lockedAccountId && <p className="text-xs text-muted-foreground">This post’s publishing account is fixed. Start a new post to choose a different destination.</p>}
       {accounts.length === 0 ? (
-        <p className="text-sm text-zinc-500">No social accounts connected. Connect an account in Settings first.</p>
+        <p className="text-sm text-zinc-500">
+          No social accounts connected. You can save this draft now, or{" "}
+          <Link href="/accounts" className="font-medium underline underline-offset-2">connect an account</Link>
+          {" "}when you are ready to publish.
+        </p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           {accounts.map((acc) => {
@@ -39,6 +50,7 @@ export function PlatformSelector({
               >
                 <Checkbox
                   checked={isSelected}
+                  disabled={Boolean(lockedAccountId)}
                   onCheckedChange={(checked) => handleToggle(acc.id, checked as boolean)}
                 />
                 <div className="flex items-center gap-2 overflow-hidden">

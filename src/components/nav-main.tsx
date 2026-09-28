@@ -12,6 +12,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
+import { useSidebar } from "@/components/ui/sidebar"
 
 export interface NavItem {
   title: string
@@ -33,6 +34,7 @@ export function NavMain({
   items?: NavItem[]
 }) {
   const pathname = usePathname()
+  const { setOpenMobile } = useSidebar()
   const renderedSections: NavSection[] = sections || (items ? [{ items }] : [])
 
   return (
@@ -64,6 +66,7 @@ export function NavMain({
                     >
                       <Link
                         href={item.url}
+                        onClick={() => setOpenMobile(false)}
                         data-tour={`nav-${item.url.replace(/^\//, "").replaceAll("/", "-")}`}
                         aria-current={isActive ? "page" : undefined}
                         className="flex items-center justify-between w-full"

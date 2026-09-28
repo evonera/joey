@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
 import {
   createThemeStudioWebMcpTools,
+  getThemeStudioReadinessIssues,
   type ThemeStudioWebMcpState,
 } from "@/lib/theme-studio/webmcp/theme-studio-tools";
 
@@ -40,6 +41,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
   const pathname = usePathname();
   const [status, setStatus] = React.useState(page.status);
   const [loading, setLoading] = React.useState(false);
+  const [activationError, setActivationError] = React.useState<string | null>(null);
   const resolvedWebMcpState = React.useMemo<ThemeStudioWebMcpState>(() => {
     if (webMcpState) {
       return { ...webMcpState, page: { ...webMcpState.page, status } };
@@ -65,6 +67,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
     [resolvedWebMcpState],
   );
   useWebMcpTools(webMcpTools);
+  const readinessIssues = getThemeStudioReadinessIssues(resolvedWebMcpState);
 
   const tabs = [
     { label: "Overview", href: `/theme-studio/${page.id}`, icon: IconLayoutDashboard },
@@ -78,6 +81,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
 
   async function handleToggleStatus() {
     setLoading(true);
+    setActivationError(null);
     try {
       if (status === "active") {
         const res = await pauseThemePage(page.id);
@@ -91,7 +95,9 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
         toast.success("Theme page automation activated");
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to update status");
+      const message = err.message || "Failed to update status";
+      setActivationError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -155,6 +161,22 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
             </button>
           </div>
         </div>
+
+        {status !== "active" && readinessIssues.length > 0 && (
+          <div role="status" className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+            <p className="font-semibold">Before this page can run</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+              {readinessIssues.map((issue) => (
+                <li key={issue}>{issue}.{" "}
+                  <Link className="font-medium underline underline-offset-2" href={issue.includes("source") || issue.includes("rights") ? `/theme-studio/${page.id}/sources` : issue.includes("slot") ? `/theme-studio/${page.id}/mix` : `/theme-studio/${page.id}/settings`}>
+                    Fix this
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {activationError && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{activationError}</p>}
 
         {/* Tab Navigation */}
         <nav className="flex space-x-1 overflow-x-auto no-scrollbar">

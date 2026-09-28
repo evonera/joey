@@ -96,6 +96,7 @@ describe("Theme Studio UI Components", () => {
         themePageId="page_abc"
         initialSlots={mockSlots}
         availableFormats={mockFormats}
+        availableTemplates={[]}
       />
     );
 

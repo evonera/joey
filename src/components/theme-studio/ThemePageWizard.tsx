@@ -94,9 +94,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
   const [selectedAccountIds, setSelectedAccountIds] = React.useState<string[]>([]);
 
   // Step 3: Initial Sources
-  const [sources, setSources] = React.useState<Array<{ name: string; url: string; type: "rss" | "reddit" | "http" | "exa_domain" | "exa_topic" }>>([
-    { name: "Cricinfo & Sports News", url: "espncricinfo.com", type: "exa_domain" },
-  ]);
+  const [sources, setSources] = React.useState<Array<{ name: string; url: string; type: "rss" | "reddit" | "http" | "exa_domain" | "exa_topic"; rightsCategory: string }>>([]);
 
   // Step 4: Mix Preset
   const [selectedPreset, setSelectedPreset] = React.useState<"growth" | "authority" | "news">("growth");
@@ -112,7 +110,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
   function addSourceField() {
     setSources((prev) => [
       ...prev, 
-      { name: `Source #${prev.length + 1}`, url: "", type: "exa_domain" }
+      { name: "", url: "", type: "exa_domain", rightsCategory: "unknown" }
     ]);
   }
 
@@ -181,7 +179,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
           name: source.name.trim() || "Source Feed",
           sourceType: source.type,
           url: source.url.trim(),
-          rightsCategory: "unknown",
+          rightsCategory: source.rightsCategory,
         })),
         slots,
         template: {
@@ -326,7 +324,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
               <div>
                 <p className="text-sm font-semibold">No Connected Social Accounts</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-                  You haven&apos;t connected any accounts in Zernio yet. You can continue creating your theme page now — content will be drafted and saved to your Drafts queue until you connect your accounts.
+                  You can finish setting up this page now. Connect a matching publishing account before activating its daily content automation.
                 </p>
               </div>
               <Link
@@ -414,10 +412,16 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
           </div>
 
           <div className="space-y-3">
+            {sources.length === 0 && (
+              <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                No sources added. You can save the page, then add a source with rights you can verify before activation.
+              </p>
+            )}
             {sources.map((src, idx) => (
               <div key={idx} className="p-3.5 border rounded-xl bg-card space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <input
+                    aria-label={`Source ${idx + 1} name`}
                     type="text"
                     value={src.name}
                     onChange={(e) => updateSourceField(idx, "name", e.target.value)}
@@ -426,6 +430,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
                   />
                   <div className="flex items-center gap-2">
                     <select
+                      aria-label={`Source ${idx + 1} type`}
                       value={src.type}
                       onChange={(e) => updateSourceField(idx, "type", e.target.value)}
                       className="px-2 py-1 text-xs border rounded bg-background"
@@ -436,18 +441,18 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
                       <option value="reddit">Reddit</option>
                       <option value="http">Web link</option>
                     </select>
-                    {sources.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeSourceField(idx)}
-                        className="text-muted-foreground hover:text-destructive p-1"
-                      >
-                        <IconTrash className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      aria-label={`Remove source ${idx + 1}`}
+                      onClick={() => removeSourceField(idx)}
+                      className="text-muted-foreground hover:text-destructive p-1"
+                    >
+                      <IconTrash className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
                 <input
+                  aria-label={`Source ${idx + 1} URL or topic`}
                   type="text"
                   value={src.url}
                   onChange={(e) => updateSourceField(idx, "url", e.target.value)}
@@ -462,6 +467,22 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
                   }
                   className="w-full px-3 py-1.5 text-xs border rounded-lg bg-background font-mono"
                 />
+                <label className="block text-xs font-medium">
+                  Rights you can verify for this source
+                  <select
+                    value={src.rightsCategory}
+                    onChange={(e) => updateSourceField(idx, "rightsCategory", e.target.value)}
+                    className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-xs"
+                  >
+                    <option value="unknown">Unknown — review before activation</option>
+                    <option value="owned">Owned original material</option>
+                    <option value="public_domain">Public domain</option>
+                    <option value="cc_by">Creative Commons BY</option>
+                    <option value="cc_by_sa">Creative Commons BY-SA</option>
+                    <option value="commercial_license">Commercial license</option>
+                    <option value="fair_use_commentary">Fair-use commentary (requires moderate policy)</option>
+                  </select>
+                </label>
                 <p className="text-[10px] text-muted-foreground">
                   {src.type === "exa_domain" && "Exa Search searches this domain for recent news articles and extracts high-resolution hero images."}
                   {src.type === "exa_topic" && "Exa Search finds fresh breaking stories matching this topic across all top news sources."}

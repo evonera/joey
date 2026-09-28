@@ -277,6 +277,13 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
             )}
 
             {/* Pending Review Actions */}
+            {draft.status === 'draft' && (
+                <div className="flex gap-2 border-t border-border pt-2">
+                    <Button asChild size="sm" className="flex-1 text-xs font-semibold">
+                        <Link href={`/compose?draftId=${encodeURIComponent(draft.id)}`}>Continue editing</Link>
+                    </Button>
+                </div>
+            )}
             {!isEditing && !isRejecting && draft.status === 'pending_review' && (
                 <div className="flex gap-2 pt-2 border-t border-border">
                     {hasVariants ? (
