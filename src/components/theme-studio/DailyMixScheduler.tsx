@@ -78,6 +78,8 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
   const [isAdding, setIsAdding] = React.useState(false);
   const [selectedFormatId, setSelectedFormatId] = React.useState(supportedFormats[0]?.id || "");
   const [selectedTemplateId, setSelectedTemplateId] = React.useState("");
+  const updatingTemplateSlots = React.useRef(new Set<string>());
+  const [updatingTemplateSlotIds, setUpdatingTemplateSlotIds] = React.useState<Set<string>>(new Set());
   const [slotLabel, setSlotLabel] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [slotToDelete, setSlotToDelete] = React.useState<SlotItem | null>(null);
@@ -138,6 +140,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
         setSlots((prev) => [...prev, res.slot as SlotItem]);
         setIsAdding(false);
         setSlotLabel("");
+        setSelectedTemplateId("");
         toast.success("Slot added to daily mix");
       }
     } catch (err: any) {
@@ -148,6 +151,9 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
   }
 
   async function handleTemplateChange(slot: SlotItem, templateId: string) {
+    if (updatingTemplateSlots.current.has(slot.id)) return;
+    updatingTemplateSlots.current.add(slot.id);
+    setUpdatingTemplateSlotIds(new Set(updatingTemplateSlots.current));
     try {
       const res = await updateThemeSlot(slot.id, { overrideTemplateId: templateId });
       if (res.error || !res.slot) throw new Error(res.error || "Could not update template");
@@ -155,6 +161,9 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
       toast.success("Template updated for future posts");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update template");
+    } finally {
+      updatingTemplateSlots.current.delete(slot.id);
+      setUpdatingTemplateSlotIds(new Set(updatingTemplateSlots.current));
     }
   }
 
@@ -274,7 +283,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() => setIsAdding(false)}
+              onClick={() => { setIsAdding(false); setSelectedTemplateId(""); }}
               className="px-3 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted"
             >
               Cancel
@@ -366,6 +375,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
                   Visual template
                   <select
                     value={slot.overrideTemplateId || ""}
+                    disabled={updatingTemplateSlotIds.has(slot.id)}
                     onChange={(event) => void handleTemplateChange(slot, event.target.value)}
                     className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-xs"
                   >

@@ -74,6 +74,8 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
     setEditingSourceId(null);
     setName("");
     setUrl("");
+    setSourceType("exa_domain");
+    setFreshnessHours(24);
     setRightsCategory("unknown");
   }
 
@@ -89,7 +91,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
         sourceType,
         url: url.trim(),
         freshnessWindowHours: freshnessHours,
-        rightsCategory,
+        rightsCategory: rightsCategory === "news_fair_use" ? undefined : rightsCategory,
       };
       const res = editingSourceId
         ? await updateThemeSource(editingSourceId, input)
@@ -249,7 +251,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
               <input
                 type="number"
                 min={1}
-                max={168}
+                max={720}
                 value={freshnessHours}
                 onChange={(e) => setFreshnessHours(Number(e.target.value))}
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -271,6 +273,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
                 <option value="owned">Owned / Original Material</option>
                 <option value="commercial_license">Commercial License</option>
                 <option value="fair_use_commentary">Fair-use commentary (moderate policy only)</option>
+                {rightsCategory === "news_fair_use" && <option value="news_fair_use">Legacy news fair use (review before use)</option>}
               </select>
             </div>
           </div>

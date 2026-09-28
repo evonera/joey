@@ -272,7 +272,7 @@ export default function ComposePage() {
       }
       toast.success(mode === "draft" ? "Draft saved" : mode === "scheduled" ? "Post scheduled" : res.processing ? "Post submitted. Publishing is still in progress." : "Post published");
       autosaveCompleteRef.current = true;
-      if (autosaveKey) sessionStorage.removeItem(autosaveKey);
+      try { if (autosaveKey) sessionStorage.removeItem(autosaveKey); } catch { /* Storage can be unavailable after the post succeeds. */ }
       router.push(mode === "scheduled" ? "/calendar" : mode === "draft" ? "/drafts?tab=draft" : `/drafts?tab=${res.processing ? "publishing" : "published"}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn’t save your post. Please try again.");

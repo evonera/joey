@@ -241,7 +241,7 @@ export async function createThemePage(data: CreateThemePageInput) {
  * Complete the five-step wizard in one browser-to-server round trip. The
  * existing mutation actions remain the validation boundary; independent
  * source/slot/template writes run concurrently after the page exists. Any
- * partial setup is removed by the page's cascading foreign keys.
+ * partial setup is removed, including templates whose foreign key uses SET NULL.
  */
 export async function createThemePageFromWizard(data: CreateThemePageFromWizardInput) {
   const pageResult = await createThemePage(data.page);
@@ -274,7 +274,10 @@ export async function createThemePageFromWizard(data: CreateThemePageFromWizardI
     if (failed?.error) throw new Error(failed.error);
     return { page };
   } catch (error) {
-    await db.delete(themePages).where(and(eq(themePages.id, page.id), eq(themePages.tenantId, page.tenantId)));
+    await db.transaction(async (tx) => {
+      await tx.delete(themeVisualTemplates).where(and(eq(themeVisualTemplates.themePageId, page.id), eq(themeVisualTemplates.tenantId, page.tenantId)));
+      await tx.delete(themePages).where(and(eq(themePages.id, page.id), eq(themePages.tenantId, page.tenantId)));
+    });
     console.error("Failed to complete theme page wizard:", error);
     return { error: error instanceof Error ? error.message : "Failed to complete theme page setup" };
   }
