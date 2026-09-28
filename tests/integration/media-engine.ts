@@ -48,6 +48,7 @@ try {
   await completeRenderJob({ jobId: draftClaim!.id, attemptToken: draftClaim!.attemptToken!, success: true, usage: { elapsedSeconds: 1, encoder: "mp4", outputSeconds: 10 } }, async () => ({ ContentLength: 100, ContentType: "video/mp4", $metadata: {} }));
   const completedDraft = await db.query.drafts.findFirst({ where: eq(drafts.id, videoDraft.id) });
   assert.equal((completedDraft?.platformOptions as { renderStatus?: string }).renderStatus, "succeeded", "the worker must update the linked draft");
+  assert.equal((completedDraft?.platformOptions as { mediaUrls?: string[] }).mediaUrls?.length, 1, "a completed video must be available from its draft");
   const videoSpec = { ...spec, media, template: "branded_clip", format: "mp4", video: { duration: 15, captions: true } };
   const videoJob = await submitRender(tenantId, videoSpec);
   const videoClaim = await claimNextRender();

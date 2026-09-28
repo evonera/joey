@@ -87,7 +87,7 @@ export async function completeRenderJob(input: z.infer<typeof completionSchema>,
     if (spec.source.kind === "draft") {
       await tx.update(drafts).set({
         platformOptions: input.success
-          ? sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('mediaUrls', jsonb_build_array(${buildPublicUrl(key)}), 'renderStatus', 'succeeded')`
+          ? sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('mediaUrls', jsonb_build_array(${buildPublicUrl(key)}::text), 'renderStatus', 'succeeded')`
           : sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('renderStatus', 'failed')`,
       }).where(and(
         eq(drafts.id, spec.source.id), eq(drafts.tenantId, job.tenantId),
