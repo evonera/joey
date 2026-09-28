@@ -65,8 +65,11 @@ export default function DraftsPage() {
             ? requested : "pending_review";
     });
     const [platformFilter, setPlatformFilter] = useState<string>("all");
-    const [sourceFilter, setSourceFilter] = useState<string>("all");
-    const [searchQuery, setSearchQuery] = useState<string>("");
+    const [sourceFilter, setSourceFilter] = useState<string>(() => {
+        const requested = searchParams.get("source");
+        return requested && SOURCES.some((source) => source.id === requested) ? requested : "all";
+    });
+    const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get("search") || "");
     
     // Bulk selection state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

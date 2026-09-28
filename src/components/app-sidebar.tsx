@@ -16,7 +16,6 @@ import {
   Image01Icon,
   Activity01Icon,
   Settings02Icon,
-  NoteEditIcon,
   Calendar03Icon,
 } from "hugeicons-react"
 import {
@@ -41,6 +40,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { OrganizationSwitcher } from "@/components/auth/OrganizationSwitcher"
+import { ThemeShelfSidebar } from "@/components/theme-shelf-sidebar"
 
 export function AppSidebar({
   pendingDraftCount,
@@ -52,20 +52,15 @@ export function AppSidebar({
 }) {
   const navSections: NavSection[] = [
     {
-      label: "Workflow",
+      label: "Create",
       items: [
         {
-          title: "AI Chat",
+          title: "Chat workspace",
           url: "/dashboard",
           icon: DashboardSquare01Icon,
         },
         {
-          title: "Compose",
-          url: "/compose",
-          icon: NoteEditIcon,
-        },
-        {
-          title: "Drafts",
+          title: "Posts & drafts",
           url: "/drafts",
           icon: File02Icon,
           badge: pendingDraftCount,
@@ -75,16 +70,10 @@ export function AppSidebar({
           url: "/calendar",
           icon: Calendar03Icon,
         },
-        {
-          title: "Engagement",
-          url: "/engagement",
-          icon: Comment01Icon,
-          badge: pendingReplyCount,
-        },
       ],
     },
     {
-      label: "Studio",
+      label: "Explore & automate",
       items: [
         {
           title: "Theme Studio",
@@ -101,16 +90,17 @@ export function AppSidebar({
           url: "/flows",
           icon: GitForkIcon,
         },
-        {
-          title: "Assets",
-          url: "/assets",
-          icon: Image01Icon,
-        },
       ],
     },
     {
-      label: "Performance",
+      label: "Results",
       items: [
+        {
+          title: "Engagement",
+          url: "/engagement",
+          icon: Comment01Icon,
+          badge: pendingReplyCount,
+        },
         {
           title: "Analytics",
           url: "/analytics",
@@ -118,9 +108,14 @@ export function AppSidebar({
         },
       ],
     },
+  ]
+
+  const moreSections: NavSection[] = [
     {
-      label: "Setup & Admin",
+      label: "Workspace tools",
       items: [
+        { title: "Compose editor", url: "/compose", icon: File02Icon },
+        { title: "Assets", url: "/assets", icon: Image01Icon },
         {
           title: "Brand Kit",
           url: "/brandkit",
@@ -212,6 +207,11 @@ export function AppSidebar({
         <nav aria-label="Primary">
           <NavMain sections={navSections} />
         </nav>
+        <ThemeShelfSidebar />
+        <details className="group px-2 pb-2">
+          <summary className="cursor-pointer rounded-lg px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">More tools</summary>
+          <nav aria-label="Workspace tools"><NavMain sections={moreSections} /></nav>
+        </details>
       </SidebarContent>
       <SidebarFooter>
         <NavSecondary items={secondaryItems} className="mt-auto" />

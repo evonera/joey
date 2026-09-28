@@ -86,7 +86,7 @@ export function AgentChat() {
   const [initialPrompt, setInitialPrompt] = useState<string | undefined>(undefined);
   const [activeView, setActiveView] = useState<"chat" | "library">("chat");
   const [isSidepanelOpen, setIsSidepanelOpen] = useState(false);
-  const [sidepanelTab, setSidepanelTab] = useState<"artifacts" | "context">("artifacts");
+  const [sidepanelTab, setSidepanelTab] = useState<"studio" | "artifacts" | "context">("studio");
 
   // Load saved session data when activeSessionId changes
   const activeSavedSession = useMemo(() => {
@@ -108,7 +108,7 @@ export function AgentChat() {
     setActiveView("chat");
   };
 
-  const handleToggleSidepanel = (tab?: "artifacts" | "context") => {
+  const handleToggleSidepanel = (tab?: "studio" | "artifacts" | "context") => {
     if (!tab) {
       setIsSidepanelOpen((prev) => !prev);
       return;
@@ -186,9 +186,9 @@ interface AgentChatInnerProps {
   onOpenLibrary: () => void;
   onNewChat: (prompt?: string) => void;
   isSidepanelOpen: boolean;
-  onToggleSidepanel: (tab?: "artifacts" | "context") => void;
-  sidepanelTab: "artifacts" | "context";
-  onSidepanelTabChange: (tab: "artifacts" | "context") => void;
+  onToggleSidepanel: (tab?: "studio" | "artifacts" | "context") => void;
+  sidepanelTab: "studio" | "artifacts" | "context";
+  onSidepanelTabChange: (tab: "studio" | "artifacts" | "context") => void;
   onCloseSidepanel: () => void;
 }
 
@@ -301,6 +301,12 @@ function AgentChatInner({
   const [autocompleteType, setAutocompleteType] = useState<"sources" | "skills" | null>(null);
   const [autocompleteQuery, setAutocompleteQuery] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fillPrompt = (prompt: string) => {
+    if (!textareaRef.current) return;
+    textareaRef.current.value = prompt;
+    textareaRef.current.focus();
+    if (window.matchMedia('(max-width: 639px)').matches) onCloseSidepanel();
+  };
 
   const handleTogglePlatform = (platformId: string) => {
     setSelectedPlatforms((prev) =>
@@ -697,6 +703,16 @@ function AgentChatInner({
 
           {/* Right Minimal Controls: Sidepanel Toggle */}
           <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant={isSidepanelOpen && sidepanelTab === "studio" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => onToggleSidepanel("studio")}
+              className="h-8 px-2 text-xs font-medium"
+              aria-label="Open creation workspace"
+            >
+              <span>Create</span>
+            </Button>
             {hasArtifacts && (
               <Button
                 type="button"
@@ -831,9 +847,14 @@ function AgentChatInner({
                 <h1 className="font-semibold text-2xl sm:text-3xl tracking-tight text-foreground">
                   What are we creating today?
                 </h1>
-                <p className="max-w-[calc(100vw-4rem)] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground sm:max-w-none sm:text-sm">
-                  Ask anything, draft a post, or build an automation. Joey can use your workspace context to help.
+                <p className="max-w-sm text-xs text-muted-foreground sm:text-sm">
+                  Start a post or video, then save your work before setting up publishing.
                 </p>
+              </div>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                <Button type="button" size="sm" onClick={() => onToggleSidepanel("studio")}>Create a post</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => fillPrompt('Help me create a short vertical video. Start by asking what it should say, what media I have, and where it will be posted.')}>Create a video</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => fillPrompt('I have an idea for a social post. Help me turn it into an original draft and save it here.')}>Use an idea</Button>
               </div>
             </div>
           ) : null}
@@ -849,6 +870,7 @@ function AgentChatInner({
         onClose={onCloseSidepanel}
         activeTab={sidepanelTab}
         onTabChange={onSidepanelTabChange}
+        onUsePrompt={fillPrompt}
         sessionTitle={sessionTitle}
         modelId={selectedModel}
         messages={agent.data.messages}
