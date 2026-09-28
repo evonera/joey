@@ -17,7 +17,7 @@ import {
   IconChevronUp,
   IconChevronDown,
 } from "@tabler/icons-react";
-import { createThemeSlot, deleteThemeSlot, reorderThemeSlots } from "@/app/actions/theme-slots";
+import { createThemeSlot, updateThemeSlot, deleteThemeSlot, reorderThemeSlots } from "@/app/actions/theme-slots";
 import {
   getMixRecommendations,
   acceptRecommendation,
@@ -43,6 +43,7 @@ interface SlotItem {
   daysOfWeek?: any;
   priority: number;
   isActive: boolean;
+  overrideTemplateId?: string | null;
   format?: {
     id: string;
     slug: string;
@@ -66,15 +67,17 @@ interface DailyMixSchedulerProps {
   themePageId: string;
   initialSlots: SlotItem[];
   availableFormats: FormatItem[];
+  availableTemplates: Array<{ id: string; name: string; formatId: string }>;
 }
 
-export function DailyMixScheduler({ themePageId, initialSlots, availableFormats }: DailyMixSchedulerProps) {
+export function DailyMixScheduler({ themePageId, initialSlots, availableFormats, availableTemplates }: DailyMixSchedulerProps) {
   // Video formats are queued through the production MP4 worker and are
   // reviewed before publishing, just like image and carousel slots.
   const supportedFormats = availableFormats;
   const [slots, setSlots] = React.useState<SlotItem[]>(initialSlots);
   const [isAdding, setIsAdding] = React.useState(false);
   const [selectedFormatId, setSelectedFormatId] = React.useState(supportedFormats[0]?.id || "");
+  const [selectedTemplateId, setSelectedTemplateId] = React.useState("");
   const [slotLabel, setSlotLabel] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [slotToDelete, setSlotToDelete] = React.useState<SlotItem | null>(null);
@@ -127,6 +130,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
         formatId: selectedFormatId,
         label: slotLabel.trim() || undefined,
         priority: slots.length,
+        overrideTemplateId: selectedTemplateId || undefined,
       });
 
       if (res.error) throw new Error(res.error);
@@ -140,6 +144,17 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
       toast.error(err.message || "Failed to add slot");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleTemplateChange(slot: SlotItem, templateId: string) {
+    try {
+      const res = await updateThemeSlot(slot.id, { overrideTemplateId: templateId });
+      if (res.error || !res.slot) throw new Error(res.error || "Could not update template");
+      setSlots((current) => current.map((item) => item.id === slot.id ? { ...item, overrideTemplateId: templateId || null } : item));
+      toast.success("Template updated for future posts");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update template");
     }
   }
 
@@ -219,7 +234,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
               </label>
               <select
                 value={selectedFormatId}
-                onChange={(e) => setSelectedFormatId(e.target.value)}
+                onChange={(e) => { setSelectedFormatId(e.target.value); setSelectedTemplateId(""); }}
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
                 required
               >
@@ -230,6 +245,19 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
                 ))}
               </select>
             </div>
+            <label className="block text-xs font-medium text-muted-foreground">
+              Visual template
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Default style</option>
+                {availableTemplates.filter((template) => template.formatId === selectedFormatId).map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+            </label>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                 Slot Label / Purpose (Optional)
@@ -334,6 +362,19 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats 
                 <p className="text-xs text-muted-foreground mt-1">
                   Format: {slot.format?.name} ({slot.format?.aspectRatio || "1:1"})
                 </p>
+                <label className="mt-3 block text-xs font-medium text-muted-foreground">
+                  Visual template
+                  <select
+                    value={slot.overrideTemplateId || ""}
+                    onChange={(event) => void handleTemplateChange(slot, event.target.value)}
+                    className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-xs"
+                  >
+                    <option value="">Default style</option>
+                    {availableTemplates.filter((template) => template.formatId === slot.formatId).map((template) => (
+                      <option key={template.id} value={template.id}>{template.name}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
 
               <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">

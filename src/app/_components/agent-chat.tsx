@@ -754,7 +754,7 @@ function AgentChatInner({
                     See plans
                   </Link>
                   <Link
-                    href="/settings?tab=keys"
+                    href="/settings?tab=byok"
                     className="inline-flex items-center justify-center text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Add API key

@@ -249,10 +249,26 @@ export async function createThemePageFromWizard(data: CreateThemePageFromWizardI
 
   const page = pageResult.page;
   try {
+    const templatesByFormat = new Map<string, string>();
+    if (data.template) {
+      for (const formatId of new Set(data.slots.map((slot) => slot.formatId))) {
+        const result = await createThemeTemplate({
+          ...data.template,
+          name: formatId === data.template.formatId ? data.template.name : `${data.template.name} (${formatId})`,
+          formatId,
+          themePageId: page.id,
+        });
+        if (!result.template) throw new Error(result.error || "Failed to create visual template");
+        templatesByFormat.set(formatId, result.template.id);
+      }
+    }
     const results = await Promise.all([
       ...data.sources.map((source) => createThemeSource({ ...source, themePageId: page.id })),
-      ...data.slots.map((slot) => createThemeSlot({ ...slot, themePageId: page.id })),
-      ...(data.template ? [createThemeTemplate({ ...data.template, themePageId: page.id })] : []),
+      ...data.slots.map((slot) => createThemeSlot({
+        ...slot,
+        themePageId: page.id,
+        overrideTemplateId: slot.overrideTemplateId || templatesByFormat.get(slot.formatId),
+      })),
     ]);
     const failed = results.find((result) => result.error);
     if (failed?.error) throw new Error(failed.error);

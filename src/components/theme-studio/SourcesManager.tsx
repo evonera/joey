@@ -3,7 +3,8 @@
 import * as React from "react";
 import { 
   IconPlus, 
-  IconTrash, 
+  IconTrash,
+  IconPencil,
   IconRss, 
   IconWorld, 
   IconBrandReddit, 
@@ -15,7 +16,7 @@ import {
   IconX,
   IconSparkles
 } from "@tabler/icons-react";
-import { createThemeSource, deleteThemeSource, toggleThemeSource } from "@/app/actions/theme-sources";
+import { createThemeSource, updateThemeSource, deleteThemeSource, toggleThemeSource } from "@/app/actions/theme-sources";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -48,14 +49,33 @@ interface SourcesManagerProps {
 export function SourcesManager({ themePageId, initialSources }: SourcesManagerProps) {
   const [sources, setSources] = React.useState<SourceItem[]>(initialSources);
   const [isAdding, setIsAdding] = React.useState(false);
+  const [editingSourceId, setEditingSourceId] = React.useState<string | null>(null);
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
   const [sourceType, setSourceType] = React.useState<"exa_domain" | "exa_topic" | "rss" | "reddit" | "http">("exa_domain");
   const [freshnessHours, setFreshnessHours] = React.useState(24);
-  const [rightsCategory, setRightsCategory] = React.useState("news_fair_use");
+  const [rightsCategory, setRightsCategory] = React.useState("unknown");
   const [loading, setLoading] = React.useState(false);
   const [sourceToDelete, setSourceToDelete] = React.useState<SourceItem | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
+
+  function startEdit(source: SourceItem) {
+    setEditingSourceId(source.id);
+    setName(source.name);
+    setUrl(source.url);
+    setSourceType(source.sourceType as typeof sourceType);
+    setFreshnessHours(source.freshnessWindowHours);
+    setRightsCategory(source.rightsCategory);
+    setIsAdding(true);
+  }
+
+  function closeForm() {
+    setIsAdding(false);
+    setEditingSourceId(null);
+    setName("");
+    setUrl("");
+    setRightsCategory("unknown");
+  }
 
   async function handleAddSource(e: React.FormEvent) {
     e.preventDefault();
@@ -63,22 +83,25 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
 
     setLoading(true);
     try {
-      const res = await createThemeSource({
+      const input = {
         themePageId,
         name: name.trim(),
         sourceType,
         url: url.trim(),
         freshnessWindowHours: freshnessHours,
         rightsCategory,
-      });
+      };
+      const res = editingSourceId
+        ? await updateThemeSource(editingSourceId, input)
+        : await createThemeSource(input);
 
       if (res.error) throw new Error(res.error);
       if (res.source) {
-        setSources((prev) => [res.source as SourceItem, ...prev]);
-        setIsAdding(false);
-        setName("");
-        setUrl("");
-        toast.success("Source connected successfully");
+        setSources((prev) => editingSourceId
+          ? prev.map((source) => source.id === editingSourceId ? res.source as SourceItem : source)
+          : [res.source as SourceItem, ...prev]);
+        closeForm();
+        toast.success(editingSourceId ? "Source updated" : "Source connected");
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to add source");
@@ -149,7 +172,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
           </p>
         </div>
         <button
-          onClick={() => setIsAdding(true)}
+          onClick={() => { closeForm(); setIsAdding(true); }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors shadow-sm self-start"
         >
           <IconPlus className="w-4 h-4" /> Add Source
@@ -158,7 +181,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
 
       {isAdding && (
         <form onSubmit={handleAddSource} className="p-5 border rounded-xl bg-card/60 shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold">Connect New Feed Source</h3>
+          <h3 className="text-sm font-semibold">{editingSourceId ? "Edit source" : "Connect new source"}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Source Name</label>
@@ -241,18 +264,20 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
                 onChange={(e) => setRightsCategory(e.target.value)}
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
+                <option value="unknown">Unknown — review before activation</option>
                 <option value="cc_by">Creative Commons Attribution (CC-BY)</option>
+                <option value="cc_by_sa">Creative Commons Attribution ShareAlike (CC-BY-SA)</option>
                 <option value="public_domain">Public Domain / Press Release</option>
                 <option value="owned">Owned / Original Material</option>
                 <option value="commercial_license">Commercial License</option>
-                <option value="unknown">Unknown / Requires Review</option>
+                <option value="fair_use_commentary">Fair-use commentary (moderate policy only)</option>
               </select>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() => setIsAdding(false)}
+              onClick={closeForm}
               className="px-3 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted"
             >
               Cancel
@@ -263,7 +288,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
               className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               {loading && <IconLoader2 className="w-3.5 h-3.5 animate-spin" />}
-              Save Source
+              {editingSourceId ? "Save changes" : "Save source"}
             </button>
           </div>
         </form>
@@ -279,7 +304,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
             Connect RSS feeds, subreddits, or news APIs to supply content for your daily mix.
           </p>
           <button
-            onClick={() => setIsAdding(true)}
+            onClick={() => { closeForm(); setIsAdding(true); }}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg"
           >
             <IconPlus className="w-3.5 h-3.5" /> Add First Source
@@ -314,6 +339,14 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => startEdit(source)}
+                    aria-label={`Edit ${source.name}`}
+                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <IconPencil className="h-4 w-4" />
+                  </button>
                   <button
                     onClick={() => handleToggle(source.id)}
                     className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${

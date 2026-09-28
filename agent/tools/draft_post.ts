@@ -54,16 +54,17 @@ export default defineTool({
       const selected = requestedIds.length ? accounts.filter(account => requestedIds.includes(account.id)) : accounts;
       if (requestedIds.length && selected.length !== requestedIds.length) return { error: "Choose active accounts from this workspace matching the draft platform." };
       if (!requestedIds.length && selected.length > 1) return { error: "Multiple accounts match this platform. Ask which account to use and pass its account ID." };
-      if (!selected.length) return { error: "Connect an account in Settings first, or provide the draft text directly in chat." };
+      if (!selected.length && scheduledFor) return { error: "Connect a publishing account before scheduling. I can save this as an unscheduled draft now." };
       const validation = manualPostSchema.safeParse({ content: resolvedContent, mediaUrls: mediaUrls || [], accountIds: selected.map(account => account.id), scheduleType: "draft" });
       if (!validation.success) return { error: validation.error.issues[0]?.message || "Invalid draft" };
-      const saved = await db.insert(drafts).values(selected.map(account => ({
+      const targets: Array<typeof selected[number] | null> = selected.length ? selected : [null];
+      const saved = await db.insert(drafts).values(targets.map(account => ({
         tenantId,
         content: resolvedContent,
         variants: resolvedVariants,
-        platformOptions: { platform: canonicalPlatform, accountId: account.id, mediaUrls: mediaUrls || [], source: "chat" },
+        platformOptions: { platform: canonicalPlatform, ...(account ? { accountId: account.id } : {}), mediaUrls: mediaUrls || [], source: "chat" },
         scheduledFor: validScheduledDate,
-        status: "pending_review",
+        status: account ? "pending_review" : "draft",
       }))).returning();
 
       // Send in-app notification
@@ -88,7 +89,9 @@ export default defineTool({
         url: "/drafts",
         platform: canonicalPlatform,
         scheduledFor: validScheduledDate?.toISOString() ?? null,
-        message: `Draft successfully created and queued for review${validScheduledDate ? ` (proposed time ${validScheduledDate.toISOString()}; approval is still required)` : ""}.`,
+        message: selected.length
+          ? `Draft saved for review${validScheduledDate ? ` (proposed time ${validScheduledDate.toISOString()}; approval is still required)` : ""}.`
+          : "Draft saved without a connected account. Choose a destination when you are ready to publish.",
       };
     } catch (error: any) {
       console.error("[draft_post] Error saving draft:", error);
