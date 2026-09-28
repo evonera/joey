@@ -1,6 +1,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { getThemePages } from "@/app/actions/theme-pages";
+import { getCreationShelf } from "@/app/actions/creation-shelf";
 import { 
   IconSparkles, 
   IconPlus, 
@@ -11,7 +12,7 @@ import {
 } from "@tabler/icons-react";
 
 export default async function ThemeStudioOverviewPage() {
-  const pagesRes = await getThemePages();
+  const [pagesRes, shelf] = await Promise.all([getThemePages(), getCreationShelf('theme')]);
 
   if (pagesRes.error) throw new Error(pagesRes.error);
   const pages = pagesRes.pages || [];
@@ -28,26 +29,40 @@ export default async function ThemeStudioOverviewPage() {
             <h1 className="text-2xl font-bold tracking-tight">Theme Studio</h1>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Create recurring content for Instagram, TikTok, and other social pages using your sources, brand, and templates.
+            Create a post or video now. Set up a Theme Page when you want a repeatable series.
           </p>
         </div>
 
         <Link
           href="/theme-studio/new"
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-xl hover:bg-primary/90 transition-all shadow-sm self-start"
+          className="inline-flex items-center gap-2 px-4 py-2.5 border border-border font-semibold text-sm rounded-xl hover:bg-muted transition-all self-start"
         >
           <IconPlus className="w-4 h-4" /> Create Theme Page
         </Link>
       </div>
+
+      <section className="rounded-2xl border border-primary/25 bg-primary/5 p-5 sm:p-8">
+        <h2 className="text-xl font-semibold">Make something now</h2>
+        <p className="mt-1 max-w-xl text-sm text-muted-foreground">Start in Chat, preview your work, and save a draft before connecting a publishing account.</p>
+        <div className="mt-4 flex flex-wrap gap-2"><Link href="/dashboard?create=post" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Create a post</Link><Link href="/dashboard?create=video" className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Create a video</Link></div>
+      </section>
+
+      {(shelf.posts.length > 0 || shelf.templates.length > 0) && <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Your recent work</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {shelf.posts.slice(0, 4).map((post) => <Link key={post.id} href={`/drafts?tab=all&source=theme_studio&search=${encodeURIComponent(post.title)}`} className="min-w-0 rounded-xl border border-border bg-card p-3 hover:border-primary/40"><span className="text-[11px] uppercase text-muted-foreground">Post · {post.status.replace('_', ' ')}</span>{post.mediaUrls[0] && <img src={post.mediaUrls[0]} alt={`Preview of ${post.title}`} className="mt-2 h-28 w-full rounded-md object-contain" />}<span className="mt-2 block truncate text-sm font-medium">{post.title}</span></Link>)}
+          {shelf.templates.slice(0, 4).map((template) => <Link key={template.id} href={template.themePageId ? `/theme-studio/${template.themePageId}/templates/${template.id}` : '/theme-studio'} className="min-w-0 rounded-xl border border-border bg-card p-3 hover:border-primary/40"><span className="text-[11px] uppercase text-muted-foreground">Template · {template.formatName}</span>{template.previewUrl && <img src={template.previewUrl} alt={`Preview of ${template.name}`} className="mt-2 h-28 w-full rounded-md object-contain" />}<span className="mt-2 block truncate text-sm font-medium">{template.name}</span></Link>)}
+        </div>
+      </section>}
 
       {pages.length === 0 ? (
         <div className="px-6 py-12 sm:p-16 text-center border-2 border-dashed rounded-3xl bg-card/40 space-y-4">
           <div className="w-16 h-16 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-2">
             <IconSparkles className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold">No Theme Pages Created Yet</h2>
+          <h2 className="text-xl font-bold">Build a repeatable series</h2>
           <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
-            Choose a topic, connect your accounts, and add sources. Joey prepares posts for your review before publishing.
+            When you are ready to automate, choose a topic and sources, then review posts before publishing.
           </p>
           <Link
             href="/theme-studio/new"

@@ -88,6 +88,13 @@ export async function listAssets(opts?: {
   return { assets: rows };
 }
 
+export async function getAssetForCreation(assetId: string) {
+  const tenantId = await getActiveTenantId();
+  const asset = await db.query.assets.findFirst({ where: and(eq(assets.id, assetId), eq(assets.tenantId, tenantId)) });
+  if (!asset) throw new Error("Asset not found in this workspace.");
+  return asset;
+}
+
 export async function deleteAsset(id: string) {
   const tenantId = await getActiveTenantId();
 

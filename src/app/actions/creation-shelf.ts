@@ -14,10 +14,10 @@ function mediaUrls(value: unknown): string[] {
   });
 }
 
-export async function getCreationShelf() {
+export async function getCreationShelf(mode: 'all' | 'theme' = 'all') {
   const tenantId = await getActiveTenantId();
   const [draftRows, packageRows, templateRows, pageRows, formatRows] = await Promise.all([
-    db.query.drafts.findMany({
+    mode === 'theme' ? Promise.resolve([] as Array<typeof drafts.$inferSelect>) : db.query.drafts.findMany({
       where: and(eq(drafts.tenantId, tenantId), inArray(drafts.status, ['draft', 'pending_review', 'approved', 'scheduled', 'rejected'])),
       orderBy: [desc(drafts.createdAt)],
       limit: 12,
@@ -46,12 +46,15 @@ export async function getCreationShelf() {
 
   return {
     drafts: draftRows.map((draft) => {
-      const options = draft.platformOptions as { accountId?: unknown; mediaUrls?: unknown } | null;
+      const options = draft.platformOptions as { accountId?: unknown; mediaUrls?: unknown; source?: unknown; renderJobId?: unknown; renderStatus?: unknown } | null;
       return {
         id: draft.id,
         content: draft.content || '',
         status: draft.status,
         accountId: typeof options?.accountId === 'string' ? options.accountId : null,
+        source: typeof options?.source === 'string' ? options.source : 'compose',
+        renderJobId: typeof options?.renderJobId === 'string' ? options.renderJobId : null,
+        renderStatus: typeof options?.renderStatus === 'string' ? options.renderStatus : null,
         mediaUrls: mediaUrls(options?.mediaUrls),
         createdAt: draft.createdAt.toISOString(),
       };

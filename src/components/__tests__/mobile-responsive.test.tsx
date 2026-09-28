@@ -10,6 +10,7 @@ vi.mock("next-themes", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/app/actions/scouts", () => ({
+  getScoutSetup: vi.fn().mockResolvedValue({ apifyReady: false, issue: "Apify token missing" }),
   createScout: vi.fn(),
   runScoutNow: vi.fn(),
   toggleScout: vi.fn(),

@@ -11,6 +11,16 @@ describe("MediaEngine contract", () => {
     expect(renderHash(spec)).toBe(renderHash({ ...spec, crop: { mode: "contain", x: .5, y: .5 } }));
     expect(renderHash(spec)).not.toBe(renderHash({ ...spec, source: { ...spec.source, revision: "2" } }));
   });
+  it("accepts a saved draft as the source of a finished video", () => {
+    const result = renderSpecSchema.safeParse({
+      ...base,
+      source: { kind: "draft", id: "draft-1", revision: "revision-1" },
+      template: "branded_clip",
+      format: "mp4",
+      video: { start: 0, duration: 15, captions: false, zoom: 1, sourceAudio: true, words: [] },
+    });
+    expect(result.success).toBe(true);
+  });
   it("rejects invalid template/format combinations and fabricated caption timing", () => {
     expect(renderSpecSchema.safeParse({ ...base, format: "mp4" }).success).toBe(false);
     expect(renderSpecSchema.safeParse({ ...base, template: "minimal_meme", format: "mp4", video: { duration: 10, words: [{ text: "word", start: 9, end: 11 }] } }).success).toBe(false);

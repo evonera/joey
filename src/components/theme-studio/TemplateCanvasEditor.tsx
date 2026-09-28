@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { 
   IconDeviceFloppy, 
   IconSparkles, 
@@ -649,9 +650,9 @@ export function TemplateCanvasEditor({
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
             <IconSparkles className="w-3.5 h-3.5 text-amber-500" /> Viral Template Families & Formats
           </span>
-          <span className="text-[11px] text-muted-foreground">1-click switch between high-retention formats</span>
+          <span className="text-[11px] text-muted-foreground">Choose a supported post style, then customize it below.</span>
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-2 snap-x sm:grid sm:grid-cols-4 lg:grid-cols-7 sm:overflow-visible sm:pb-0 sm:snap-none [&>button]:snap-start [&>button]:shrink-0 [&>button]:min-w-[150px] sm:[&>button]:min-w-0">
+        <div className="flex gap-2 overflow-x-auto pb-2 snap-x sm:grid sm:grid-cols-4 sm:overflow-visible sm:pb-0 sm:snap-none [&>button]:snap-start [&>button]:shrink-0 [&>button]:min-w-[150px] sm:[&>button]:min-w-0">
           <button
             type="button"
             onClick={() => applyPreset("pubity_hero")}
@@ -704,45 +705,10 @@ export function TemplateCanvasEditor({
             <p className="text-[10px] text-muted-foreground mt-0.5">Media & quote-tweet reply</p>
           </button>
 
-          <button
-            type="button"
-            onClick={() => applyPreset("tweet_grid4")}
-            className={`p-2.5 border rounded-xl text-left transition-colors ${
-              spec.templateFamily === "tweet_grid4" ? "bg-sky-500/10 border-sky-500" : "bg-muted/20 hover:bg-muted/40"
-            }`}
-          >
-            <div className="text-xs font-bold flex items-center gap-1 text-sky-400">
-              <IconLayoutGrid className="w-3.5 h-3.5" /> 4-Grid Collage
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-0.5">2x2 comparison meme</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset("video_reel")}
-            className={`p-2.5 border rounded-xl text-left transition-colors ${
-              spec.templateFamily === "video_reel" ? "bg-purple-500/10 border-purple-500" : "bg-muted/20 hover:bg-muted/40"
-            }`}
-          >
-            <div className="text-xs font-bold flex items-center gap-1 text-purple-400">
-              <IconVideo className="w-3.5 h-3.5" /> 9:16 Meme Reel
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Hook text & center video</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset("mixed_carousel")}
-            className={`p-2.5 border rounded-xl text-left transition-colors ${
-              spec.templateFamily === "mixed_carousel" ? "bg-emerald-500/10 border-emerald-500" : "bg-muted/20 hover:bg-muted/40"
-            }`}
-          >
-            <div className="text-xs font-bold flex items-center gap-1 text-emerald-400">
-              Mixed Media
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Card cover + video clip</p>
-          </button>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">Need a video? <Link href="/dashboard?create=video" className="underline">Create a finished MP4 in Chat</Link>.</p>
+        {(spec.templateFamily === "video_reel" || spec.templateFamily === "mixed_carousel") && <p role="alert" className="mt-2 rounded-lg border border-amber-500/30 p-2 text-xs">This older style cannot be rendered from Theme Studio. Choose a supported post style above, or create a video in Chat.</p>}
+        {spec.templateFamily === "tweet_grid4" && <p role="alert" className="mt-2 rounded-lg border border-amber-500/30 p-2 text-xs">This older four-post style exports as a single post. Choose Single Post above for a reliable preview and export.</p>}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -798,7 +764,7 @@ export function TemplateCanvasEditor({
                 <IconTypography className="w-3.5 h-3.5" /> Copy & Tokens
               </span>
             </button>
-            <button
+            {(spec.templateFamily === "video_reel" || spec.templateFamily === "mixed_carousel") && <button
               onClick={() => setActiveTab("clips")}
               className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
                 activeTab === "clips"
@@ -807,9 +773,9 @@ export function TemplateCanvasEditor({
               }`}
             >
               <span className="flex items-center gap-1.5">
-                <IconVideo className="w-3.5 h-3.5 text-purple-400" /> Meme & Video Clips
+                <IconVideo className="w-3.5 h-3.5 text-purple-400" /> Legacy Clip Settings
               </span>
-            </button>
+            </button>}
           </div>
 
           {activeTab === "design" && (

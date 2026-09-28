@@ -216,7 +216,7 @@ export default function ComposePage() {
         const uploadRes = await fetch(uploadUrl, {
           method: "PUT",
           body: file,
-          headers: { "Content-Type": file.type || "application/octet-stream" },
+          headers: { "Content-Type": file.type || "application/octet-stream", "Content-Disposition": "attachment" },
         });
         if (!uploadRes.ok) throw new Error(`Upload of ${file.name} to R2 storage failed`);
 
@@ -574,7 +574,8 @@ export default function ComposePage() {
       {selectedAccounts.length > 0 && (content.trim().length > 0 || mediaUrls.length > 0) && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Platform Previews</CardTitle>
+            <CardTitle className="text-base">Approximate post preview</CardTitle>
+            <CardDescription>Layout may differ in the social app. Review the published result after posting.</CardDescription>
           </CardHeader>
           <CardContent>
             <PlatformPreviews content={content} media={mediaUrls} selectedAccounts={selectedAccounts} />

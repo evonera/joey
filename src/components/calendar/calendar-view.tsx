@@ -80,7 +80,9 @@ export function CalendarView() {
   }, [currentDate, view]);
 
   const handleCreatePost = useCallback((date: Date) => {
-    router.push(`/compose?date=${format(date, "yyyy-MM-dd")}`);
+    const day = format(date, "yyyy-MM-dd");
+    sessionStorage.setItem("joey_seed_prompt", JSON.stringify({ prompt: `Help me create an original social post for ${day}. Ask for the topic and audience if needed, save a draft, and help me schedule it when I choose an account.`, autoSend: true }));
+    router.push("/dashboard");
   }, [router]);
 
   const handleReschedule = useCallback(async (draftId: string, newDate: Date) => {

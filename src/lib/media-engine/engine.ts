@@ -1,7 +1,7 @@
 import { dispatchQueuedRender } from "./dispatch";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assets, contentPackages, flows, mediaRenderJobs } from "@/lib/db/schema";
+import { assets, contentPackages, drafts, flows, mediaRenderJobs } from "@/lib/db/schema";
 import { renderHash, renderSpecSchema, referencedAssets } from "./spec";
 
 /** Server runtime only. The tenant is derived by the authenticated caller. */
@@ -13,7 +13,9 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`media:${tenantId}`}))`);
     const source = spec.source.kind === "theme_package"
       ? await tx.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, spec.source.id), eq(contentPackages.tenantId, tenantId)) })
-      : await tx.query.flows.findFirst({ where: and(eq(flows.id, spec.source.id), eq(flows.tenantId, tenantId)) });
+      : spec.source.kind === "draft"
+        ? await tx.query.drafts.findFirst({ where: and(eq(drafts.id, spec.source.id), eq(drafts.tenantId, tenantId)) })
+        : await tx.query.flows.findFirst({ where: and(eq(flows.id, spec.source.id), eq(flows.tenantId, tenantId)) });
     if (!source) throw new Error("Render source does not belong to this workspace.");
     const refs = referencedAssets(spec);
     const owned = await tx.query.assets.findMany({ where: and(eq(assets.tenantId, tenantId), inArray(assets.id, refs.map(ref => ref.id))) });
@@ -67,6 +69,15 @@ export async function retryRender(tenantId: string, jobId: string) {
       const [pkg] = await tx.update(contentPackages).set({ status: "pending_review", error: null, updatedAt: new Date(), metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || '{"failurePhase":"render_pending"}'::jsonb` })
         .where(and(eq(contentPackages.id, spec.source.id), eq(contentPackages.tenantId, tenantId), inArray(contentPackages.status, ["pending_review", "failed", "rejected"]), sql`${contentPackages.metrics}->>'renderJobId' = ${jobId}`, sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning({ id: contentPackages.id });
       if (!pkg) throw new Error("This package changed or has been submitted for publishing.");
+    } else if (spec.source.kind === "draft") {
+      const [draft] = await tx.update(drafts).set({
+        platformOptions: sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('renderStatus', 'queued')`,
+      }).where(and(
+        eq(drafts.id, spec.source.id), eq(drafts.tenantId, tenantId),
+        sql`${drafts.platformOptions}->>'renderJobId' = ${job.id}`,
+        sql`${drafts.platformOptions}->>'renderRevision' = ${spec.source.revision}`,
+      )).returning({ id: drafts.id });
+      if (!draft) throw new Error("This video draft changed or is unavailable.");
     }
     await tx.update(mediaRenderJobs).set({ status: "queued", error: null, attemptToken: null, updatedAt: new Date() }).where(eq(mediaRenderJobs.id, job.id));
   });

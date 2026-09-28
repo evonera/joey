@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { requestUploadUrl, registerAsset, listAssets, deleteAsset } from "@/app/actions/assets";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -150,6 +151,17 @@ export default function AssetsPage() {
     }
   }
 
+  function createWithAsset(asset: Asset) {
+    if (asset.mimeType === "video/mp4") {
+      sessionStorage.setItem("joey_create_video_asset", asset.id);
+      return;
+    }
+    const prompt = asset.mimeType.startsWith("image/")
+      ? `Create an original social post using this uploaded image: ${asset.publicUrl}. Ask for the audience if needed, then save a draft with the image attached.`
+      : '';
+    sessionStorage.setItem("joey_seed_prompt", JSON.stringify({ prompt, autoSend: true }));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -287,6 +299,7 @@ export default function AssetsPage() {
                       ))}
                     </div>
                   )}
+                  {(asset.mimeType.startsWith("image/") || asset.mimeType === "video/mp4") && <Link href="/dashboard" onClick={() => createWithAsset(asset)} className="mt-2 inline-block text-xs font-medium underline underline-offset-2">{asset.mimeType === "video/mp4" ? "Create video in Chat" : "Create post in Chat"}</Link>}
                 </CardContent>
               </Card>
             );

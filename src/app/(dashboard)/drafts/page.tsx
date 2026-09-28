@@ -224,9 +224,9 @@ export default function DraftsPage() {
                         </div>
                     )}
                     <Button asChild size="sm" className="gap-1.5">
-                        <Link href="/compose">
+                        <Link href="/dashboard">
                             <PenSquare className="w-4 h-4" />
-                            Compose New
+                            Create in Chat
                         </Link>
                     </Button>
                 </div>
