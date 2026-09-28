@@ -81,12 +81,20 @@ export async function createManualPost(data: {
             return ids;
         });
         const publishFailures: string[] = [];
+        const publicationResults: Array<{ draftId: string; accountId: string; platform: string; status: string; error?: string }> = [];
         let processing = false;
         if (data.scheduleType === "now") {
-            for (const draftId of createdDraftIds) {
+            for (const [index, draftId] of createdDraftIds.entries()) {
                 const result = await publishDraft(draftId);
                 if (result.error) publishFailures.push(result.error);
                 if (result.status === "publishing") processing = true;
+                publicationResults.push({
+                    draftId,
+                    accountId: selectedAccounts[index].id,
+                    platform: selectedAccounts[index].platform,
+                    status: result.error ? "failed" : result.status || "publishing",
+                    ...(result.error ? { error: result.error } : {}),
+                });
             }
         }
         revalidatePath("/drafts");
@@ -95,11 +103,11 @@ export async function createManualPost(data: {
         if (publishFailures.length > 0) {
             return {
                 error: `Published with errors: ${publishFailures.join("; ")}`,
-                draftsCreated: createdDraftIds.length, draftIds: createdDraftIds
+                draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, publicationResults
             };
         }
 
-        return { success: true, draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, processing };
+        return { success: true, draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, processing, publicationResults };
     } catch (error: any) {
         console.error("Failed to create manual post:", error);
         return { error: error.message || "Failed to create post" };

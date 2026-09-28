@@ -56,6 +56,7 @@ export default function ComposePage() {
   const [scheduledTime, setScheduledTime] = useState("09:00");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [publicationReceipt, setPublicationReceipt] = useState<Array<{ draftId: string; accountId: string; platform: string; status: string; error?: string }> | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [mediaStudioOpen, setMediaStudioOpen] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -265,15 +266,20 @@ export default function ComposePage() {
       });
       if (res.error) {
         toast.error(res.error);
-        // A partial publish already saved the drafts. Continue in the queue,
-        // where retries use their existing IDs, instead of duplicating posts.
-        if (res.draftsCreated) router.push("/drafts?tab=all");
+        // A partial publish already saved the drafts. Keep the receipt visible
+        // so a second click cannot create duplicate posts.
+        if ("publicationResults" in res && res.publicationResults?.length) {
+          autosaveCompleteRef.current = true;
+          try { if (autosaveKey) sessionStorage.removeItem(autosaveKey); } catch { /* Browser storage can be unavailable. */ }
+          setPublicationReceipt(res.publicationResults);
+        }
         return;
       }
       toast.success(mode === "draft" ? "Draft saved" : mode === "scheduled" ? "Post scheduled" : res.processing ? "Post submitted. Publishing is still in progress." : "Post published");
       autosaveCompleteRef.current = true;
       try { if (autosaveKey) sessionStorage.removeItem(autosaveKey); } catch { /* Storage can be unavailable after the post succeeds. */ }
-      router.push(mode === "scheduled" ? "/calendar" : mode === "draft" ? "/drafts?tab=draft" : `/drafts?tab=${res.processing ? "publishing" : "published"}`);
+      if (mode === "now") setPublicationReceipt("publicationResults" in res ? res.publicationResults || [] : []);
+      else router.push(mode === "scheduled" ? "/calendar" : "/drafts?tab=draft");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn’t save your post. Please try again.");
     } finally { setIsSavingDraft(false); setIsSubmitting(false); }
@@ -289,6 +295,16 @@ export default function ComposePage() {
   };
 
   if (draftLoadError) return <div role="alert" className="space-y-4"><p>{draftLoadError}</p><Button asChild><Link href="/drafts">Back to drafts</Link></Button></div>;
+
+  if (publicationReceipt) return <div className="mx-auto max-w-2xl space-y-5 rounded-xl border border-border bg-card p-5">
+    <div><h1 className="text-xl font-semibold">Publication status</h1><p className="mt-1 text-sm text-muted-foreground">Each destination is shown separately. Publishing may still be in progress.</p></div>
+    <ul className="space-y-2">{publicationReceipt.map((result) => <li key={result.draftId} className="rounded-lg border border-border/60 p-3 text-sm">
+      <div className="flex justify-between gap-3"><span className="capitalize">{result.platform}</span><span className="capitalize font-medium">{result.status}</span></div>
+      {result.error && <p role="alert" className="mt-1 text-destructive">{result.error}</p>}
+      <Link href={`/drafts?tab=${result.status === 'published' ? 'published' : result.status === 'failed' ? 'failed' : 'publishing'}`} className="mt-2 inline-block text-xs underline">View posts with this status</Link>
+    </li>)}</ul>
+    <div className="flex flex-wrap gap-2"><Button asChild><Link href="/compose">Create another post</Link></Button><Button asChild variant="outline"><Link href="/drafts?tab=all">View all posts</Link></Button></div>
+  </div>;
 
   return (
     <div className="mx-auto min-w-0 max-w-3xl space-y-6 pb-16">
