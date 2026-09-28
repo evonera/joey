@@ -29,7 +29,7 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
     const associateDraft = async (jobId: string, status: string) => {
       if (spec.source.kind !== "draft") return;
       const [linked] = await tx.update(drafts).set({
-        platformOptions: sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('renderJobId', ${jobId}, 'renderStatus', ${status})`,
+        platformOptions: sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('renderJobId', ${jobId}::text, 'renderStatus', ${status}::text)`,
       }).where(and(
         eq(drafts.id, spec.source.id), eq(drafts.tenantId, tenantId),
         sql`${drafts.platformOptions}->>'renderRevision' = ${spec.source.revision}`,

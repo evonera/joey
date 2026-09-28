@@ -38,7 +38,7 @@ describe('Chat video render', () => {
     expect(result).toEqual({ draftId: 'draft-1', jobId: 'job-1', status: 'queued' });
     expect(mocks.insertValues).toHaveBeenCalledWith(expect.objectContaining({ status: 'draft', tenantId: 'tenant-1' }));
     expect(mocks.submitRender).toHaveBeenCalledWith('tenant-1', expect.objectContaining({ source: expect.objectContaining({ kind: 'draft', id: 'draft-1' }), format: 'mp4' }), { dispatch: false });
-    expect(mocks.updateSet).toHaveBeenCalledWith(expect.objectContaining({ platformOptions: expect.objectContaining({ renderJobId: 'job-1' }) }));
+    expect(mocks.updateSet).not.toHaveBeenCalled();
     expect(mocks.dispatchQueuedRender).toHaveBeenCalledWith('job-1');
   }, 60000);
 });
