@@ -83,7 +83,7 @@ configuring automation.
   Theme Studio readiness and template wiring, Scout handoff, honest outcomes.
 - PR 2: [#126](https://github.com/evonera/joey/pull/126) — Chat creation panel,
   Theme Studio post/template shelf, compact navigation, publication receipt.
-- PR 3: video rendering from Chat drafts, daily Scout monitoring fixes,
+- PR 3: [#127](https://github.com/evonera/joey/pull/127) — video rendering from Chat drafts, daily Scout monitoring fixes,
   creation links from Assets and Calendar, and a creation-first welcome.
 
 The video flow uses the existing media worker. It becomes available only when
