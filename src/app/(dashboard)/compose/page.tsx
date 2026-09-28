@@ -64,6 +64,7 @@ export default function ComposePage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autosaveCompleteRef = useRef(false);
+  const skipNextAutosaveRestoreRef = useRef(false);
   const [autosaveKey, setAutosaveKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,7 +74,10 @@ export default function ComposePage() {
       if (cancelled) return;
       const key = `joey:compose:${scope}`;
       try {
-        const saved = sessionStorage.getItem(key);
+        const skipRestore = skipNextAutosaveRestoreRef.current;
+        skipNextAutosaveRestoreRef.current = false;
+        if (skipRestore) sessionStorage.removeItem(key);
+        const saved = skipRestore ? null : sessionStorage.getItem(key);
         if (saved) {
           const parsed = JSON.parse(saved) as { content?: string; mediaUrls?: string[]; scheduledDate?: string; scheduledTime?: string; scheduleType?: ScheduleType };
           if (typeof parsed.content === "string") setContent(parsed.content);
@@ -294,6 +298,20 @@ export default function ComposePage() {
     await submitPost("scheduled");
   };
 
+  const createAnotherPost = () => {
+    setContent("");
+    setMediaUrls([]);
+    setSelectedAccountIds([]);
+    setScheduleType("now");
+    setScheduledDate(undefined);
+    setScheduledTime("09:00");
+    setPublicationReceipt(null);
+    autosaveCompleteRef.current = false;
+    skipNextAutosaveRestoreRef.current = Boolean(draftIdParam);
+    try { if (autosaveKey) sessionStorage.removeItem(autosaveKey); } catch { /* Browser storage can be unavailable. */ }
+    if (draftIdParam) router.replace("/compose");
+  };
+
   if (draftLoadError) return <div role="alert" className="space-y-4"><p>{draftLoadError}</p><Button asChild><Link href="/drafts">Back to drafts</Link></Button></div>;
 
   if (publicationReceipt) return <div className="mx-auto max-w-2xl space-y-5 rounded-xl border border-border bg-card p-5">
@@ -303,7 +321,7 @@ export default function ComposePage() {
       {result.error && <p role="alert" className="mt-1 text-destructive">{result.error}</p>}
       <Link href={`/drafts?tab=${result.status === 'published' ? 'published' : result.status === 'failed' ? 'failed' : 'publishing'}`} className="mt-2 inline-block text-xs underline">View posts with this status</Link>
     </li>)}</ul>
-    <div className="flex flex-wrap gap-2"><Button asChild><Link href="/compose">Create another post</Link></Button><Button asChild variant="outline"><Link href="/drafts?tab=all">View all posts</Link></Button></div>
+    <div className="flex flex-wrap gap-2"><Button onClick={createAnotherPost}>Create another post</Button><Button asChild variant="outline"><Link href="/drafts?tab=all">View all posts</Link></Button></div>
   </div>;
 
   return (
