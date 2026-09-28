@@ -100,6 +100,21 @@ describe("Scouts Evaluator and Tool", () => {
     await expect(evaluateScout("non-existent")).rejects.toThrow("not found");
   });
 
+  it("suppresses an identical finding for the same source post", async () => {
+    const { isRepeatedScoutAlert } = await import("../evaluator");
+    const alert = {
+      title: "Spike", detectedAt: "2026-01-01", targetUrl: "https://instagram.com/test", platform: "instagram", goal: "Views > 50k",
+      changes: [{ type: "SPIKE" as const, label: "Views", after: "80k", rationale: "Goal met" }],
+      samplePost: { url: "https://instagram.com/p/123", content: "Reference" },
+    };
+    expect(isRepeatedScoutAlert(alert, { ...alert, detectedAt: "2026-01-02" })).toBe(true);
+    expect(isRepeatedScoutAlert(alert, { ...alert, samplePost: { ...alert.samplePost, url: "https://instagram.com/p/456" } })).toBe(false);
+    const secondChange = { type: "ADDED" as const, label: "Comments", after: "120", rationale: "Engagement" };
+    const twoChanges = { ...alert, changes: [...alert.changes, secondChange] };
+    expect(isRepeatedScoutAlert(twoChanges, { ...twoChanges, changes: [secondChange, alert.changes[0]] })).toBe(true);
+    expect(isRepeatedScoutAlert(twoChanges, { ...twoChanges, changes: [{ ...secondChange, after: "121" }, alert.changes[0]] })).toBe(false);
+  });
+
   it("throws when tenantId does not match", async () => {
     mockScoutFindFirst.mockResolvedValueOnce({
       id: "scout-1",
@@ -187,7 +202,7 @@ describe("Scouts Evaluator and Tool", () => {
       },
       ctx
     );
-    expect(createRes.message).toContain("created successfully");
+    expect(createRes.message).toContain("saved paused");
   });
 
   it("fails cleanly without generating fake posts in production when Apify is unconfigured", async () => {
@@ -248,4 +263,3 @@ describe("Scouts Evaluator and Tool", () => {
     }
   });
 });
-

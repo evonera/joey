@@ -87,6 +87,18 @@ export function AgentChat() {
   const [activeView, setActiveView] = useState<"chat" | "library">("chat");
   const [isSidepanelOpen, setIsSidepanelOpen] = useState(false);
   const [sidepanelTab, setSidepanelTab] = useState<"studio" | "artifacts" | "context">("studio");
+  const [creationMode, setCreationMode] = useState<'post' | 'video'>('post');
+  const [videoAssetId, setVideoAssetId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const assetId = sessionStorage.getItem('joey_create_video_asset');
+    const requestedMode = new URLSearchParams(window.location.search).get('create');
+    if (!assetId && requestedMode !== 'post' && requestedMode !== 'video') return;
+    if (assetId) { sessionStorage.removeItem('joey_create_video_asset'); setVideoAssetId(assetId); }
+    setCreationMode(assetId || requestedMode === 'video' ? 'video' : 'post');
+    setSidepanelTab('studio');
+    setIsSidepanelOpen(true);
+  }, []);
 
   // Load saved session data when activeSessionId changes
   const activeSavedSession = useMemo(() => {
@@ -174,6 +186,11 @@ export function AgentChat() {
         sidepanelTab={sidepanelTab}
         onSidepanelTabChange={setSidepanelTab}
         onCloseSidepanel={() => setIsSidepanelOpen(false)}
+        creationMode={creationMode}
+        videoAssetId={videoAssetId}
+        onCreationModeChange={setCreationMode}
+        onOpenPost={() => { setCreationMode('post'); setSidepanelTab('studio'); setIsSidepanelOpen(true); }}
+        onOpenVideo={() => { setVideoAssetId(null); setCreationMode('video'); setSidepanelTab('studio'); setIsSidepanelOpen(true); }}
       />
     </div>
   );
@@ -190,6 +207,11 @@ interface AgentChatInnerProps {
   sidepanelTab: "studio" | "artifacts" | "context";
   onSidepanelTabChange: (tab: "studio" | "artifacts" | "context") => void;
   onCloseSidepanel: () => void;
+  creationMode: 'post' | 'video';
+  videoAssetId: string | null;
+  onCreationModeChange: (mode: 'post' | 'video') => void;
+  onOpenPost: () => void;
+  onOpenVideo: () => void;
 }
 
 function AgentChatInner({
@@ -203,6 +225,11 @@ function AgentChatInner({
   sidepanelTab,
   onSidepanelTabChange,
   onCloseSidepanel,
+  creationMode,
+  videoAssetId,
+  onCreationModeChange,
+  onOpenPost,
+  onOpenVideo,
 }: AgentChatInnerProps) {
   const storageScope = useChatStorageScope();
   const [cancellationError, setCancellationError] = useState<string>();
@@ -852,8 +879,8 @@ function AgentChatInner({
                 </p>
               </div>
               <div className="mt-3 flex flex-wrap justify-center gap-2">
-                <Button type="button" size="sm" onClick={() => onToggleSidepanel("studio")}>Create a post</Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => fillPrompt('Help me create a short vertical video. Start by asking what it should say, what media I have, and where it will be posted.')}>Create a video</Button>
+                <Button type="button" size="sm" onClick={onOpenPost}>Create a post</Button>
+                <Button type="button" size="sm" variant="outline" onClick={onOpenVideo}>Create a video</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => fillPrompt('I have an idea for a social post. Help me turn it into an original draft and save it here.')}>Use an idea</Button>
               </div>
             </div>
@@ -871,6 +898,9 @@ function AgentChatInner({
         activeTab={sidepanelTab}
         onTabChange={onSidepanelTabChange}
         onUsePrompt={fillPrompt}
+        creationMode={creationMode}
+        videoAssetId={videoAssetId}
+        onCreationModeChange={onCreationModeChange}
         sessionTitle={sessionTitle}
         modelId={selectedModel}
         messages={agent.data.messages}
@@ -899,7 +929,7 @@ async function uploadToObjectStorage(file: {
   const body = await response.blob();
   const uploadRes = await fetch(uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": mediaType },
+    headers: { "Content-Type": mediaType, "Content-Disposition": "attachment" },
     body,
   });
   if (!uploadRes.ok) {

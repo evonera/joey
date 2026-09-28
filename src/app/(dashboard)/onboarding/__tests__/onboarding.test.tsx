@@ -22,13 +22,13 @@ describe("OnboardingPage", () => {
   it("renders step 1 with welcome message and mascot", () => {
     render(<OnboardingPage />);
     expect(screen.getByText("Welcome to Joey!")).toBeDefined();
-    expect(screen.getByText("Let's Get Started")).toBeDefined();
-    expect(screen.getByText("Skip to Dashboard →")).toBeDefined();
+    expect(screen.getByText("Set up automation")).toBeDefined();
+    expect(screen.getByText("Create my first post")).toBeDefined();
   });
 
   it("navigates from step 1 to step 2 (AI Engine)", () => {
     render(<OnboardingPage />);
-    const nextBtn = screen.getByRole("button", { name: /Let's Get Started/i });
+    const nextBtn = screen.getByRole("button", { name: /Set up automation/i });
     fireEvent.click(nextBtn);
 
     expect(screen.getByText("Choose Your AI Engine")).toBeDefined();

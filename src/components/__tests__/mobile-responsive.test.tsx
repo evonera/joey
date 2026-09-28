@@ -10,6 +10,7 @@ vi.mock("next-themes", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/app/actions/scouts", () => ({
+  getScoutSetup: vi.fn().mockResolvedValue({ apifyReady: false, issue: "Apify token missing" }),
   createScout: vi.fn(),
   runScoutNow: vi.fn(),
   toggleScout: vi.fn(),
@@ -102,10 +103,10 @@ describe("mobile responsive (390px) guards", () => {
 
   it("ScoutsClient surfaces the last scan result including failures", async () => {
     render(<ScoutsClient initialScouts={mockScouts as never} />);
-    const status = await screen.findByRole("status");
-    expect(status.textContent).toMatch(/last scan/i);
-    expect(status.textContent).toMatch(/scan failed/i);
-    expect(status.textContent).toMatch(/Apify token missing/);
+    const status = (await screen.findByText(/last scan/i)).closest('[role="status"]');
+    expect(status?.textContent).toMatch(/last scan/i);
+    expect(status?.textContent).toMatch(/scan failed/i);
+    expect(status?.textContent).toMatch(/Apify token missing/);
   });
 
   it("DmRulesBuilder truncates long response links", () => {

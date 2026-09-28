@@ -6,7 +6,7 @@ import { manualPostSchema, validatePostForPlatforms } from "@/lib/compose-valida
 import { revalidatePath } from "next/cache";
 import { publishDraft } from "./publisher";
 import { getActiveTenantId, getActiveTenantMembership } from "@/lib/auth";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 
 export async function getComposeAutosaveScope() {
     const { userId, tenantId } = await getActiveTenantMembership();
@@ -63,11 +63,23 @@ export async function createManualPost(data: {
                         where: and(eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId)),
                     });
                     if (!existing) throw new Error("Draft not found.");
-                    const currentAccountId = (existing.platformOptions as { accountId?: unknown } | null)?.accountId;
+                    const existingOptions = existing.platformOptions as { accountId?: unknown; source?: unknown; renderJobId?: unknown; renderStatus?: unknown } | null;
+                    const currentAccountId = existingOptions?.accountId;
                     if (typeof currentAccountId === "string" && currentAccountId !== account?.id) {
                         throw new Error("This draft belongs to a different account. Start a new post to change its destination.");
                     }
-                    const [updated] = await tx.update(drafts).set(values).where(and(
+                    if (existingOptions?.source === "chat_video" && existingOptions.renderJobId && existingOptions.renderStatus !== "succeeded" && data.scheduleType !== "draft") {
+                        throw new Error("Wait for the finished video before scheduling or publishing this draft.");
+                    }
+                    const videoOptions = {
+                        ...(account ? { accountId: account.id, platform: account.platform } : {}),
+                        ...(data.mediaUrls.length ? { mediaUrls: data.mediaUrls } : {}),
+                        source: "chat_video",
+                    };
+                    const updatedValues = existingOptions?.source === "chat_video"
+                        ? { ...values, platformOptions: sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || ${JSON.stringify(videoOptions)}::jsonb` }
+                        : values;
+                    const [updated] = await tx.update(drafts).set(updatedValues).where(and(
                         eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId),
                         inArray(drafts.status, ["draft", "pending_review", "approved", "rejected", "scheduled"]),
                     )).returning({ id: drafts.id });

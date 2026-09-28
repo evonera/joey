@@ -6,16 +6,18 @@ import { toast } from 'sonner';
 import { createManualPost } from '@/app/actions/compose';
 import { getCreationShelf } from '@/app/actions/creation-shelf';
 import { Button } from '@/components/ui/button';
+import { VideoCreator } from './video-creator';
 
 type Shelf = Awaited<ReturnType<typeof getCreationShelf>>;
 type ShelfDraft = Shelf['drafts'][number];
 
-export function CreationShelfPanel({ onUsePrompt }: { onUsePrompt: (prompt: string) => void }) {
+export function CreationShelfPanel({ onUsePrompt, mode, videoAssetId, onModeChange }: { onUsePrompt: (prompt: string) => void; mode: 'post' | 'video'; videoAssetId: string | null; onModeChange: (mode: 'post' | 'video') => void }) {
   const [shelf, setShelf] = React.useState<Shelf | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [selectedDraft, setSelectedDraft] = React.useState<ShelfDraft | null>(null);
+  const [resumableVideo, setResumableVideo] = React.useState<{ jobId: string; draftId: string } | null>(null);
   const [content, setContent] = React.useState('');
 
   const reload = React.useCallback(async () => {
@@ -32,6 +34,12 @@ export function CreationShelfPanel({ onUsePrompt }: { onUsePrompt: (prompt: stri
   React.useEffect(() => { void reload(); }, [reload]);
 
   function openDraft(draft: ShelfDraft) {
+    if (draft.source === 'chat_video' && draft.renderJobId) {
+      setResumableVideo({ jobId: draft.renderJobId, draftId: draft.id });
+      onModeChange('video');
+      return;
+    }
+    onModeChange('post');
     setSelectedDraft(draft);
     setContent(draft.content);
   }
@@ -51,7 +59,7 @@ export function CreationShelfPanel({ onUsePrompt }: { onUsePrompt: (prompt: stri
       toast.success('Draft saved');
       const savedId = result.draftIds?.[0];
       await reload();
-      if (!selectedDraft && savedId) setSelectedDraft({ id: savedId, content, status: 'draft', accountId: null, mediaUrls: [], createdAt: new Date().toISOString() });
+      if (!selectedDraft && savedId) setSelectedDraft({ id: savedId, content, status: 'draft', accountId: null, source: 'compose', renderJobId: null, renderStatus: null, mediaUrls: [], createdAt: new Date().toISOString() });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not save draft.');
     } finally {
@@ -61,6 +69,8 @@ export function CreationShelfPanel({ onUsePrompt }: { onUsePrompt: (prompt: stri
 
   return (
     <div className="space-y-6 p-4 text-sm">
+      <div className="flex gap-2" role="group" aria-label="Creation type"><Button size="sm" variant={mode === 'post' ? 'default' : 'outline'} onClick={() => onModeChange('post')}>Post</Button><Button size="sm" variant={mode === 'video' ? 'default' : 'outline'} onClick={() => onModeChange('video')}>Video</Button></div>
+      {mode === 'video' ? <VideoCreator key={resumableVideo?.jobId || 'new'} resume={resumableVideo} initialAssetId={videoAssetId} onSaved={() => void reload()} onStartNew={() => setResumableVideo(null)} /> : <>
       <section aria-label="Post editor" className="space-y-3 rounded-xl border border-border/60 bg-card p-3">
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -83,6 +93,7 @@ export function CreationShelfPanel({ onUsePrompt }: { onUsePrompt: (prompt: stri
           {selectedDraft && <Button asChild size="sm" variant="ghost"><Link href={`/compose?draftId=${selectedDraft.id}`}>Media and publishing</Link></Button>}
         </div>
       </section>
+      </>}
 
       {error && <p role="alert" className="text-destructive">{error} <button type="button" className="underline" onClick={() => void reload()}>Retry</button></p>}
       {loading && <p role="status" className="text-muted-foreground">Loading your work…</p>}
@@ -90,7 +101,7 @@ export function CreationShelfPanel({ onUsePrompt }: { onUsePrompt: (prompt: stri
       <section className="space-y-2" aria-label="Saved drafts">
         <div className="flex items-center justify-between"><h2 className="font-semibold">Saved drafts</h2><Link href="/drafts?tab=draft" className="text-xs underline">View all</Link></div>
         {!loading && !shelf?.drafts.length && <p className="text-xs text-muted-foreground">Your saved posts will appear here.</p>}
-        {shelf?.drafts.map((draft) => <button key={draft.id} type="button" onClick={() => openDraft(draft)} className="block w-full rounded-lg border border-border/50 p-3 text-left hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><span className="line-clamp-2">{draft.content || 'Media draft'}</span><span className="mt-1 block text-xs capitalize text-muted-foreground">{draft.status.replace('_', ' ')}</span></button>)}
+        {shelf?.drafts.map((draft) => <button key={draft.id} type="button" onClick={() => openDraft(draft)} className="block w-full rounded-lg border border-border/50 p-3 text-left hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><span className="line-clamp-2">{draft.content || 'Media draft'}</span><span className="mt-1 block text-xs capitalize text-muted-foreground">{draft.source === 'chat_video' ? `Video · ${draft.renderStatus || 'render status available'}` : draft.status.replace('_', ' ')}</span></button>)}
       </section>
 
       <section className="space-y-2" aria-label="Theme Studio posts">

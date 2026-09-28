@@ -13,7 +13,7 @@ export function ThemeShelfSidebar() {
 
   React.useEffect(() => {
     let active = true;
-    getCreationShelf().then((result) => { if (active) setShelf(result); }).catch(() => {});
+    getCreationShelf('theme').then((result) => { if (active) setShelf(result); }).catch(() => {});
     return () => { active = false; };
   }, []);
 

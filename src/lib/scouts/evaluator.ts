@@ -47,6 +47,12 @@ export interface EvaluateScoutOptions {
 
 const inFlightEvaluations = new Map<string, Promise<EvaluateScoutResult>>();
 
+export function isRepeatedScoutAlert(previous: ScoutAlert | null, next: ScoutAlert): boolean {
+  if (!previous?.samplePost?.url || !next.samplePost?.url || previous.samplePost.url !== next.samplePost.url) return false;
+  const changes = (alert: ScoutAlert) => alert.changes.map((change) => JSON.stringify([change.type, change.label, change.after])).sort().join('|');
+  return changes(previous) === changes(next);
+}
+
 /**
  * Evaluates a scout against its goal condition by scraping the target and running an LLM diff judge.
  * Deduplicates concurrent in-flight evaluations for the same scout ID.
@@ -306,40 +312,12 @@ Only trigger if a post genuinely meets the goal. Do not fabricate spikes. If non
         };
       }
     } catch (llmErr) {
-      console.warn(`[scout-evaluator] LLM evaluation error:`, llmErr);
-      // Fallback heuristic: check if any item views > 50,000 or meets high engagement
-      const spikeItem = items.find((i) => (i.views || 0) > 50000);
-      if (spikeItem) {
-        triggered = true;
-        alert = {
-          title: `${scout.name} engagement spike detected`,
-          detectedAt: new Date().toISOString(),
-          targetUrl: scout.targetUrl,
-          platform: scout.platform,
-          goal: scout.goalCondition,
-          changes: [
-            {
-              type: "SPIKE",
-              label: "High View Count",
-              before: "Average ~15k views",
-              after: `${(spikeItem.views || 0).toLocaleString()} views`,
-              rationale: "Exceeded velocity threshold defined in Scout goal",
-            },
-          ],
-          samplePost: {
-            url: spikeItem.url,
-            content: spikeItem.text,
-            views: spikeItem.views,
-            likes: spikeItem.likes,
-            detectedFormat: "Spike Format",
-          },
-          actionPayload: {
-            type: "remix_theme_studio",
-            topicQuery: (spikeItem.text || scout.name).slice(0, 120),
-            suggestedFormat: "image",
-          },
-        };
-      }
+      throw new Error(`Scout could not evaluate the goal: ${llmErr instanceof Error ? llmErr.message : String(llmErr)}`);
+    }
+
+    if (alert && isRepeatedScoutAlert((scout.latestAlert as ScoutAlert | null) ?? null, alert)) {
+      triggered = false;
+      alert = undefined;
     }
 
     // 3. Persist run & update scout
@@ -460,5 +438,3 @@ export async function runScoutsTick(options?: ScoutsTickOptions) {
 
   return { checkedCount: dueScouts.length, results };
 }
-
-

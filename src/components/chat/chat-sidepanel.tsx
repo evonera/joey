@@ -30,6 +30,9 @@ interface ChatSidepanelProps {
   activeTab: "studio" | "artifacts" | "context";
   onTabChange: (tab: "studio" | "artifacts" | "context") => void;
   onUsePrompt: (prompt: string) => void;
+  creationMode: 'post' | 'video';
+  videoAssetId: string | null;
+  onCreationModeChange: (mode: 'post' | 'video') => void;
   sessionTitle: string;
   modelId: string;
   messages: readonly any[];
@@ -46,6 +49,9 @@ export function ChatSidepanel({
   activeTab,
   onTabChange,
   onUsePrompt,
+  creationMode,
+  videoAssetId,
+  onCreationModeChange,
   sessionTitle,
   modelId,
   messages,
@@ -215,7 +221,7 @@ export function ChatSidepanel({
         </div>
 
         <TabsContent value="studio" className="flex-1 overflow-y-auto m-0 p-0">
-          <CreationShelfPanel onUsePrompt={onUsePrompt} />
+          <CreationShelfPanel onUsePrompt={onUsePrompt} mode={creationMode} videoAssetId={videoAssetId} onModeChange={onCreationModeChange} />
         </TabsContent>
 
         {/* Artifacts Tab Content */}

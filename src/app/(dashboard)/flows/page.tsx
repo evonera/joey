@@ -52,6 +52,14 @@ export default function FlowsPage() {
     finally { creating.current = false; setIsCreating(false); }
   }
 
+  function startFlowInChat() {
+    sessionStorage.setItem("joey_seed_prompt", JSON.stringify({
+      prompt: "Help me set up a simple content automation. Ask what topic or source to watch, how often I want a draft, and which platform it is for. Choose a suitable starter template, create the Flow as a draft, and show me what to review before I activate it.",
+      autoSend: true,
+    }));
+    router.push("/dashboard");
+  }
+
   async function confirmDelete() {
     if (!flowToDelete || deleting.current) return;
     deleting.current = true;
@@ -72,9 +80,10 @@ export default function FlowsPage() {
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4" data-tour="flows-overview">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Flows</h1>
-          <p className="text-muted-foreground mt-1">Build automations with triggers, AI steps, and actions—or start from a template.</p>
+          <p className="text-muted-foreground mt-1">Describe what you want in Chat, or use the visual builder when you need detailed control.</p>
         </div>
-        <div className="flex w-full items-center gap-2 sm:w-auto">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <Button onClick={startFlowInChat} className="w-full sm:w-auto">Build with Joey</Button>
           <Link href="/flows/templates" className="flex-1 sm:flex-none">
             <Button variant="outline" className="w-full"><BookMarked className="mr-1.5 h-4 w-4" />Templates</Button>
           </Link>
@@ -100,8 +109,9 @@ export default function FlowsPage() {
           <Workflow className="h-10 w-10 text-zinc-300 dark:text-zinc-700" />
           <p className="font-medium">No flows yet</p>
           <p className="text-sm text-muted-foreground max-w-sm">
-            Create one from scratch or install a ready-made template like “Competitor Intelligence”.
+            Describe your automation to Joey, or install a ready-made template like “Competitor Intelligence”.
           </p>
+          <Button onClick={startFlowInChat}>Describe a Flow in Chat</Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

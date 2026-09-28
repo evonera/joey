@@ -162,7 +162,7 @@ export default function OnboardingPage() {
           href="/dashboard"
           className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
         >
-          Skip to Dashboard →
+          Create now →
         </Link>
       </div>
 
@@ -199,7 +199,7 @@ export default function OnboardingPage() {
             <div className="space-y-2">
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Welcome to Joey!</h1>
               <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-                Meet your autonomous social media agent. Joey monitors live trends, crafts platform-optimized drafts, and generates branded visuals.
+                Start with a post or video in Chat. You can save a draft before connecting accounts or setting up automation.
               </p>
             </div>
 
@@ -218,12 +218,13 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="pt-4 flex items-center justify-end">
+            <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+              <Link href="/dashboard" className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-zinc-900 text-white dark:bg-[#ffe633] dark:text-zinc-950 font-semibold text-sm hover:opacity-90">Create my first post <ArrowRight className="size-4" /></Link>
               <button
                 onClick={() => setStep(2)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-zinc-900 text-white dark:bg-[#ffe633] dark:text-zinc-950 font-semibold text-sm hover:opacity-90 transition-opacity"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-full border border-border font-semibold text-sm hover:bg-muted transition-colors"
               >
-                Let&apos;s Get Started <ArrowRight className="size-4" />
+                Set up automation
               </button>
             </div>
           </div>
@@ -510,9 +511,9 @@ export default function OnboardingPage() {
         {step === 5 && (
           <div className="space-y-6 text-center">
             <div className="space-y-1.5">
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">You&apos;re ready to launch</h2>
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Ready to create</h2>
               <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
-                Here are the 5 superpowers now at your fingertips in the Joey Dashboard:
+                Make your first post in Chat. The guided product tour is available anytime from Help.
               </p>
             </div>
 
@@ -555,11 +556,12 @@ export default function OnboardingPage() {
             </div>
 
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link href="/dashboard" className="w-full sm:w-auto px-8 py-3 rounded-full bg-zinc-900 text-white dark:bg-[#ffe633] dark:text-zinc-950 font-bold text-sm hover:opacity-90 text-center">Create a post</Link>
               <button
                 onClick={() => router.push("/dashboard?tour=1")}
-                className="w-full sm:w-auto px-8 py-3 rounded-full bg-zinc-900 text-white dark:bg-[#ffe633] dark:text-zinc-950 font-bold text-sm hover:opacity-90 transition-opacity shadow-md"
+                className="w-full sm:w-auto px-8 py-3 rounded-full border border-border font-medium text-sm hover:bg-muted transition-colors"
               >
-                Start guided tour
+                Take guided tour
               </button>
             </div>
             <p className="text-[11px] text-muted-foreground">

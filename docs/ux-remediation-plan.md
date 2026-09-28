@@ -76,3 +76,18 @@ connection abandonment; Scout finding to draft conversion; Theme Page
 activation blockers; render failures; and repeat visits to creation from Chat.
 The key measure is whether a new user can create a reviewable result before
 configuring automation.
+
+## Delivery and rollout
+
+- PR 1: [#125](https://github.com/evonera/joey/pull/125) — draft recovery,
+  Theme Studio readiness and template wiring, Scout handoff, honest outcomes.
+- PR 2: [#126](https://github.com/evonera/joey/pull/126) — Chat creation panel,
+  Theme Studio post/template shelf, compact navigation, publication receipt.
+- PR 3: [#127](https://github.com/evonera/joey/pull/127) — video rendering from Chat drafts, daily Scout monitoring fixes,
+  creation links from Assets and Calendar, and a creation-first welcome.
+
+The video flow uses the existing media worker. It becomes available only when
+`MEDIA_ENGINE_ENABLED`, R2 storage, and a media worker secret are configured.
+The worker is still verified by a real render, and captions additionally need
+an active OpenAI key and a valid transcription rate. Keep the feature gate off
+until the deployed worker and R2 path have passed an MP4 end-to-end check.
