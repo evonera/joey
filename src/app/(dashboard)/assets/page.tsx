@@ -153,12 +153,14 @@ export default function AssetsPage() {
 
   function createWithAsset(asset: Asset) {
     if (asset.mimeType === "video/mp4") {
+      sessionStorage.removeItem("joey_seed_prompt");
       sessionStorage.setItem("joey_create_video_asset", asset.id);
       return;
     }
     const prompt = asset.mimeType.startsWith("image/")
       ? `Create an original social post using this uploaded image: ${asset.publicUrl}. Ask for the audience if needed, then save a draft with the image attached.`
       : '';
+    sessionStorage.removeItem("joey_create_video_asset");
     sessionStorage.setItem("joey_seed_prompt", JSON.stringify({ prompt, autoSend: true }));
   }
 

@@ -245,6 +245,7 @@ export function TemplateCanvasEditor({
   const isCarousel = selectedFormat?.slug?.includes("carousel") || name.toLowerCase().includes("carousel") || spec.templateFamily === "pubity_carousel" || spec.templateFamily === "mixed_carousel";
 
   function applyPreset(presetType: "pubity_hero" | "morning_brew_cyan" | "pubity_carousel" | "tweet_card" | "tweet_grid4" | "video_reel" | "mixed_carousel" | "sports_spotlight" | "dark_minimal") {
+    setActiveTab("design");
     if (presetType === "pubity_hero") {
       setName("Pubity Breaking News Hero");
       setBgMode("photo");

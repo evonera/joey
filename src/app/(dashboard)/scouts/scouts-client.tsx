@@ -124,6 +124,8 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
 
   const selectedScout = scoutsList.find((s) => s.id === selectedId) || scoutsList[0];
   const selectedScoutId = selectedScout?.id;
+  const selectedScoutIdRef = React.useRef(selectedScoutId);
+  selectedScoutIdRef.current = selectedScoutId;
 
   useEffect(() => {
     if (!selectedScoutId) {
@@ -176,7 +178,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
       if (res.error) {
         toast.error(res.error);
         getScoutRuns(scoutId)
-          .then(setRuns)
+          .then((runs) => { if (selectedScoutIdRef.current === scoutId) setRuns(runs); })
           .catch(() => {});
         router.refresh();
         return;
@@ -200,7 +202,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
         toast.info("Scout completed. No new changes matched the goal.");
       }
       getScoutRuns(scoutId)
-        .then(setRuns)
+        .then((runs) => { if (selectedScoutIdRef.current === scoutId) setRuns(runs); })
         .catch(() => {});
       router.refresh();
     } catch (err: any) {

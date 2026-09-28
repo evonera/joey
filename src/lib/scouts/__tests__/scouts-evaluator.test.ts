@@ -109,6 +109,10 @@ describe("Scouts Evaluator and Tool", () => {
     };
     expect(isRepeatedScoutAlert(alert, { ...alert, detectedAt: "2026-01-02" })).toBe(true);
     expect(isRepeatedScoutAlert(alert, { ...alert, samplePost: { ...alert.samplePost, url: "https://instagram.com/p/456" } })).toBe(false);
+    const secondChange = { type: "ADDED" as const, label: "Comments", after: "120", rationale: "Engagement" };
+    const twoChanges = { ...alert, changes: [...alert.changes, secondChange] };
+    expect(isRepeatedScoutAlert(twoChanges, { ...twoChanges, changes: [secondChange, alert.changes[0]] })).toBe(true);
+    expect(isRepeatedScoutAlert(twoChanges, { ...twoChanges, changes: [{ ...secondChange, after: "121" }, alert.changes[0]] })).toBe(false);
   });
 
   it("throws when tenantId does not match", async () => {

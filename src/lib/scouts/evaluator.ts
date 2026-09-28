@@ -49,7 +49,7 @@ const inFlightEvaluations = new Map<string, Promise<EvaluateScoutResult>>();
 
 export function isRepeatedScoutAlert(previous: ScoutAlert | null, next: ScoutAlert): boolean {
   if (!previous?.samplePost?.url || !next.samplePost?.url || previous.samplePost.url !== next.samplePost.url) return false;
-  const changes = (alert: ScoutAlert) => alert.changes.map((change) => `${change.type}:${change.label}:${change.after}`).join('|');
+  const changes = (alert: ScoutAlert) => alert.changes.map((change) => JSON.stringify([change.type, change.label, change.after])).sort().join('|');
   return changes(previous) === changes(next);
 }
 
@@ -438,4 +438,3 @@ export async function runScoutsTick(options?: ScoutsTickOptions) {
 
   return { checkedCount: dueScouts.length, results };
 }
-

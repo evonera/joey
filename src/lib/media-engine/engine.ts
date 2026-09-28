@@ -26,8 +26,21 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
       if (!row.mimeType.startsWith(expected)) throw new Error("Source asset type does not match the template.");
     }
     const inputHash = renderHash(spec);
+    const associateDraft = async (jobId: string, status: string) => {
+      if (spec.source.kind !== "draft") return;
+      const [linked] = await tx.update(drafts).set({
+        platformOptions: sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('renderJobId', ${jobId}, 'renderStatus', ${status})`,
+      }).where(and(
+        eq(drafts.id, spec.source.id), eq(drafts.tenantId, tenantId),
+        sql`${drafts.platformOptions}->>'renderRevision' = ${spec.source.revision}`,
+      )).returning({ id: drafts.id });
+      if (!linked) throw new Error("This video draft changed or is unavailable.");
+    };
     const existing = await tx.query.mediaRenderJobs.findFirst({ where: and(eq(mediaRenderJobs.tenantId, tenantId), eq(mediaRenderJobs.inputHash, inputHash)) });
-    if (existing) return { jobId: existing.id, status: existing.status };
+    if (existing) {
+      await associateDraft(existing.id, existing.status);
+      return { jobId: existing.id, status: existing.status };
+    }
     const [monthlyUsage] = await tx
       .select({ value: count() })
       .from(mediaRenderJobs)
@@ -38,6 +51,7 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
     const limit = Number(process.env.MEDIA_MONTHLY_JOB_LIMIT || 1000);
     if (!Number.isSafeInteger(limit) || limit < 1 || Number(monthlyUsage?.value ?? 0) >= limit) throw new Error("Workspace monthly render limit reached.");
     const [job] = await tx.insert(mediaRenderJobs).values({ tenantId, inputHash, spec }).returning();
+    await associateDraft(job.id, job.status);
     return { jobId: job.id, status: job.status };
   });
   if (result.status === "queued" && options.dispatch !== false) await dispatchQueuedRender(result.jobId);

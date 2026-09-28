@@ -77,7 +77,6 @@ export async function startChatVideoRender(raw: unknown) {
       video: { start: input.start, duration: input.duration, captions: input.captions, zoom: 1, sourceAudio: true, words: [] },
     }, { dispatch: false });
     jobId = render.jobId;
-    await db.update(drafts).set({ platformOptions: { source: 'chat_video', mediaUrls: [], sourceAssetId: sourceAsset.id, renderRevision: revision, renderJobId: render.jobId, renderStatus: render.status } }).where(and(eq(drafts.id, draft.id), eq(drafts.tenantId, tenantId)));
     if (render.status === 'queued') await dispatchQueuedRender(render.jobId);
     return { draftId: draft.id, jobId: render.jobId, status: render.status };
   } catch (error) {
