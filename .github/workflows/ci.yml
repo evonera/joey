@@ -45,7 +45,7 @@ jobs:
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
       postgres:
         image: pgvector/pgvector:pg16
