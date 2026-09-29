@@ -95,3 +95,31 @@ export async function saveAgentConfig(data: {
         return { error: "Failed to save configuration" };
     }
 }
+
+/** Update scheduling without overwriting brand guidance edited in Brand Kit. */
+export async function saveAgentSchedule(postingSchedule: PostingSchedule) {
+    try {
+        const tenantId = await getActiveTenantId();
+        const parsed = agentConfigSchema.shape.postingSchedule.safeParse(postingSchedule);
+        if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your schedule." };
+        const schedule = parsed.data;
+        if (schedule.selectedAccountIds.length) {
+            const accounts = await db.query.socialAccounts.findMany({
+                where: and(eq(socialAccounts.tenantId, tenantId), eq(socialAccounts.isActive, true), inArray(socialAccounts.id, schedule.selectedAccountIds)),
+                columns: { id: true },
+            });
+            if (accounts.length !== schedule.selectedAccountIds.length) return { error: "Select connected accounts from this workspace." };
+        }
+        const nextDraftAt = computeNextDraftTime(new Date(), schedule);
+        await db.insert(agentConfigs).values({ tenantId, brandVoice: "", postingGoals: "", postingSchedule: schedule, nextDraftAt })
+            .onConflictDoUpdate({ target: agentConfigs.tenantId, set: {
+                postingSchedule: schedule,
+                nextDraftAt,
+                updatedAt: sql`GREATEST(now(), ${agentConfigs.updatedAt} + interval '1 millisecond')`,
+            } });
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to save agent schedule:", error);
+        return { error: "Failed to save schedule" };
+    }
+}

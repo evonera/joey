@@ -117,9 +117,7 @@ export default function BrandKitPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Brand Kit</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Configure your brand voice, content guidelines, and vector memory retrieval.
-          </p>
+          <p className="text-muted-foreground mt-1 text-sm">Tell Joey how your brand sounds and what you want to post about.</p>
         </div>
         <Button
           onClick={handleReindex}
@@ -135,7 +133,7 @@ export default function BrandKitPage() {
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          {reindexSuccess ? "Re-indexed" : "Re-index Memories"}
+          {reindexSuccess ? "Updated" : "Refresh brand memory"}
         </Button>
       </div>
 
@@ -145,40 +143,13 @@ export default function BrandKitPage() {
         </div>
       )}
 
-      {/* Metric Cards */}
-      {data?.summary && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-card rounded-xl border border-border p-5 shadow-xs">
-            <div className="flex items-center gap-3 mb-2">
-              <BookOpen className="h-5 w-5 text-primary" />
-              <p className="text-xs text-muted-foreground font-medium">Total Memories</p>
-            </div>
-            <p className="text-3xl font-semibold tabular-nums text-foreground">{data.summary.total}</p>
-          </div>
-          <div className="bg-card rounded-xl border border-border p-5 shadow-xs">
-            <div className="flex items-center gap-3 mb-2">
-              <FileText className="h-5 w-5 text-emerald-500" />
-              <p className="text-xs text-muted-foreground font-medium">Brand Guidelines</p>
-            </div>
-            <p className="text-3xl font-semibold tabular-nums text-foreground">{data.summary.byType["brand_guideline"] ?? 0}</p>
-          </div>
-          <div className="bg-card rounded-xl border border-border p-5 shadow-xs">
-            <div className="flex items-center gap-3 mb-2">
-              <MessageSquare className="h-5 w-5 text-amber-500" />
-              <p className="text-xs text-muted-foreground font-medium">Published Posts</p>
-            </div>
-            <p className="text-3xl font-semibold tabular-nums text-foreground">{data.summary.byType["published_post"] ?? 0}</p>
-          </div>
-        </div>
-      )}
-
       {/* Editable Brand Voice & Strategy */}
       <section className="bg-card rounded-xl border border-border overflow-hidden shadow-xs">
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+        <div className="flex flex-col items-start gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
             <h2 className="font-semibold text-sm text-foreground">Brand Voice & Content Strategy</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Joey references these instructions when autonomously drafting posts and responding to audience replies.
+              Joey uses these notes when helping you write posts and replies.
             </p>
           </div>
           <Button
@@ -198,7 +169,7 @@ export default function BrandKitPage() {
           </Button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="space-y-5 p-4 sm:p-6">
           <div className="space-y-1.5">
             <label htmlFor="brand-voice" className="text-xs font-semibold text-foreground">Brand Voice & Persona</label>
             <p className="text-[11px] text-muted-foreground">
@@ -231,12 +202,39 @@ export default function BrandKitPage() {
         </div>
       </section>
 
+      {/* Metric Cards */}
+      {data?.summary && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-card rounded-xl border border-border p-5 shadow-xs">
+            <div className="flex items-center gap-3 mb-2">
+              <BookOpen className="h-5 w-5 text-primary" />
+              <p className="text-xs text-muted-foreground font-medium">Total Memories</p>
+            </div>
+            <p className="text-3xl font-semibold tabular-nums text-foreground">{data.summary.total}</p>
+          </div>
+          <div className="bg-card rounded-xl border border-border p-5 shadow-xs">
+            <div className="flex items-center gap-3 mb-2">
+              <FileText className="h-5 w-5 text-emerald-500" />
+              <p className="text-xs text-muted-foreground font-medium">Brand Guidelines</p>
+            </div>
+            <p className="text-3xl font-semibold tabular-nums text-foreground">{data.summary.byType["brand_guideline"] ?? 0}</p>
+          </div>
+          <div className="bg-card rounded-xl border border-border p-5 shadow-xs">
+            <div className="flex items-center gap-3 mb-2">
+              <MessageSquare className="h-5 w-5 text-amber-500" />
+              <p className="text-xs text-muted-foreground font-medium">Published Posts</p>
+            </div>
+            <p className="text-3xl font-semibold tabular-nums text-foreground">{data.summary.byType["published_post"] ?? 0}</p>
+          </div>
+        </div>
+      )}
+
       {/* Indexed Memories */}
       <section className="bg-card rounded-xl border border-border overflow-hidden shadow-xs">
         <div className="px-6 py-4 border-b border-border">
-          <h2 className="font-semibold text-sm text-foreground">Indexed Vector Memories</h2>
+          <h2 className="font-semibold text-sm text-foreground">Saved brand memory</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            High-dimensional embeddings used by the agent during live hybrid search.
+            Past brand guidance and published posts Joey can refer to.
           </p>
         </div>
         <div className="p-6">
@@ -245,7 +243,7 @@ export default function BrandKitPage() {
               <BookOpen className="h-8 w-8 mx-auto text-muted-foreground/50" />
               <p className="font-medium text-foreground text-sm">No memories indexed yet</p>
               <p>
-                Save your brand guidelines above and click &quot;Re-index Memories&quot; to vectorize your voice and past published posts.
+                Save your brand guidelines above, then refresh brand memory to make them available in Chat.
               </p>
             </div>
           ) : (

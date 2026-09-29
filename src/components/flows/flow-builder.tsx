@@ -85,7 +85,7 @@ import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
 import { ZodForm } from "./zod-form";
 import { RunsPanel } from "./runs-panel";
 import {
-  saveFlow, validateFlowGraph, runFlow, setFlowStatus, publishTemplate,
+  saveFlow, validateFlowGraph, validateFlowActivation, runFlow, setFlowStatus, publishTemplate,
   provisionFlowWebhookSecret, rotateFlowWebhookSecret,
 } from "@/app/actions/flows";
 
@@ -226,7 +226,7 @@ function graphEdgeToReactFlow(edge: FlowGraphDoc["edges"][number]): Edge {
   };
 }
 
-export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?: Array<{ id: string; name: string | null; platform: string }> }) {
+export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { flow: FlowRow; accounts?: Array<{ id: string; name: string | null; platform: string }>; activationIssues?: string[] }) {
   const router = useRouter();
   const initialGraph = (flow.graph ?? { nodes: [], edges: [] }) as FlowGraphDoc;
 
@@ -349,11 +349,22 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
     [setRfEdges],
   );
 
-  function addNodeType(type: string, screenPos?: { x: number; y: number }) {
+  function addNodeType(type: string, screenPos?: { x: number; y: number }, connectAfterLast = false) {
     const def = getNode(type);
     if (!def) return;
+    const previous = connectAfterLast ? rfNodes.at(-1) : undefined;
+    if (connectAfterLast && rfNodes.length === 0 && def.category !== "trigger") {
+      toast.error("Add a start trigger first.");
+      return;
+    }
+    if (connectAfterLast && previous && def.category === "trigger") {
+      toast.error("A flow can only start once. Choose a step instead.");
+      return;
+    }
     let position: { x: number; y: number };
-    if (screenPos && reactFlowRef.current) {
+    if (connectAfterLast) {
+      position = previous ? { x: previous.position.x + 240, y: previous.position.y } : { x: 0, y: 0 };
+    } else if (screenPos && reactFlowRef.current) {
       position = reactFlowRef.current.screenToFlowPosition({ x: screenPos.x, y: screenPos.y });
     } else if (reactFlowRef.current && wrapperRef.current) {
       const rect = wrapperRef.current.getBoundingClientRect();
@@ -373,6 +384,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
         data: { label: def.label, nodeType: def.type, category: def.category, config: {} },
       } as Node,
     ]);
+    if (previous) setRfEdges((edges) => [...edges, graphEdgeToReactFlow({ from: previous.id, to: id })]);
     setSelectedId(id);
     setIsDirty(true);
   }
@@ -383,9 +395,14 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
     try {
       const res = await validateFlowGraph(toGraphDoc());
       if (res.ok) {
-        toast.success("Flow is valid", {
-          description: res.issues.filter(i=>i.severity==="warning").map(i=>i.message).join("\n") || undefined,
-        });
+        if (isDirty) {
+          toast.info("The steps look valid. Save your changes, then validate the required setup.");
+        } else {
+          const readiness = await validateFlowActivation(flow.id);
+          if (readiness.ok) toast.success("Flow is ready to activate");
+          else toast.error(readiness.issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join("\n"));
+          router.refresh();
+        }
       } else {
         toast.error(res.issues.filter(i=>i.severity==="error").map(i=>i.message).join("\n"));
       }
@@ -508,7 +525,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
       {/* Palette */}
       {isPaletteCollapsed ? (
-        <aside className="w-12 shrink-0 border-r p-2 flex flex-col items-center gap-3 bg-card/40 transition-all">
+        <aside className="hidden w-12 shrink-0 flex-col items-center gap-3 border-r bg-card/40 p-2 transition-all sm:flex">
           <Link href="/flows" className="p-1.5 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted" title="All flows">
             <ArrowLeft className="h-4 w-4" />
           </Link>
@@ -524,7 +541,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
           </Button>
         </aside>
       ) : (
-        <aside className="w-56 shrink-0 border-r p-3 space-y-4 overflow-y-auto transition-all max-md:absolute max-md:z-20 max-md:h-full max-md:bg-background max-md:shadow-xl">
+        <aside className="hidden w-56 shrink-0 space-y-4 overflow-y-auto border-r p-3 transition-all sm:block max-md:absolute max-md:z-20 max-md:h-full max-md:bg-background max-md:shadow-xl">
           <div className="flex items-center justify-between">
             <Link href="/flows" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" /> All flows
@@ -577,7 +594,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
             <Badge variant={status === "active" ? "default" : "secondary"} className="text-[10px] shrink-0">{status}</Badge>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Button size="sm" variant="outline" disabled={busy} onClick={handleValidate} className="hidden sm:inline-flex"><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>Validate</Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={handleValidate}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>Validate</Button>
             <Button size="sm" variant={isDirty ? "default" : "outline"} disabled={busy} onClick={handleSave}>
               <Save className="mr-1 h-3.5 w-3.5"/>
               Save{isDirty ? " *" : ""}
@@ -586,8 +603,8 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
             <Button
               size="sm"
               variant={status === "active" ? "secondary" : "default"}
-              disabled={busy || activationBlockedByAgentChanges}
-              title={activationBlockedByAgentChanges ? "Save the staged agent changes before activation" : undefined}
+              disabled={busy || isDirty || activationBlockedByAgentChanges}
+              title={isDirty || activationBlockedByAgentChanges ? "Save changes before activation" : activationIssues.join(" ") || undefined}
               onClick={handleToggleActive}
             >
               {status === "active" ? <><Pause className="mr-1 h-3.5 w-3.5"/>Pause</> : <><Rocket className="mr-1 h-3.5 w-3.5"/>Activate</>}
@@ -670,6 +687,12 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
             </DropdownMenu>
           </div>
         </div>
+        {status !== "active" && activationIssues.length > 0 && (
+          <div role="status" className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs">
+            <p className="font-semibold">Before you activate</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">{activationIssues.map((issue, index) => <li key={`${issue}-${index}`}>{issue}</li>)}</ul>
+          </div>
+        )}
 
         {agentChangeCount > 0 && (
           <div
@@ -684,7 +707,13 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
           </div>
         )}
 
-        <div className="relative min-h-0 flex-1" ref={wrapperRef}>
+        <div className="relative min-h-0 flex-1 overflow-y-auto sm:overflow-hidden" ref={wrapperRef}>
+          <div className="space-y-2 p-3 sm:hidden" aria-label="Flow steps">
+            <p className="text-xs font-medium text-muted-foreground">Tap a step to edit its settings. Validate before activating.</p>
+            <details className="rounded-lg border bg-card p-3"><summary className="cursor-pointer text-sm font-semibold">Add a step</summary><p className="mt-1 text-xs text-muted-foreground">New steps connect after the final step. Use the desktop canvas for branching.</p><div className="mt-2 grid grid-cols-2 gap-2">{catalog().filter((entry) => ["trigger.manual", "trigger.schedule", "data.rss", "data.exa_search", "ai.llm", "action.create_draft", "action.notify"].includes(entry.type)).map((entry) => <button key={entry.type} type="button" onClick={() => addNodeType(entry.type, undefined, true)} className="rounded-lg border px-2 py-2 text-left text-xs hover:border-primary/50">{entry.label}</button>)}</div></details>
+            {rfNodes.length === 0 ? <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">This flow has no steps yet. Open Add a step and choose a trigger.</p> : rfNodes.map((node, index) => <button key={node.id} type="button" onClick={() => setSelectedId(node.id)} className={`flex w-full min-w-0 items-center gap-3 rounded-lg border p-3 text-left ${selectedId === node.id ? "border-primary bg-primary/5" : "bg-card"}`}><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">{index + 1}</span><span className="min-w-0"><span className="block truncate text-sm font-semibold">{String(node.data.label || node.data.nodeType)}</span><span className="block truncate text-xs text-muted-foreground">{String(node.data.nodeType)}</span></span><span className="ml-auto text-xs text-muted-foreground">Edit</span></button>)}
+          </div>
+          <div className="hidden h-full sm:block">
           <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
@@ -718,9 +747,10 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
               nodeColor={colorMode === "dark" ? "#6366f1" : "#4f46e5"}
             />
           </ReactFlow>
+          </div>
 
           {rfNodes.length === 0 && (
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10 p-4">
+            <div className="pointer-events-none absolute inset-0 z-10 hidden items-center justify-center p-4 sm:flex">
               <div className="pointer-events-auto max-w-sm w-full p-6 rounded-2xl border border-border bg-card/90 backdrop-blur-md shadow-xl text-center space-y-4">
                 <div className="mx-auto w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
                   <Rocket className="w-6 h-6" />
@@ -755,7 +785,7 @@ export function FlowBuilder({ flow, accounts = [] }: { flow: FlowRow; accounts?:
 
           {/* Config drawer */}
           {selectedDef && selectedNode && (
-            <div className="absolute right-4 top-4 z-10 w-80 max-w-[calc(100%-2rem)] rounded-xl border bg-background p-4 shadow-lg space-y-3 max-h-[80%] overflow-y-auto max-sm:inset-x-4 max-sm:w-auto">
+            <div className="relative z-10 mx-3 mb-4 max-h-none min-w-0 space-y-3 overflow-y-auto rounded-xl border bg-background p-4 sm:absolute sm:right-4 sm:top-4 sm:mx-0 sm:mb-0 sm:max-h-[80%] sm:w-80 sm:max-w-[calc(100%-2rem)] sm:shadow-lg">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">{selectedDef.label}</p>
                 <button aria-label="Close node settings" className="text-xs text-muted-foreground hover:text-foreground p-1 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center" onClick={()=>setSelectedId(null)}><Cancel01Icon size={14} /></button>

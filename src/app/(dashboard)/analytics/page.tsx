@@ -109,7 +109,7 @@ function AnalyticsDashboard() {
   const latestInsight = insights.length > 0 ? insights[0] : null;
 
   return (
-    <div className="p-8 max-w-6xl mx-auto pb-24 space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 px-3 pb-24 pt-4 sm:p-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Analytics</h1>
@@ -135,7 +135,12 @@ function AnalyticsDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid w-full sm:w-auto grid-cols-3">
+        <label className="block text-xs font-medium sm:hidden">Analytics view
+          <select value={activeTab} onChange={(event) => handleTabChange(event.target.value)} className="mt-1 block w-full rounded-lg border bg-background px-3 py-2.5 text-sm">
+            <option value="overview">Overview</option><option value="posts">Post performance</option><option value="insights">AI insights</option>
+          </select>
+        </label>
+        <TabsList className="hidden w-full grid-cols-3 sm:grid sm:w-auto">
           <TabsTrigger value="overview" className="gap-2">
             <AnalyticsIcon className="h-4 w-4" />
             Overview

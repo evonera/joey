@@ -105,6 +105,10 @@ export async function runScoutNow(scoutId: string) {
   });
   if (!scout) throw new Error("Scout not found.");
 
+  // A missing token is a setup problem, not a failed scan. Avoid creating a
+  // misleading failed run that the user could never have completed.
+  await resolveToken(tenantId);
+
   const result = await evaluateScout(scoutId, { tenantId, force: true });
   revalidatePath("/scouts");
   return result;

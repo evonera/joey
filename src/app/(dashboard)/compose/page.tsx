@@ -523,9 +523,7 @@ export default function ComposePage() {
                   return (
                     <div key={url} className="group relative rounded-lg overflow-hidden border bg-background">
                       {isVideo ? (
-                        <div className="h-16 w-20 flex items-center justify-center bg-muted text-[10px] font-semibold">
-                          VIDEO
-                        </div>
+                        <video src={url} controls preload="metadata" aria-label={`Video attachment ${i + 1}`} className="h-32 w-24 bg-black object-contain" />
                       ) : (
                         <img
                           src={url}

@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { registerAsset, requestUploadUrl } from "@/app/actions/assets";
 import { getConfiguredProviders } from "@/app/actions/models";
+import { getThemeTemplateById } from "@/app/actions/theme-templates";
 import {
   getModelById,
   getRecommendedModels,
@@ -92,12 +93,23 @@ export function AgentChat() {
 
   useEffect(() => {
     const assetId = sessionStorage.getItem('joey_create_video_asset');
-    const requestedMode = new URLSearchParams(window.location.search).get('create');
-    if (!assetId && requestedMode !== 'post' && requestedMode !== 'video') return;
+    const params = new URLSearchParams(window.location.search);
+    const requestedMode = params.get('create');
+    const templateId = params.get('templateId');
+    if (!assetId && requestedMode !== 'post' && requestedMode !== 'video' && !templateId) return;
     if (assetId) { sessionStorage.removeItem('joey_create_video_asset'); setVideoAssetId(assetId); }
     setCreationMode(assetId || requestedMode === 'video' ? 'video' : 'post');
     setSidepanelTab('studio');
     setIsSidepanelOpen(true);
+    if (templateId) {
+      void getThemeTemplateById(templateId).then((result) => {
+        if (!result.template) return;
+        const template = result.template;
+        const cleanName = template.name.replace(/\s*\([0-9a-f-]{36}\)$/, '');
+        setInitialPrompt(`Help me create an original post using the ${cleanName} visual style (${template.format?.name || 'post'}). Ask me for the topic and audience, then save a draft. Keep the post in this Chat workspace.`);
+        setSessionKey(`template_${template.id}_${Date.now()}`);
+      });
+    }
   }, []);
 
   // Load saved session data when activeSessionId changes
@@ -173,7 +185,7 @@ export function AgentChat() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-var(--header-height)-3.5rem)] w-full overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs">
+    <div className="relative flex h-[calc(100dvh-var(--header-height)-3.5rem)] w-full overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs">
       <AgentChatInner
         key={sessionKey}
         initialSavedSession={activeSavedSession}
@@ -542,8 +554,8 @@ function AgentChatInner({
           className="px-1 pb-1"
         />
       </PromptInputBody>
-      <PromptInputFooter>
-        <PromptInputTools>
+      <PromptInputFooter className="flex-wrap gap-2">
+        <PromptInputTools className="flex-wrap sm:flex-nowrap">
           <SourcesPillButton
             activeSourceIds={activeSourceIds}
             onToggleSource={handleToggleSource}
@@ -551,9 +563,9 @@ function AgentChatInner({
           <PromptInputSelect value={selectedModel} onValueChange={handleModelChange}>
             <PromptInputSelectTrigger 
               aria-label="Select AI model"
-              className="h-7 text-xs px-2 gap-1.5 border border-border/50 rounded-md bg-background/50 hover:bg-muted/80 transition-colors"
+              className="h-7 min-w-0 max-w-[145px] gap-1.5 rounded-md border border-border/50 bg-background/50 px-2 text-xs transition-colors hover:bg-muted/80 sm:max-w-none"
             >
-              <span className="font-medium text-foreground">{currentModelDef.name}</span>
+              <span className="truncate font-medium text-foreground">{currentModelDef.name}</span>
             </PromptInputSelectTrigger>
             <PromptInputSelectContent className="max-h-96 w-[min(20rem,calc(100vw-2rem))]">
               <PromptInputSelectGroup>
@@ -782,9 +794,6 @@ function AgentChatInner({
                     <Crown className="size-4 text-amber-400 fill-amber-400/20" />
                     <span className="font-semibold text-sm">Limit reached</span>
                   </div>
-                  <span className="font-mono text-xs text-muted-foreground/70">
-                    rate_limit:chat
-                  </span>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Free AI trial limit reached. You have used your 3 free generations. Upgrade to a paid plan or add your own API key in Settings to continue.
@@ -880,7 +889,7 @@ function AgentChatInner({
               </div>
               <div className="mt-3 flex flex-wrap justify-center gap-2">
                 <Button type="button" size="sm" onClick={onOpenPost}>Create a post</Button>
-                <Button type="button" size="sm" variant="outline" onClick={onOpenVideo}>Create a video</Button>
+                <Button type="button" size="sm" variant="outline" onClick={onOpenVideo}>Brand an MP4</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => fillPrompt('I have an idea for a social post. Help me turn it into an original draft and save it here.')}>Use an idea</Button>
               </div>
             </div>

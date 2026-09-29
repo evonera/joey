@@ -117,13 +117,13 @@ export function CreationShelfPanel({ onUsePrompt, mode, videoAssetId, onModeChan
       </section>
 
       <section className="space-y-2" aria-label="Theme Studio templates">
-        <div className="flex items-center justify-between"><h2 className="font-semibold">Templates</h2><Link href="/theme-studio" className="text-xs underline">View all</Link></div>
+        <div className="flex items-center justify-between"><h2 className="font-semibold">Templates</h2><Link href="/theme-studio/templates" className="text-xs underline">View all</Link></div>
         {!loading && !shelf?.templates.length && <p className="text-xs text-muted-foreground">Your Theme Studio templates will appear here.</p>}
         {shelf?.templates.map((template) => <article key={template.id} className="rounded-lg border border-border/50 p-3">
           {template.previewUrl && <img src={template.previewUrl} alt={`Preview of ${template.name}`} className="mb-2 max-h-40 w-full rounded-md object-contain" />}
-          <h3 className="font-medium">{template.name}</h3>
+          <h3 className="font-medium" title={template.name}>{template.name.replace(/\s*\([0-9a-f-]{36}\)$/, '')}</h3>
           <p className="mt-1 text-xs text-muted-foreground">{template.themePageName} · {template.formatName}</p>
-          <div className="mt-2 flex gap-3 text-xs">{template.themePageId && <Link href={`/theme-studio/${template.themePageId}/templates`} className="underline">Open template</Link>}<button type="button" className="underline" onClick={() => onUsePrompt(`Help me create an original post for ${template.themePageName} using its ${template.formatName} visual style. Template: ${template.name}.`)}>Use in Chat</button></div>
+          <div className="mt-2 flex gap-3 text-xs"><Link href={template.themePageId ? `/theme-studio/${template.themePageId}/templates/${template.id}` : `/theme-studio/templates/${template.id}`} className="underline">Edit style</Link><button type="button" className="underline" onClick={() => onUsePrompt(`Help me create an original post for ${template.themePageName} using its ${template.formatName} visual style. Template: ${template.name}.`)}>Use in Chat</button></div>
         </article>)}
       </section>
     </div>

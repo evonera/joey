@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useQueryState } from "nuqs";
 import type { CalendarViewMode } from "./post-calendar";
 import { getCalendarPosts, rescheduleDraft, type CalendarPost } from "@/app/actions/calendar";
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, addHours, format } from "date-fns";
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, addHours, addMonths, format, subMonths } from "date-fns";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PostDetailsDialog } from "./post-details-dialog";
@@ -39,6 +39,7 @@ export function CalendarView() {
   const [requestedView, setView] = useQueryState("view", { defaultValue: "month" });
   const view: CalendarViewMode = requestedView === "week" || requestedView === "day" ? requestedView : "month";
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [mobileDate, setMobileDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   const [posts, setPosts] = useState<CalendarPost[]>([]);
   const [isPending, setIsPending] = useState(false);
@@ -81,8 +82,7 @@ export function CalendarView() {
 
   const handleCreatePost = useCallback((date: Date) => {
     const day = format(date, "yyyy-MM-dd");
-    sessionStorage.setItem("joey_seed_prompt", JSON.stringify({ prompt: `Help me create an original social post for ${day}. Ask for the topic and audience if needed, save a draft, and help me schedule it when I choose an account.`, autoSend: true }));
-    router.push("/dashboard");
+    router.push(`/compose?date=${day}`);
   }, [router]);
 
   const handleReschedule = useCallback(async (draftId: string, newDate: Date) => {
@@ -104,7 +104,23 @@ export function CalendarView() {
 
   return (
     <div className="flex min-w-0 flex-col w-full min-h-[640px] rounded-xl border border-border bg-card p-2 sm:p-4 shadow-xs">
-      <PostCalendar
+      <div className="space-y-4 sm:hidden" aria-label="Mobile post agenda">
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" onClick={() => setCurrentDate(subMonths(currentDate, 1))} aria-label="Previous month" className="rounded-lg border px-3 py-2">←</button>
+          <h2 className="text-base font-semibold">{format(currentDate, "MMMM yyyy")}</h2>
+          <button type="button" onClick={() => setCurrentDate(addMonths(currentDate, 1))} aria-label="Next month" className="rounded-lg border px-3 py-2">→</button>
+        </div>
+        <div className="flex flex-wrap items-end gap-2 rounded-xl border bg-background p-3">
+          <label className="min-w-0 flex-1 text-xs font-medium">Post date<input type="date" value={mobileDate} onChange={(event) => setMobileDate(event.target.value)} className="mt-1 block w-full rounded-md border bg-background px-2 py-2 text-sm" /></label>
+          <button type="button" onClick={() => handleCreatePost(new Date(`${mobileDate}T12:00:00`))} className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground">Create post</button>
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Posts this month</h3>
+          {isPending ? <p role="status" className="text-sm text-muted-foreground">Loading posts…</p> : posts.length === 0 ? <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">No posts here yet. Choose a date above to start a draft.</p> :
+            posts.slice().sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()).map((post) => <button key={post.id} type="button" onClick={() => setSelectedPost(post)} className="block w-full rounded-xl border bg-background p-3 text-left hover:border-primary/50"><span className="block text-xs text-muted-foreground">{format(new Date(post.start), "EEE, MMM d · h:mm a")}</span><span className="mt-1 block font-medium">{post.title}</span><span className="mt-1 block text-xs capitalize text-muted-foreground">{post.platform} · {post.status.replaceAll("_", " ")}</span></button>)}
+        </div>
+      </div>
+      <div className="hidden sm:block"><PostCalendar
         posts={posts}
         isPending={isPending}
         currentDate={currentDate}
@@ -115,7 +131,7 @@ export function CalendarView() {
         onCreatePost={handleCreatePost}
         onReschedule={handleReschedule}
         onReload={handleReload}
-      />
+      /></div>
 
       <PostDetailsDialog
         open={selectedPost !== null}

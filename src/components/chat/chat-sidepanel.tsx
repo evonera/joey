@@ -170,7 +170,7 @@ export function ChatSidepanel({
   return (
     <aside
       className={cn(
-        "flex flex-col h-full w-full max-w-full sm:w-[420px] lg:w-[460px] border-l border-border/50 bg-background/95 backdrop-blur-md shrink-0 shadow-lg transition-all duration-200 z-30",
+        "absolute inset-0 z-30 flex h-full w-full max-w-full shrink-0 flex-col border-l border-border/50 bg-background/95 shadow-lg backdrop-blur-md transition-all duration-200 sm:static sm:w-[420px] lg:w-[460px]",
         className
       )}
     >
@@ -180,12 +180,12 @@ export function ChatSidepanel({
         className="flex flex-col h-full gap-0"
       >
         {/* Header with Tab switcher and Close button - h-12 aligns with main header */}
-        <div className="flex h-12 items-center justify-between border-b border-border/40 px-3 shrink-0 bg-background/50 backdrop-blur-xs">
-          <TabsList className="h-7 p-0.5 bg-muted/40 border border-border/50">
+        <div className="flex h-12 min-w-0 shrink-0 items-center justify-between gap-1 border-b border-border/40 bg-background/50 px-2 backdrop-blur-xs sm:px-3">
+          <TabsList className="h-7 min-w-0 p-0.5 bg-muted/40 border border-border/50">
             <TabsTrigger value="studio" className="h-6 px-2.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-xs">Create</TabsTrigger>
             <TabsTrigger
               value="artifacts"
-              className="h-6 px-2.5 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
+              className="h-6 gap-1 px-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-xs sm:gap-1.5 sm:px-2.5"
             >
               <FileIcon className="size-3.5" />
               <span>Replies</span>
@@ -198,7 +198,7 @@ export function ChatSidepanel({
 
             <TabsTrigger
               value="context"
-              className="h-6 px-2.5 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
+              className="h-6 gap-1 px-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-xs sm:gap-1.5 sm:px-2.5"
             >
               <BrainIcon className="size-3.5" />
               <span>Details</span>
