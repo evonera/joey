@@ -4,6 +4,11 @@ import { render, screen } from "@testing-library/react";
 
 const webMcpHarness = vi.hoisted(() => ({ tools: [] as WebMCP.ModelContextTool[] }));
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/theme-studio/page_abc",
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 vi.mock("@/app/actions/theme-pages", () => ({
   activateThemePage: vi.fn(),
   pauseThemePage: vi.fn(),
@@ -48,11 +53,10 @@ describe("Theme Studio UI Components", () => {
 
     expect(screen.getByText("Tech AI Weekly")).toBeDefined();
     expect(screen.getByText(/AI engineering updates/)).toBeDefined();
-    expect(screen.getByText("Overview")).toBeDefined();
-    expect(screen.getByText("Sources")).toBeDefined();
-    expect(screen.getByText("Daily Mix")).toBeDefined();
-    expect(screen.getByText("Templates")).toBeDefined();
-    expect(screen.getByText("Preview Day")).toBeDefined();
+    for (const section of ["Overview", "Sources", "Daily Mix", "Templates", "Preview Day"]) {
+      expect(screen.getByRole("link", { name: section })).toBeDefined();
+      expect(screen.getByRole("option", { name: section })).toBeDefined();
+    }
     expect(webMcpHarness.tools.map((tool) => tool.name)).toEqual([
       "theme_studio_inspect_page",
       "theme_studio_check_readiness",

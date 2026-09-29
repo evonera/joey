@@ -25,6 +25,13 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
       const response = await page.goto(route);
       expect(response?.status(), route).toBe(200);
       await expect(page.locator("h1").first()).toBeVisible();
+      if (["/compose", "/assets", "/calendar"].includes(route)) await expect(page.locator(".animate-spin:visible")).toHaveCount(0, { timeout: 60_000 });
+      if (route === "/drafts") await expect(page.getByText("Loading drafts...")).toHaveCount(0, { timeout: 60_000 });
+      if (route === "/flows") await expect(page.getByText("Loading…", { exact: true })).toHaveCount(0, { timeout: 60_000 });
+      if (route === "/flows/templates") await expect(page.getByText("Loading templates…")).toHaveCount(0, { timeout: 60_000 });
+      if (route === "/dashboard") await expect(page.getByText("Loading your work...")).toHaveCount(0, { timeout: 60_000 });
+      if (route === "/analytics") await expect(page.locator(".animate-spin:visible")).toHaveCount(0, { timeout: 30_000 });
+      if (route === "/accounts") await expect(page.getByText("No accounts connected yet")).toBeVisible();
       await expect(page.getByText("Something went wrong", { exact: true })).toHaveCount(0);
       expect(new URL(page.url()).pathname).toBe(route);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${route} overflows at ${width}px`).toBe(true);
@@ -37,6 +44,21 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
           await expect(page.getByRole("button", { name: "Create post", exact: true })).toBeVisible();
         }
       }
+      if (route === "/compose" && width === 320) {
+        const publishNow = await page.getByRole("tab", { name: "Publish Now" }).boundingBox();
+        const scheduleLater = await page.getByRole("tab", { name: "Schedule for Later" }).boundingBox();
+        expect(publishNow).not.toBeNull();
+        expect(scheduleLater).not.toBeNull();
+        expect(publishNow!.y + publishNow!.height).toBeLessThanOrEqual(scheduleLater!.y);
+      }
+      if (route === "/dashboard" && width <= 390) {
+        const mic = await page.getByRole("button", { name: "Voice input" }).boundingBox();
+        const submit = await page.getByRole("button", { name: "Submit" }).boundingBox();
+        expect(mic).not.toBeNull();
+        expect(submit).not.toBeNull();
+        const overlap = mic!.x < submit!.x + submit!.width && mic!.x + mic!.width > submit!.x && mic!.y < submit!.y + submit!.height && mic!.y + mic!.height > submit!.y;
+        expect(overlap, `Chat voice input and Submit overlap at ${width}px`).toBe(false);
+      }
       await page.screenshot({ path: testInfo.outputPath(`${route.slice(1).replaceAll("/", "-")}-${width}.png`), fullPage: true });
     }
   }
@@ -44,6 +66,7 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
   await page.goto("/dashboard?create=post");
   await expect(page.getByRole("button", { name: "Close sidepanel" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
+  await expect(page.getByText("Loading your work...")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Chat creation panel overflows at 320px").toBe(true);
   await page.screenshot({ path: testInfo.outputPath("chat-create-post-320.png"), fullPage: true });
   await page.getByRole("button", { name: "Close sidepanel" }).click();
@@ -138,5 +161,7 @@ test("Instagram and TikTok templates are available and install as editable flows
     await expect(page.getByRole("link", { name: "Connect a social account" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${name} settings overflow at 320px`).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`flow-${name.toLowerCase().replaceAll(" ", "-")}-settings-320.png`), fullPage: true });
+    await page.getByRole("combobox", { name: "Publishing account" }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`flow-${name.toLowerCase().replaceAll(" ", "-")}-settings-detail-320.png`) });
   }
 });

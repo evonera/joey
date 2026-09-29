@@ -694,7 +694,7 @@ function AgentChatInner({
             }}
           />
         </PromptInputTools>
-        <PromptInputSubmit onStop={requestCancellation} status={submitStatus} />
+        <PromptInputSubmit className="static ml-auto shrink-0" onStop={requestCancellation} status={submitStatus} />
       </PromptInputFooter>
     </PromptInput>
   );
