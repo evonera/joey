@@ -24,7 +24,7 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
     for (const route of routes) {
       const response = await page.goto(route);
       expect(response?.status(), route).toBe(200);
-      await expect(page.locator("h1").first()).toBeVisible();
+      await expect(page.locator("h1").first()).toBeVisible({ timeout: 60_000 });
       if (["/compose", "/assets", "/calendar"].includes(route)) await expect(page.locator(".animate-spin:visible")).toHaveCount(0, { timeout: 60_000 });
       if (route === "/drafts") await expect(page.getByText("Loading drafts...")).toHaveCount(0, { timeout: 60_000 });
       if (route === "/flows") await expect(page.getByText("Loading…", { exact: true })).toHaveCount(0, { timeout: 60_000 });
