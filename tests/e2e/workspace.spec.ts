@@ -14,7 +14,8 @@ function signupHeaders(testInfo: TestInfo) {
   return { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8::${suffix}` };
 }
 
-test("authenticated workspace routes remain usable on desktop and mobile", async ({ page, context }, testInfo) => {
+for (const width of [1440, 390, 320] as const) {
+test(`authenticated workspace routes remain usable at ${width}px`, async ({ page, context }, testInfo) => {
   test.setTimeout(480_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -24,9 +25,9 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
   });
   expect(signup.ok(), await signup.text()).toBe(true);
   const routes = ["/dashboard", "/compose", "/drafts", "/calendar", "/flows", "/flows/templates", "/theme-studio", "/theme-studio/templates", "/assets", "/engagement", "/analytics", "/accounts", "/brandkit", "/settings", "/operations"];
-  for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     for (const route of routes) {
+      if (process.env.CI) console.log(`Checking ${route} at ${width}px`);
       const response = await page.goto(route);
       expect(response?.status(), route).toBe(200);
       await expect(page.locator("h1").first()).toBeVisible({ timeout: 60_000 });
@@ -71,8 +72,8 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
       }
       await captureScreenshot(page, testInfo, `${route.slice(1).replaceAll("/", "-")}-${width}.png`);
     }
-  }
   expect(errors).toEqual([]);
+  if (width === 320) {
   await page.goto("/dashboard?create=post");
   await expect(page.getByRole("button", { name: "Close sidepanel" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
@@ -95,7 +96,9 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
   await expect(page.getByRole("tab", { name: "Schedule for Later" })).toHaveAttribute("data-state", "active");
   await expect(page.locator("#schedule-date")).toHaveValue(requestedDate);
   await expect(page.getByRole("textbox", { name: "Post content" })).toHaveValue("Keep this restored draft");
+  }
 });
+}
 
 test("a new workspace can create a theme page and open every setup tab", async ({ page, context }, testInfo) => {
   test.setTimeout(240_000);
