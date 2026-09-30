@@ -1,6 +1,6 @@
 'use server';
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themeSlots, themePages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
@@ -53,7 +53,7 @@ export async function getThemeSlots(themePageId: string) {
 
 export async function createThemeSlot(data: CreateThemeSlotInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     const page = await db.query.themePages.findFirst({
       where: and(eq(themePages.id, data.themePageId), eq(themePages.tenantId, tenantId)),
@@ -107,7 +107,7 @@ export async function createThemeSlot(data: CreateThemeSlotInput) {
 
 export async function updateThemeSlot(id: string, data: UpdateThemeSlotInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     const existing = await db.query.themeSlots.findFirst({
       where: and(eq(themeSlots.id, id), eq(themeSlots.tenantId, tenantId)),
     });
@@ -157,7 +157,7 @@ export async function updateThemeSlot(id: string, data: UpdateThemeSlotInput) {
 
 export async function deleteThemeSlot(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     await db.delete(themeSlots)
       .where(and(eq(themeSlots.id, id), eq(themeSlots.tenantId, tenantId)));
 
@@ -170,7 +170,7 @@ export async function deleteThemeSlot(id: string) {
 
 export async function reorderThemeSlots(themePageId: string, orderedSlotIds: string[]) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     for (let i = 0; i < orderedSlotIds.length; i++) {
       await db.update(themeSlots)

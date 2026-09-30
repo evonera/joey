@@ -13,6 +13,9 @@ const sql = postgres(connectionString, { max: 1 });
 const db = drizzleNode({ client: sql, schema });
 
 async function seed() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Refusing to seed demo data in NODE_ENV=production.");
+  }
   console.log("Seeding development data...");
 
   // A deterministic tenant id for local dev so the script is idempotent-ish.
@@ -56,6 +59,7 @@ async function seed() {
     .insert(schema.posts)
     .values([
       {
+        id: `seed-${tenantId}-published-1`,
         tenantId,
         content: "Automate the busywork, so your team can focus on the work that matters.",
         publishedAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
@@ -63,6 +67,7 @@ async function seed() {
         metrics: { views: 1240, likes: 82, comments: 12, shares: 9 },
       },
       {
+        id: `seed-${tenantId}-published-2`,
         tenantId,
         content: "BYOK means your data stays yours. Run Joey with your own keys.",
         publishedAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),

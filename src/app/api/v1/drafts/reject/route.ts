@@ -1,43 +1,37 @@
 import { NextResponse } from 'next/server';
 import { authenticateApiRequest, requireScope, withRateLimitHeaders } from '@/lib/api-auth';
-import { db } from '@/lib/db';
-import { drafts } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { z } from 'zod';
+import { readBoundedJson } from '@/lib/http/read-bounded-json';
+import { reviewDraft } from '@/lib/draft-review';
+import { apiErrorResponse } from '@/lib/api-error-response';
+
+const bodySchema = z.object({
+    id: z.string().min(1).max(128),
+    feedback: z.string().max(5_000).optional(),
+}).strict();
 
 export async function POST(request: Request) {
     try {
         const { tenantId, scopes, rateLimit } = await authenticateApiRequest(request);
         requireScope(scopes, "approve");
-        const body = await request.json();
-        const { id: draftId, feedback } = body;
-
-        if (!draftId) {
-            return withRateLimitHeaders(
-                NextResponse.json({ error: "Missing draft id" }, { status: 400 }),
-                rateLimit
-            );
+        const parsed = await readBoundedJson<unknown>(request, 32 * 1024);
+        if (!parsed.ok) {
+            const status = parsed.reason === "too_large" ? 413 : 400;
+            return withRateLimitHeaders(NextResponse.json({ error: parsed.reason === "too_large" ? "Request body is too large" : "Invalid JSON body" }, { status }), rateLimit);
         }
+        const body = bodySchema.safeParse(parsed.value);
+        if (!body.success) return withRateLimitHeaders(NextResponse.json({ error: "Invalid rejection request" }, { status: 400 }), rateLimit);
 
-        const updated = await db.update(drafts)
-            .set({ status: "rejected", errorMessage: feedback })
-            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)))
-            .returning();
-
-        if (updated.length === 0) {
-            return withRateLimitHeaders(
-                NextResponse.json({ error: "Draft not found" }, { status: 404 }),
-                rateLimit
-            );
+        const result = await reviewDraft({ tenantId, draftId: body.data.id, decision: "reject", feedback: body.data.feedback });
+        if ("error" in result && result.error) {
+            const status = result.error === "Draft not found" ? 404 : result.error.startsWith("This draft is already") ? 409 : 400;
+            return withRateLimitHeaders(NextResponse.json({ error: result.error }, { status }), rateLimit);
         }
-
         return withRateLimitHeaders(NextResponse.json({ success: true }), rateLimit);
-    } catch (error: any) {
-        if (error.name === 'RateLimitError') {
-            return NextResponse.json({ error: error.message }, { status: 429 });
+    } catch (error: unknown) {
+        if (error instanceof Error && !/Unauthorized|Insufficient scope|RateLimit/.test(error.message)) {
+            console.error("[api/v1/drafts/reject] unexpected error", error);
         }
-        if (error.message.startsWith('Insufficient scope')) {
-            return NextResponse.json({ error: error.message }, { status: 403 });
-        }
-        return NextResponse.json({ error: error.message }, { status: 401 });
+        return apiErrorResponse(error);
     }
 }

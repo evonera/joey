@@ -1,5 +1,10 @@
 # Desktop releases
 
+> **Experimental distribution.** Do not advertise desktop builds as production-ready
+> until the updater signing key is configured and the OAuth deep-link callback
+> exchange is implemented and acceptance-tested. The current callback handler
+> intentionally does not exchange or persist OAuth tokens.
+
 Joey desktop releases are built by `.github/workflows/desktop-release.yml` when an `app-v*` tag is pushed. The workflow creates a draft GitHub release with macOS arm64 and x64, Linux x64, and Windows x64 bundles plus signed Tauri updater artifacts.
 
 ## Required repository secrets

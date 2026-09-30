@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server';
 import { authenticateApiRequest, requireScope, withRateLimitHeaders } from '@/lib/api-auth';
 import { db } from '@/lib/db';
 import { drafts } from '@/lib/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, lt, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { validateSafeUrl } from '@/lib/flows/nodes/ai/transcribe';
+import { cursorTimestamp, makeNextCursor, parsePageRequest } from '@/lib/http/cursor-pagination';
+import { readBoundedJson } from '@/lib/http/read-bounded-json';
+import { apiErrorResponse } from '@/lib/api-error-response';
 
 const createDraftSchema = z.object({
     content: z.string().min(1, "Draft content cannot be empty").max(50000, "Draft content exceeds maximum length of 50,000 characters"),
@@ -12,34 +15,38 @@ const createDraftSchema = z.object({
     mediaUrls: z.array(z.string().url("Invalid media URL format").max(2048)).max(10, "Maximum 10 media URLs allowed").optional(),
     accountIds: z.array(z.string().max(128)).max(20).optional(),
     scheduledFor: z.string().datetime({ message: "scheduledFor must be a valid ISO 8601 datetime string" }).nullable().optional(),
-});
+}).strict();
 
 export async function GET(request: Request) {
     try {
         const { tenantId, scopes, rateLimit } = await authenticateApiRequest(request);
         requireScope(scopes, "read");
         const { searchParams } = new URL(request.url);
+        const page = parsePageRequest(searchParams);
+        if (!page.ok) return withRateLimitHeaders(NextResponse.json({ error: page.error }, { status: 400 }), rateLimit);
         const status = searchParams.get('status');
 
         let conditions = [eq(drafts.tenantId, tenantId)];
         if (status) {
             conditions.push(eq(drafts.status, status));
         }
+        const cursorDate = cursorTimestamp(drafts.createdAt);
+        if (page.cursor) conditions.push(or(
+            lt(cursorDate, page.cursor.createdAt),
+            and(eq(cursorDate, page.cursor.createdAt), lt(drafts.id, page.cursor.id)),
+        )!);
 
-        const data = await db.query.drafts.findMany({
+        const rows = await db.query.drafts.findMany({
             where: and(...conditions),
-            orderBy: [desc(drafts.createdAt)]
+            orderBy: [desc(cursorDate), desc(drafts.id)],
+            limit: page.limit + 1,
         });
+        const data = rows.slice(0, page.limit);
+        const nextCursor = rows.length > page.limit ? makeNextCursor(data.at(-1)) : null;
 
-        return withRateLimitHeaders(NextResponse.json({ drafts: data }), rateLimit);
-    } catch (error: any) {
-        if (error.name === 'RateLimitError') {
-            return NextResponse.json({ error: error.message }, { status: 429 });
-        }
-        if (error.message.startsWith('Insufficient scope')) {
-            return NextResponse.json({ error: error.message }, { status: 403 });
-        }
-        return NextResponse.json({ error: error.message }, { status: 401 });
+        return withRateLimitHeaders(NextResponse.json({ drafts: data, nextCursor }), rateLimit);
+    } catch (error: unknown) {
+        return apiErrorResponse(error);
     }
 }
 
@@ -50,14 +57,14 @@ export async function POST(request: Request) {
         authRateLimit = rateLimit;
         requireScope(scopes, "write");
 
-        let body: any;
-        try {
-            body = await request.json();
-        } catch {
-            return withRateLimitHeaders(NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }), authRateLimit);
+        const body = await readBoundedJson<unknown>(request, 256 * 1024);
+        if (!body.ok) {
+            return withRateLimitHeaders(NextResponse.json({
+                error: body.reason === "too_large" ? "Request body is too large" : "Invalid JSON body",
+            }, { status: body.reason === "too_large" ? 413 : 400 }), authRateLimit);
         }
 
-        const parseResult = createDraftSchema.safeParse(body);
+        const parseResult = createDraftSchema.safeParse(body.value);
         if (!parseResult.success) {
             const errorMsg = parseResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ');
             return withRateLimitHeaders(NextResponse.json({ error: errorMsg }, { status: 400 }), authRateLimit);
@@ -92,13 +99,7 @@ export async function POST(request: Request) {
         }).returning();
 
         return withRateLimitHeaders(NextResponse.json({ draft }), authRateLimit);
-    } catch (error: any) {
-        if (error.name === 'RateLimitError') {
-            return NextResponse.json({ error: error.message }, { status: 429 });
-        }
-        if (error.message?.startsWith('Insufficient scope')) {
-            return NextResponse.json({ error: error.message }, { status: 403 });
-        }
-        return NextResponse.json({ error: error.message || "Unauthorized" }, { status: 401 });
+    } catch (error: unknown) {
+        return apiErrorResponse(error, authRateLimit);
     }
 }

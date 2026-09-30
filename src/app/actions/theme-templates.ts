@@ -1,7 +1,7 @@
 'use server';
 
 import { invalidateThemeMedia } from "@/lib/media-engine/invalidation";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themeVisualTemplates, themeContentFormats, themeSlots, themePages } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -147,7 +147,7 @@ export async function getThemeTemplateById(id: string) {
 
 export async function createThemeTemplate(data: CreateThemeTemplateInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     if (!data.name || !data.name.trim()) {
       return { error: "Template name is required" };
@@ -193,7 +193,7 @@ export async function createThemeTemplate(data: CreateThemeTemplateInput) {
 
 export async function updateThemeTemplate(id: string, data: UpdateThemeTemplateInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     const existing = await db.query.themeVisualTemplates.findFirst({
       where: and(eq(themeVisualTemplates.id, id), eq(themeVisualTemplates.tenantId, tenantId)),
@@ -240,7 +240,7 @@ export async function updateThemeTemplate(id: string, data: UpdateThemeTemplateI
 
 export async function deleteThemeTemplate(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     // Check if slots are using this template as override
     const slotsUsingTemplate = await db.query.themeSlots.findMany({

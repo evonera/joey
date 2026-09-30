@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/auth", () => ({
   getActiveTenantId: vi.fn().mockResolvedValue("tenant_123"),
+  requireRole: vi.fn().mockResolvedValue("tenant_123"),
   auth: {
     api: {
       getSession: vi.fn(),

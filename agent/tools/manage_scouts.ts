@@ -1,10 +1,10 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { scouts, scoutRuns } from "@/lib/db/schema";
+import { scouts } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
-import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
+import { workspaceApproval } from "../lib/workspace-approval";
 
 export default defineTool({
   description:
@@ -18,6 +18,12 @@ export default defineTool({
     goalCondition: z.string().optional().describe("Natural language goal / trigger condition (e.g. 'Alert when a reel exceeds 50k views or uses a split-screen text hook')."),
     pollIntervalMinutes: z.literal(1440).default(1440).describe("Automatic checks run daily; use evaluate for an immediate check."),
   }),
+  approval: {
+    request: (ctx) => ctx.toolInput?.action === "evaluate"
+      ? workspaceApproval().request(ctx)
+      : "not-applicable",
+    response: (ctx) => workspaceApproval().response!(ctx),
+  },
   execute: async ({ action, scoutId, name, targetUrl, platform, goalCondition, pollIntervalMinutes }, ctx) => {
     const tenantId = ctx.session.auth.current?.attributes?.tenantId;
     if (!tenantId) throw new Error("Unable to identify tenant from session auth.");
@@ -50,8 +56,6 @@ export default defineTool({
         }
 
         if (new URL(targetUrl).protocol !== "https:") throw new Error("Scout target must use HTTPS.");
-        let apifyReady = true;
-        try { await resolveToken(tenantId as string); } catch { apifyReady = false; }
         const [created] = await db
           .insert(scouts)
           .values({
@@ -61,12 +65,12 @@ export default defineTool({
             platform,
             goalCondition,
             pollIntervalMinutes,
-            isActive: apifyReady,
+            isActive: false,
           })
           .returning();
 
         return {
-          message: apifyReady ? `Scout '${name}' created for daily monitoring.` : `Scout '${name}' saved paused. Connect Apify in Settings to begin monitoring.`,
+          message: `Scout '${name}' saved paused. An owner or admin can enable daily monitoring in Scouts once Apify is connected.`,
           scout: created,
         };
       }

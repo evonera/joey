@@ -1,7 +1,7 @@
 'use server';
 
 import { invalidateThemeMedia } from "@/lib/media-engine/invalidation";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themeContentFormats, themeSlots } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -158,7 +158,7 @@ export async function seedDefaultFormats() {
 
 export async function createContentFormat(data: CreateContentFormatInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     if (!data.slug || !data.slug.trim()) {
       return { error: "Format slug is required" };
@@ -200,7 +200,7 @@ export async function createContentFormat(data: CreateContentFormatInput) {
 
 export async function updateContentFormat(id: string, data: UpdateContentFormatInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     if (data.platform !== undefined && !SUPPORTED_THEME_PLATFORMS.has(data.platform)) return { error: "Theme Studio currently supports Instagram, TikTok, and X formats" };
 
     const updated = await db.transaction(async tx => {
@@ -237,7 +237,7 @@ export async function updateContentFormat(id: string, data: UpdateContentFormatI
 
 export async function deleteContentFormat(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     // Check if slots are using this format
     const slotsUsingFormat = await db.query.themeSlots.findMany({

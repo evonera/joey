@@ -1,0 +1,78 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockFindFlow = vi.fn();
+const mockUpdateFlow = vi.fn();
+const mockRequireRole = vi.fn(async () => "tenant_1");
+
+vi.mock("@/lib/db", () => ({
+  db: {
+    query: { flows: { findFirst: mockFindFlow } },
+    update: mockUpdateFlow,
+  },
+}));
+
+vi.mock("@/lib/auth", () => ({
+  getActiveTenantId: vi.fn(async () => "tenant_1"),
+  requireRole: mockRequireRole,
+}));
+
+describe("saveFlow concurrency handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireRole.mockResolvedValue("tenant_1");
+    mockFindFlow.mockResolvedValue({
+      id: "flow_1",
+      tenantId: "tenant_1",
+      status: "draft",
+      name: "Draft flow",
+      graph: { nodes: [], edges: [] },
+    });
+  });
+
+  it("returns a conflict when the draft-only update loses a race", async () => {
+    const returning = vi.fn().mockResolvedValue([]);
+    const where = vi.fn(() => ({ returning }));
+    const set = vi.fn(() => ({ where }));
+    mockUpdateFlow.mockReturnValue({ set: set });
+
+    const { saveFlow } = await import("@/app/actions/flows");
+    const result = await saveFlow("flow_1", { name: "Updated name" });
+
+    expect(result).toEqual({
+      error: "Flow changed before it could be saved. Refresh and try again.",
+    });
+    expect(returning).toHaveBeenCalled();
+  });
+
+  it("reports success only when the row was updated", async () => {
+    const returning = vi.fn().mockResolvedValue([{ id: "flow_1" }]);
+    const where = vi.fn(() => ({ returning }));
+    mockUpdateFlow.mockReturnValue({ set: vi.fn(() => ({ where })) });
+
+    const { saveFlow } = await import("@/app/actions/flows");
+    await expect(saveFlow("flow_1", { name: "Updated name" })).resolves.toEqual({ ok: true });
+  });
+
+  it("returns handled authorization errors for run approval and restart actions", async () => {
+    const { resumeRun, restartRun, setFlowStatus, publishTemplate } = await import("@/app/actions/flows");
+    mockRequireRole.mockRejectedValueOnce(new Error("Forbidden: Action requires role owner or admin"));
+    await expect(resumeRun("run-1", true)).resolves.toEqual({
+      error: "Forbidden: Action requires role owner or admin",
+    });
+
+    mockRequireRole.mockRejectedValueOnce(new Error("Forbidden: Action requires role owner or admin"));
+    await expect(restartRun("run-1")).resolves.toEqual({
+      error: "Forbidden: Action requires role owner or admin",
+    });
+
+    mockRequireRole.mockRejectedValueOnce(new Error("Forbidden: Action requires role owner or admin"));
+    await expect(setFlowStatus("flow_1", "active")).resolves.toEqual({
+      error: "Forbidden: Action requires role owner or admin",
+    });
+
+    mockRequireRole.mockRejectedValueOnce(new Error("Forbidden: Action requires role owner or admin"));
+    await expect(publishTemplate("flow_1", { name: "Template" })).resolves.toEqual({
+      error: "Forbidden: Action requires role owner or admin",
+    });
+  });
+});

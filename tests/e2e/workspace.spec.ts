@@ -24,6 +24,9 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
     for (const route of routes) {
       const response = await page.goto(route);
       expect(response?.status(), route).toBe(200);
+      const csp = response?.headers()["content-security-policy"] ?? "";
+      expect(csp).toContain("https://fonts.googleapis.com");
+      expect(csp).toContain("https://fonts.gstatic.com");
       await expect(page.locator("h1").first()).toBeVisible();
       await expect(page.getByText("Something went wrong", { exact: true })).toHaveCount(0);
       expect(new URL(page.url()).pathname).toBe(route);

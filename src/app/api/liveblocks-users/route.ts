@@ -2,7 +2,13 @@ import { auth, getActiveTenantMembership } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, asc, ilike, or } from "drizzle-orm";
+import { z } from "zod";
+import { readBoundedJson } from "@/lib/http/read-bounded-json";
+
+const requestSchema = z.object({
+  userIds: z.array(z.string().min(1).max(128)).max(100),
+}).strict();
 
 /**
  * Resolves user information for Liveblocks components (AvatarStack, Threads, Mentions).
@@ -21,9 +27,14 @@ export async function POST(request: Request) {
   }
 
   try {
+    const parsed = await readBoundedJson<unknown>(request, 32 * 1024);
+    if (!parsed.ok) return Response.json({ error: parsed.reason === "too_large" ? "Request body is too large" : "Invalid JSON body" }, { status: parsed.reason === "too_large" ? 413 : 400 });
+    const body = requestSchema.safeParse(parsed.value);
+    if (!body.success) return Response.json({ error: "Invalid user lookup request" }, { status: 400 });
+
     const membership = await getActiveTenantMembership().catch(() => null);
     const tenantId = membership?.tenantId;
-    const { userIds } = (await request.json()) as { userIds?: string[] };
+    const { userIds } = body.data;
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return Response.json([]);
     }
@@ -41,6 +52,7 @@ export async function POST(request: Request) {
       columns: {
         userId: true,
       },
+      limit: 100,
     });
 
     const authorizedUserIds = new Set((memberships || []).map((m) => m.userId));
@@ -92,38 +104,34 @@ export async function GET(request: Request) {
   try {
     const { tenantId } = await getActiveTenantMembership();
     const url = new URL(request.url);
-    const text = url.searchParams.get("text") || "";
-
-    const memberships = await db.query.member.findMany({
-      where: eq(schema.member.organizationId, tenantId),
-      columns: {
-        userId: true,
-      },
-    });
-
-    const memberIds = memberships.map((m) => m.userId);
-    if (memberIds.length === 0) {
-      return Response.json({ userIds: [] });
+    const text = (url.searchParams.get("text") || "").trim();
+    if (text.length > 128) {
+      return Response.json({ error: "Search text is too long" }, { status: 400 });
     }
 
-    const users = await db.query.user.findMany({
-      where: inArray(schema.user.id, memberIds),
-      columns: {
-        id: true,
-        name: true,
-        email: true,
-      },
-    });
-
-    let matched = users;
-    if (text.trim().length > 0) {
-      const q = text.toLowerCase();
-      matched = users.filter(
-        (u) => u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q)
-      );
+    // Search inside the tenant-scoped join before applying the bounded result
+    // limit, so large workspaces don't hide later matching members.
+    const conditions = [eq(schema.member.organizationId, tenantId)];
+    if (text) {
+      const escaped = text.replace(/[\\%_]/g, "\\$&");
+      const pattern = `%${escaped}%`;
+      // Both columns are parameterized by Drizzle; escaping keeps user
+      // wildcards from turning autocomplete into an unfiltered tenant scan.
+      conditions.push(or(
+        ilike(schema.user.name, pattern),
+        ilike(schema.user.email, pattern),
+      )!);
     }
 
-    return Response.json({ userIds: matched.map((u) => u.id) });
+    const matched = await db
+      .select({ userId: schema.member.userId })
+      .from(schema.member)
+      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+      .where(and(...conditions))
+      .orderBy(asc(schema.user.name), asc(schema.user.id))
+      .limit(50);
+
+    return Response.json({ userIds: matched.map(({ userId }) => userId) });
   } catch {
     return Response.json({ userIds: [] });
   }

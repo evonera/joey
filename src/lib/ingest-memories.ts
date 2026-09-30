@@ -62,16 +62,14 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
   // concurrent readers never observe duplicate guidelines and historical
   // dupes are compacted away.
   const prepared = prepareMemoryContent(content);
-  let embedding: number[];
   const canEmbed = await hasOpenAIKey(tenantId);
-  if (canEmbed) {
-    try {
-      embedding = await generateEmbedding(prepared, tenantId);
-    } catch {
-      embedding = new Array(1536).fill(0);
-    }
-  } else {
-    embedding = new Array(1536).fill(0);
+  if (!canEmbed) return;
+  let embedding: number[];
+  try {
+    embedding = await generateEmbedding(prepared, tenantId);
+  } catch (error) {
+    console.warn("[memories] Brand guideline was not reindexed because embedding generation failed.", error);
+    return;
   }
   const swap = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
     // Re-check under lock: an overlapping sync may have committed a newer

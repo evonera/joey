@@ -38,9 +38,9 @@ const nextConfig: NextConfig = {
     const cspEnforce = [
       "default-src 'self'",
       `script-src ${scriptSrc}`,
-      "style-src 'self' 'unsafe-inline'", // recharts/rbc inject inline styles
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", // recharts/rbc inject inline styles; template display fonts load from Google Fonts
       "img-src 'self' blob: data: https:",
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       `connect-src 'self' https: wss://*.liveblocks.io${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
       "media-src 'self' blob: data: https:",
       "worker-src 'self' blob:",
@@ -60,9 +60,9 @@ const nextConfig: NextConfig = {
     const cspReportOnly = [
       "default-src 'self'",
       `script-src ${scriptSrc}`,
-      "style-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' blob: data: https://img.shields.io https://*.r2.cloudflarestorage.com https://pbs.twimg.com https://cdn.syndication.twimg.com https://media.licdn.com https://graph.facebook.com",
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       "connect-src 'self' https://*.liveblocks.io wss://*.liveblocks.io https://*.r2.cloudflarestorage.com https://*.ingest.sentry.io",
       "media-src 'self' blob: data: https:",
       "worker-src 'self' blob:",

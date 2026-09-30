@@ -1,6 +1,5 @@
-import { Pool, neon } from '@neondatabase/serverless';
+import { Pool } from '@neondatabase/serverless';
 import { drizzle as drizzleNeonServerless } from 'drizzle-orm/neon-serverless';
-import { drizzle as drizzleNeonHttp } from 'drizzle-orm/neon-http';
 import { drizzle as drizzleNode } from 'drizzle-orm/postgres-js';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -17,11 +16,10 @@ function getDb(): Db {
     if (!instance) {
         const connectionString = process.env.DATABASE_URL || '';
         const provider = process.env.DATABASE_PROVIDER;
-        const isNeonHttp = provider === 'neon-http';
         const isNeon = provider === 'neon' || connectionString.includes('neon.tech');
 
-        if (isNeonHttp) {
-            instance = drizzleNeonHttp({ client: neon(connectionString), schema }) as unknown as Db;
+        if (provider === 'neon-http') {
+            throw new Error("DATABASE_PROVIDER=neon-http is unsupported: Joey requires transactions. Use DATABASE_PROVIDER=neon for Neon's WebSocket pool.");
         } else if (isNeon) {
             // Use WebSocket Pool for Neon deployments so transactions and advisory locks are fully supported
             instance = drizzleNeonServerless({ client: new Pool({ connectionString }), schema }) as unknown as Db;

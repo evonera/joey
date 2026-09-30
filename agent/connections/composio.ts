@@ -1,9 +1,12 @@
 import { defineMcpClientConnection } from "eve/connections";
+import { composioConnectionApproval } from "../lib/composio-policy";
 
 export default defineMcpClientConnection({
   url: "https://connect.composio.dev/mcp",
   description:
-    "Composio: gateway to the user's connected apps (Gmail, Google Calendar, Notion, Slack, GitHub, Linear, and 1000+ more). Search for app tools, connect or authorize apps (returns an OAuth link to show the user), check connection status, and execute app actions like reading news, searching the web, or managing documents.",
+    "Composio research connector for reading/searching connected apps. Ask permission before connecting an app or executing any external action. Use Joey's first-party tools for drafting, scheduling, publishing, and account management.",
+  tools: { allow: ["COMPOSIO_SEARCH_TOOLS", "COMPOSIO_GET_TOOL_SCHEMAS", "COMPOSIO_MANAGE_CONNECTIONS", "COMPOSIO_MULTI_EXECUTE_TOOL"] },
+  approval: ({ toolName }) => composioConnectionApproval(toolName),
   headers: (ctx) => {
     const tenantId = ctx.session.auth.current?.attributes?.tenantId;
     const apiKey = process.env.COMPOSIO_API_KEY;

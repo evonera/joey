@@ -1,20 +1,27 @@
 'use server';
 
-import { auth, getActiveTenantId } from "@/lib/auth";
+import { auth, getActiveTenantId, getActiveTenantMembership, requireRole } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { drafts, contentPackages, themePages, tenants } from "@/lib/db/schema";
 import { eq, and, or, isNotNull, isNull, inArray, desc, ilike, sql } from "drizzle-orm";
 import { reviewThemePackage } from "@/app/actions/theme-packages";
+import { reviewDraft } from "@/lib/draft-review";
 
 // A review action must never reset an accepted or uncertain publication.
-function editableDraft() {
-    return and(inArray(drafts.status, ["draft", "pending_review", "approved", "scheduled", "rejected", "failed"]),
+function editableDraft(role: string) {
+    const statuses = role === "owner" || role === "admin"
+        ? ["draft", "pending_review", "approved", "scheduled", "rejected", "failed"]
+        : ["draft", "pending_review", "rejected", "failed"];
+    return and(inArray(drafts.status, statuses),
         or(isNull(drafts.errorMessage), sql`${drafts.errorMessage} NOT LIKE 'verify:%'`),
         sql`NOT EXISTS (SELECT 1 FROM posts p WHERE p.draft_id = ${drafts.id} AND p.tenant_id = ${drafts.tenantId})`);
 }
-function editablePackage() {
-    return and(inArray(contentPackages.status, ["pending_review", "approved", "rejected", "failed"]),
+function editablePackage(role: string) {
+    const statuses = role === "owner" || role === "admin"
+        ? ["pending_review", "approved", "rejected", "failed"]
+        : ["pending_review", "rejected", "failed"];
+    return and(inArray(contentPackages.status, statuses),
         sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`, sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`);
 }
 
@@ -282,7 +289,7 @@ export async function updateDraft(draftId: string, content: string) {
             return { error: "Content exceeds maximum length of 50,000 characters" };
         }
 
-        const tenantId = await getActiveTenantId();
+        const { tenantId, role } = await getActiveTenantMembership();
         
         const existingDraft = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
@@ -292,7 +299,7 @@ export async function updateDraft(draftId: string, content: string) {
         if (existingDraft) {
             const changed = await db.update(drafts)
                 .set({ content })
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft())).returning({ id: drafts.id });
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft(role))).returning({ id: drafts.id });
             if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
             return { success: true };
         }
@@ -320,7 +327,7 @@ export async function updateDraft(draftId: string, content: string) {
 
             const changed = await db.update(contentPackages)
                 .set({ title: newTitle, caption: newCaption, status: "pending_review", ...(newTitle !== existingPackage.title || (!(existingPackage.metrics as Record<string, unknown> | null)?.renderJobId && newCaption !== existingPackage.caption) ? { renderedAssetUrls: [] } : {}), updatedAt: new Date() })
-                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage())).returning({ id: contentPackages.id });
+                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage(role))).returning({ id: contentPackages.id });
             if (!changed.length) return { error: "This post has already been submitted for publishing. Review it in Theme Studio." };
             return { success: true };
         }
@@ -332,33 +339,16 @@ export async function updateDraft(draftId: string, content: string) {
     }
 }
 
-export async function approveDraft(draftId: string, variantName?: string, content?: string) {
+export async function approveDraft(draftId: string, variantName?: string, content?: string): Promise<{ success?: boolean; error?: string }> {
     try {
-        if (content && content.length > 50000) {
-            return { error: "Content exceeds maximum length of 50,000 characters" };
-        }
-
-        const tenantId = await getActiveTenantId();
-        
+        const tenantId = await requireRole(["owner", "admin"]);
         const existingDraft = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
+            columns: { id: true },
         });
 
         if (existingDraft) {
-            const updateData: Partial<typeof drafts.$inferInsert> & { status: string; errorMessage: null } = { status: "approved", errorMessage: null };
-            if (variantName && content) {
-                updateData.selectedVariantId = variantName;
-                updateData.content = content;
-            } else if (!existingDraft.content) {
-                return { error: "Cannot approve a draft without content. Please select a variant." };
-            }
-
-            const changed = await db.update(drafts)
-                .set(updateData)
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft())).returning({ id: drafts.id });
-            if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
-
-            return { success: true };
+            return reviewDraft({ tenantId, draftId, decision: "approve", variantName, content });
         }
 
         // Check if it's a theme studio content package
@@ -379,13 +369,9 @@ export async function approveDraft(draftId: string, variantName?: string, conten
     }
 }
 
-export async function rejectDraft(draftId: string, feedback: string) {
+export async function rejectDraft(draftId: string, feedback: string): Promise<{ success?: boolean; error?: string }> {
     try {
-        if (feedback && feedback.length > 5000) {
-            return { error: "Feedback exceeds maximum length of 5,000 characters" };
-        }
-
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
         
         const existingDraft = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
@@ -393,11 +379,7 @@ export async function rejectDraft(draftId: string, feedback: string) {
         });
 
         if (existingDraft) {
-            const changed = await db.update(drafts)
-                .set({ status: "rejected", errorMessage: feedback })
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft())).returning({ id: drafts.id });
-            if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
-            return { success: true };
+            return reviewDraft({ tenantId, draftId, decision: "reject", feedback });
         }
 
         const existingPackage = await db.query.contentPackages.findFirst({
@@ -420,7 +402,7 @@ export async function rejectDraft(draftId: string, feedback: string) {
 
 export async function deleteDraft(draftId: string) {
     try {
-        const tenantId = await getActiveTenantId();
+        const { tenantId, role } = await getActiveTenantMembership();
         
         const existingDraft = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
@@ -429,7 +411,7 @@ export async function deleteDraft(draftId: string) {
 
         if (existingDraft) {
             const changed = await db.delete(drafts)
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft())).returning({ id: drafts.id });
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft(role))).returning({ id: drafts.id });
             if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
             return { success: true };
         }
@@ -441,7 +423,7 @@ export async function deleteDraft(draftId: string) {
 
         if (existingPackage) {
             const changed = await db.delete(contentPackages)
-                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage())).returning({ id: contentPackages.id });
+                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage(role))).returning({ id: contentPackages.id });
             if (!changed.length) return { error: "This post has already been submitted for publishing. Review it in Theme Studio." };
             return { success: true };
         }
