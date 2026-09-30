@@ -603,8 +603,8 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
             <Button
               size="sm"
               variant={status === "active" ? "secondary" : "default"}
-              disabled={busy || isDirty || activationBlockedByAgentChanges}
-              title={isDirty || activationBlockedByAgentChanges ? "Save changes before activation" : activationIssues.join(" ") || undefined}
+              disabled={busy || (status !== "active" && (isDirty || activationBlockedByAgentChanges))}
+              title={status !== "active" ? (isDirty || activationBlockedByAgentChanges ? "Save changes before activation" : activationIssues.join(" ") || undefined) : undefined}
               onClick={handleToggleActive}
             >
               {status === "active" ? <><Pause className="mr-1 h-3.5 w-3.5"/>Pause</> : <><Rocket className="mr-1 h-3.5 w-3.5"/>Activate</>}

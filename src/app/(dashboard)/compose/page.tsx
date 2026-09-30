@@ -51,7 +51,7 @@ export default function ComposePage() {
   const [externalUrl, setExternalUrl] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [lockedAccountId, setLockedAccountId] = useState<string | null>(null);
-  const [scheduleType, setScheduleType] = useState<ScheduleType>("now");
+  const [scheduleType, setScheduleType] = useState<ScheduleType>(dateParam ? "scheduled" : "now");
   const [scheduledDate, setScheduledDate] = useState<string | undefined>(dateParam || undefined);
   const [scheduledTime, setScheduledTime] = useState("09:00");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -82,15 +82,17 @@ export default function ComposePage() {
           const parsed = JSON.parse(saved) as { content?: string; mediaUrls?: string[]; scheduledDate?: string; scheduledTime?: string; scheduleType?: ScheduleType };
           if (typeof parsed.content === "string") setContent(parsed.content);
           if (Array.isArray(parsed.mediaUrls)) setMediaUrls(parsed.mediaUrls.filter((url) => typeof url === "string"));
-          if (parsed.scheduleType === "now" || parsed.scheduleType === "scheduled") setScheduleType(parsed.scheduleType);
-          if (typeof parsed.scheduledDate === "string") setScheduledDate(parsed.scheduledDate);
+          if (!dateParam) {
+            if (parsed.scheduleType === "now" || parsed.scheduleType === "scheduled") setScheduleType(parsed.scheduleType);
+            if (typeof parsed.scheduledDate === "string") setScheduledDate(parsed.scheduledDate);
+          }
           if (typeof parsed.scheduledTime === "string") setScheduledTime(parsed.scheduledTime);
         }
       } catch { /* Browser storage is optional; server draft saving remains available. */ }
       setAutosaveKey(key);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [draftIdParam]);
+  }, [draftIdParam, dateParam]);
 
   useEffect(() => {
     if (!autosaveKey || autosaveCompleteRef.current) return;

@@ -64,7 +64,7 @@ export function checkActivationReadiness(
         // an explicitly selected destination must still be available.
         const accountId = typeof config.accountId === "string" ? config.accountId : "";
         if (!accountId) break;
-        const platform = config.platform === "twitter" ? "x" : config.platform;
+        const platform = config.platform === undefined || config.platform === "twitter" ? "x" : config.platform;
         if (!resources.accounts.some((account) => account.id === accountId &&
           (account.platform === platform || (platform === "x" && account.platform === "twitter")))) {
           issues.push({ nodeId: node.id, severity: "error", message: "The selected draft account is disconnected. Choose an active account before activating." });

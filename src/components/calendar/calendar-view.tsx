@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useQueryState } from "nuqs";
 import type { CalendarViewMode } from "./post-calendar";
 import { getCalendarPosts, rescheduleDraft, type CalendarPost } from "@/app/actions/calendar";
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, addHours, addMonths, format, subMonths } from "date-fns";
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, format, subMonths } from "date-fns";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PostDetailsDialog } from "./post-details-dialog";
@@ -51,17 +51,10 @@ export function CalendarView() {
     async function loadPosts() {
       setIsPending(true);
 
-      let start, end;
-      if (view === "month") {
-        start = startOfWeek(startOfMonth(currentDate));
-        end = endOfWeek(endOfMonth(currentDate));
-      } else if (view === "week") {
-        start = startOfWeek(currentDate);
-        end = endOfWeek(currentDate);
-      } else {
-        start = startOfDay(currentDate);
-        end = addHours(start, 24);
-      }
+      // The mobile agenda always shows the month, even when a desktop day/week
+      // view remains in the URL after resizing or opening a shared link.
+      const start = startOfWeek(startOfMonth(currentDate));
+      const end = endOfWeek(endOfMonth(currentDate));
 
       try {
         const res = await getCalendarPosts(start, end);
@@ -78,7 +71,7 @@ export function CalendarView() {
     return () => {
       ignore = true;
     };
-  }, [currentDate, view]);
+  }, [currentDate]);
 
   const handleCreatePost = useCallback((date: Date) => {
     const day = format(date, "yyyy-MM-dd");
@@ -102,6 +95,11 @@ export function CalendarView() {
     setCurrentDate(new Date(currentDate));
   }, [currentDate]);
 
+  const mobileMonth = format(currentDate, "yyyy-MM");
+  const mobilePosts = posts
+    .filter((post) => format(new Date(post.start), "yyyy-MM") === mobileMonth)
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
   return (
     <div className="flex min-w-0 flex-col w-full min-h-[640px] rounded-xl border border-border bg-card p-2 sm:p-4 shadow-xs">
       <div className="space-y-4 sm:hidden" aria-label="Mobile post agenda">
@@ -116,8 +114,8 @@ export function CalendarView() {
         </div>
         <div className="space-y-2">
           <h3 className="text-sm font-semibold">Posts this month</h3>
-          {isPending ? <p role="status" className="text-sm text-muted-foreground">Loading posts…</p> : posts.length === 0 ? <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">No posts here yet. Choose a date above to start a draft.</p> :
-            posts.slice().sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()).map((post) => <button key={post.id} type="button" onClick={() => setSelectedPost(post)} className="block w-full rounded-xl border bg-background p-3 text-left hover:border-primary/50"><span className="block text-xs text-muted-foreground">{format(new Date(post.start), "EEE, MMM d · h:mm a")}</span><span className="mt-1 block font-medium">{post.title}</span><span className="mt-1 block text-xs capitalize text-muted-foreground">{post.platform} · {post.status.replaceAll("_", " ")}</span></button>)}
+          {isPending ? <p role="status" className="text-sm text-muted-foreground">Loading posts…</p> : mobilePosts.length === 0 ? <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">No posts here yet. Choose a date above to start a draft.</p> :
+            mobilePosts.map((post) => <button key={post.id} type="button" onClick={() => setSelectedPost(post)} className="block w-full rounded-xl border bg-background p-3 text-left hover:border-primary/50"><span className="block text-xs text-muted-foreground">{format(new Date(post.start), "EEE, MMM d · h:mm a")}</span><span className="mt-1 block font-medium">{post.title}</span><span className="mt-1 block text-xs capitalize text-muted-foreground">{post.platform} · {post.status.replaceAll("_", " ")}</span></button>)}
         </div>
       </div>
       <div className="hidden sm:block"><PostCalendar

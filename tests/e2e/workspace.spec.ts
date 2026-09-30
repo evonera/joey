@@ -81,9 +81,20 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
   await captureScreenshot(page, testInfo, "chat-create-post-320.png");
   await page.getByRole("button", { name: "Close sidepanel" }).click();
   await expect(page.getByRole("button", { name: "Create a post" })).toBeVisible();
-  await page.goto("/calendar?view=invalid");
+  await page.goto("/compose");
+  await page.waitForFunction(() => Object.keys(sessionStorage).some((key) => key.startsWith("joey:compose:")));
+  await page.evaluate(() => {
+    const key = Object.keys(sessionStorage).find((entry) => entry.startsWith("joey:compose:"));
+    if (key) sessionStorage.setItem(key, JSON.stringify({ content: "Keep this restored draft", scheduleType: "now", scheduledDate: "2020-01-01" }));
+  });
+  await page.goto("/calendar?view=day");
+  const requestedDate = "2030-01-12";
+  await page.getByLabel("Post date").fill(requestedDate);
   await page.getByRole("button", { name: "Create post", exact: true }).click();
-  await expect(page).toHaveURL(/\/compose\?date=\d{4}-\d{2}-\d{2}$/);
+  await expect(page).toHaveURL(`/compose?date=${requestedDate}`);
+  await expect(page.getByRole("tab", { name: "Schedule for Later" })).toHaveAttribute("data-state", "active");
+  await expect(page.locator("#schedule-date")).toHaveValue(requestedDate);
+  await expect(page.getByRole("textbox", { name: "Post content" })).toHaveValue("Keep this restored draft");
 });
 
 test("a new workspace can create a theme page and open every setup tab", async ({ page, context }, testInfo) => {
