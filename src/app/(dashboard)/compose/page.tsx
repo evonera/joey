@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getConnectedAccounts } from "@/app/actions/zernio";
-import { createManualPost, getDraftForCompose } from "@/app/actions/compose";
+import { createManualPost, getComposeAutosaveScope, getDraftForCompose } from "@/app/actions/compose";
 import { requestUploadUrl, registerAsset } from "@/app/actions/assets";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,17 +50,57 @@ export default function ComposePage() {
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [externalUrl, setExternalUrl] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [lockedAccountId, setLockedAccountId] = useState<string | null>(null);
   const [scheduleType, setScheduleType] = useState<ScheduleType>("now");
   const [scheduledDate, setScheduledDate] = useState<string | undefined>(dateParam || undefined);
   const [scheduledTime, setScheduledTime] = useState("09:00");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [publicationReceipt, setPublicationReceipt] = useState<Array<{ draftId: string; accountId: string; platform: string; status: string; error?: string }> | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [mediaStudioOpen, setMediaStudioOpen] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [packagingScore, setPackagingScore] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const autosaveCompleteRef = useRef(false);
+  const skipNextAutosaveRestoreRef = useRef(false);
+  const [autosaveKey, setAutosaveKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (draftIdParam) return;
+    let cancelled = false;
+    void getComposeAutosaveScope().then((scope) => {
+      if (cancelled) return;
+      const key = `joey:compose:${scope}`;
+      try {
+        const skipRestore = skipNextAutosaveRestoreRef.current;
+        skipNextAutosaveRestoreRef.current = false;
+        if (skipRestore) sessionStorage.removeItem(key);
+        const saved = skipRestore ? null : sessionStorage.getItem(key);
+        if (saved) {
+          const parsed = JSON.parse(saved) as { content?: string; mediaUrls?: string[]; scheduledDate?: string; scheduledTime?: string; scheduleType?: ScheduleType };
+          if (typeof parsed.content === "string") setContent(parsed.content);
+          if (Array.isArray(parsed.mediaUrls)) setMediaUrls(parsed.mediaUrls.filter((url) => typeof url === "string"));
+          if (parsed.scheduleType === "now" || parsed.scheduleType === "scheduled") setScheduleType(parsed.scheduleType);
+          if (typeof parsed.scheduledDate === "string") setScheduledDate(parsed.scheduledDate);
+          if (typeof parsed.scheduledTime === "string") setScheduledTime(parsed.scheduledTime);
+        }
+      } catch { /* Browser storage is optional; server draft saving remains available. */ }
+      setAutosaveKey(key);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [draftIdParam]);
+
+  useEffect(() => {
+    if (!autosaveKey || autosaveCompleteRef.current) return;
+    const timeout = window.setTimeout(() => {
+      try {
+        sessionStorage.setItem(autosaveKey, JSON.stringify({ content, mediaUrls, scheduleType, scheduledDate, scheduledTime }));
+      } catch { /* Keep editing when browser storage is unavailable. */ }
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [autosaveKey, content, mediaUrls, scheduleType, scheduledDate, scheduledTime]);
 
   // Prefill date if coming from calendar
   useEffect(() => {
@@ -99,6 +139,7 @@ export default function ComposePage() {
         }
         if (opts?.accountId) {
           setSelectedAccountIds([opts.accountId]);
+          setLockedAccountId(opts.accountId);
         }
         if (res.draft.scheduledFor) {
           setScheduleType("scheduled");
@@ -175,7 +216,7 @@ export default function ComposePage() {
         const uploadRes = await fetch(uploadUrl, {
           method: "PUT",
           body: file,
-          headers: { "Content-Type": file.type || "application/octet-stream" },
+          headers: { "Content-Type": file.type || "application/octet-stream", "Content-Disposition": "attachment" },
         });
         if (!uploadRes.ok) throw new Error(`Upload of ${file.name} to R2 storage failed`);
 
@@ -203,16 +244,12 @@ export default function ComposePage() {
   }
 
   const handleSaveDraft = async () => {
-    if (selectedAccountIds.length === 0) {
-      toast.error("Please select at least one account for this draft");
-      return;
-    }
     if (!content.trim() && mediaUrls.length === 0) {
       toast.error("Please provide content or media for your draft");
       return;
     }
 
-    await submitPost("draft");
+    await submitPost(draftIdParam && scheduleType === "scheduled" ? "scheduled" : "draft");
   };
 
   const submitPost = async (mode: "now" | "scheduled" | "draft", opts?: { confirmedAt?: string }) => {
@@ -233,13 +270,20 @@ export default function ComposePage() {
       });
       if (res.error) {
         toast.error(res.error);
-        // A partial publish already saved the drafts. Continue in the queue,
-        // where retries use their existing IDs, instead of duplicating posts.
-        if (res.draftsCreated) router.push("/drafts");
+        // A partial publish already saved the drafts. Keep the receipt visible
+        // so a second click cannot create duplicate posts.
+        if ("publicationResults" in res && res.publicationResults?.length) {
+          autosaveCompleteRef.current = true;
+          try { if (autosaveKey) sessionStorage.removeItem(autosaveKey); } catch { /* Browser storage can be unavailable. */ }
+          setPublicationReceipt(res.publicationResults);
+        }
         return;
       }
       toast.success(mode === "draft" ? "Draft saved" : mode === "scheduled" ? "Post scheduled" : res.processing ? "Post submitted. Publishing is still in progress." : "Post published");
-      router.push(mode === "scheduled" ? "/calendar" : "/drafts");
+      autosaveCompleteRef.current = true;
+      try { if (autosaveKey) sessionStorage.removeItem(autosaveKey); } catch { /* Storage can be unavailable after the post succeeds. */ }
+      if (mode === "now") setPublicationReceipt("publicationResults" in res ? res.publicationResults || [] : []);
+      else router.push(mode === "scheduled" ? "/calendar" : "/drafts?tab=draft");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn’t save your post. Please try again.");
     } finally { setIsSavingDraft(false); setIsSubmitting(false); }
@@ -254,7 +298,31 @@ export default function ComposePage() {
     await submitPost("scheduled");
   };
 
+  const createAnotherPost = () => {
+    setContent("");
+    setMediaUrls([]);
+    setSelectedAccountIds([]);
+    setScheduleType("now");
+    setScheduledDate(undefined);
+    setScheduledTime("09:00");
+    setPublicationReceipt(null);
+    autosaveCompleteRef.current = false;
+    skipNextAutosaveRestoreRef.current = Boolean(draftIdParam);
+    try { if (autosaveKey) sessionStorage.removeItem(autosaveKey); } catch { /* Browser storage can be unavailable. */ }
+    if (draftIdParam) router.replace("/compose");
+  };
+
   if (draftLoadError) return <div role="alert" className="space-y-4"><p>{draftLoadError}</p><Button asChild><Link href="/drafts">Back to drafts</Link></Button></div>;
+
+  if (publicationReceipt) return <div className="mx-auto max-w-2xl space-y-5 rounded-xl border border-border bg-card p-5">
+    <div><h1 className="text-xl font-semibold">Publication status</h1><p className="mt-1 text-sm text-muted-foreground">Each destination is shown separately. Publishing may still be in progress.</p></div>
+    <ul className="space-y-2">{publicationReceipt.map((result) => <li key={result.draftId} className="rounded-lg border border-border/60 p-3 text-sm">
+      <div className="flex justify-between gap-3"><span className="capitalize">{result.platform}</span><span className="capitalize font-medium">{result.status}</span></div>
+      {result.error && <p role="alert" className="mt-1 text-destructive">{result.error}</p>}
+      <Link href={`/drafts?tab=${result.status === 'published' ? 'published' : result.status === 'failed' ? 'failed' : 'publishing'}`} className="mt-2 inline-block text-xs underline">View posts with this status</Link>
+    </li>)}</ul>
+    <div className="flex flex-wrap gap-2"><Button onClick={createAnotherPost}>Create another post</Button><Button asChild variant="outline"><Link href="/drafts?tab=all">View all posts</Link></Button></div>
+  </div>;
 
   return (
     <div className="mx-auto min-w-0 max-w-3xl space-y-6 pb-16">
@@ -292,7 +360,7 @@ export default function ComposePage() {
               </Badge>
             )}
           </CardTitle>
-          <CardDescription>Choose the platforms and profiles where you want to publish.</CardDescription>
+          <CardDescription>Choose a destination when you are ready to publish or schedule. Saving a draft needs no account.</CardDescription>
         </CardHeader>
         <CardContent>
           {loadingAccounts ? (
@@ -302,6 +370,8 @@ export default function ComposePage() {
               accounts={accounts}
               selectedAccountIds={selectedAccountIds}
               onSelectionChange={setSelectedAccountIds}
+              maxSelection={draftIdParam ? 1 : undefined}
+              lockedAccountId={lockedAccountId}
             />
           )}
         </CardContent>
@@ -504,7 +574,8 @@ export default function ComposePage() {
       {selectedAccounts.length > 0 && (content.trim().length > 0 || mediaUrls.length > 0) && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Platform Previews</CardTitle>
+            <CardTitle className="text-base">Approximate post preview</CardTitle>
+            <CardDescription>Layout may differ in the social app. Review the published result after posting.</CardDescription>
           </CardHeader>
           <CardContent>
             <PlatformPreviews content={content} media={mediaUrls} selectedAccounts={selectedAccounts} />
@@ -544,12 +615,12 @@ export default function ComposePage() {
           type="button"
           variant="outline"
           onClick={handleSaveDraft}
-          disabled={selectedAccountIds.length === 0 || (!content.trim() && mediaUrls.length === 0) || isSavingDraft || isSubmitting || uploading || loadingDraft}
+          disabled={(!content.trim() && mediaUrls.length === 0) || isSavingDraft || isSubmitting || uploading || loadingDraft}
           size="lg"
           className="w-full sm:w-auto px-6"
         >
           {isSavingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Save as Draft
+          {draftIdParam && scheduleType === "scheduled" ? "Save schedule changes" : "Save as Draft"}
         </Button>
         <Button
           onClick={handleSubmit}

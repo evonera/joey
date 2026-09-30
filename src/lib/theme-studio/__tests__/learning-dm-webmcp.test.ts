@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { calculateQualityScore } from "@/lib/theme-studio/learning/quality-scorer";
 import { hasUsableAnalyticsSample } from "@/lib/theme-studio/learning/recipe-optimizer";
-import { createThemeStudioWebMcpTools } from "@/lib/theme-studio/webmcp/theme-studio-tools";
+import { createThemeStudioWebMcpTools, getThemeStudioReadinessIssues } from "@/lib/theme-studio/webmcp/theme-studio-tools";
 
 describe("Theme Studio Learning Loop, DM Automation & WebMCP (Phase 6)", () => {
   describe("Algorithmic Quality Scorer", () => {
@@ -104,6 +104,19 @@ describe("Theme Studio Learning Loop, DM Automation & WebMCP (Phase 6)", () => {
 
       expect(payload.ready).toBe(false);
       expect(payload.issues).toContain("Select an active instagram publishing account");
+    });
+
+    it("surfaces an unknown-rights source as a setup blocker", () => {
+      const issues = getThemeStudioReadinessIssues({
+        page: {
+          id: "page-1", name: "Daily", niche: null, audience: null, status: "draft",
+          rightsPolicy: "strict", connectedAccountCount: 1, connectedPlatforms: ["instagram"],
+        },
+        sources: [{ id: "source-1", name: "News feed", sourceType: "rss", rightsCategory: "unknown", isActive: true }],
+        slots: [{ id: "slot-1", label: "Card", cadence: "daily", isActive: true, platform: "instagram" }],
+        packages: [],
+      });
+      expect(issues).toContain("Review source rights: no active source is allowed by this page's policy");
     });
   });
 });

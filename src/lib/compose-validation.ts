@@ -7,7 +7,7 @@ export const manualPostSchema = z.object({
     const url = new URL(value);
     return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
   }, "Use an HTTP or HTTPS media URL without credentials.")).max(10),
-  accountIds: z.array(z.string().min(1).max(128)).min(1, "Select at least one account.").max(30)
+  accountIds: z.array(z.string().min(1).max(128)).max(30)
     .refine(ids => new Set(ids).size === ids.length, "Select each account only once."),
   scheduleType: z.enum(["now", "scheduled", "draft"]),
   scheduledFor: z.iso.datetime({ offset: true }).optional(),
@@ -17,6 +17,9 @@ export const manualPostSchema = z.object({
   confirmedAt: z.iso.datetime({ offset: true }).optional(),
 }).superRefine((data, ctx) => {
   if (!data.content.trim() && !data.mediaUrls.length) ctx.addIssue({ code: "custom", message: "Add post content or media." });
+  if (data.scheduleType !== "draft" && data.accountIds.length === 0) {
+    ctx.addIssue({ code: "custom", message: "Connect and select an account before publishing or scheduling." });
+  }
   if (data.scheduleType === "scheduled" && (!data.scheduledFor || Date.parse(data.scheduledFor) <= Date.now())) {
     ctx.addIssue({ code: "custom", message: "Select a future date and time." });
   }
@@ -26,7 +29,7 @@ export const manualPostSchema = z.object({
       ctx.addIssue({ code: "custom", message: "Please confirm live publication before publishing." });
     }
   }
-  if (data.draftId && data.accountIds.length !== 1) ctx.addIssue({ code: "custom", message: "An existing draft belongs to one account. Select one account to update it." });
+  if (data.draftId && data.accountIds.length > 1) ctx.addIssue({ code: "custom", message: "Select at most one account when editing a draft." });
 });
 
 export const COMPOSE_PLATFORM_LIMITS: Record<string, { label: string; limit: number; maxMedia: number }> = {

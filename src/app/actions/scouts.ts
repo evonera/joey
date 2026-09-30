@@ -6,6 +6,7 @@ import { scouts, scoutRuns } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
 import { revalidatePath } from "next/cache";
+import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
 
 export interface CreateScoutInput {
   name: string;
@@ -13,6 +14,31 @@ export interface CreateScoutInput {
   platform?: "instagram" | "tiktok" | "twitter" | "youtube" | "web";
   goalCondition: string;
   pollIntervalMinutes?: number;
+}
+
+function validateScoutInput(input: CreateScoutInput) {
+  if (!input.name?.trim()) throw new Error("Scout name is required");
+  if (!input.targetUrl?.trim()) throw new Error("Target URL is required");
+  if (!input.goalCondition?.trim()) throw new Error("Goal condition is required");
+  if (input.name.length > 120 || input.goalCondition.length > 1000) throw new Error("Scout name or goal is too long.");
+  const platform = input.platform || "instagram";
+  if (!["instagram", "tiktok", "twitter", "youtube", "web"].includes(platform)) throw new Error("Unsupported Scout platform.");
+  let url: URL;
+  try { url = new URL(input.targetUrl.trim()); } catch { throw new Error("Enter a full HTTPS target URL."); }
+  if (url.protocol !== "https:" || url.username || url.password) throw new Error("Enter a public HTTPS target URL without credentials.");
+  const expectedHosts: Record<string, string[]> = {
+    instagram: ["instagram.com"], tiktok: ["tiktok.com"], twitter: ["x.com", "twitter.com"], youtube: ["youtube.com", "youtu.be"], web: [],
+  };
+  if (expectedHosts[platform].length && !expectedHosts[platform].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
+    throw new Error(`Use a ${platform} URL for this platform.`);
+  }
+  return { name: input.name.trim(), targetUrl: url.toString(), platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: 1440 };
+}
+
+export async function getScoutSetup() {
+  const tenantId = await getActiveTenantId();
+  try { await resolveToken(tenantId); return { apifyReady: true }; }
+  catch { return { apifyReady: false, issue: "Connect an Apify token in Settings before automatic monitoring can run." }; }
 }
 
 export async function getScouts() {
@@ -41,26 +67,42 @@ export async function getScoutRuns(scoutId: string) {
 
 export async function createScout(input: CreateScoutInput) {
   const tenantId = await getActiveTenantId();
-
-  if (!input.name?.trim()) throw new Error("Scout name is required");
-  if (!input.targetUrl?.trim()) throw new Error("Target URL is required");
-  if (!input.goalCondition?.trim()) throw new Error("Goal condition is required");
+  const values = validateScoutInput(input);
 
   const [created] = await db
     .insert(scouts)
     .values({
       tenantId,
-      name: input.name.trim(),
-      targetUrl: input.targetUrl.trim(),
-      platform: input.platform || "instagram",
-      goalCondition: input.goalCondition.trim(),
-      pollIntervalMinutes: input.pollIntervalMinutes || 120,
+      ...values,
+      // Creating a Scout is a drafting action. Activation remains a separate,
+      // owner/admin-only operation even when Apify is already configured.
       isActive: false,
     })
     .returning();
 
   revalidatePath("/scouts");
   return created;
+}
+
+export async function updateScout(scoutId: string, input: CreateScoutInput) {
+  const { tenantId, role } = await getActiveTenantMembership();
+  const values = validateScoutInput(input);
+  const existing = await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) });
+  if (!existing) throw new Error("Scout not found.");
+  const canOperate = role === "owner" || role === "admin";
+  if (existing.isActive && !canOperate) throw new Error("Only workspace admins can edit an active Scout.");
+  const conditions = [eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)];
+  // Do not let a member update a Scout that was activated after the read above.
+  if (!canOperate) conditions.push(eq(scouts.isActive, false));
+  const changedTarget = existing.targetUrl !== values.targetUrl || existing.goalCondition !== values.goalCondition || existing.platform !== values.platform;
+  const [updated] = await db.update(scouts).set({
+    ...values,
+    ...(changedTarget ? { latestAlert: null, lastPolledAt: null } : {}),
+    updatedAt: new Date(),
+  }).where(and(...conditions)).returning();
+  if (!updated) throw new Error("Scout changed before it could be saved. Refresh and try again.");
+  revalidatePath("/scouts");
+  return updated;
 }
 
 export async function runScoutNow(scoutId: string) {
@@ -80,6 +122,7 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
   // an admin for both transitions prevents pausing an active Scout as a way to
   // bypass the active-Scout deletion restriction.
   const tenantId = await requireRole(["owner", "admin"]);
+  if (isActive) await resolveToken(tenantId);
   await db
     .update(scouts)
     .set({ isActive, updatedAt: new Date() })

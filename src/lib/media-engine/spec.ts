@@ -6,7 +6,7 @@ export const FONT_VERSION = "joey-fonts-1";
 const asset = z.object({ id: z.uuid(), version: z.string().min(1).max(512) }).strict();
 export const renderSpecSchema = z.object({
   version: z.literal(1),
-  source: z.object({ kind: z.enum(["theme_package", "flow"]), id: z.string().min(1).max(128), revision: z.string().min(1).max(128) }).strict(),
+  source: z.object({ kind: z.enum(["theme_package", "flow", "draft"]), id: z.string().min(1).max(128), revision: z.string().min(1).max(128) }).strict(),
   template: z.enum(["photo_headline", "photo_inset", "branded_clip", "minimal_meme"]),
   templateVersion: z.literal(1),
   format: z.enum(["png", "mp4"]),

@@ -43,6 +43,24 @@ function sanitizeComponentSpec(input: Record<string, unknown>): Record<string, u
       output[field] = input[field];
     }
   }
+  if (input.templateFamily !== undefined) {
+    if (typeof input.templateFamily !== "string" || !["pubity_hero", "morning_brew_cyan", "pubity_carousel", "tweet_card", "tweet_grid4"].includes(input.templateFamily)) return null;
+    output.templateFamily = input.templateFamily;
+  }
+  if (input.topBadge !== undefined) {
+    if (typeof input.topBadge !== "string" || !["yellow_logo", "swipe_pill", "tag_pill", "circular_seal", "none"].includes(input.topBadge)) return null;
+    output.topBadge = input.topBadge;
+  }
+  if (input.brandInitial !== undefined) {
+    if (typeof input.brandInitial !== "string" || input.brandInitial.length > 16) return null;
+    output.brandInitial = input.brandInitial;
+  }
+  for (const field of ["showDivider", "showDividerMark"] as const) {
+    if (input[field] !== undefined) {
+      if (typeof input[field] !== "boolean") return null;
+      output[field] = input[field];
+    }
+  }
   for (const field of ["watermarkText", "titleTemplate", "bodyTemplate"] as const) {
     if (input[field] !== undefined) {
       if (typeof input[field] !== "string" || input[field].length > 500) return null;

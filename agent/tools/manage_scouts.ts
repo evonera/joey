@@ -1,22 +1,29 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { scouts, scoutRuns } from "@/lib/db/schema";
+import { scouts } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
+import { workspaceApproval } from "../lib/workspace-approval";
 
 export default defineTool({
   description:
-    "Manage Social Scouts for monitoring competitor/reference social accounts and theme pages (Instagram, TikTok, Twitter/X) via Apify. You can list, create, evaluate, or check alerts from scouts.",
+    "Manage Social Scouts for daily monitoring of social accounts and theme pages via Apify. You can list, create, evaluate, or check alerts from scouts.",
   inputSchema: z.object({
     action: z.enum(["list", "create", "evaluate", "get_alert"]).describe("Action to perform."),
     scoutId: z.string().optional().describe("ID of the scout (required for evaluate or get_alert)."),
     name: z.string().optional().describe("Descriptive name for the scout (e.g. 'Pubity Viral Hooks')."),
-    targetUrl: z.string().optional().describe("Target profile or page URL (e.g. 'https://instagram.com/pubity')."),
+    targetUrl: z.url().optional().describe("Full HTTPS profile or page URL (e.g. 'https://instagram.com/pubity')."),
     platform: z.enum(["instagram", "tiktok", "twitter", "youtube", "web"]).default("instagram").describe("Social platform."),
     goalCondition: z.string().optional().describe("Natural language goal / trigger condition (e.g. 'Alert when a reel exceeds 50k views or uses a split-screen text hook')."),
-    pollIntervalMinutes: z.number().min(15).max(1440).default(120).describe("How often to check in minutes."),
+    pollIntervalMinutes: z.literal(1440).default(1440).describe("Automatic checks run daily; use evaluate for an immediate check."),
   }),
+  approval: {
+    request: (ctx) => ctx.toolInput?.action === "evaluate"
+      ? workspaceApproval().request(ctx)
+      : "not-applicable",
+    response: (ctx) => workspaceApproval().response!(ctx),
+  },
   execute: async ({ action, scoutId, name, targetUrl, platform, goalCondition, pollIntervalMinutes }, ctx) => {
     const tenantId = ctx.session.auth.current?.attributes?.tenantId;
     if (!tenantId) throw new Error("Unable to identify tenant from session auth.");
@@ -48,6 +55,7 @@ export default defineTool({
           throw new Error("name, targetUrl, and goalCondition are required to create a scout.");
         }
 
+        if (new URL(targetUrl).protocol !== "https:") throw new Error("Scout target must use HTTPS.");
         const [created] = await db
           .insert(scouts)
           .values({
@@ -57,11 +65,12 @@ export default defineTool({
             platform,
             goalCondition,
             pollIntervalMinutes,
+            isActive: false,
           })
           .returning();
 
         return {
-          message: `Scout '${name}' created successfully.`,
+          message: `Scout '${name}' saved paused. An owner or admin can enable daily monitoring in Scouts once Apify is connected.`,
           scout: created,
         };
       }

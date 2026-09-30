@@ -19,6 +19,12 @@ describe("composer input validation", () => {
   it("prevents an edited draft from being duplicated across multiple accounts", () => {
     expect(manualPostSchema.safeParse({ ...valid, draftId: "draft-1", accountIds: ["a", "b"] }).success).toBe(false);
   });
+  it("saves work without an account but requires one for delivery", () => {
+    expect(manualPostSchema.safeParse({ ...valid, accountIds: [] }).success).toBe(true);
+    expect(manualPostSchema.safeParse({ ...valid, draftId: "draft-1", accountIds: [] }).success).toBe(true);
+    expect(manualPostSchema.safeParse({ ...valid, accountIds: [], scheduleType: "scheduled", scheduledFor: new Date(Date.now() + 3600000).toISOString() }).success).toBe(false);
+    expect(manualPostSchema.safeParse({ ...valid, accountIds: [], scheduleType: "now", confirmedAt: new Date().toISOString() }).success).toBe(false);
+  });
   it("requires a fresh user confirmation for immediate publishing", () => {
     const base = { ...valid, scheduleType: "now" };
     expect(manualPostSchema.safeParse(base).success).toBe(false);

@@ -7,6 +7,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { normalizeThemeSourceLocation } from "@/lib/theme-studio/source-location";
 
 export type ThemeSourceType = 'rss' | 'http' | 'reddit' | 'exa_domain' | 'exa_topic';
+const RIGHTS_CATEGORIES = new Set(["unknown", "owned", "public_domain", "cc_by", "cc_by_sa", "commercial_license", "fair_use_commentary"]);
 
 export interface CreateThemeSourceInput {
   themePageId: string;
@@ -71,6 +72,7 @@ export async function createThemeSource(data: CreateThemeSourceInput) {
       return { error: "Source URL is required" };
     }
     if (!['rss', 'http', 'reddit', 'exa_domain', 'exa_topic'].includes(data.sourceType)) return { error: "Unsupported source type" };
+    if (data.rightsCategory && !RIGHTS_CATEGORIES.has(data.rightsCategory)) return { error: "Choose a supported rights category" };
     const url = normalizeThemeSourceLocation(data.sourceType, data.url);
     if (!validSourceLocation(data.sourceType, url)) return { error: "Use a valid URL, domain, or subreddit name" };
     if (data.pollIntervalMinutes !== undefined && (data.pollIntervalMinutes < 5 || data.pollIntervalMinutes > 10080)) return { error: "Poll interval must be between 5 minutes and 7 days" };
@@ -109,6 +111,7 @@ export async function updateThemeSource(id: string, data: UpdateThemeSourceInput
   try {
     const tenantId = await requireRole(["owner", "admin"]);
     if (data.sourceType !== undefined && !['rss', 'http', 'reddit', 'exa_domain', 'exa_topic'].includes(data.sourceType)) return { error: "Unsupported source type" };
+    if (data.rightsCategory !== undefined && !RIGHTS_CATEGORIES.has(data.rightsCategory)) return { error: "Choose a supported rights category" };
     let normalizedUrl: string | undefined;
     if (data.url !== undefined || data.sourceType !== undefined) {
       const existing = await db.query.themeSources.findFirst({

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Artifact, type ArtifactType } from "@/components/ai-elements/artifact";
 import { ChatContextInspector } from "./chat-context-inspector";
+import { CreationShelfPanel } from "./creation-shelf-panel";
 import type { TokenMetrics } from "@/lib/chat-sessions";
 
 interface ExtractedArtifact {
@@ -26,8 +27,12 @@ interface ExtractedArtifact {
 interface ChatSidepanelProps {
   isOpen: boolean;
   onClose: () => void;
-  activeTab: "artifacts" | "context";
-  onTabChange: (tab: "artifacts" | "context") => void;
+  activeTab: "studio" | "artifacts" | "context";
+  onTabChange: (tab: "studio" | "artifacts" | "context") => void;
+  onUsePrompt: (prompt: string) => void;
+  creationMode: 'post' | 'video';
+  videoAssetId: string | null;
+  onCreationModeChange: (mode: 'post' | 'video') => void;
   sessionTitle: string;
   modelId: string;
   messages: readonly any[];
@@ -43,6 +48,10 @@ export function ChatSidepanel({
   onClose,
   activeTab,
   onTabChange,
+  onUsePrompt,
+  creationMode,
+  videoAssetId,
+  onCreationModeChange,
   sessionTitle,
   modelId,
   messages,
@@ -167,18 +176,19 @@ export function ChatSidepanel({
     >
       <Tabs
         value={activeTab}
-        onValueChange={(val) => onTabChange(val as "artifacts" | "context")}
+        onValueChange={(val) => onTabChange(val as "studio" | "artifacts" | "context")}
         className="flex flex-col h-full gap-0"
       >
         {/* Header with Tab switcher and Close button - h-12 aligns with main header */}
         <div className="flex h-12 items-center justify-between border-b border-border/40 px-3 shrink-0 bg-background/50 backdrop-blur-xs">
           <TabsList className="h-7 p-0.5 bg-muted/40 border border-border/50">
+            <TabsTrigger value="studio" className="h-6 px-2.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-xs">Create</TabsTrigger>
             <TabsTrigger
               value="artifacts"
               className="h-6 px-2.5 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
             >
               <FileIcon className="size-3.5" />
-              <span>Artifacts</span>
+              <span>Replies</span>
               {artifacts.length > 0 ? (
                 <span className="ml-0.5 rounded-full bg-primary/15 px-1.5 py-0.2 text-[10px] font-mono font-medium text-primary">
                   {artifacts.length}
@@ -191,7 +201,7 @@ export function ChatSidepanel({
               className="h-6 px-2.5 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
             >
               <BrainIcon className="size-3.5" />
-              <span>Context</span>
+              <span>Details</span>
               <span className="ml-0.5 rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">
                 {formatTokenCount(tokenMetrics.totalTokens)}
               </span>
@@ -209,6 +219,10 @@ export function ChatSidepanel({
             <CloseIcon className="size-4" />
           </Button>
         </div>
+
+        <TabsContent value="studio" className="flex-1 overflow-y-auto m-0 p-0">
+          <CreationShelfPanel onUsePrompt={onUsePrompt} mode={creationMode} videoAssetId={videoAssetId} onModeChange={onCreationModeChange} />
+        </TabsContent>
 
         {/* Artifacts Tab Content */}
         <TabsContent

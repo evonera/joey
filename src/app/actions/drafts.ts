@@ -221,6 +221,7 @@ export async function getDraftCounts() {
 
         const counts: Record<string, number> = {
             all: allDrafts.length + allPackages.length,
+            draft: 0,
             pending_review: 0,
             scheduled: 0,
             approved: 0,
@@ -254,7 +255,7 @@ export async function getDraftCounts() {
 
         return { counts };
     } catch (error: any) {
-        return { counts: { all: 0, pending_review: 0, scheduled: 0, approved: 0, publishing: 0, published: 0, failed: 0, rejected: 0 } };
+        return { counts: { all: 0, draft: 0, pending_review: 0, scheduled: 0, approved: 0, publishing: 0, published: 0, failed: 0, rejected: 0 } };
     }
 }
 
@@ -436,18 +437,30 @@ export async function deleteDraft(draftId: string) {
 
 export async function bulkApproveDrafts(draftIds: string[]) {
     if (!Array.isArray(draftIds) || draftIds.length > 100) return { error: "Select up to 100 drafts at a time." };
-    await getActiveTenantId();
+    const tenantId = await getActiveTenantId();
     let count = 0;
-    for (const id of new Set(draftIds)) if ((await approveDraft(id)).success) count++;
+    for (const id of new Set(draftIds)) {
+        const [draft, pkg] = await Promise.all([
+            db.query.drafts.findFirst({ where: and(eq(drafts.id, id), eq(drafts.tenantId, tenantId)), columns: { status: true } }),
+            db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, id), eq(contentPackages.tenantId, tenantId)), columns: { status: true } }),
+        ]);
+        if ((draft?.status === "pending_review" || pkg?.status === "pending_review") && (await approveDraft(id)).success) count++;
+    }
     return { success: true, count };
 }
 
 export async function bulkRejectDrafts(draftIds: string[], feedback?: string) {
     if (!Array.isArray(draftIds) || draftIds.length > 100) return { error: "Select up to 100 drafts at a time." };
     if (feedback && feedback.length > 5000) return { error: "Feedback must be 5,000 characters or fewer." };
-    await getActiveTenantId();
+    const tenantId = await getActiveTenantId();
     let count = 0;
-    for (const id of new Set(draftIds)) if ((await rejectDraft(id, feedback || "Rejected via bulk action")).success) count++;
+    for (const id of new Set(draftIds)) {
+        const [draft, pkg] = await Promise.all([
+            db.query.drafts.findFirst({ where: and(eq(drafts.id, id), eq(drafts.tenantId, tenantId)), columns: { status: true } }),
+            db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, id), eq(contentPackages.tenantId, tenantId)), columns: { status: true } }),
+        ]);
+        if ((draft?.status === "pending_review" || pkg?.status === "pending_review") && (await rejectDraft(id, feedback || "Rejected via bulk action")).success) count++;
+    }
     return { success: true, count };
 }
 

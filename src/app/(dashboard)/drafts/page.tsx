@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { getDrafts, getDraftCounts, bulkApproveDrafts, bulkRejectDrafts, bulkDeleteDrafts } from "@/app/actions/drafts";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DraftCard } from "@/components/draft-card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -43,10 +44,12 @@ const SOURCES = [
 ];
 
 export default function DraftsPage() {
+    const searchParams = useSearchParams();
     const { isConfigured, tenantId } = useLiveblocksConfig();
     const [drafts, setDrafts] = useState<any[]>([]);
     const [counts, setCounts] = useState<Record<string, number>>({
         all: 0,
+        draft: 0,
         pending_review: 0,
         scheduled: 0,
         approved: 0,
@@ -56,10 +59,17 @@ export default function DraftsPage() {
         rejected: 0,
     });
     const [loading, setLoading] = useState(true);
-    const [statusFilter, setStatusFilter] = useState<string>("pending_review");
+    const [statusFilter, setStatusFilter] = useState<string>(() => {
+        const requested = searchParams.get("tab");
+        return requested && ["draft", "pending_review", "scheduled", "approved", "publishing", "published", "failed", "rejected", "all"].includes(requested)
+            ? requested : "pending_review";
+    });
     const [platformFilter, setPlatformFilter] = useState<string>("all");
-    const [sourceFilter, setSourceFilter] = useState<string>("all");
-    const [searchQuery, setSearchQuery] = useState<string>("");
+    const [sourceFilter, setSourceFilter] = useState<string>(() => {
+        const requested = searchParams.get("source");
+        return requested && SOURCES.some((source) => source.id === requested) ? requested : "all";
+    });
+    const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get("search") || "");
     
     // Bulk selection state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -111,6 +121,7 @@ export default function DraftsPage() {
     }, [fetchDrafts, refreshCounts]);
 
     const tabs = useMemo(() => [
+        { id: "draft", label: "My drafts", count: counts.draft },
         { id: "pending_review", label: "Pending", count: counts.pending_review },
         { id: "scheduled", label: "Scheduled", count: counts.scheduled },
         { id: "approved", label: "Approved", count: counts.approved },
@@ -150,7 +161,8 @@ export default function DraftsPage() {
         if (res.error) {
             toast.error(res.error);
         } else {
-            toast.success(`Approved ${ids.length} draft${ids.length > 1 ? "s" : ""}`);
+            if (res.count === ids.length) toast.success(`Approved ${res.count} draft${res.count === 1 ? "" : "s"}`);
+            else toast.warning(`Approved ${res.count ?? 0} of ${ids.length} selected drafts. Review the remaining items.`);
             setSelectedIds(new Set());
             handleActionComplete();
         }
@@ -167,7 +179,8 @@ export default function DraftsPage() {
         if (res.error) {
             toast.error(res.error);
         } else {
-            toast.success(`Rejected ${ids.length} draft${ids.length > 1 ? "s" : ""}`);
+            if (res.count === ids.length) toast.success(`Rejected ${res.count} draft${res.count === 1 ? "" : "s"}`);
+            else toast.warning(`Rejected ${res.count ?? 0} of ${ids.length} selected drafts. Review the remaining items.`);
             setSelectedIds(new Set());
             handleActionComplete();
         }
@@ -183,7 +196,8 @@ export default function DraftsPage() {
         if (res.error) {
             toast.error(res.error);
         } else {
-            toast.success(`Deleted ${ids.length} draft${ids.length > 1 ? "s" : ""}`);
+            if (res.count === ids.length) toast.success(`Deleted ${res.count} draft${res.count === 1 ? "" : "s"}`);
+            else toast.warning(`Deleted ${res.count ?? 0} of ${ids.length} selected drafts. Review the remaining items.`);
             setSelectedIds(new Set());
             handleActionComplete();
         }
@@ -210,9 +224,9 @@ export default function DraftsPage() {
                         </div>
                     )}
                     <Button asChild size="sm" className="gap-1.5">
-                        <Link href="/compose">
+                        <Link href="/dashboard">
                             <PenSquare className="w-4 h-4" />
-                            Compose New
+                            Create in Chat
                         </Link>
                     </Button>
                 </div>
@@ -312,7 +326,7 @@ export default function DraftsPage() {
 
                     {selectedIds.size > 0 && (
                         <div className="flex items-center gap-2">
-                            <Button 
+                            {statusFilter === "pending_review" && <Button
                                 size="sm" 
                                 variant="default"
                                 disabled={bulkLoading}
@@ -321,8 +335,8 @@ export default function DraftsPage() {
                             >
                                 {bulkLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCheck className="w-3.5 h-3.5" />}
                                 Approve ({selectedIds.size})
-                            </Button>
-                            <Button 
+                            </Button>}
+                            {statusFilter === "pending_review" && <Button
                                 size="sm" 
                                 variant="outline"
                                 disabled={bulkLoading}
@@ -331,7 +345,7 @@ export default function DraftsPage() {
                             >
                                 <XCircle className="w-3.5 h-3.5" />
                                 Reject ({selectedIds.size})
-                            </Button>
+                            </Button>}
                             <Button 
                                 size="sm" 
                                 variant="ghost"

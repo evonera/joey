@@ -5,8 +5,13 @@ import { drafts, socialAccounts } from "@/lib/db/schema";
 import { manualPostSchema, validatePostForPlatforms } from "@/lib/compose-validation";
 import { revalidatePath } from "next/cache";
 import { publishDraft } from "./publisher";
-import { getActiveTenantId, getActiveTenantMembership, requireRole } from "@/lib/auth";
-import { eq, and, inArray } from "drizzle-orm";
+import { getActiveTenantId, getActiveTenantMembership } from "@/lib/auth";
+import { eq, and, inArray, sql } from "drizzle-orm";
+
+export async function getComposeAutosaveScope() {
+    const { userId, tenantId } = await getActiveTenantMembership();
+    return `${userId}:${tenantId}`;
+}
 
 export async function createManualPost(data: {
     draftId?: string;
@@ -43,19 +48,40 @@ export async function createManualPost(data: {
             const error = validatePostForPlatforms(data.content, data.mediaUrls, selectedAccounts.map(a => a.platform));
             if (error) return { error };
         }
-        const initialStatus = data.scheduleType === "draft" ? "pending_review" : data.scheduleType === "scheduled" ? "scheduled" : "approved";
+        const initialStatus = data.scheduleType === "draft" ? "draft" : data.scheduleType === "scheduled" ? "scheduled" : "approved";
         const createdDraftIds = await db.transaction(async (tx) => {
             const ids: string[] = [];
-            for (const account of selectedAccounts) {
+            const targets: Array<typeof selectedAccounts[number] | null> = selectedAccounts.length > 0 ? selectedAccounts : [null];
+            for (const account of targets) {
                 const values = {
                     content: data.content,
                     status: initialStatus,
-                    platformOptions: { accountId: account.id, platform: account.platform, mediaUrls: data.mediaUrls, source: "compose" },
+                    platformOptions: { ...(account ? { accountId: account.id, platform: account.platform } : {}), mediaUrls: data.mediaUrls, source: "compose" },
                     scheduledFor: data.scheduleType === "scheduled" ? new Date(data.scheduledFor!) : null,
                     errorMessage: null,
                 };
                 if (data.draftId) {
-                    const [updated] = await tx.update(drafts).set(values).where(and(
+                    const existing = await tx.query.drafts.findFirst({
+                        where: and(eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId)),
+                    });
+                    if (!existing) throw new Error("Draft not found.");
+                    const existingOptions = existing.platformOptions as { accountId?: unknown; source?: unknown; renderJobId?: unknown; renderStatus?: unknown } | null;
+                    const currentAccountId = existingOptions?.accountId;
+                    if (typeof currentAccountId === "string" && currentAccountId !== account?.id) {
+                        throw new Error("This draft belongs to a different account. Start a new post to change its destination.");
+                    }
+                    if (existingOptions?.source === "chat_video" && existingOptions.renderJobId && existingOptions.renderStatus !== "succeeded" && data.scheduleType !== "draft") {
+                        throw new Error("Wait for the finished video before scheduling or publishing this draft.");
+                    }
+                    const videoOptions = {
+                        ...(account ? { accountId: account.id, platform: account.platform } : {}),
+                        ...(data.mediaUrls.length ? { mediaUrls: data.mediaUrls } : {}),
+                        source: "chat_video",
+                    };
+                    const updatedValues = existingOptions?.source === "chat_video"
+                        ? { ...values, platformOptions: sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || ${JSON.stringify(videoOptions)}::jsonb` }
+                        : values;
+                    const [updated] = await tx.update(drafts).set(updatedValues).where(and(
                         eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId),
                         inArray(drafts.status, role === "owner" || role === "admin"
                             ? ["draft", "pending_review", "approved", "rejected", "scheduled"]
@@ -71,12 +97,20 @@ export async function createManualPost(data: {
             return ids;
         });
         const publishFailures: string[] = [];
+        const publicationResults: Array<{ draftId: string; accountId: string; platform: string; status: string; error?: string }> = [];
         let processing = false;
         if (data.scheduleType === "now") {
-            for (const draftId of createdDraftIds) {
+            for (const [index, draftId] of createdDraftIds.entries()) {
                 const result = await publishDraft(draftId);
                 if (result.error) publishFailures.push(result.error);
                 if (result.status === "publishing") processing = true;
+                publicationResults.push({
+                    draftId,
+                    accountId: selectedAccounts[index].id,
+                    platform: selectedAccounts[index].platform,
+                    status: result.error ? "failed" : result.status || "publishing",
+                    ...(result.error ? { error: result.error } : {}),
+                });
             }
         }
         revalidatePath("/drafts");
@@ -85,11 +119,11 @@ export async function createManualPost(data: {
         if (publishFailures.length > 0) {
             return {
                 error: `Published with errors: ${publishFailures.join("; ")}`,
-                draftsCreated: createdDraftIds.length, draftIds: createdDraftIds
+                draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, publicationResults
             };
         }
 
-        return { success: true, draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, processing };
+        return { success: true, draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, processing, publicationResults };
     } catch (error: any) {
         console.error("Failed to create manual post:", error);
         return { error: error.message || "Failed to create post" };

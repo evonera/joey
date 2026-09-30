@@ -247,7 +247,7 @@ export async function renderPackageMedia(
         brandKit,
         imageUrl: heroImage,
         topBadge: typeof templateSpec.topBadge === "string" ? (templateSpec.topBadge as any) : undefined,
-        showDividerMark: typeof templateSpec.showDividerMark === "boolean" ? templateSpec.showDividerMark : undefined,
+        showDividerMark: typeof templateSpec.showDividerMark === "boolean" ? templateSpec.showDividerMark : typeof templateSpec.showDivider === "boolean" ? templateSpec.showDivider : undefined,
         pipInsetUrl: typeof templateSpec.pipInsetUrl === "string" ? templateSpec.pipInsetUrl : undefined,
         highlightWords,
         aspectRatio: (format?.aspectRatio as any) || "1:1",

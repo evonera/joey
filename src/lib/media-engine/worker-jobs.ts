@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { assets, mediaRenderJobs } from "@/lib/db/schema";
+import { assets, drafts, mediaRenderJobs } from "@/lib/db/schema";
 import { buildPublicUrl, headObject, mediaWorkerUrls } from "@/lib/storage";
 import { enqueueR2Cleanup, cancelR2Cleanup } from "@/lib/storage-cleanup";
 import { renderTemplateHtml } from "./templates";
@@ -84,6 +84,17 @@ export async function completeRenderJob(input: z.infer<typeof completionSchema>,
       assetId = asset.id;
     }
     await tx.update(mediaRenderJobs).set({ status: input.success ? "succeeded" : "failed", outputAssetId: assetId, usage: { attempts: [...((job.usage as { attempts?: unknown[] } | null)?.attempts ?? []), { ...input.usage, attempt: job.attempt, succeeded: input.success, cpuCores: 2, memoryMiB: 4096 }] }, error: input.success ? null : input.error || "Rendering failed", updatedAt: new Date() }).where(eq(mediaRenderJobs.id, job.id));
+    if (spec.source.kind === "draft") {
+      await tx.update(drafts).set({
+        platformOptions: input.success
+          ? sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('mediaUrls', jsonb_build_array(${buildPublicUrl(key)}::text), 'renderStatus', 'succeeded')`
+          : sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('renderStatus', 'failed')`,
+      }).where(and(
+        eq(drafts.id, spec.source.id), eq(drafts.tenantId, job.tenantId),
+        sql`${drafts.platformOptions}->>'renderJobId' = ${job.id}`,
+        sql`${drafts.platformOptions}->>'renderRevision' = ${spec.source.revision}`,
+      ));
+    }
     return { accepted: true };
   });
   if (result.accepted && input.success) await cancelR2Cleanup(key);

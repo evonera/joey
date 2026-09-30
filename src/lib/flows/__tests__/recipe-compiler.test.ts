@@ -16,10 +16,11 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
   const mockSources = [
     {
       id: "src_espn",
-      name: "ESPN NBA RSS",
+      name: "Owned NBA Blog",
       sourceType: "rss",
-      url: "https://www.espn.com/espn/rss/nba/news",
+      url: "https://example.test/nba/feed",
       isActive: true,
+      rightsCategory: "owned",
     },
     {
       id: "src_reddit",
@@ -27,6 +28,7 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
       sourceType: "reddit",
       url: "https://reddit.com/r/nba",
       isActive: true,
+      rightsCategory: "unknown",
     },
     {
       id: "src_theathletic",
@@ -34,6 +36,7 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
       sourceType: "http",
       url: "https://api.theathletic.com/v1/nba/news",
       isActive: true,
+      rightsCategory: "unknown",
     },
     {
       id: "src_inactive",
@@ -41,6 +44,7 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
       sourceType: "rss",
       url: "https://oldblog.com/feed",
       isActive: false,
+      rightsCategory: "unknown",
     },
   ];
 
@@ -109,6 +113,17 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
     expect(result.validationIssues).toContain("Add at least one active Theme Studio source.");
     const validation = validateGraph(result.graph);
     expect(validation.ok).toBe(true);
+  });
+
+  it("explains why a strict page with only unknown-rights sources cannot run", () => {
+    const result = compileThemeRecipe({
+      page: mockPage,
+      sources: mockSources.map((source) => ({ ...source, rightsCategory: "unknown" })),
+      slots: mockSlots,
+    });
+
+    expect(result.isValid).toBe(false);
+    expect(result.validationIssues).toContain("Review source rights: no active source is allowed by this page's rights policy. Edit a source's declared rights before activation.");
   });
 
   it("refuses activation when no content slots are configured", () => {

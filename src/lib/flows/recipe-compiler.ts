@@ -3,6 +3,7 @@ import { validateGraph } from "./validation";
 import { db } from "@/lib/db";
 import { flows, socialAccounts, themePages, themeSources, themeSlots, themeContentFormats } from "@/lib/db/schema";
 import { eq, and, inArray, like } from "drizzle-orm";
+import { isRightsCategoryAllowed } from "@/lib/theme-studio/pipeline/fact-rights-verifier";
 
 export interface CompileThemeRecipeInput {
   page: {
@@ -20,11 +21,13 @@ export interface CompileThemeRecipeInput {
     sourceType: string;
     url: string;
     isActive: boolean;
+    rightsCategory?: string;
   }>;
   slots: Array<{
     id: string;
     label?: string | null;
     priority: number;
+    isActive?: boolean;
     format?: {
       slug: string;
       name: string;
@@ -43,7 +46,10 @@ export function compileThemeRecipe(input: CompileThemeRecipeInput): {
   const { page, sources, slots } = input;
   const flowName = `[Theme] ${page.name}`;
   const activeSources = sources.filter((s) => s.isActive);
-  const activeSlots = slots.filter((s) => s.format);
+  const rightsPolicy = page.defaultRightsPolicy === "moderate" || page.defaultRightsPolicy === "permissive"
+    ? page.defaultRightsPolicy : "strict";
+  const usableSources = activeSources.filter((source) => isRightsCategoryAllowed(source.rightsCategory || "unknown", rightsPolicy));
+  const activeSlots = slots.filter((s) => s.isActive !== false && s.format);
   const connectedPlatforms = new Set(page.connectedPlatforms.map((platform) => platform === "twitter" ? "x" : platform));
   const missingPlatforms = Array.from(new Set(
     activeSlots
@@ -53,6 +59,8 @@ export function compileThemeRecipe(input: CompileThemeRecipeInput): {
   ));
   const validationIssues = [
     ...(activeSources.length === 0 ? ["Add at least one active Theme Studio source."] : []),
+    ...(activeSources.length > 0 && usableSources.length === 0
+      ? ["Review source rights: no active source is allowed by this page's rights policy. Edit a source's declared rights before activation."] : []),
     ...(activeSlots.length === 0 ? ["Add at least one active Theme Studio content slot."] : []),
     ...missingPlatforms.map((platform) => `Select an active ${platform} publishing account.`),
   ];

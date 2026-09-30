@@ -33,6 +33,12 @@ const MODERATE_ALLOWED_RIGHTS = new Set([
   "fair_use_commentary",
 ]);
 
+export function isRightsCategoryAllowed(rightsCategory: string, policy: "strict" | "moderate" | "permissive"): boolean {
+  if (policy === "strict") return STRICT_ALLOWED_RIGHTS.has(rightsCategory);
+  if (policy === "moderate") return MODERATE_ALLOWED_RIGHTS.has(rightsCategory);
+  return true;
+}
+
 /**
  * Validates a story against the page's rights policy and factual provenance rules.
  */
@@ -44,13 +50,13 @@ export function verifyRightsAndProvenance(check: VerificationPolicyCheck): Verif
   let attributionRequired = false;
 
   if (policy === "strict") {
-    rightsPassed = STRICT_ALLOWED_RIGHTS.has(rightsCategory);
+    rightsPassed = isRightsCategoryAllowed(rightsCategory, policy);
     if (!rightsPassed) {
       violations.push(`Rights category "${rightsCategory}" is blocked under strict policy.`);
     }
     attributionRequired = ["cc_by", "cc_by_sa"].includes(rightsCategory);
   } else if (policy === "moderate") {
-    rightsPassed = MODERATE_ALLOWED_RIGHTS.has(rightsCategory);
+    rightsPassed = isRightsCategoryAllowed(rightsCategory, policy);
     if (!rightsPassed) {
       violations.push(`Rights category "${rightsCategory}" is restricted.`);
     }

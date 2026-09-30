@@ -2,6 +2,7 @@ import * as React from "react";
 import { notFound } from "next/navigation";
 import { getThemeSlots } from "@/app/actions/theme-slots";
 import { getContentFormats } from "@/app/actions/theme-content-formats";
+import { getThemeTemplates } from "@/app/actions/theme-templates";
 import { DailyMixScheduler } from "@/components/theme-studio/DailyMixScheduler";
 
 export default async function ThemePageMixRoute({
@@ -10,9 +11,10 @@ export default async function ThemePageMixRoute({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [slotsRes, formatsRes] = await Promise.all([
+  const [slotsRes, formatsRes, templatesRes] = await Promise.all([
     getThemeSlots(id),
     getContentFormats(),
+    getThemeTemplates(id),
   ]);
 
   if (slotsRes.error) {
@@ -24,6 +26,7 @@ export default async function ThemePageMixRoute({
       themePageId={id}
       initialSlots={slotsRes.slots || []}
       availableFormats={formatsRes.formats || []}
+      availableTemplates={templatesRes.templates || []}
     />
   );
 }

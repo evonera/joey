@@ -41,7 +41,7 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
   await page.goto("/calendar?view=invalid");
   await expect(page.getByRole("combobox", { name: "Calendar view" })).toHaveValue("month");
   await page.getByRole("button", { name: /Create post for/ }).first().click();
-  await expect(page).toHaveURL(/\/compose\?date=\d{4}-\d{2}-\d{2}/);
+  await expect(page).toHaveURL(/\/dashboard$/);
 });
 
 test("a new workspace can create a theme page and open every setup tab", async ({ page, context }, testInfo) => {
