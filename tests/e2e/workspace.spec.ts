@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type TestInfo } from "@playwright/test";
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
+
+async function captureScreenshot(page: Page, testInfo: TestInfo, name: string, fullPage = true) {
+  // CI verifies every interaction and viewport; local QA keeps the 64-image gallery.
+  if (!process.env.CI) await page.screenshot({ path: testInfo.outputPath(name), fullPage });
+}
 
 function signupHeaders(testInfo: TestInfo) {
   // Better Auth intentionally limits sign-up attempts to three per IP per
@@ -10,7 +15,7 @@ function signupHeaders(testInfo: TestInfo) {
 }
 
 test("authenticated workspace routes remain usable on desktop and mobile", async ({ page, context }, testInfo) => {
-  test.setTimeout(900_000);
+  test.setTimeout(480_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const signup = await context.request.post("/api/auth/sign-up/email", {
@@ -64,7 +69,7 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
         const overlap = mic!.x < submit!.x + submit!.width && mic!.x + mic!.width > submit!.x && mic!.y < submit!.y + submit!.height && mic!.y + mic!.height > submit!.y;
         expect(overlap, `Chat voice input and Submit overlap at ${width}px`).toBe(false);
       }
-      await page.screenshot({ path: testInfo.outputPath(`${route.slice(1).replaceAll("/", "-")}-${width}.png`), fullPage: true });
+      await captureScreenshot(page, testInfo, `${route.slice(1).replaceAll("/", "-")}-${width}.png`);
     }
   }
   expect(errors).toEqual([]);
@@ -73,7 +78,7 @@ test("authenticated workspace routes remain usable on desktop and mobile", async
   await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
   await expect(page.getByText("Loading your work…")).toHaveCount(0, { timeout: 60_000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Chat creation panel overflows at 320px").toBe(true);
-  await page.screenshot({ path: testInfo.outputPath("chat-create-post-320.png"), fullPage: true });
+  await captureScreenshot(page, testInfo, "chat-create-post-320.png");
   await page.getByRole("button", { name: "Close sidepanel" }).click();
   await expect(page.getByRole("button", { name: "Create a post" })).toBeVisible();
   await page.goto("/calendar?view=invalid");
@@ -94,12 +99,12 @@ test("a new workspace can create a theme page and open every setup tab", async (
   await page.getByPlaceholder("e.g. Cricket news, match stats, viral sporting moments").fill("Astronomy and space exploration");
   for (let step = 0; step < 4; step++) {
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: testInfo.outputPath(`theme-wizard-step-${step + 1}-320.png`), fullPage: true });
+    await captureScreenshot(page, testInfo, `theme-wizard-step-${step + 1}-320.png`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Theme wizard step ${step + 1} overflows at 320px`).toBe(true);
     await page.getByRole("button", { name: "Continue", exact: true }).click();
   }
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: testInfo.outputPath("theme-wizard-step-5-320.png"), fullPage: true });
+  await captureScreenshot(page, testInfo, "theme-wizard-step-5-320.png");
   await page.getByRole("button", { name: "Create Theme Page", exact: true }).click();
   await expect(page).toHaveURL(/\/theme-studio\/[0-9a-f-]{36}$/, { timeout: 60_000 });
   const path = new URL(page.url()).pathname;
@@ -109,7 +114,7 @@ test("a new workspace can create a theme page and open every setup tab", async (
     if (suffix === "/settings") await expect(page.getByRole("heading", { name: "Theme Page Settings" })).toBeVisible();
     await expect(page.getByText("Something went wrong", { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Theme section ${suffix || "overview"} overflows at 320px`).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`theme${suffix.replaceAll("/", "-") || "-overview"}-320.png`), fullPage: true });
+    await captureScreenshot(page, testInfo, `theme${suffix.replaceAll("/", "-") || "-overview"}-320.png`);
   }
   await page.goto(`${path}/preview-day`);
   await page.getByRole("button", { name: "Show Sample Day" }).click();
@@ -117,7 +122,7 @@ test("a new workspace can create a theme page and open every setup tab", async (
   await page.getByRole("button", { name: "Next slide" }).first().click();
   await expect(page.getByRole("button", { name: "Slide 2, current" }).first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Theme samples overflow at 320px").toBe(true);
-  await page.screenshot({ path: testInfo.outputPath("theme-preview-samples-320.png"), fullPage: true });
+  await captureScreenshot(page, testInfo, "theme-preview-samples-320.png");
   await page.goto(`${path}/templates`);
   const linkedTemplate = page.getByRole("link", { name: "Edit style" }).first();
   const linkedHref = await linkedTemplate.getAttribute("href");
@@ -158,15 +163,15 @@ test("Instagram and TikTok templates are available and install as editable flows
     await expect(page.getByRole("button", { name: "Activate" })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Pause" })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${name} flow overflows at 320px`).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`flow-${name.toLowerCase().replaceAll(" ", "-")}-320.png`), fullPage: true });
+    await captureScreenshot(page, testInfo, `flow-${name.toLowerCase().replaceAll(" ", "-")}-320.png`);
     const draftStep = page.getByLabel("Flow steps").getByRole("button", { name: /Create Draft/ });
     await expect(draftStep).toBeVisible();
     await draftStep.click();
     await expect(page.getByRole("combobox", { name: "Publishing account" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Connect a social account" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${name} settings overflow at 320px`).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`flow-${name.toLowerCase().replaceAll(" ", "-")}-settings-320.png`), fullPage: true });
+    await captureScreenshot(page, testInfo, `flow-${name.toLowerCase().replaceAll(" ", "-")}-settings-320.png`);
     await page.getByRole("combobox", { name: "Publishing account" }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: testInfo.outputPath(`flow-${name.toLowerCase().replaceAll(" ", "-")}-settings-detail-320.png`) });
+    await captureScreenshot(page, testInfo, `flow-${name.toLowerCase().replaceAll(" ", "-")}-settings-detail-320.png`, false);
   }
 });
