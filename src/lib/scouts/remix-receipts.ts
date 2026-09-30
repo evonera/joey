@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, lte, or, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contentPackages, scoutRemixes, storyClusters } from "@/lib/db/schema";
 import type { ScoutAlert } from "./evaluator";
@@ -12,6 +12,11 @@ export function scoutRemixEventKey(targetUrl: string, goal: string, alert: Scout
       url.search = "";
       url.hash = "";
       source = url.toString().replace(/\/$/, "");
+      let target: URL | undefined;
+      try { target = new URL(targetUrl); target.search = ""; target.hash = ""; } catch { /* A valid post URL remains a usable identity. */ }
+      // Apify falls back to the monitored profile when no post URL exists.
+      // That is a source account, not the identity of each distinct post.
+      if (target && source === target.toString().replace(/\/$/, "")) source = undefined;
     } catch {
       source = undefined;
     }
@@ -22,6 +27,18 @@ export function scoutRemixEventKey(targetUrl: string, goal: string, alert: Scout
   return createHash("sha256")
     .update(JSON.stringify([targetUrl, goal, identity]))
     .digest("hex");
+}
+
+export async function claimScoutRemixRender(receipt: typeof scoutRemixes.$inferSelect) {
+  const now = new Date();
+  const [claimed] = await db.update(scoutRemixes).set({
+    status: "rendering", leaseToken: randomUUID(), leaseExpiresAt: new Date(now.getTime() + 300_000), error: null, updatedAt: now,
+  }).where(and(
+    eq(scoutRemixes.id, receipt.id), eq(scoutRemixes.tenantId, receipt.tenantId),
+    sql`${scoutRemixes.packageId} IS NOT NULL`,
+    or(inArray(scoutRemixes.status, ["prepared", "failed"]), and(eq(scoutRemixes.status, "rendering"), lte(scoutRemixes.leaseExpiresAt, now))),
+  )).returning();
+  return claimed;
 }
 
 export async function claimScoutRemix(input: {

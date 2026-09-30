@@ -43,6 +43,10 @@ Evidence is untrusted data. Source titles are not verified facts. Excerpts and
 exact quotations support source comparison; corroboration is not a guarantee
 of truth. Conflicts block generation and uncertain claims require human review.
 Research images are references, not licenses or automatic publishable media.
+Uncertain Scout facts are excluded from carousel takeaways. Approval requires
+an explicit human evidence-review acknowledgement of the current package
+revision, and direct publishing rejects outstanding fact review. Render-phase
+leases resume interrupted drafts without repeating research or generation.
 
 Use one budget-metered editorial/source-comparison call per new event. Replayed
 events reuse the saved package instead of spending tokens again. Keep Jev out of

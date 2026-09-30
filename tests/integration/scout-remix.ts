@@ -4,7 +4,7 @@ await requireDisposableDatabase();
 const { db } = await import("../../src/lib/db");
 const { tenants, scouts, themePages, themeContentFormats, scoutRemixes, contentPackages, storyClusters } =
   await import("../../src/lib/db/schema");
-const { claimScoutRemix, saveScoutRemixDraft, finishScoutRemix } = await import("../../src/lib/scouts/remix-receipts");
+const { claimScoutRemix, claimScoutRemixRender, saveScoutRemixDraft, finishScoutRemix } = await import("../../src/lib/scouts/remix-receipts");
 const { eq } = await import("drizzle-orm");
 const tenantId = crypto.randomUUID();
 try {
@@ -49,7 +49,12 @@ try {
     /lease expired/,
     "a replay cannot create a second draft"
   );
-  await finishScoutRemix(receipt, "queued");
+  const renderClaims = await Promise.all(Array.from({ length: 8 }, () => claimScoutRemixRender({ ...receipt, packageId: saved.pkg.id })));
+  assert.equal(renderClaims.filter(Boolean).length, 1, "render recovery has one lease owner too");
+  const renderReceipt = renderClaims.find(Boolean)!;
+  await finishScoutRemix(receipt, "failed", "stale draft worker");
+  assert.equal((await db.query.scoutRemixes.findFirst({ where: eq(scoutRemixes.id, receipt.id) }))?.status, "rendering");
+  await finishScoutRemix(renderReceipt, "queued");
   const duplicate = await claimScoutRemix(input);
   assert.equal(duplicate.claimed, false);
   assert.equal(duplicate.receipt.packageId, saved.pkg.id);

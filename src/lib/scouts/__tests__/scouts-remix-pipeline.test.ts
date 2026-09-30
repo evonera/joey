@@ -11,6 +11,7 @@ const mockInsertPackage = vi.fn();
 const mockSearchWithExa = vi.fn();
 const mockRenderPackageMedia = vi.fn();
 const mockClaim = vi.fn();
+const mockRenderClaim = vi.fn();
 const mockFinish = vi.fn();
 const mockEditorial = vi.fn();
 const mockExistingPackage = vi.fn();
@@ -18,6 +19,7 @@ const mockExistingPackage = vi.fn();
 vi.mock("../remix-receipts", () => ({
   scoutRemixEventKey: () => "event-1",
   claimScoutRemix: (...args: any[]) => mockClaim(...args),
+  claimScoutRemixRender: (...args: any[]) => mockRenderClaim(...args),
   finishScoutRemix: (...args: any[]) => mockFinish(...args),
   saveScoutRemixDraft: async (_receipt: unknown, cluster: any, pkg: any) => {
     mockInsertCluster(cluster);
@@ -102,6 +104,7 @@ describe("Scout -> Exa -> Theme Studio Remix Action Pipeline", () => {
       claimed: true,
       receipt: { id: "receipt-1", tenantId: "tenant-1", leaseToken: "lease-1" },
     });
+    mockRenderClaim.mockResolvedValue({ id: "receipt-1", tenantId: "tenant-1", leaseToken: "render-lease", clusterId: "cluster-remix-1" });
     mockEditorial.mockResolvedValue({
       title: "A fresh branded angle",
       caption: "Original evidence-grounded copy.",
@@ -134,6 +137,7 @@ describe("Scout -> Exa -> Theme Studio Remix Action Pipeline", () => {
       status: "pending_review",
       renderedAssetUrls: [],
     });
+    mockRenderClaim.mockResolvedValue(undefined);
     const result = await remixScoutAlertToThemeStudio({ tenantId: "tenant-1", scoutId: "scout-1" });
     expect(result).toMatchObject({ success: true, duplicate: true, renderState: "queued", packageId: "existing" });
     expect(mockSearchWithExa).not.toHaveBeenCalled();
@@ -155,6 +159,17 @@ describe("Scout -> Exa -> Theme Studio Remix Action Pipeline", () => {
       duplicate: true,
       renderState: "completed",
     });
+  });
+
+  it("recovers rendering after the draft commit without another editorial call", async () => {
+    primeDraft();
+    mockClaim.mockResolvedValue({ claimed: false, receipt: { id: "receipt-1", status: "prepared", packageId: "existing" } });
+    mockExistingPackage.mockResolvedValue({ id: "existing", title: "Saved draft", status: "pending_review", renderedAssetUrls: [] });
+    mockRenderPackageMedia.mockResolvedValue({ queued: true, renderedUrls: [] });
+    expect(await remixScoutAlertToThemeStudio({ tenantId: "tenant-1", scoutId: "scout-1" })).toMatchObject({ duplicate: true, packageId: "existing", renderState: "queued" });
+    expect(mockRenderPackageMedia).toHaveBeenCalledWith("existing", "tenant-1", "scout_remix_receipt-1", undefined);
+    expect(mockEditorial).not.toHaveBeenCalled();
+    expect(mockInsertPackage).not.toHaveBeenCalled();
   });
 
   it("does not create a draft after cancellation or a failed editorial/budget call", async () => {

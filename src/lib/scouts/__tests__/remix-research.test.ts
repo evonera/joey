@@ -106,4 +106,9 @@ describe("source event identity", () => {
       })
     ).not.toBe(key);
   });
+  it("uses post content when the scraper falls back to a shared profile URL", () => {
+    const first = { ...alert, samplePost: { url: "https://instagram.com/science/", content: "First distinct source story" } };
+    const second = { ...first, samplePost: { ...first.samplePost, content: "A second source story" } };
+    expect(scoutRemixEventKey("https://instagram.com/science", "new story", first)).not.toBe(scoutRemixEventKey("https://instagram.com/science", "new story", second));
+  });
 });

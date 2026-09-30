@@ -12,7 +12,7 @@ import { and, eq, desc } from "drizzle-orm";
 import { searchWithExa } from "@/lib/search/exa-client";
 import { renderPackageMedia } from "@/lib/theme-studio/renderers/media-assembler";
 import type { ScoutAlert } from "./evaluator";
-import { claimScoutRemix, finishScoutRemix, saveScoutRemixDraft, scoutRemixEventKey } from "./remix-receipts";
+import { claimScoutRemix, claimScoutRemixRender, finishScoutRemix, saveScoutRemixDraft, scoutRemixEventKey } from "./remix-receipts";
 import { synthesizeScoutResearch } from "./remix-research";
 
 export interface RemixScoutAlertOptions {
@@ -51,7 +51,7 @@ function cleanQueryFromPost(raw: string): string {
 /**
  * Automates the Scout -> Research -> Theme Studio Draft action bridge.
  * 1. Takes a competitor spike detected by a Scout.
- * 2. Uses Exa Search to research the authoritative story and retrieve high-res hero images.
+ * 2. Uses Exa Search for source evidence and image references (not licenses).
  * 3. Ingests the facts into a Theme Studio story cluster.
  * 4. Synthesizes a branded content package in the theme page's voice.
  * 5. Renders branded visual media and places the post into the pending_review draft queue.
@@ -96,6 +96,29 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
     themePageId: targetPage.id,
     eventKey: scoutRemixEventKey(scout.targetUrl, scout.goalCondition, alert),
   });
+  async function renderSavedDraft(renderReceipt: typeof receipt, pkg: { id: string; title: string; status: string }, duplicate = false): Promise<RemixScoutAlertResult> {
+    const common = { packageId: pkg.id, clusterId: renderReceipt.clusterId ?? undefined, title: pkg.title, status: pkg.status, duplicate };
+    try {
+      options.signal?.throwIfAborted();
+      const renderRes = await renderPackageMedia(pkg.id, options.tenantId, `scout_remix_${receipt.id}`, options.signal);
+      const renderedUrls = renderRes?.renderedUrls || [];
+      if (renderRes?.queued) {
+        await finishScoutRemix(renderReceipt, "queued");
+        return { ...common, success: true, renderedUrls, renderState: "queued" };
+      }
+      if (renderedUrls.length) {
+        await finishScoutRemix(renderReceipt, "complete");
+        return { ...common, success: true, renderedUrls, renderState: "completed" };
+      }
+      const error = renderRes?.error || "Media rendering produced no output assets.";
+      await finishScoutRemix(renderReceipt, "failed", error);
+      return { ...common, success: false, error, renderState: "failed" };
+    } catch (error) {
+      const message = `Media rendering failed: ${error instanceof Error ? error.message : "Unknown failure"}`;
+      await finishScoutRemix(renderReceipt, "failed", message);
+      return { ...common, success: false, error: message, renderState: "failed" };
+    }
+  }
   if (!claimed) {
     const existing = receipt.packageId
       ? await db.query.contentPackages.findFirst({
@@ -106,6 +129,10 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
       ? (existing.renderedAssetUrls as Array<{ url: string; type: string }>)
       : [];
     const completed = outputs.length > 0;
+    if (existing && !completed && ["pending_review", "failed", "rejected"].includes(existing.status)) {
+      const renderLease = await claimScoutRemixRender(receipt);
+      if (renderLease) return renderSavedDraft(renderLease, existing, true);
+    }
     const failed = !completed && (existing?.status === "failed" || receipt.status === "failed");
     return {
       success: !failed,
@@ -119,7 +146,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
         ? "completed"
         : failed
           ? "failed"
-          : receipt.status === "queued"
+          : ["queued", "rendering"].includes(receipt.status)
             ? "queued"
             : existing
               ? "not_started"
@@ -268,75 +295,23 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
           competitorUrl: scout.targetUrl,
           heroImageReference,
           requiresFactReview: editorial.requiresFactReview,
+          researchFacts: editorial.facts,
           sourceMediaRights: "unknown",
           remixReceiptId: receipt.id,
           sources: searchRes.results.map((r) => ({
             title: r.title,
             url: r.url,
-            heroImage: r.heroImage,
+            heroImageReference: r.heroImage,
           })),
         },
       }
     );
 
-    // Trigger media rendering
-    let renderedUrls: Array<{ url: string; type: string }> = [];
-    try {
-      const renderRes = await renderPackageMedia(pkg.id, options.tenantId, `scout_remix_${receipt.id}`);
-      renderedUrls = renderRes?.renderedUrls || [];
-      if (renderRes?.queued) {
-        await finishScoutRemix(receipt, "queued");
-        return {
-          success: true,
-          packageId: pkg.id,
-          clusterId: cluster.id,
-          title: pkg.title,
-          status: pkg.status,
-          renderedUrls,
-          renderState: "queued",
-        };
-      }
-      if (renderedUrls.length === 0) {
-        await finishScoutRemix(receipt, "failed", renderRes?.error || "Media rendering produced no output assets.");
-        return {
-          success: false,
-          packageId: pkg.id,
-          clusterId: cluster.id,
-          title: pkg.title,
-          status: pkg.status,
-          renderState: "failed",
-          error: renderRes?.error || "Media rendering produced no output assets.",
-        };
-      }
-    } catch (renderErr: any) {
-      await finishScoutRemix(
-        receipt,
-        "failed",
-        renderErr instanceof Error ? renderErr.message : "Media rendering failed."
-      );
-      console.warn("[scouts-remix] Media card rendering failed:", renderErr);
-      return {
-        success: false,
-        packageId: pkg.id,
-        clusterId: cluster.id,
-        title: pkg.title,
-        status: pkg.status,
-        renderState: "failed",
-        error: `Media rendering failed: ${renderErr?.message || String(renderErr)}`,
-      };
-    }
-
-    await finishScoutRemix(receipt, "complete");
-
-    return {
-      success: true,
-      packageId: pkg.id,
-      clusterId: cluster.id,
-      title: pkg.title,
-      status: pkg.status,
-      renderedUrls,
-      renderState: "completed",
-    };
+    // Claim a separate render lease: a crash after the draft commit can replay
+    // just this phase, with the same package/job identity and no new LLM spend.
+    const renderLease = await claimScoutRemixRender({ ...receipt, packageId: pkg.id, clusterId: cluster.id });
+    if (!renderLease) return { success: true, packageId: pkg.id, clusterId: cluster.id, title: pkg.title, status: pkg.status, renderState: "processing" };
+    return renderSavedDraft(renderLease, pkg);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Remix failed.";
     await finishScoutRemix(receipt, "failed", message);

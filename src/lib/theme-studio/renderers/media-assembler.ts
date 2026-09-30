@@ -5,6 +5,7 @@ import { renderCardSvg, renderCarouselSlideSvgs } from "./static-card-renderer";
 import { renderTweetCardSvg } from "./tweet-card-renderer";
 import { uploadAndRegisterFlowAsset } from "@/lib/flows/asset-registration";
 import { renderSvgPng } from "./rasterize-svg";
+import { scoutRenderableFacts } from "@/lib/scouts/fact-review";
 
 export interface RenderPackageResult {
   packageId: string;
@@ -144,8 +145,8 @@ export async function renderPackageMedia(
 
   const heroImage = (
     (typeof templateSpec.imageUrl === "string" && templateSpec.imageUrl) ||
-    (typeof firstSource.heroImage === "string" && firstSource.heroImage) ||
-    (typeof (provenance as any).heroImage === "string" && (provenance as any).heroImage) ||
+    (!provenance.scoutId && typeof firstSource.heroImage === "string" && firstSource.heroImage) ||
+    (!provenance.scoutId && typeof (provenance as any).heroImage === "string" && (provenance as any).heroImage) ||
     (typeof (pkg as any).metadata?.heroImage === "string" && (pkg as any).metadata?.heroImage) ||
     undefined
   );
@@ -159,11 +160,7 @@ export async function renderPackageMedia(
       const cluster = pkg.clusterId ? await db.query.storyClusters.findFirst({
         where: and(eq(storyClusters.id, pkg.clusterId), eq(storyClusters.tenantId, tenantId)),
       }) : undefined;
-      const facts = Array.isArray(cluster?.facts)
-        ? cluster.facts.filter((fact): fact is { claim: string } => (
-            Boolean(fact) && typeof fact === "object" && "claim" in fact && typeof fact.claim === "string"
-          )).slice(0, 3)
-        : [];
+      const facts = scoutRenderableFacts(cluster?.facts, provenance);
       const slides = [
         { 
           title: renderedTitle, 
