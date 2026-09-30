@@ -79,8 +79,13 @@ test(`authenticated workspace routes remain usable at ${width}px`, async ({ page
   await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
   await expect(page.getByText("Loading your work…")).toHaveCount(0, { timeout: 60_000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Chat creation panel overflows at 320px").toBe(true);
+  const sidepanelTabs = await page.getByRole("tablist").boundingBox();
+  const closeSidepanel = await page.getByRole("button", { name: "Close sidepanel" }).boundingBox();
+  expect(sidepanelTabs).not.toBeNull();
+  expect(closeSidepanel).not.toBeNull();
+  expect(sidepanelTabs!.x + sidepanelTabs!.width).toBeLessThanOrEqual(closeSidepanel!.x);
   await captureScreenshot(page, testInfo, "chat-create-post-320.png");
-  await page.getByRole("button", { name: "Close sidepanel" }).click();
+  await page.getByRole("button", { name: "Close sidepanel" }).click({ timeout: 5000 });
   await expect(page.getByRole("button", { name: "Create a post" })).toBeVisible();
   await page.goto("/compose");
   await page.waitForFunction(() => Object.keys(sessionStorage).some((key) => key.startsWith("joey:compose:")));
