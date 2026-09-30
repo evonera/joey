@@ -945,3 +945,24 @@ export const scoutRuns = pgTable("scout_runs", {
   scoutIdx: index("scout_runs_scout_id_idx").on(table.scoutId),
   tenantIdx: index("scout_runs_tenant_id_idx").on(table.tenantId),
 }));
+
+// A durable receipt for a source event, separate from polling history. Network
+// work runs outside transactions; the lease token fences a resumed/stale worker.
+export const scoutRemixes = pgTable("scout_remixes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  scoutId: text("scout_id").notNull().references(() => scouts.id, { onDelete: "cascade" }),
+  themePageId: text("theme_page_id").notNull().references(() => themePages.id, { onDelete: "cascade" }),
+  eventKey: text("event_key").notNull(),
+  status: varchar("status", { length: 24 }).notNull().default("processing"),
+  leaseToken: text("lease_token").notNull(),
+  leaseExpiresAt: timestamp("lease_expires_at").notNull(),
+  packageId: text("package_id").references(() => contentPackages.id, { onDelete: "set null" }),
+  clusterId: text("cluster_id").references(() => storyClusters.id, { onDelete: "set null" }),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  eventIdx: uniqueIndex("scout_remixes_source_event_key").on(table.tenantId, table.scoutId, table.themePageId, table.eventKey),
+  pendingIdx: index("scout_remixes_pending_idx").on(table.status, table.leaseExpiresAt),
+}));

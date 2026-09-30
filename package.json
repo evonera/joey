@@ -34,7 +34,8 @@
     "postinstall": "node scripts/patch-eve.mjs",
     "db:push": "drizzle-kit push",
     "test:integration": "node --import tsx tests/integration/publishing-and-usage.ts",
-    "test:integration:media": "node --import tsx tests/integration/media-engine.ts"
+    "test:integration:media": "node --import tsx tests/integration/media-engine.ts",
+    "test:integration:scouts": "node --import tsx tests/integration/scout-remix.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.49",
