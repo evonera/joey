@@ -2,6 +2,15 @@
 
 This document outlines the dependencies for the social media agent platform.
 
+## Security refresh — October 1, 2026
+
+The Next.js packages are aligned on 16.3.8, and DOMPurify is overridden to
+3.4.16. Undici overrides are major-scoped: 7.x consumers use 7.29.1 and 8.x
+consumers use 8.10.2, preserving the AI SDK and Eve dependency contracts.
+Brace expansion, URI parsing, IP-address parsing, and Moment receive compatible
+updates in the npm lockfile. Do not downgrade Eve to satisfy an audit suggestion
+or use an unreviewed blanket `npm audit fix --force`.
+
 ## Categories
 
 ### Core Framework
@@ -10,15 +19,15 @@ This document outlines the dependencies for the social media agent platform.
 | -------------------- | ------- | ------------------------------ | ---------- | ----------------------------------------------- |
 | `next`               | 16.x    | App Router, React 19 framework | MIT        | Very Low (Industry standard, highly maintained) |
 | `react`, `react-dom` | 19.x    | UI library                     | MIT        | Very Low (Industry standard, highly maintained) |
-| `typescript`         | 5.x     | Type safety                    | Apache-2.0 | Very Low (Industry standard)                    |
+| `typescript`         | 6.x     | Type safety                    | Apache-2.0 | Very Low (Industry standard)                    |
 
 ### Agent Framework
 
-| Package | Version     | Purpose                                             | License    | Risk Assessment                                   |
-| ------- | ----------- | --------------------------------------------------- | ---------- | ------------------------------------------------- |
-| `eve`   | ~5.0.0-beta | Vercel's AI agent framework. Shipped June 17, 2026. | Apache-2.0 | High (BETA). Breaking changes expected before GA. |
-| `ai`    | latest      | Vercel AI SDK for model routing                     | Apache-2.0 | Medium (Evolving ecosystem, but strong backing)   |
-| `zod`   | latest      | Schema validation (required by Eve)                 | MIT        | Low (Widely adopted, stable)                      |
+| Package | Version | Purpose                             | License    | Risk Assessment                                     |
+| ------- | ------- | ----------------------------------- | ---------- | --------------------------------------------------- |
+| `eve`   | 0.50.x  | Vercel's AI agent framework.        | Apache-2.0 | High (Pre-1.0). Review framework changes carefully. |
+| `ai`    | latest  | Vercel AI SDK for model routing     | Apache-2.0 | Medium (Evolving ecosystem, but strong backing)     |
+| `zod`   | latest  | Schema validation (required by Eve) | MIT        | Low (Widely adopted, stable)                        |
 
 ### Social Media API
 
