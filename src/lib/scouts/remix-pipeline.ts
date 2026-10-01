@@ -100,7 +100,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
     const common = { packageId: pkg.id, clusterId: renderReceipt.clusterId ?? undefined, title: pkg.title, status: pkg.status, duplicate };
     try {
       options.signal?.throwIfAborted();
-      const renderRes = await renderPackageMedia(pkg.id, options.tenantId, `scout_remix_${receipt.id}`, options.signal);
+      const renderRes = await renderPackageMedia(pkg.id, options.tenantId, `scout_remix_${receipt.id}`, options.signal, undefined, { preserveReviewDecision: true });
       const renderedUrls = renderRes?.renderedUrls || [];
       if (renderRes?.queued) {
         await finishScoutRemix(renderReceipt, "queued");
@@ -129,7 +129,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
       ? (existing.renderedAssetUrls as Array<{ url: string; type: string }>)
       : [];
     const completed = outputs.length > 0;
-    if (existing && !completed && ["pending_review", "failed", "rejected"].includes(existing.status)) {
+    if (existing && !completed && ["pending_review", "failed"].includes(existing.status)) {
       const renderLease = await claimScoutRemixRender(receipt);
       if (renderLease) return renderSavedDraft(renderLease, existing, true);
     }

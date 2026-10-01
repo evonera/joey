@@ -167,9 +167,30 @@ describe("Scout -> Exa -> Theme Studio Remix Action Pipeline", () => {
     mockExistingPackage.mockResolvedValue({ id: "existing", title: "Saved draft", status: "pending_review", renderedAssetUrls: [] });
     mockRenderPackageMedia.mockResolvedValue({ queued: true, renderedUrls: [] });
     expect(await remixScoutAlertToThemeStudio({ tenantId: "tenant-1", scoutId: "scout-1" })).toMatchObject({ duplicate: true, packageId: "existing", renderState: "queued" });
-    expect(mockRenderPackageMedia).toHaveBeenCalledWith("existing", "tenant-1", "scout_remix_receipt-1", undefined);
+    expect(mockRenderPackageMedia).toHaveBeenCalledWith("existing", "tenant-1", "scout_remix_receipt-1", undefined, undefined, { preserveReviewDecision: true });
     expect(mockEditorial).not.toHaveBeenCalled();
     expect(mockInsertPackage).not.toHaveBeenCalled();
+  });
+
+  it("never reopens a rejected draft on Scout replay", async () => {
+    primeDraft();
+    mockClaim.mockResolvedValue({ claimed: false, receipt: { status: "failed", packageId: "existing" } });
+    mockExistingPackage.mockResolvedValue({ id: "existing", status: "rejected", renderedAssetUrls: [] });
+    const result = await remixScoutAlertToThemeStudio({ tenantId: "tenant-1", scoutId: "scout-1" });
+    expect(result.status).toBe("rejected");
+    expect(mockRenderClaim).not.toHaveBeenCalled();
+    expect(mockRenderPackageMedia).not.toHaveBeenCalled();
+    expect(mockEditorial).not.toHaveBeenCalled();
+  });
+
+  it("recovers an expired queued receipt using the existing draft, not new research", async () => {
+    primeDraft();
+    mockClaim.mockResolvedValue({ claimed: false, receipt: { id: "receipt-1", status: "queued", packageId: "existing" } });
+    mockExistingPackage.mockResolvedValue({ id: "existing", title: "Saved draft", status: "failed", renderedAssetUrls: [] });
+    mockRenderPackageMedia.mockResolvedValue({ queued: true, renderedUrls: [] });
+    expect(await remixScoutAlertToThemeStudio({ tenantId: "tenant-1", scoutId: "scout-1" })).toMatchObject({ duplicate: true, packageId: "existing", renderState: "queued" });
+    expect(mockRenderPackageMedia).toHaveBeenCalledTimes(1);
+    expect(mockEditorial).not.toHaveBeenCalled();
   });
 
   it("does not create a draft after cancellation or a failed editorial/budget call", async () => {

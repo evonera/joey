@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { assets, contentPackages, storyClusters, themePages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { renderCardSvg, renderCarouselSlideSvgs } from "./static-card-renderer";
 import { renderTweetCardSvg } from "./tweet-card-renderer";
 import { uploadAndRegisterFlowAsset } from "@/lib/flows/asset-registration";
@@ -37,11 +37,21 @@ export async function renderPackageMedia(
   flowRunId: string,
   signal?: AbortSignal,
   heartbeat?: () => Promise<void> | void,
+  options: { preserveReviewDecision?: boolean } = {},
 ): Promise<RenderPackageResult> {
   const pkg = await db.query.contentPackages.findFirst({
     where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)),
   });
   if (!pkg) throw new Error("Content package not found");
+  if (options.preserveReviewDecision && !["pending_review", "failed"].includes(pkg.status)) {
+    return { packageId, mediaType: "unknown", renderedUrls: [], success: false, error: "This package is no longer an editable draft." };
+  }
+  const draftFence = options.preserveReviewDecision ? and(
+    inArray(contentPackages.status, ["pending_review", "failed"]),
+    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${pkg.updatedAt.toISOString()}::timestamp`,
+    sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`,
+    sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`,
+  ) : undefined;
 
   const page = await db.query.themePages.findFirst({
     where: and(eq(themePages.id, pkg.themePageId), eq(themePages.tenantId, tenantId)),
@@ -57,7 +67,8 @@ export async function renderPackageMedia(
   if (process.env.MEDIA_ENGINE_ENABLED === "true" && (format.mediaType === "video" || process.env.MEDIA_STATIC_TEMPLATES_ENABLED === "true" && format.mediaType === "image")) {
     const { queueThemeRender } = await import("@/lib/media-engine/theme-adapter");
     try {
-      const job = await queueThemeRender(tenantId, packageId);
+      signal?.throwIfAborted();
+      const job = await queueThemeRender(tenantId, packageId, undefined, options);
       return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, queued: job.status === "queued" || job.status === "rendering" || job.status === "succeeded" };
     } catch (error) { return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, error: error instanceof Error ? error.message : "Render submission failed" }; }
   }
@@ -258,7 +269,7 @@ export async function renderPackageMedia(
       renderedUrls.push({ url: publicUrl, type: "image" });
     }
 
-    await db
+    const attached = await db
       .update(contentPackages)
       .set({
         renderedAssetUrls: renderedUrls,
@@ -267,7 +278,8 @@ export async function renderPackageMedia(
         metrics: { ...priorMetrics, failurePhase: null },
         updatedAt: new Date(),
       })
-      .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
+      .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), draftFence)).returning({ id: contentPackages.id });
+    if (options.preserveReviewDecision && !attached.length) throw new Error("Package changed during rendering. Its review decision and media were preserved.");
 
     return {
       packageId,
@@ -282,7 +294,7 @@ export async function renderPackageMedia(
       error: message,
       metrics: { ...priorMetrics, failurePhase: "render" },
       updatedAt: new Date(),
-    }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)));
+    }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), draftFence));
     signal?.throwIfAborted();
     return {
       packageId,

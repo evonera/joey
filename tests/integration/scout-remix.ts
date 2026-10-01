@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { requireDisposableDatabase } from "./require-disposable-database";
 await requireDisposableDatabase();
 const { db } = await import("../../src/lib/db");
-const { tenants, scouts, themePages, themeContentFormats, scoutRemixes, contentPackages, storyClusters } =
+const { tenants, scouts, themePages, themeContentFormats, themeVisualTemplates, scoutRemixes, contentPackages, storyClusters, assets, mediaRenderJobs } =
   await import("../../src/lib/db/schema");
 const { claimScoutRemix, claimScoutRemixRender, saveScoutRemixDraft, finishScoutRemix } = await import("../../src/lib/scouts/remix-receipts");
 const { eq } = await import("drizzle-orm");
@@ -55,10 +55,47 @@ try {
   await finishScoutRemix(receipt, "failed", "stale draft worker");
   assert.equal((await db.query.scoutRemixes.findFirst({ where: eq(scoutRemixes.id, receipt.id) }))?.status, "rendering");
   await finishScoutRemix(renderReceipt, "queued");
+  assert.equal(await claimScoutRemixRender(renderReceipt), undefined, "a fresh queued lease must not dispatch twice");
+  await db.update(scoutRemixes).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(scoutRemixes.id, receipt.id));
+  const queuedRecovery = await claimScoutRemixRender(renderReceipt);
+  assert.ok(queuedRecovery, "an expired queued receipt must be reclaimable");
+  await finishScoutRemix(queuedRecovery, "queued");
+  await db.update(contentPackages).set({ status: "rejected" }).where(eq(contentPackages.id, saved.pkg.id));
+  await db.update(scoutRemixes).set({ status: "failed" }).where(eq(scoutRemixes.id, receipt.id));
+  assert.equal(await claimScoutRemixRender(queuedRecovery), undefined, "rejection blocks render recovery at the database claim");
+  await db.update(contentPackages).set({ status: "pending_review" }).where(eq(contentPackages.id, saved.pkg.id));
   const duplicate = await claimScoutRemix(input);
   assert.equal(duplicate.claimed, false);
   assert.equal(duplicate.receipt.packageId, saved.pkg.id);
   assert.equal((await db.query.contentPackages.findMany({ where: eq(contentPackages.tenantId, tenantId) })).length, 1);
+  // Exercise the real async adapter without Modal/R2 calls: fake only the
+  // provider completion, not queue identity, retry bounds, or SQL attachment.
+  process.env.MEDIA_ENGINE_ENABLED = "true";
+  delete process.env.MEDIA_WORKER_DISPATCH_URL;
+  const { queueThemeRender, settleThemeRender } = await import("../../src/lib/media-engine/theme-adapter");
+  const [sourceAsset] = await db.insert(assets).values({ tenantId, filename: "input.png", key: `${tenantId}/input.png`, mimeType: "image/png", size: 100, publicUrl: `https://assets.example.com/${tenantId}/input.png` }).returning();
+  const [template] = await db.insert(themeVisualTemplates).values({ tenantId, themePageId: page.id, formatId: format.id, name: "Test", renderer: "svg", componentSpec: { mediaAssetId: sourceAsset.id } }).returning();
+  await db.update(contentPackages).set({ templateId: template.id }).where(eq(contentPackages.id, saved.pkg.id));
+  const job = await queueThemeRender(tenantId, saved.pkg.id, undefined, { preserveReviewDecision: true });
+  await db.update(mediaRenderJobs).set({ status: "failed", attempt: 1, error: "Test failure" }).where(eq(mediaRenderJobs.id, job.jobId));
+  await db.update(scoutRemixes).set({ status: "queued" }).where(eq(scoutRemixes.id, receipt.id));
+  await settleThemeRender(tenantId, saved.pkg.id);
+  assert.equal((await db.query.scoutRemixes.findFirst({ where: eq(scoutRemixes.id, receipt.id) }))?.status, "failed");
+  const retry = await queueThemeRender(tenantId, saved.pkg.id, undefined, { preserveReviewDecision: true });
+  assert.equal(retry.jobId, job.jobId, "recovery retains the identical render job");
+  assert.equal(retry.status, "queued");
+  assert.equal((await db.query.mediaRenderJobs.findMany({ where: eq(mediaRenderJobs.tenantId, tenantId) })).length, 1);
+  await db.update(contentPackages).set({ status: "rejected" }).where(eq(contentPackages.id, saved.pkg.id));
+  await assert.rejects(queueThemeRender(tenantId, saved.pkg.id, undefined, { preserveReviewDecision: true }), /rejected/);
+  await db.update(mediaRenderJobs).set({ status: "succeeded", outputAssetId: sourceAsset.id }).where(eq(mediaRenderJobs.id, job.jobId));
+  await settleThemeRender(tenantId, saved.pkg.id);
+  assert.equal((await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, saved.pkg.id) }))?.status, "rejected", "late completion preserves rejection");
+  await db.update(contentPackages).set({ status: "pending_review" }).where(eq(contentPackages.id, saved.pkg.id));
+  await db.update(scoutRemixes).set({ status: "queued" }).where(eq(scoutRemixes.id, receipt.id));
+  await settleThemeRender(tenantId, saved.pkg.id);
+  assert.equal((await db.query.scoutRemixes.findFirst({ where: eq(scoutRemixes.id, receipt.id) }))?.status, "complete");
+  await finishScoutRemix(queuedRecovery, "queued");
+  assert.equal((await db.query.scoutRemixes.findFirst({ where: eq(scoutRemixes.id, receipt.id) }))?.status, "complete", "late dispatch cannot overwrite terminal settlement");
   const crashInput = { ...input, eventKey: "interrupted-event" };
   const initial = await claimScoutRemix(crashInput);
   await db
