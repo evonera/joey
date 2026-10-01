@@ -1,7 +1,8 @@
 'use server';
 
 import { invalidateThemeMedia } from "@/lib/media-engine/invalidation";
-import { getActiveTenantId, requireRole } from "@/lib/auth";
+import { getActiveTenantId, getActiveTenantMembership, requireRole } from "@/lib/auth";
+import { detachAgencyResource } from "@/lib/agency/service";
 import { db } from "@/lib/db";
 import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
 import { eq, and, desc, like, inArray, sql } from "drizzle-orm";
@@ -284,8 +285,11 @@ export async function updateThemePage(id: string, data: UpdateThemePageInput) {
 export async function deleteThemePage(id: string) {
   try {
     const tenantId = await requireRole(["owner", "admin"]);
-    await db.delete(themePages)
-      .where(and(eq(themePages.id, id), eq(themePages.tenantId, tenantId)));
+    const { userId } = await getActiveTenantMembership();
+    await db.transaction(async tx => {
+      await detachAgencyResource(tx, { tenantId, userId }, { kind: "page", id });
+      await tx.delete(themePages).where(and(eq(themePages.id, id), eq(themePages.tenantId, tenantId)));
+    });
 
     return { success: true };
   } catch (error: any) {

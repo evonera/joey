@@ -38,6 +38,28 @@ async function snapshot(connection: AgencyDb, actor: AgencyActor, agentId: strin
   await connection.delete(customAgentAccounts).where(and(eq(customAgentAccounts.tenantId, actor.tenantId), eq(customAgentAccounts.agentId, agentId)));
   if (config.accountIds.length) await connection.insert(customAgentAccounts).values(config.accountIds.map(accountId => ({ tenantId: actor.tenantId, agentId, accountId })));
 }
+
+/** Run inside the same transaction as resource deletion. Revoking a binding
+ * pauses its agent and invalidates old sessions/work before the FK is removed. */
+export async function detachAgencyResource(connection: AgencyDb, actor: AgencyActor, resource: { kind: "scout" | "page"; id: string }) {
+  await lockAgency(connection, actor.tenantId);
+  const membership = await requireAgencyMember(actor, connection);
+  const column = resource.kind === "scout" ? customAgents.scoutId : customAgents.themePageId;
+  const bound = await connection.query.customAgents.findMany({ where: and(eq(customAgents.tenantId, actor.tenantId), eq(column, resource.id)), limit: 20 });
+  if (bound.some(agent => agent.state === "active") && !canOperateAgency(membership.role)) throw new Error("Only workspace admins can remove a source bound to an active agent.");
+  for (const agent of bound) {
+    const accounts = await connection.query.customAgentAccounts.findMany({ where: and(eq(customAgentAccounts.tenantId, actor.tenantId), eq(customAgentAccounts.agentId, agent.id)), limit: 15 });
+    const config = agentConfigSchema.parse({ name: agent.name, description: agent.description, specialty: agent.specialty === "scout" ? "writer" : agent.specialty, avatarShape: agent.avatarShape, avatarColor: agent.avatarColor, dailyDraftLimit: agent.dailyDraftLimit, scoutId: null, themePageId: resource.kind === "page" ? null : agent.themePageId, accountIds: accounts.map(binding => binding.accountId) });
+    const { accountIds: _accounts, ...values } = config;
+    await connection.update(customAgents).set({ ...values, state: agent.state === "archived" ? "archived" : "paused", configVersion: agent.configVersion + 1, approvedVersion: null, updatedAt: new Date() }).where(and(eq(customAgents.id, agent.id), eq(customAgents.tenantId, actor.tenantId)));
+    await connection.update(customAgentRuns).set({ status: "cancelled", updatedAt: new Date() }).where(and(eq(customAgentRuns.tenantId, actor.tenantId), eq(customAgentRuns.agentId, agent.id), eq(customAgentRuns.status, "running")));
+    await snapshot(connection, actor, agent.id, agent.configVersion + 1, config);
+  }
+}
+
+async function settleExpiredAgencyRuns(connection: AgencyDb, tenantId: string, agentId: string) {
+  await connection.update(customAgentRuns).set({ status: "failed", error: "Run lease expired. Retry is limited to three attempts.", updatedAt: new Date() }).where(and(eq(customAgentRuns.tenantId, tenantId), eq(customAgentRuns.agentId, agentId), eq(customAgentRuns.status, "running"), sql`${customAgentRuns.leaseExpiresAt} <= now()`));
+}
 export async function listAgencyAgents(actor: AgencyActor) {
   await requireAgencyMember(actor);
   const [agents, accounts] = await Promise.all([
@@ -107,6 +129,7 @@ export async function reserveAgencyRun(actor: AgencyActor, id: string, version: 
     if (!canOperateAgency(membership.role)) throw new Error("Only workspace admins can run automation.");
     const agent = await tx.query.customAgents.findFirst({ where: and(eq(customAgents.tenantId, actor.tenantId), eq(customAgents.id, id)) });
     if (!agent || agent.state !== "active" || agent.configVersion !== version || agent.approvedVersion !== version) throw new Error("Activate the current agent configuration before running it.");
+    await settleExpiredAgencyRuns(tx, actor.tenantId, id);
     const where = and(eq(customAgentRuns.tenantId, actor.tenantId), eq(customAgentRuns.agentId, id), eq(customAgentRuns.configVersion, version), eq(customAgentRuns.eventKey, eventKey));
     const existing = await tx.query.customAgentRuns.findFirst({ where });
     const now = new Date();
@@ -141,6 +164,7 @@ export async function finishAgencyRun(run: typeof customAgentRuns.$inferSelect, 
 }
 export async function listAgencyRuns(actor: AgencyActor, id: string) {
   await getAgencyProfile(actor, id);
+  await settleExpiredAgencyRuns(db, actor.tenantId, id);
   return db.query.customAgentRuns.findMany({ where: and(eq(customAgentRuns.tenantId, actor.tenantId), eq(customAgentRuns.agentId, id)), orderBy: [desc(customAgentRuns.createdAt)], limit: 30 });
 }
 // Call only with the actual ID emitted by Eve's server-side session.started

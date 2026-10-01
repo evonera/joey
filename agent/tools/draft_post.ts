@@ -54,7 +54,7 @@ export default defineTool({
           inArray(socialAccounts.platform, canonicalPlatform === "x" ? ["x", "twitter"] : [canonicalPlatform])),
       });
       const accounts = profile ? workspaceAccounts.filter(account => profile.accountIds.includes(account.id)) : workspaceAccounts;
-      if (profile?.accountIds.length && !accounts.length) return { error: "No active bound account matches this platform. Update the agent's destination in its settings." };
+      if (profile && !accounts.length) return { error: "No active bound account matches this platform. Update the agent's destination in its settings." };
       const requestedIds = [...new Set(accountIds || [])];
       const selected = requestedIds.length ? accounts.filter(account => requestedIds.includes(account.id)) : accounts;
       if (requestedIds.length && selected.length !== requestedIds.length) return { error: "Choose active accounts from this workspace matching the draft platform." };
