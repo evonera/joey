@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { publishThemePackage, reviewThemePackage } from "@/app/actions/theme-packages";
+import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 
 interface ThemePackageSummary {
   id: string;
@@ -14,7 +15,9 @@ interface ThemePackageSummary {
   status: string;
   renderedAssetUrls: unknown;
   metrics?: unknown;
+  provenance?: unknown;
   createdAt: Date | string;
+  updatedAt?: Date | string;
 }
 
 function firstAsset(value: unknown): string | undefined {
@@ -27,11 +30,13 @@ function firstAsset(value: unknown): string | undefined {
 export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[] }) {
   const router = useRouter();
   const [busyId, setBusyId] = React.useState<string>();
+  const [factAcknowledgements, setFactAcknowledgements] = React.useState<Record<string, string>>({});
 
   async function review(packageId: string, decision: "approve" | "reject") {
     setBusyId(packageId);
     try {
-      const result = await reviewThemePackage(packageId, decision);
+      const acknowledged = factAcknowledgements[packageId];
+      const result = await reviewThemePackage(packageId, decision, undefined, acknowledged ? { updatedAt: acknowledged } : undefined);
       if (result.error) throw new Error(result.error);
       toast.success(decision === "approve" ? "Package approved" : "Package rejected");
       router.refresh();
@@ -65,6 +70,10 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
       {packages.map((pkg) => {
         const asset = firstAsset(pkg.renderedAssetUrls);
         const busy = busyId === pkg.id;
+        const needsFactReview = scoutFactReviewRequired(pkg.provenance);
+        const revision = pkg.updatedAt ? new Date(pkg.updatedAt).toISOString() : "";
+        const acknowledged = Boolean(revision) && factAcknowledgements[pkg.id] === revision;
+        const evidence = (pkg.provenance as { researchFacts?: Array<{ claim: string; corroborationStatus: string; evidence?: Array<{ sourceUrl: string; quote: string }> }> } | null)?.researchFacts;
         return (
           <article key={pkg.id} className="grid gap-4 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[96px_1fr]">
             <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-background">
@@ -78,11 +87,24 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
                 </div>
               </div>
               {pkg.caption ? <p className="line-clamp-3 text-xs text-muted-foreground">{pkg.caption}</p> : null}
+              {needsFactReview && <details className="rounded-lg border p-3 text-xs">
+                <summary className="cursor-pointer font-medium">Fact review required: claims are not independently corroborated</summary>
+                <p className="my-2 text-muted-foreground">Compare the original sources and edit any uncertain claims before approving. Only corroborated claims appear as carousel takeaways.</p>
+                {Array.isArray(evidence) && evidence.map((fact, index) => <div key={index} className="mb-3 space-y-1">
+                  <p>{fact.claim} <span className="text-muted-foreground">({fact.corroborationStatus})</span></p>
+                  {fact.evidence?.map((source, sourceIndex) => {
+                    let url: URL; try { url = new URL(source.sourceUrl); } catch { return null; }
+                    if (url.protocol !== "https:") return null;
+                    return <blockquote key={sourceIndex} className="border-l pl-2 text-muted-foreground">{source.quote} <a href={url.toString()} target="_blank" rel="noopener noreferrer" className="underline">{url.hostname}</a></blockquote>;
+                  })}
+                </div>)}
+                <label className="flex items-start gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setFactAcknowledgements(previous => ({ ...previous, [pkg.id]: event.target.checked ? revision : "" }))} />I reviewed the sources and resolved uncertainty in this draft.</label>
+              </details>}
               <div className="flex flex-wrap gap-2">
                 {["pending_review", "rejected", "failed"].includes(pkg.status) && <RenderControls packageId={pkg.id} renderJobId={typeof (pkg.metrics as { renderJobId?: unknown } | null)?.renderJobId === "string" ? (pkg.metrics as { renderJobId: string }).renderJobId : undefined} />}
                 {pkg.status === "pending_review" || pkg.status === "rejected" ? (
                   <>
-                    <button type="button" disabled={busy || !asset} onClick={() => review(pkg.id, "approve")} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">Approve</button>
+                    <button type="button" disabled={busy || !asset || needsFactReview && !acknowledged} onClick={() => review(pkg.id, "approve")} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">Approve</button>
                     <button type="button" disabled={busy} onClick={() => review(pkg.id, "reject")} className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-50">Reject</button>
                   </>
                 ) : null}

@@ -11,6 +11,7 @@ import { draftStatusFromZernio, getZernioClientForTenant } from "@/lib/publisher
 
 import { adaptPackageForPlatform } from "./variant-adapter";
 import { reconcileThemePackagePostEvent } from "./reconcile-post-event";
+import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 
 export interface PublishContentPackageResult {
   success: boolean;
@@ -81,6 +82,9 @@ export async function publishContentPackage(
   }
   if (savedMetrics?.publishAttemptAt && Date.now() - Date.parse(String(savedMetrics.publishAttemptAt)) > 4 * 60_000) {
     return failPackage(packageId, tenantId, "Publication was interrupted beyond the deduplication window. Check Zernio before creating another package.");
+  }
+  if (scoutFactReviewRequired(pkg.provenance)) {
+    return { success: false, status: "failed", error: "Source claims need human fact review in Theme Studio before publication." };
   }
 
   try {
