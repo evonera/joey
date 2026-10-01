@@ -43,10 +43,15 @@ export async function preflightAgencyAutomation(actor: AgencyActor, agentId: str
   await resolveModelForTurn({ preferredModel: "google/gemini-3.8-flash", tenantId: actor.tenantId });
 }
 
-export async function executeAgencyDraft(actor: AgencyActor, agentId: string, version: number, signal?: AbortSignal) {
+export async function executeAgencyDraft(actor: AgencyActor, agentId: string, version: number, signal?: AbortSignal, dispatchedDay?: string) {
   requireAgencyAutomationEnabled();
   signal?.throwIfAborted();
-  const claim = await reserveAgencyRun(actor, agentId, version, agencyDailyEventKey());
+  const eventKey = agencyDailyEventKey();
+  // A delayed dispatcher must not move yesterday's job into today's quota
+  // or race today's scheduled check. Manual checks use the current UTC day.
+  if (dispatchedDay !== undefined && eventKey !== `daily:${dispatchedDay}`)
+    throw new Error("Scheduled check expired. Wait for today's dispatcher or request a new manual check.");
+  const claim = await reserveAgencyRun(actor, agentId, version, eventKey);
   if (!claim.claimed)
     return { status: claim.run.status, runId: claim.run.id, packageId: claim.run.packageId, duplicate: true };
   const run = claim.run;

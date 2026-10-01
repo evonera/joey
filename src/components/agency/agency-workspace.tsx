@@ -202,7 +202,7 @@ export function AgencyWorkspace({
                   aria-label="Resume conversation"
                   className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-xs"
                   value={threadId ?? ""}
-                  disabled={historyLoading}
+                  disabled={historyLoading || !threads.length}
                   onChange={(event) => {
                     setThreadId(event.target.value || undefined);
                     setConversationKey((previous) => previous + 1);

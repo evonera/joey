@@ -4,13 +4,13 @@ import { agencyDispatchPage, executeAgencyDraft } from "@/lib/agency/automation"
 import type { AgencyActor } from "@/lib/agency/config";
 import type { SessionContext } from "eve/context";
 
-export async function agencyDraftWorkflow(actor: AgencyActor, agentId: string, version: number) {
+export async function agencyDraftWorkflow(actor: AgencyActor, agentId: string, version: number, day: string) {
   "use workflow";
-  return draftStep(actor, agentId, version);
+  return draftStep(actor, agentId, version, undefined, day);
 }
-export async function draftStep(actor: AgencyActor, agentId: string, version: number, signal?: AbortSignal) {
+export async function draftStep(actor: AgencyActor, agentId: string, version: number, signal?: AbortSignal, day?: string) {
   "use step";
-  return executeAgencyDraft(actor, agentId, version, signal);
+  return executeAgencyDraft(actor, agentId, version, signal, day);
 }
 // Never implicitly repeat paid requests. Explicit retries use the same DB
 // receipt, three-attempt ceiling and existing saved package.
@@ -44,7 +44,7 @@ async function dispatchStep(cursor: string, day: string) {
   const rows = await agencyDispatchPage(cursor, day);
   for (const row of rows) {
     if (!row.userId) continue;
-    await start(agencyDraftWorkflow, [{ tenantId: row.tenantId, userId: row.userId }, row.id, row.version]);
+    await start(agencyDraftWorkflow, [{ tenantId: row.tenantId, userId: row.userId }, row.id, row.version, day]);
   }
   return rows.length === 25 ? rows.at(-1)!.id : null;
 }

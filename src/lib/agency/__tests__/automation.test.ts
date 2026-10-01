@@ -120,6 +120,15 @@ describe("Governed draft automation (no provider calls)", () => {
     expect(await executeAgencyDraft(actor, "agent", 1)).toMatchObject({ status: "failed" });
     expect(mocks.evaluate).not.toHaveBeenCalled();
   });
+  it("rejects expired schedule days before reservations or paid calls", async () => {
+    await expect(executeAgencyDraft(actor, "agent", 1, undefined, "2000-01-01")).rejects.toThrow("expired");
+    expect(mocks.reserve).not.toHaveBeenCalled();
+    expect(mocks.apify).not.toHaveBeenCalled();
+  });
+  it("uses the pinned current schedule day as its shared manual receipt", async () => {
+    await executeAgencyDraft(actor, "agent", 1, undefined, agencyDailyEventKey().slice(6));
+    expect(mocks.reserve).toHaveBeenCalledWith(actor, "agent", 1, agencyDailyEventKey());
+  });
   it.each([undefined, { platform: "linkedin" }])("rejects missing/non-Instagram formats before resolving paid providers", async (format) => {
     mocks.format.mockResolvedValue(format);
     expect(await executeAgencyDraft(actor, "agent", 1)).toMatchObject({ status: "failed" });
@@ -132,5 +141,27 @@ describe("Governed draft automation (no provider calls)", () => {
     expect(mocks.format).not.toHaveBeenCalled();
     expect(mocks.apify).not.toHaveBeenCalled();
     expect(mocks.evaluate).not.toHaveBeenCalled();
+  });
+  it("observes a cancellation after scraping before research starts", async () => {
+    const controller = new AbortController();
+    mocks.evaluate.mockImplementation(async () => { controller.abort(); return { triggered: true, alert }; });
+    expect(await executeAgencyDraft(actor, "agent", 1, controller.signal)).toMatchObject({ status: "failed" });
+    expect(mocks.remix).not.toHaveBeenCalled();
+    expect(mocks.finish).toHaveBeenCalledWith(run, "failed", expect.objectContaining({ error: expect.stringContaining("cancelled") }));
+  });
+  it("fences a cancellation at atomic draft commit, even after research completed", async () => {
+    const controller = new AbortController();
+    mocks.remix.mockImplementation(async ({ governance }) => {
+      controller.abort();
+      await governance.beforeCommit({});
+      await governance.afterCommit({}, "unsafe-draft");
+    });
+    expect(await executeAgencyDraft(actor, "agent", 1, controller.signal)).toMatchObject({ status: "failed" });
+    expect(mocks.attach).not.toHaveBeenCalled();
+  });
+  it("never persists provider response text or secrets in run errors", async () => {
+    mocks.remix.mockRejectedValue(new Error("provider secret=do-not-log"));
+    await executeAgencyDraft(actor, "agent", 1);
+    expect(JSON.stringify(mocks.finish.mock.calls)).not.toContain("do-not-log");
   });
 });
