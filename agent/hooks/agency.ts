@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { customAgentThreads, eveSessionOwners } from "@/lib/db/schema";
 import { registerAgencyThread, requireAgencyMember } from "@/lib/agency/service";
 import { agencySessionIdentity } from "../lib/agency-session";
+import { userPromptText } from "@/lib/chat-title";
 
 export default defineHook({
   events: {
@@ -14,17 +15,59 @@ export default defineHook({
       const userId = principal?.attributes?.userId;
       if (principal?.authenticator === "better-auth" && typeof tenantId === "string" && typeof userId === "string") {
         await requireAgencyMember({ tenantId, userId });
-        await db.insert(eveSessionOwners).values({ sessionId: ctx.session.id, tenantId, userId, agentId: identity?.agentId ?? null, configVersion: identity?.version ?? null }).onConflictDoNothing();
+        await db
+          .insert(eveSessionOwners)
+          .values({
+            sessionId: ctx.session.id,
+            tenantId,
+            userId,
+            agentId: identity?.agentId ?? null,
+            configVersion: identity?.version ?? null,
+          })
+          .onConflictDoNothing();
       }
-      if (identity && !ctx.session.parent) await registerAgencyThread(identity, identity.agentId, identity.version, ctx.session.id);
+      if (identity && !ctx.session.parent)
+        await registerAgencyThread(identity, identity.agentId, identity.version, ctx.session.id);
     },
     async "*"(event, ctx) {
       const identity = agencySessionIdentity(ctx.session);
       if (!identity || ctx.session.parent) return;
-      const statuses: Record<string, string> = { "turn.started": "working", "input.requested": "needs_input", "session.waiting": "ready", "turn.failed": "failed", "session.failed": "failed", "turn.cancelled": "cancelled" };
+      if (event.type === "message.received") {
+        const title = userPromptText(event.data.message).slice(0, 120);
+        if (title)
+          await db
+            .update(customAgentThreads)
+            .set({ title, updatedAt: new Date() })
+            .where(
+              and(
+                eq(customAgentThreads.sessionId, ctx.session.id),
+                eq(customAgentThreads.tenantId, identity.tenantId),
+                eq(customAgentThreads.userId, identity.userId),
+                eq(customAgentThreads.title, "New conversation")
+              )
+            );
+        return;
+      }
+      const statuses: Record<string, string> = {
+        "turn.started": "working",
+        "input.requested": "needs_input",
+        "session.waiting": "ready",
+        "turn.failed": "failed",
+        "session.failed": "failed",
+        "turn.cancelled": "cancelled",
+      };
       const status = statuses[event.type];
       if (!status) return;
-      await db.update(customAgentThreads).set({ status, updatedAt: new Date() }).where(and(eq(customAgentThreads.sessionId, ctx.session.id), eq(customAgentThreads.tenantId, identity.tenantId), eq(customAgentThreads.userId, identity.userId)));
+      await db
+        .update(customAgentThreads)
+        .set({ status, updatedAt: new Date() })
+        .where(
+          and(
+            eq(customAgentThreads.sessionId, ctx.session.id),
+            eq(customAgentThreads.tenantId, identity.tenantId),
+            eq(customAgentThreads.userId, identity.userId)
+          )
+        );
     },
   },
 });

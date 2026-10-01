@@ -11,6 +11,7 @@ import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provi
 
 const ROUTE_LABELS: Record<string, string> = {
   "/dashboard": "AI Chat",
+  "/agents": "Agents",
   "/compose": "Compose",
   "/drafts": "Drafts",
   "/calendar": "Calendar",
