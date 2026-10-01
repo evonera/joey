@@ -64,6 +64,7 @@ import {
   type SavedChatSession,
 } from "@/lib/chat-sessions";
 import { ChatLibraryView } from "@/components/chat/chat-library-view";
+import { messageWithChatContext } from "@/lib/chat-title";
 import { SocialPlatformSelector } from "@/components/chat/social-platform-selector";
 import {
   SourcesPillButton,
@@ -492,7 +493,7 @@ function AgentChatInner({
             .join("; ")}]\n\n`
         : "";
 
-    const fullText = `${sourcesPreamble}${targetPreamble}${text}`.trim();
+    const fullText = messageWithChatContext(text, `${sourcesPreamble}${targetPreamble}`);
 
     if (message.files.length === 0) {
       await agent.send(fullText);
