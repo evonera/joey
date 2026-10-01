@@ -61,6 +61,22 @@ Use one budget-metered editorial/source-comparison call per new event. Replayed
 events reuse the saved package instead of spending tokens again. Keep Jev out of
 this path; existing cheap Scout gates remain separate.
 
+## Agency interface (PR 3)
+
+`/agents` is a separate, original roster and chat surface. Its three-step Base
+UI dialog reviews identity, bound destinations, and paused creation. Geometric
+identities use semantic tokens, not copied mascot artwork. On narrow screens,
+the roster scrolls above the conversation; dialog content scrolls independently
+of its actions. Existing Joey chat remains available.
+
+Conversation history is loaded from server-owned, user-private Eve entries.
+Resuming uses `useEveAgent` with the durable session ID; approval cards use the
+existing real Eve `inputResponses` path. Agent settings cannot fabricate an
+approval, bind a foreign account, or enable publishing. Switching conversations
+does not cancel a durable run: use the chat Stop control first when cancellation
+is intended. The daily ceiling applies to automation attempts; manual chat
+continues to use workspace AI budget and trial reservations.
+
 ## Release acceptance
 
 Run migrations against a disposable database only. Use the integration guard
