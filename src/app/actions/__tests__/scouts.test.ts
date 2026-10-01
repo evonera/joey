@@ -98,6 +98,15 @@ describe("toggleScout authorization", () => {
 });
 
 describe("Scout create and edit safety", () => {
+  it("saves public IPv6 web sources using the shared collector rules", async () => {
+    await createScout({ ...input, platform: "web", targetUrl: "https://[2606:4700:4700::1111]/page" });
+    expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({ targetUrl: "https://[2606:4700:4700::1111]/page" }));
+  });
+
+  it.each(["https://instagram.com/" + "a".repeat(2048), "https://127.0.0.1/page", "https://[::1]/page", "https://user:secret@instagram.com/page"])("refuses sources that cannot pass static collection validation: %s", async targetUrl => {
+    await expect(createScout({ ...input, platform: "web", targetUrl })).rejects.toThrow("public HTTPS");
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
   it("creates a validated daily Scout paused, even when credentials are configured", async () => {
     await createScout({ ...input, pollIntervalMinutes: 120 });
     expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({

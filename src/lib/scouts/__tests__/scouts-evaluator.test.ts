@@ -203,11 +203,15 @@ describe("Scouts Evaluator and Tool", () => {
         action: "create",
         name: "New Scout",
         targetUrl: "https://instagram.com/new",
+        platform: "instagram",
+        pollIntervalMinutes: 1440,
         goalCondition: "Spike alerts",
       },
       ctx
     );
     expect(createRes.message).toContain("saved paused");
+    expect(createRes.message).toContain("Scout provider is connected");
+    expect(createRes.message).not.toContain("Apify");
   });
 
   it("fails cleanly without generating fake posts in production when Apify is unconfigured", async () => {

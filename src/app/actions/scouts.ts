@@ -7,6 +7,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
 import { revalidatePath } from "next/cache";
 import { getScoutDataProvider, getScoutProviderSetup } from "@/lib/scouts/data-provider";
+import { validateScoutSource } from "@/lib/scouts/source-validation";
 import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/service";
 
 export interface CreateScoutInput {
@@ -23,17 +24,8 @@ function validateScoutInput(input: CreateScoutInput) {
   if (!input.goalCondition?.trim()) throw new Error("Goal condition is required");
   if (input.name.length > 120 || input.goalCondition.length > 1000) throw new Error("Scout name or goal is too long.");
   const platform = input.platform || "instagram";
-  if (!["instagram", "tiktok", "twitter", "youtube", "web"].includes(platform)) throw new Error("Unsupported Scout platform.");
-  let url: URL;
-  try { url = new URL(input.targetUrl.trim()); } catch { throw new Error("Enter a full HTTPS target URL."); }
-  if (url.protocol !== "https:" || url.username || url.password) throw new Error("Enter a public HTTPS target URL without credentials.");
-  const expectedHosts: Record<string, string[]> = {
-    instagram: ["instagram.com"], tiktok: ["tiktok.com"], twitter: ["x.com", "twitter.com"], youtube: ["youtube.com", "youtu.be"], web: [],
-  };
-  if (expectedHosts[platform].length && !expectedHosts[platform].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
-    throw new Error(`Use a ${platform} URL for this platform.`);
-  }
-  return { name: input.name.trim(), targetUrl: url.toString(), platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: 1440 };
+  const targetUrl = validateScoutSource(input.targetUrl.trim(), platform);
+  return { name: input.name.trim(), targetUrl, platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: 1440 };
 }
 
 export async function getScoutSetup() {

@@ -118,6 +118,13 @@ describe("Scout provider selection and isolation", () => {
 });
 
 describe("Custom provider collection contract", () => {
+  it("accepts public IPv6 web targets that can be saved", async () => {
+    const request = { platform: "web", targetUrl: "https://[2606:4700:4700::1111]/page" };
+    await expect(new CustomScoutProvider(endpoint, "key").fetchRecentPosts(request, context())).resolves.toEqual([
+      item,
+    ]);
+    expect(mocks.resolve).toHaveBeenCalledWith(request.targetUrl, expect.any(AbortSignal));
+  });
   it("sends a bounded, versioned request with no browser or tenant identity override", async () => {
     const ctx = context();
     const result = await new CustomScoutProvider(endpoint, "key").fetchRecentPosts(request, ctx);

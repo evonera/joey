@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { scouts } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
+import { validateScoutSource } from "@/lib/scouts/source-validation";
 import { workspaceApproval } from "../lib/workspace-approval";
 
 export default defineTool({
@@ -57,13 +58,13 @@ export default defineTool({
           throw new Error("name, targetUrl, and goalCondition are required to create a scout.");
         }
 
-        if (new URL(targetUrl).protocol !== "https:") throw new Error("Scout target must use HTTPS.");
+        const sourceUrl = validateScoutSource(targetUrl, platform);
         const [created] = await db
           .insert(scouts)
           .values({
             tenantId: tenantId as string,
             name,
-            targetUrl,
+            targetUrl: sourceUrl,
             platform,
             goalCondition,
             pollIntervalMinutes,
@@ -72,7 +73,7 @@ export default defineTool({
           .returning();
 
         return {
-          message: `Scout '${name}' saved paused. An owner or admin can enable daily monitoring in Scouts once Apify is connected.`,
+          message: `Scout '${name}' saved paused. An owner or admin can enable daily monitoring in Scouts once a Scout provider is connected.`,
           scout: created,
         };
       }

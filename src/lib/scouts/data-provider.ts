@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { isIP } from "node:net";
 import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
 import { readBoundedJson } from "@/lib/http/read-bounded-json";
-import { isPrivateAddress, outboundRequest, resolveOutboundTarget } from "@/lib/flows/outbound-request";
+import { outboundRequest, resolveOutboundTarget } from "@/lib/flows/outbound-request";
+import { isPublicScoutHttpsUrl as publicHttps, validateScoutSource } from "./source-validation";
 
 /** Server-owned collection boundary. Providers supply evidence, never approvals or drafts. */
 export interface ScoutPostItem {
@@ -28,35 +28,6 @@ export interface ScoutDataProvider {
 
 const MAX_ITEMS = 15;
 const MAX_BYTES = 2 * 1024 * 1024;
-const platforms = ["instagram", "tiktok", "twitter", "youtube", "web"];
-const hosts: Record<string, string[]> = {
-  instagram: ["instagram.com"],
-  tiktok: ["tiktok.com"],
-  twitter: ["x.com", "twitter.com"],
-  youtube: ["youtube.com", "youtu.be"],
-  web: [],
-};
-
-function publicHttps(value: string): boolean {
-  try {
-    const url = new URL(value);
-    const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    return (
-      value.length <= 2048 &&
-      url.protocol === "https:" &&
-      !url.username &&
-      !url.password &&
-      host.includes(".") &&
-      (isIP(host) === 0 || !isPrivateAddress(host)) &&
-      !["localhost", "local", "internal", "test", "invalid"].some(
-        (suffix) => host === suffix || host.endsWith(`.${suffix}`)
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
 const itemSchema = z
   .object({
     id: z.string().min(1).max(120),
@@ -70,15 +41,7 @@ const itemSchema = z
 const envelopeSchema = z.object({ version: z.literal(1), items: z.array(itemSchema).max(MAX_ITEMS) }).strict();
 
 async function validateTarget(request: ScoutCollectionRequest, signal: AbortSignal) {
-  if (!platforms.includes(request.platform) || !publicHttps(request.targetUrl))
-    throw new Error("Invalid Scout source URL or platform.");
-  const host = new URL(request.targetUrl).hostname;
-  if (
-    hosts[request.platform].length &&
-    !hosts[request.platform].some((expected) => host === expected || host.endsWith(`.${expected}`))
-  ) {
-    throw new Error("Scout source URL does not match its platform.");
-  }
+  validateScoutSource(request.targetUrl, request.platform);
   // Do not forward private DNS targets to collection services. The service must
   // independently validate/pin DNS when it fetches (its network is different).
   try {
