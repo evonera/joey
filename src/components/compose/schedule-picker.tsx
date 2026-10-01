@@ -30,9 +30,9 @@ export function SchedulePicker({
   return (
     <div className="space-y-4">
       <Tabs value={scheduleType} onValueChange={(val) => onScheduleTypeChange(val as ScheduleType)}>
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="now">Publish Now</TabsTrigger>
-          <TabsTrigger value="scheduled">Schedule for Later</TabsTrigger>
+        <TabsList className="grid h-auto! w-full grid-cols-1 sm:grid-cols-2">
+          <TabsTrigger value="now" className="min-h-8 whitespace-normal">Publish Now</TabsTrigger>
+          <TabsTrigger value="scheduled" className="min-h-8 whitespace-normal">Schedule for Later</TabsTrigger>
         </TabsList>
       </Tabs>
 

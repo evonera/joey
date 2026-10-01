@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getAnalytics } from "@/app/actions/analytics";
@@ -53,6 +54,7 @@ function AnalyticsDashboard() {
   const [days, setDays] = useState(30);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsAccount, setNeedsAccount] = useState(false);
   const [snapshot, setSnapshot] = useState<Extract<Awaited<ReturnType<typeof getAnalytics>>, { success: true }> | null>(null);
 
   const [insights, setInsights] = useState<{ id: string; content: string; createdAt: Date; metadata: unknown }[]>([]);
@@ -76,15 +78,25 @@ function AnalyticsDashboard() {
     async function load() {
       setIsLoading(true);
       setError(null);
-      const res = await getAnalytics(days);
-      if (!active) return;
-      if (!res.success) {
-        setError(res.error);
-        setSnapshot(null);
-      } else {
-        setSnapshot(res);
+      setNeedsAccount(false);
+      try {
+        const res = await getAnalytics(days);
+        if (!active) return;
+        if (!res.success) {
+          setError(res.error);
+          setNeedsAccount(res.code === "no_connected_account");
+          setSnapshot(null);
+        } else {
+          setSnapshot(res);
+        }
+      } catch {
+        if (active) {
+          setError("Analytics couldn’t load. Please try again.");
+          setSnapshot(null);
+        }
+      } finally {
+        if (active) setIsLoading(false);
       }
-      setIsLoading(false);
     }
     load();
     return () => {
@@ -93,23 +105,31 @@ function AnalyticsDashboard() {
   }, [days]);
 
   useEffect(() => {
+    let active = true;
     async function loadInsightsData() {
       setIsLoadingInsights(true);
-      const res = await getInsights();
-      if (res.error) {
-        setInsightsError(res.error);
-      } else if (res.insights) {
-        setInsights(res.insights);
+      try {
+        const res = await getInsights();
+        if (!active) return;
+        if (res.error) {
+          setInsightsError(res.error);
+        } else if (res.insights) {
+          setInsights(res.insights);
+        }
+      } catch {
+        if (active) setInsightsError("AI insights couldn’t load. Please try again.");
+      } finally {
+        if (active) setIsLoadingInsights(false);
       }
-      setIsLoadingInsights(false);
     }
     loadInsightsData();
+    return () => { active = false; };
   }, []);
 
   const latestInsight = insights.length > 0 ? insights[0] : null;
 
   return (
-    <div className="p-8 max-w-6xl mx-auto pb-24 space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 px-3 pb-24 pt-4 sm:p-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Analytics</h1>
@@ -135,7 +155,12 @@ function AnalyticsDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid w-full sm:w-auto grid-cols-3">
+        <label className="block text-xs font-medium sm:hidden">Analytics view
+          <select value={activeTab} onChange={(event) => handleTabChange(event.target.value)} className="mt-1 block w-full rounded-lg border bg-background px-3 py-2.5 text-sm">
+            <option value="overview">Overview</option><option value="posts">Post performance</option><option value="insights">AI insights</option>
+          </select>
+        </label>
+        <TabsList className="hidden w-full grid-cols-3 sm:grid sm:w-auto">
           <TabsTrigger value="overview" className="gap-2">
             <AnalyticsIcon className="h-4 w-4" />
             Overview
@@ -160,12 +185,21 @@ function AnalyticsDashboard() {
             <div className="flex h-[40vh] items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : needsAccount ? (
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-8 text-center sm:p-12">
+              <TrendingUp className="h-12 w-12 text-muted-foreground/50" />
+              <p className="font-medium text-foreground">Connect an account to see analytics</p>
+              <p className="max-w-md text-sm text-muted-foreground">Once you connect a social account, performance data will appear here.</p>
+              <Link href="/accounts" className="mt-1 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                Connect account
+              </Link>
+            </div>
           ) : error ? (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-12 text-center">
               <TrendingUp className="h-12 w-12 text-destructive" />
               <p className="font-medium text-destructive">{error}</p>
               <p className="text-sm text-muted-foreground max-w-md">
-                Make sure a valid Zernio API key is connected and the analytics add-on is enabled, then refresh.
+                Check your account connection, then refresh. If this persists, try again in a moment.
               </p>
             </div>
           ) : snapshot ? (
@@ -220,6 +254,13 @@ function AnalyticsDashboard() {
           {isLoading ? (
             <div className="flex h-[40vh] items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : needsAccount ? (
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-8 text-center">
+              <p className="font-medium text-foreground">Connect an account to see post performance</p>
+              <Link href="/accounts" className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                Connect account
+              </Link>
             </div>
           ) : error ? (
             <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center text-sm text-destructive">

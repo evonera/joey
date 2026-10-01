@@ -156,7 +156,13 @@ export const auth = betterAuth({
                 }
             },
         }),
-        ...(getBillingConfig().webhookKey ? [dodopayments({
+        ...(getBillingConfig().webhookKey ? [{
+            // Mount the SDK's signed webhook endpoint, not its user-owned
+            // customer schema/hooks. Joey billing belongs to tenants; adding
+            // the full plugin makes Better Auth require user.dodoCustomerId
+            // and breaks every auth route even with signup sync disabled.
+            id: "dodopayments",
+            endpoints: dodopayments({
             client: dodoPayments,
             // Billing belongs to workspaces, not sign-up or the user's latest
             // membership. Checkout and portal use role-checked server actions.
@@ -167,7 +173,8 @@ export const auth = betterAuth({
                     onPayload: reconcileBillingWebhook,
                 }),
             ],
-        })] : []),
+            }).endpoints,
+        }] : []),
         nextCookies(),
     ],
 });

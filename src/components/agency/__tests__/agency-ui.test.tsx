@@ -46,6 +46,20 @@ describe("Original agency UI", () => {
     mocks.threads.mockResolvedValue([]);
     mocks.runs.mockResolvedValue([]);
   });
+  it("explains why daily automation is unavailable without a source", () => {
+    render(<AgentAutomationControls agent={agent} choices={choices} onChanged={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Enable daily drafts" })).toBeDisabled();
+    expect(screen.getByText(/Add an Instagram source in agent settings/)).toBeDefined();
+  });
+  it("collapses the mobile roster after selection and lets users reopen it", async () => {
+    render(<AgencyWorkspace agents={[agent]} choices={choices} actor={{ tenantId: "tenant", userId: "user", role: "owner" }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Studio editor.*Automation paused/ }));
+    const toggle = screen.getByRole("button", { name: "Show agents" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "Hide agents" })).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(mocks.threads).toHaveBeenCalled());
+  });
   it("requires the explicit draft-only activation confirmation and retains failed setup", async () => {
     mocks.state.mockRejectedValue(new Error("Agency automation is disabled by the operator."));
     render(<AgentAutomationControls agent={{ ...agent, scoutId: "source", themePageId: "page", accountIds: ["one"] }} choices={choices} onChanged={vi.fn()} />);

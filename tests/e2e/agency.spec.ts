@@ -11,9 +11,9 @@ for (const width of [1440, 390]) {
     test.setTimeout(150_000);
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
-    const suffix = randomUUID().replace(/-/g, "").slice(0, 4);
+    const suffix = randomUUID().replace(/-/g, "").slice(0, 8);
     const signup = await context.request.post("/api/auth/sign-up/email", {
-      headers: { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8::${suffix}` },
+      headers: { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8:${suffix.slice(0, 4)}:${suffix.slice(4)}::1` },
       data: { name: "Agency E2E", email: `agency-${randomUUID()}@example.test`, password: "Local-E2E-Only-2026!" },
     });
     expect(signup.ok(), await signup.text()).toBe(true);
@@ -38,8 +38,10 @@ for (const width of [1440, 390]) {
     await expect(dialog.getByText("Human review only", { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Create paused agent" }).click();
     await expect(dialog).toHaveCount(0, { timeout: 60_000 });
+    if (width === 390) await page.getByRole("button", { name: "Show agents", exact: true }).click();
     const roster = page.getByRole("complementary", { name: "Agent roster" });
     await expect(roster.getByRole("button", { name: /Evidence editor/ })).toHaveAttribute("aria-pressed", "true");
+    if (width === 390) await page.getByRole("button", { name: "Hide agents", exact: true }).click();
     await expect(page.getByRole("button", { name: "Enable daily drafts" })).toBeDisabled();
     await page.getByRole("button", { name: "Edit Evidence editor" }).click();
     const edit = page.getByRole("dialog", { name: "Edit agent" });
@@ -60,6 +62,10 @@ for (const width of [1440, 390]) {
     await page.locator('section[aria-label="Agent workspace"] details summary').click();
     await expect(page.getByText("No automation runs yet.", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    if (width === 390) {
+      await expect(page.getByRole("button", { name: "Show agents", exact: true })).toHaveAttribute("aria-expanded", "false");
+      await page.getByRole("button", { name: "Show agents", exact: true }).click();
+    }
     await page.getByRole("textbox", { name: "Search agents" }).fill("not-present");
     await expect(roster.getByText("No matching agents.")).toBeVisible();
     await page.getByRole("textbox", { name: "Search agents" }).clear();

@@ -14,6 +14,8 @@ export interface ResolveModelOptions {
 export interface ResolvedModelResult {
   model: LanguageModel;
   modelContextWindowTokens: number;
+  /** Actual provider model selected, including provider-key fallback. */
+  providerModelId: string;
 }
 
 /**
@@ -114,7 +116,7 @@ export async function resolveModelForTurn(
   if (preferredKeyInfo.key) {
     await _enforceTrialQuotaIfNeeded(options.tenantId, preferredKeyInfo);
     const model = await resolveLanguageModel(preferredModelDef, preferredKeyInfo.key);
-    return { model, modelContextWindowTokens: preferredModelDef.contextWindowTokens };
+    return { model, modelContextWindowTokens: preferredModelDef.contextWindowTokens, providerModelId: preferredModelDef.providerModelId };
   }
 
   // Fallback: try other providers in preference order (google → anthropic → openai)
@@ -140,7 +142,7 @@ export async function resolveModelForTurn(
 
     await _enforceTrialQuotaIfNeeded(options.tenantId, fallbackKeyInfo);
     const model = await resolveLanguageModel(fallbackModelDef, fallbackKeyInfo.key);
-    return { model, modelContextWindowTokens: fallbackModelDef.contextWindowTokens };
+    return { model, modelContextWindowTokens: fallbackModelDef.contextWindowTokens, providerModelId: fallbackModelDef.providerModelId };
   }
 
   // No provider has a key — surface a clear, actionable error
