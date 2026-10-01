@@ -8,6 +8,12 @@ describe("safe mobile flow append", () => {
   it("follows topology instead of array ordering", () => {
     expect(mobileAppendSource({ nodes: [node("end"), node("start", "trigger.manual")], edges: [{ from: "start", to: "end" }] })).toEqual({ ok: true, sourceId: "end" });
   });
+  it("allows linear research with multiple data outputs", () => {
+    expect(mobileAppendSource({ nodes: [node("start", "trigger.manual"), node("research", "data.exa_search")], edges: [{ from: "start", to: "research" }] })).toEqual({ ok: true, sourceId: "research" });
+  });
+  it("rejects unknown node semantics", () => {
+    expect(mobileAppendSource({ nodes: [node("unknown", "unknown.node")], edges: [] }).ok).toBe(false);
+  });
   it.each(["logic.condition", "logic.split", "ai.decision"])("never adds an unconditional edge after %s", (type) => {
     const graph: FlowGraphDoc = { nodes: [node("branch", type)], edges: [] };
     expect(mobileAppendSource(graph).ok).toBe(false);

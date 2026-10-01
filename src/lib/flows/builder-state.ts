@@ -1,10 +1,12 @@
 import type { FlowGraphDoc } from "@/lib/flows/types";
-import { getNodeOutputs } from "@/lib/flows/catalog";
+import { getNodeMeta } from "@/lib/flows/catalog";
 
 /** Mobile auto-append supports connected linear graphs, never implicit branches. */
 export function mobileAppendSource(graph: FlowGraphDoc): { ok: boolean; sourceId?: string } {
   if (!graph.nodes.length) return { ok: graph.edges.length === 0 };
-  if (graph.nodes.some(node => getNodeOutputs(node).length > 1) || graph.edges.some(edge => edge.branch)) return { ok: false };
+  // Multiple data handles (Exa results/images) do not imply control-flow branches.
+  const branchingTypes = new Set(["logic.condition", "logic.split", "ai.decision"]);
+  if (graph.nodes.some(node => !getNodeMeta(node.type) || branchingTypes.has(node.type)) || graph.edges.some(edge => edge.branch)) return { ok: false };
   if (graph.edges.length !== graph.nodes.length - 1) return { ok: false };
   const ids = new Set(graph.nodes.map(node => node.id));
   const outgoing = new Map<string, string>();
