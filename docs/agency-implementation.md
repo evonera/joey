@@ -77,6 +77,46 @@ does not cancel a durable run: use the chat Stop control first when cancellation
 is intended. The daily ceiling applies to automation attempts; manual chat
 continues to use workspace AI budget and trial reservations.
 
+## Draft-only automation (PR 4)
+
+`AGENCY_AUTOMATION_ENABLED=false` is the default operator kill switch. Enabling
+it is a separate deployment decision after acceptance. An owner/admin must
+approve the current configuration in `/agents`; migration 0053 pauses older
+activations that did not record an approver. Membership and activation are
+rechecked before paid phases and inside the fenced draft transaction. Changing
+an assigned Scout requires pausing its agent; source edits invalidate old
+conversations/configuration approval. The standalone Scout schedule cannot be
+enabled while it is assigned to a non-archived agent.
+
+Eve's daily `agency-drafts` schedule (05:00 UTC) starts a deterministic Workflow
+dispatcher, not an extra LLM routing turn. It uses 25-row keyset pages and a
+2500-agent safety ceiling; a capacity log requires operator attention rather
+than silently promising unlimited fan-out. Paid work is one non-retrying step
+with a 285-second deadline and a five-minute DB lease. Manual `agency_draft`
+uses the same receipt and a fresh real Eve owner/admin approval. The vendored
+`workflow/api` import is deliberately exempted from Knip's dependency listing;
+Eve provides it, and its docs say not to install a second Workflow SDK.
+
+One daily event is shared by manual and automatic checks. Retries count against
+the daily attempt ceiling, are limited to three per event, and retain captured
+evidence. Saved packages are attached atomically to run receipts, so a crash
+cannot lose the review link. A failed render is repaired through Theme Studio,
+not by regenerating the story. Queued media is not a failed draft; worker
+completion settles queued run history, with package locking preventing a late
+queued update from undoing completion. Rejected/published drafts remain fenced.
+
+The Scout judge now uses `runLlm`, the workspace AI reservation ledger and the
+current registered model, with validated bounded JSON. The existing opt-in Jev
+pre-gate is unchanged. Apify uses bearer auth, a client deadline, at most 15
+items and a 2 MiB response cap. Apify/Exa costs use those providers' separate
+budgets; they are not falsely represented as Gemini token spend. Configure
+provider-side spend caps as well as Joey's AI budget.
+
+Package provenance records immutable agent version and destination IDs.
+Human publishing may use only their intersection with currently linked active
+accounts, including retries. This is an upper bound, never a publish grant.
+There is no autonomous review, schedule or publish call in this workflow.
+
 ## Release acceptance
 
 Run migrations against a disposable database only. Use the integration guard

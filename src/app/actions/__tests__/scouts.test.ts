@@ -21,10 +21,12 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/db", () => ({ db: {
+  transaction: (fn: (tx: unknown) => unknown) => fn({ update: mocks.update }),
   update: mocks.update,
   insert: mocks.insert,
   query: { scouts: { findFirst: mocks.findFirst } },
 } }));
+vi.mock("@/lib/agency/service", () => ({ detachAgencyResource: vi.fn(), guardAgencyScoutChange: vi.fn() }));
 vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: vi.fn() }));
 vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({ resolveToken: mocks.resolveToken }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));

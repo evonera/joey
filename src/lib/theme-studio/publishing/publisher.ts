@@ -12,6 +12,7 @@ import { draftStatusFromZernio, getZernioClientForTenant } from "@/lib/publisher
 import { adaptPackageForPlatform } from "./variant-adapter";
 import { reconcileThemePackagePostEvent } from "./reconcile-post-event";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
+import { agencyDestinationIds } from "@/lib/agency/destinations";
 
 export interface PublishContentPackageResult {
   success: boolean;
@@ -105,13 +106,14 @@ export async function publishContentPackage(
     return failPackage(packageId, tenantId, "Theme page or content format not found");
   }
 
-  const selectedAccountIds = Array.isArray(page.connectedAccounts)
+  const pageAccountIds = Array.isArray(page.connectedAccounts)
     ? page.connectedAccounts.filter((id): id is string => typeof id === "string")
     : [];
+  const selectedAccountIds = agencyDestinationIds(pkg.provenance, pageAccountIds);
   const priorMetrics = pkg.metrics && typeof pkg.metrics === "object"
     ? pkg.metrics as Record<string, unknown>
     : {};
-  const priorAccountId = typeof priorMetrics.publishAccountId === "string"
+  const priorAccountId = typeof priorMetrics.publishAccountId === "string" && (!((pkg.provenance as Record<string, unknown>)?.customAgentId) || selectedAccountIds.includes(priorMetrics.publishAccountId))
     ? priorMetrics.publishAccountId
     : undefined;
   if (selectedAccountIds.length === 0 && !priorAccountId) {

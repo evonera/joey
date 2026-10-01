@@ -26,7 +26,12 @@ export async function saveAgencyAgentAction(input: unknown, existing?: unknown) 
 }
 export async function setAgencyAgentState(input: unknown) {
   const value = reference.extend({ state: z.enum(["active", "paused", "archived"]) }).parse(input);
-  const saved = await changeAgencyAgentState(await getActiveTenantMembership(), value.id, value.version, value.state);
+  const actor = await getActiveTenantMembership();
+  if (value.state === "active") {
+    const { preflightAgencyAutomation } = await import("@/lib/agency/automation");
+    await preflightAgencyAutomation(actor, value.id);
+  }
+  const saved = await changeAgencyAgentState(actor, value.id, value.version, value.state);
   revalidatePath("/dashboard");
   revalidatePath("/agents");
   return saved;
