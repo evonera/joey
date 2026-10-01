@@ -202,7 +202,7 @@ export function AgencyWorkspace({
                   aria-label="Resume conversation"
                   className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-xs"
                   value={threadId ?? ""}
-                  disabled={historyLoading}
+                  disabled={historyLoading || !threads.length}
                   onChange={(event) => {
                     setThreadId(event.target.value || undefined);
                     setConversationKey((previous) => previous + 1);
@@ -227,7 +227,7 @@ export function AgencyWorkspace({
                       <div key={run.id} className="border-b py-2 last:border-0">
                         <p className="font-medium capitalize">{run.status}</p>
                         <p className="mt-1 text-muted-foreground">
-                          Attempt {run.attempt} · v{run.configVersion}
+                          {run.attempt === 0 ? "Not started" : `Attempt ${run.attempt}`} · v{run.configVersion}
                         </p>
                         {run.error && <p className="mt-1 break-words text-destructive">{run.error}</p>}
                         {run.packageId && (
