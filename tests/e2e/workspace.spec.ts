@@ -14,7 +14,7 @@ function signupHeaders(testInfo: TestInfo) {
   // ten-second window. Give each test/retry its own documentation-range IPv6
   // address so retries test the application rather than the auth limiter.
   const suffix = randomUUID().replace(/-/g, "").slice(0, 8);
-  return { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8::${suffix}` };
+  return { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8::${suffix.slice(0, 4)}:${suffix.slice(4)}` };
 }
 
 for (const width of [1440, 390, 320] as const) {
