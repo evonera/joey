@@ -1,4 +1,5 @@
 import { defineTool } from "eve/tools";
+import { assertGeneralWorkspaceTool } from "../lib/agency-session";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
@@ -21,6 +22,7 @@ export default defineTool({
   }),
   approval: workspaceApproval(),
   execute: async ({ flowIdOrName, parameters }, ctx) => {
+    assertGeneralWorkspaceTool(ctx.session);
     const tenantId = ctx.session?.auth?.current?.attributes?.tenantId as string | undefined;
     if (!tenantId) {
       return { error: "No active tenant session found. Please sign in to run flows." };

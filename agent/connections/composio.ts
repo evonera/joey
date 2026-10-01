@@ -1,7 +1,8 @@
-import { defineMcpClientConnection } from "eve/connections";
+import { defineDynamic, defineMcpClientConnection } from "eve/connections";
 import { composioConnectionApproval } from "../lib/composio-policy";
+import { agencySessionIdentity } from "../lib/agency-session";
 
-export default defineMcpClientConnection({
+const connection = defineMcpClientConnection({
   url: "https://connect.composio.dev/mcp",
   description:
     "Composio research connector for reading/searching connected apps. Ask permission before connecting an app or executing any external action. Use Joey's first-party tools for drafting, scheduling, publishing, and account management.",
@@ -19,3 +20,10 @@ export default defineMcpClientConnection({
     };
   },
 });
+
+// Custom draft-only personas use first-party research. Do not expose the
+// connected-app discovery/authorization surface to this narrower persona.
+export default defineDynamic({ events: {
+  "session.started": (_event, ctx) => agencySessionIdentity(ctx.session) ? null : connection,
+  "turn.started": (_event, ctx) => agencySessionIdentity(ctx.session) ? null : connection,
+} });

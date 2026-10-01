@@ -1,4 +1,5 @@
 import { defineTool } from "eve/tools";
+import { assertGeneralWorkspaceTool } from "../lib/agency-session";
 import { z } from "zod";
 import { insertMemory } from "@/lib/memories";
 
@@ -10,6 +11,7 @@ export default defineTool({
     metadata: z.record(z.string(), z.unknown()).optional().describe("Optional structured data (e.g. { source: 'weekly-review', week: '2024-12' })."),
   }),
   execute: async ({ content, type, metadata }, ctx) => {
+    assertGeneralWorkspaceTool(ctx.session);
     const tenantId = ctx.session?.auth?.current?.attributes?.tenantId;
     if (!tenantId) {
       return { message: "Unable to identify workspace to save memory." };

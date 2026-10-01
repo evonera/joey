@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, doublePrecision, integer, jsonb, vector, json, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, varchar, uuid, bigint, numeric, doublePrecision, integer, jsonb, vector, json, index, uniqueIndex, foreignKey, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // --- BetterAuth Required Tables ---
@@ -143,7 +143,9 @@ export const socialAccounts = pgTable("social_accounts", {
   avatarUrl: text("avatar_url"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  tenantIdentity: uniqueIndex("social_accounts_tenant_identity").on(table.tenantId, table.id),
+}));
 
 export const socialEntities = pgTable("social_entities", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -661,6 +663,7 @@ export const themePages = pgTable("theme_pages", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   tenantIdx: index("theme_pages_tenant_id_idx").on(table.tenantId, table.updatedAt.desc()),
+  tenantIdentity: uniqueIndex("theme_pages_tenant_identity").on(table.tenantId, table.id),
 }));
 
 export const themeSources = pgTable("theme_sources", {
@@ -930,6 +933,7 @@ export const scouts = pgTable("scouts", {
 }, (table) => ({
   tenantIdx: index("scouts_tenant_id_idx").on(table.tenantId),
   activeIdx: index("scouts_active_idx").on(table.isActive, table.lastPolledAt),
+  tenantIdentity: uniqueIndex("scouts_tenant_identity").on(table.tenantId, table.id),
 }));
 
 export const scoutRuns = pgTable("scout_runs", {
@@ -965,4 +969,108 @@ export const scoutRemixes = pgTable("scout_remixes", {
 }, (table) => ({
   eventIdx: uniqueIndex("scout_remixes_source_event_key").on(table.tenantId, table.scoutId, table.themePageId, table.eventKey),
   pendingIdx: index("scout_remixes_pending_idx").on(table.status, table.leaseExpiresAt),
+}));
+
+// Product personas share Eve's runtime; these are not arbitrary executable
+// agents. Configuration edits pause automation and revoke activation approval.
+export const customAgents = pgTable("custom_agents", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 80 }).notNull(),
+  description: varchar("description", { length: 600 }).notNull().default(""),
+  specialty: varchar("specialty", { length: 20 }).notNull().default("writer"),
+  avatarShape: varchar("avatar_shape", { length: 20 }).notNull().default("orbit"),
+  avatarColor: varchar("avatar_color", { length: 20 }).notNull().default("teal"),
+  state: varchar("state", { length: 20 }).notNull().default("paused"),
+  configVersion: integer("config_version").notNull().default(1),
+  approvedVersion: integer("approved_version"),
+  dailyDraftLimit: integer("daily_draft_limit").notNull().default(3),
+  scoutId: text("scout_id"),
+  themePageId: text("theme_page_id"),
+  createdBy: text("created_by").notNull().references(() => user.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantIdentity: uniqueIndex("custom_agents_tenant_identity").on(table.tenantId, table.id),
+  roster: index("custom_agents_roster_idx").on(table.tenantId, table.state, table.updatedAt),
+  scoutOwner: foreignKey({ columns: [table.tenantId, table.scoutId], foreignColumns: [scouts.tenantId, scouts.id] }),
+  pageOwner: foreignKey({ columns: [table.tenantId, table.themePageId], foreignColumns: [themePages.tenantId, themePages.id] }),
+  quota: check("custom_agents_quota_check", sql`${table.dailyDraftLimit} BETWEEN 1 AND 12`),
+  stateCheck: check("custom_agents_state_check", sql`${table.state} IN ('paused', 'active', 'archived')`),
+  approval: check("custom_agents_approval_check", sql`${table.state} <> 'active' OR (${table.approvedVersion} IS NOT NULL AND ${table.approvedVersion} = ${table.configVersion})`),
+}));
+
+export const customAgentAccounts = pgTable("custom_agent_accounts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  accountId: text("account_id").notNull(),
+}, (table) => ({
+  binding: uniqueIndex("custom_agent_account_binding").on(table.tenantId, table.agentId, table.accountId),
+  agentOwner: foreignKey({ columns: [table.tenantId, table.agentId], foreignColumns: [customAgents.tenantId, customAgents.id] }).onDelete("cascade"),
+  accountOwner: foreignKey({ columns: [table.tenantId, table.accountId], foreignColumns: [socialAccounts.tenantId, socialAccounts.id] }).onDelete("cascade"),
+}));
+
+export const customAgentVersions = pgTable("custom_agent_versions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  version: integer("version").notNull(),
+  config: jsonb("config").notNull(),
+  createdBy: text("created_by").notNull().references(() => user.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  versionKey: uniqueIndex("custom_agent_version_key").on(table.tenantId, table.agentId, table.version),
+  agentOwner: foreignKey({ columns: [table.tenantId, table.agentId], foreignColumns: [customAgents.tenantId, customAgents.id] }).onDelete("cascade"),
+}));
+
+export const customAgentRuns = pgTable("custom_agent_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  configVersion: integer("config_version").notNull(),
+  eventKey: varchar("event_key", { length: 128 }).notNull(),
+  status: varchar("status", { length: 24 }).notNull().default("running"),
+  leaseToken: text("lease_token").notNull(),
+  leaseExpiresAt: timestamp("lease_expires_at").notNull(),
+  attempt: integer("attempt").notNull().default(1),
+  packageId: text("package_id").references(() => contentPackages.id, { onDelete: "set null" }),
+  error: varchar("error", { length: 500 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  event: uniqueIndex("custom_agent_run_event").on(table.tenantId, table.agentId, table.configVersion, table.eventKey),
+  history: index("custom_agent_run_history").on(table.tenantId, table.agentId, table.createdAt),
+  agentOwner: foreignKey({ columns: [table.tenantId, table.agentId], foreignColumns: [customAgents.tenantId, customAgents.id] }).onDelete("cascade"),
+  statusCheck: check("custom_agent_run_status_check", sql`${table.status} IN ('running', 'queued', 'completed', 'failed', 'cancelled')`),
+}));
+
+export const customAgentThreads = pgTable("custom_agent_threads", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  configVersion: integer("config_version").notNull(),
+  sessionId: text("session_id").notNull().unique(),
+  title: varchar("title", { length: 120 }).notNull().default("New conversation"),
+  status: varchar("status", { length: 24 }).notNull().default("ready"),
+  streamIndex: integer("stream_index").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  privateHistory: index("custom_agent_thread_history").on(table.tenantId, table.userId, table.agentId, table.updatedAt),
+  agentOwner: foreignKey({ columns: [table.tenantId, table.agentId], foreignColumns: [customAgents.tenantId, customAgents.id] }).onDelete("cascade"),
+}));
+
+// Covers normal Joey and specialist child sessions too, so removing a persona
+// header cannot turn a private conversation into an unscoped Eve route.
+export const eveSessionOwners = pgTable("eve_session_owners", {
+  sessionId: text("session_id").primaryKey(),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  agentId: text("agent_id"),
+  configVersion: integer("config_version"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  agentOwner: foreignKey({ columns: [table.tenantId, table.agentId], foreignColumns: [customAgents.tenantId, customAgents.id] }),
 }));
