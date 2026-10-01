@@ -60,6 +60,10 @@ for (const width of [1440, 390]) {
     await page.locator('section[aria-label="Agent workspace"] details summary').click();
     await expect(page.getByText("No automation runs yet.", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    if (width === 390) {
+      await expect(page.getByRole("button", { name: "Show agents", exact: true })).toHaveAttribute("aria-expanded", "false");
+      await page.getByRole("button", { name: "Show agents", exact: true }).click();
+    }
     await page.getByRole("textbox", { name: "Search agents" }).fill("not-present");
     await expect(roster.getByText("No matching agents.")).toBeVisible();
     await page.getByRole("textbox", { name: "Search agents" }).clear();

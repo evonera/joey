@@ -43,6 +43,9 @@ export function AgentAutomationControls({
       >
         {busy ? "Updating…" : agent.state === "active" ? "Pause automation" : "Enable daily drafts"}
       </Button>
+      {!agent.scoutId && agent.state !== "active" && (
+        <p className="basis-full text-xs text-muted-foreground">Add an Instagram source in agent settings to enable daily drafts. Chat remains available.</p>
+      )}
       {error && !open && (
         <p role="alert" className="basis-full text-xs text-destructive">
           {error}
@@ -62,7 +65,7 @@ export function AgentAutomationControls({
               Authorize this exact configuration to check its Scout daily at 05:00 UTC. It can spend Apify, Exa and AI
               credits to prepare drafts, never to publish or schedule posts.
             </Dialog.Description>
-            <div className="mt-4 min-h-0 space-y-3 overflow-y-auto text-sm">
+            <div className="mt-4 min-h-0 space-y-3 overflow-y-auto break-words text-sm">
               <p>
                 Source:{" "}
                 {choices.scouts.find((source) => source.id === agent.scoutId)?.name ?? "Configured Instagram Scout"}
@@ -93,7 +96,7 @@ export function AgentAutomationControls({
                 </p>
               )}
             </div>
-            <div className="mt-5 flex shrink-0 justify-end gap-2">
+            <div className="mt-5 flex shrink-0 flex-wrap justify-end gap-2">
               <Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
                 Cancel
               </Button>

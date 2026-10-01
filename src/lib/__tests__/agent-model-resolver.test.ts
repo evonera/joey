@@ -99,6 +99,7 @@ describe("agent-model-resolver", () => {
 
     expect(result.model).toBeDefined();
     expect(result.modelContextWindowTokens).toBe(1_048_576);
+    expect(result.providerModelId).toBe("gemini-3.6-flash");
   });
 
   it("enforces trial quota when using fallback server key for free tenant", async () => {
@@ -139,6 +140,9 @@ describe("agent-model-resolver", () => {
     // Should resolve via Gemini fallback
     expect(result.model).toBeDefined();
     expect(result.modelContextWindowTokens).toBeGreaterThan(0);
+    const { getModelById, DEFAULT_MODEL_ID } = await import("@/lib/models");
+    expect(result.providerModelId).toBe(getModelById(DEFAULT_MODEL_ID).providerModelId);
+    expect(result.providerModelId).not.toBe(getModelById("openai/gpt-5.6-luna").providerModelId);
   });
 
   it("throws when no provider has any key available", async () => {
