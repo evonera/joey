@@ -169,6 +169,27 @@ export async function reserveAgencyRun(actor: AgencyActor, id: string, version: 
   });
 }
 
+/** A missed scheduled check is history, not a paid attempt. Never replace a
+ * receipt that already ran for that day or grant permission to execute it. */
+export async function recordAgencyDispatchExpiry(actor: AgencyActor, id: string, version: number, day: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day >= new Date().toISOString().slice(0, 10))
+    throw new Error("Invalid expired dispatch day.");
+  return db.transaction(async tx => {
+    await lockAgency(tx, actor.tenantId);
+    if (!canOperateAgency((await requireAgencyMember(actor, tx)).role)) throw new Error("Only workspace admins can record dispatch outcomes.");
+    const snapshot = await tx.query.customAgentVersions.findFirst({ where: and(eq(customAgentVersions.tenantId, actor.tenantId), eq(customAgentVersions.agentId, id), eq(customAgentVersions.version, version)) });
+    if (!snapshot) throw new Error("Agent configuration not found.");
+    const eventKey = `daily:${day}`;
+    const [saved] = await tx.insert(customAgentRuns).values({ tenantId: actor.tenantId, agentId: id, configVersion: version, eventKey,
+      status: "cancelled", attempt: 0, leaseToken: randomUUID(), leaseExpiresAt: new Date(),
+      error: "Scheduled check expired before execution. No provider work or quota consumed.",
+    }).onConflictDoNothing({ target: [customAgentRuns.tenantId, customAgentRuns.agentId, customAgentRuns.configVersion, customAgentRuns.eventKey] }).returning({ id: customAgentRuns.id });
+    if (saved) return saved.id;
+    const existing = await tx.query.customAgentRuns.findFirst({ where: and(eq(customAgentRuns.tenantId, actor.tenantId), eq(customAgentRuns.agentId, id), eq(customAgentRuns.configVersion, version), eq(customAgentRuns.eventKey, eventKey)) });
+    return existing?.id;
+  });
+}
+
 export async function assertAgencyRunCurrent(run: typeof customAgentRuns.$inferSelect, connection: AgencyDb = db) {
   if (connection !== db) await lockAgency(connection, run.tenantId);
   const agent = await connection.query.customAgents.findFirst({ where: and(eq(customAgents.tenantId, run.tenantId), eq(customAgents.id, run.agentId)) });

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   slot: vi.fn(),
   format: vi.fn(),
+  expiry: vi.fn(),
 }));
 vi.mock("@/lib/db", () => ({
   db: {
@@ -26,6 +27,7 @@ vi.mock("@/lib/agency/service", () => ({
   getAgencyProfile: mocks.profile,
   finishAgencyRun: mocks.finish,
   attachAgencyDraft: mocks.attach,
+  recordAgencyDispatchExpiry: mocks.expiry,
 }));
 vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: mocks.evaluate }));
 vi.mock("@/lib/scouts/remix-pipeline", () => ({ remixScoutAlertToThemeStudio: mocks.remix }));
@@ -55,6 +57,7 @@ beforeEach(() => {
   mocks.finish.mockResolvedValue(true);
   mocks.evaluate.mockResolvedValue({ triggered: true, alert });
   mocks.remix.mockResolvedValue({ success: true, packageId: "draft", renderState: "queued" });
+  mocks.expiry.mockResolvedValue("expired-receipt");
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("Governed draft automation (no provider calls)", () => {
@@ -121,7 +124,8 @@ describe("Governed draft automation (no provider calls)", () => {
     expect(mocks.evaluate).not.toHaveBeenCalled();
   });
   it("rejects expired schedule days before reservations or paid calls", async () => {
-    await expect(executeAgencyDraft(actor, "agent", 1, undefined, "2000-01-01")).rejects.toThrow("expired");
+    expect(await executeAgencyDraft(actor, "agent", 1, undefined, "2000-01-01")).toMatchObject({ status: "cancelled", expired: true, runId: "expired-receipt" });
+    expect(mocks.expiry).toHaveBeenCalledWith(actor, "agent", 1, "2000-01-01");
     expect(mocks.reserve).not.toHaveBeenCalled();
     expect(mocks.apify).not.toHaveBeenCalled();
   });

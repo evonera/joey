@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type TestInfo } from "@playwright/test";
+import { requireDisposableDatabase } from "../integration/require-disposable-database";
+
+test.beforeAll(async () => { await requireDisposableDatabase(); });
 
 function signupHeaders(testInfo: TestInfo) {
   // Better Auth intentionally limits sign-up attempts to three per IP per

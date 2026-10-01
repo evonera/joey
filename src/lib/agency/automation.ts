@@ -12,6 +12,7 @@ import {
   finishAgencyRun,
   getAgencyProfile,
   reserveAgencyRun,
+  recordAgencyDispatchExpiry,
 } from "./service";
 import type { AgencyActor } from "./config";
 
@@ -49,8 +50,11 @@ export async function executeAgencyDraft(actor: AgencyActor, agentId: string, ve
   const eventKey = agencyDailyEventKey();
   // A delayed dispatcher must not move yesterday's job into today's quota
   // or race today's scheduled check. Manual checks use the current UTC day.
-  if (dispatchedDay !== undefined && eventKey !== `daily:${dispatchedDay}`)
-    throw new Error("Scheduled check expired. Wait for today's dispatcher or request a new manual check.");
+  if (dispatchedDay !== undefined && eventKey !== `daily:${dispatchedDay}`) {
+    console.warn("[agency.dispatch_expired]", { tenantId: actor.tenantId, agentId, configVersion: version, dispatchDay: dispatchedDay });
+    const runId = await recordAgencyDispatchExpiry(actor, agentId, version, dispatchedDay);
+    return { status: "cancelled", expired: true, runId };
+  }
   const claim = await reserveAgencyRun(actor, agentId, version, eventKey);
   if (!claim.claimed)
     return { status: claim.run.status, runId: claim.run.id, packageId: claim.run.packageId, duplicate: true };

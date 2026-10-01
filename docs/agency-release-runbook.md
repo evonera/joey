@@ -13,7 +13,10 @@ point automated signup, cleanup, seed or integration scripts at production.
    `JOEY_INTEGRATION_TEST=true`; cloud runs additionally require the exact
    `JOEY_NEON_TEST_BRANCH_ID`. The guard checks the database's immutable branch
    ID before imports or writes. No provider credentials are needed.
-3. Run `test:e2e` against a disposable localhost database. The agency tests
+3. Run `test:e2e` against a disposable localhost database with
+   `JOEY_INTEGRATION_TEST=true`. Both authenticated suites check the database
+   before signup; cloud runs require the immutable test branch ID above. The
+   runner never reuses an unknown existing server. The agency tests
    cover original paused creation/editing/search/history at 1440px and 390px.
    They do not approve provider calls, send model prompts or publish.
 4. Link the preview to that isolated database. A green preview build alone is
@@ -63,6 +66,11 @@ Monitor failed/expired agency runs, approval age, queued-media age, provider
 errors, AI-budget denials and the dispatcher capacity warning (2500 agents).
 Verify frontend/server/Eve/Modal events actually reach the chosen alert
 destination; configuration presence alone does not prove alert delivery.
+Cross-midnight delayed dispatches log `agency.dispatch_expired` and record a
+cancelled, zero-attempt history receipt when the actor still has permission.
+These receipts are not executions and consume no daily quota. They never
+overwrite a day that already ran. If membership is revoked, the structured
+expiry log remains available even when the historical write is denied.
 
 Run the existing authenticated 30-minute soak against this staging workspace;
 record browser errors, 5xxs, failed requests and heap/listener growth. Include

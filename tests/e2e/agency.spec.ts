@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
+import { requireDisposableDatabase } from "../integration/require-disposable-database";
+
+test.beforeAll(async () => { await requireDisposableDatabase(); });
 
 // This suite only writes to its new authenticated workspace on localhost.
 // It never sends a model prompt, activates a schedule or connects a provider.

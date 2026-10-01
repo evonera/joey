@@ -3,7 +3,7 @@ import { requireDisposableDatabase } from "./require-disposable-database";
 await requireDisposableDatabase();
 const { db } = await import("../../src/lib/db");
 const { tenants, user, member, socialAccounts, themePages, scouts, customAgents, customAgentAccounts, customAgentVersions, customAgentRuns, themeContentFormats, contentPackages, storyClusters, assets, mediaRenderJobs } = await import("../../src/lib/db/schema");
-const { saveAgencyAgent, changeAgencyAgentState, reserveAgencyRun, finishAgencyRun, registerAgencyThread, listAgencyThreads, listAgencyRuns, detachAgencyResource, assertAgencyRunCurrent, guardAgencyScoutChange, attachAgencyDraft } = await import("../../src/lib/agency/service");
+const { saveAgencyAgent, changeAgencyAgentState, reserveAgencyRun, finishAgencyRun, registerAgencyThread, listAgencyThreads, listAgencyRuns, detachAgencyResource, assertAgencyRunCurrent, guardAgencyScoutChange, attachAgencyDraft, recordAgencyDispatchExpiry } = await import("../../src/lib/agency/service");
 const { default: agencyHook } = await import("../../agent/hooks/agency");
 const { authorizeAgencyRoute } = await import("../../agent/lib/agency-route-auth");
 const { and, eq, inArray } = await import("drizzle-orm");
@@ -84,6 +84,16 @@ try {
   // provider output, never the permission, lease or package fences.
   const workerAgent = await saveAgencyAgent(owner, { ...config, name: "Async acceptance", dailyDraftLimit: 12 });
   await changeAgencyAgentState(owner, workerAgent.id, 1, "active");
+  await assert.rejects(recordAgencyDispatchExpiry(drafter, workerAgent.id, 1, "2000-01-01"), /admins/);
+  const expiryId = await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-01");
+  assert.equal(await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-01"), expiryId, "expired dispatches deduplicate without replacing history");
+  const expiry = await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, expiryId!) });
+  assert.equal(expiry?.status, "cancelled"); assert.equal(expiry?.attempt, 0, "an expired dispatch does not consume quota");
+  const expiryOnly = await saveAgencyAgent(owner, { ...config, name: "Zero-credit expiry", dailyDraftLimit: 1 });
+  await changeAgencyAgentState(owner, expiryOnly.id, 1, "active");
+  await recordAgencyDispatchExpiry(owner, expiryOnly.id, 1, "2000-01-01");
+  assert.equal((await reserveAgencyRun(owner, expiryOnly.id, 1, "current-day-check")).claimed, true, "zero-attempt history leaves the single paid slot available");
+  await assert.rejects(reserveAgencyRun(owner, expiryOnly.id, 1, "second-paid-check"), /daily draft limit/);
   const workerRun = await reserveAgencyRun(owner, workerAgent.id, 1, "queued-video");
   const { claimScoutRemix, saveScoutRemixDraft } = await import("../../src/lib/scouts/remix-receipts");
   const sourceClaim = await claimScoutRemix({ tenantId, scoutId: scout.id, themePageId: page.id, eventKey: "agency-queued-video" });

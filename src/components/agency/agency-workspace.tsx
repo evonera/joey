@@ -227,7 +227,7 @@ export function AgencyWorkspace({
                       <div key={run.id} className="border-b py-2 last:border-0">
                         <p className="font-medium capitalize">{run.status}</p>
                         <p className="mt-1 text-muted-foreground">
-                          Attempt {run.attempt} · v{run.configVersion}
+                          {run.attempt === 0 ? "Not started" : `Attempt ${run.attempt}`} · v{run.configVersion}
                         </p>
                         {run.error && <p className="mt-1 break-words text-destructive">{run.error}</p>}
                         {run.packageId && (
