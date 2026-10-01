@@ -200,8 +200,8 @@ export default function AssetsPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             aria-label="Search assets"
@@ -211,7 +211,7 @@ export default function AssetsPage() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {["image/*", "video/*", "audio/*", "application/pdf"].map((mime) => {
             const label = mime.split("/")[0];
             const isActive = filterMime === mime;

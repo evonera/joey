@@ -256,7 +256,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-4">
+    <div className="flex min-h-[calc(100vh-8rem)] min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-semibold tracking-tight">Engagement</h1><p className="text-sm text-muted-foreground">Comments, direct messages, mentions, reactions, and reviews in one queue.</p></div>
         <Button variant="outline" onClick={sync} disabled={syncing}><IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "Syncing…" : "Sync Zernio"}</Button>
@@ -264,8 +264,8 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
 
       {stagedReplyCount > 0 ? <div role="status" data-testid="engagement-webmcp-staged-banner" className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-950 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"><IconSparkles className="size-3.5" /><span className="font-medium">WebMCP staged {stagedReplyCount} {stagedReplyCount === 1 ? "reply edit" : "reply edits"}.</span><span className="text-indigo-700 dark:text-indigo-300">Open each draft and click Save. Approval and sending remain separate.</span></div> : null}
 
-      <div className="grid min-h-0 flex-1 overflow-hidden rounded-xl border bg-background lg:grid-cols-[22rem_minmax(0,1fr)]">
-        <aside className={`${mobileDetailOpen ? "hidden" : "flex"} min-h-[34rem] flex-col border-b lg:flex lg:border-b-0 lg:border-r`}>
+      <div className="grid min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border bg-background lg:grid-cols-[22rem_minmax(0,1fr)]">
+        <aside className={`${mobileDetailOpen ? "hidden" : "flex"} min-h-[34rem] min-w-0 flex-col border-b lg:flex lg:border-b-0 lg:border-r`}>
           <div className="space-y-3 border-b bg-muted/15 p-3">
             <form className="relative" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()); }}>
               <IconSearch className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input aria-label="Search people or messages" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search people or messages" className="pl-9" />
@@ -275,10 +275,11 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
               <span className="mx-1 h-4 w-px shrink-0 bg-border" />
               <Button size="sm" variant="ghost" onClick={() => setStatus((value) => value === "all" ? "active" : "all")} className={`h-7 shrink-0 ${status === "active" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"}`}>Active only</Button>
             </div>
+            <p className="text-[11px] text-muted-foreground sm:hidden">Swipe filters to see more →</p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {error ? <p className="p-6 text-center text-sm text-destructive">{error}</p> : null}
-            {!loading && pages.length === 0 ? <p className="p-8 text-center text-sm text-muted-foreground">No conversations match this view.</p> : null}
+            {!loading && pages.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground sm:p-8">No conversations match this view.</p> : null}
             {pages.map((conversation) => <button key={conversation.id} onClick={() => void selectConversation(conversation)} className={`flex w-full gap-3 border-b p-3 text-left transition-colors hover:bg-muted/60 ${selectedId === conversation.id ? "bg-muted" : ""}`}>
               <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-xs font-semibold">{conversation.participantAvatar ? <img src={conversation.participantAvatar} alt="" className="size-full object-cover" /> : initials(conversation.participantName)}</div>
               <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{conversation.participantName || conversation.participantHandle || "Unknown contact"}</span>{conversation.unreadCount > 0 ? <Badge className="ml-auto min-w-5 justify-center px-1.5">{conversation.unreadCount}</Badge> : null}</div>

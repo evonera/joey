@@ -2,7 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
-import { flows, flowRuns, flowTemplates, drafts } from "@/lib/db/schema";
+import { flows, flowRuns, flowTemplates, drafts, apiKeys, socialAccounts } from "@/lib/db/schema";
 import { and, eq, desc, inArray, isNull, sql } from "drizzle-orm";
 import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
@@ -10,6 +10,7 @@ import type { FlowStep, RunStatus } from "@/lib/flows/types";
 import { getNode } from "@/lib/flows/registry";
 import { executeAdmittedFlowRun, startFlowRun } from "@/lib/flows/run-flow-server";
 import { hashWebhookSecret } from "@/lib/flows/webhook-secret";
+import { checkActivationReadiness } from "@/lib/flows/activation-readiness";
 
 export type FlowRow = typeof flows.$inferSelect;
 export type FlowRunRow = typeof flowRuns.$inferSelect;
@@ -128,6 +129,42 @@ export async function validateFlowGraph(raw: unknown): Promise<{ ok: boolean; is
   }
 }
 
+async function activationIssues(tenantId: string, raw: unknown): Promise<ValidationIssue[]> {
+  const doc = parseGraphDoc(raw);
+  const [keys, accounts] = await Promise.all([
+    db.query.apiKeys.findMany({ where: eq(apiKeys.tenantId, tenantId), columns: { provider: true, status: true } }),
+    db.query.socialAccounts.findMany({
+      where: and(eq(socialAccounts.tenantId, tenantId), eq(socialAccounts.isActive, true)),
+      columns: { id: true, platform: true },
+    }),
+  ]);
+  return checkActivationReadiness(doc, {
+    keys,
+    accounts,
+    env: {
+      exa: Boolean(process.env.EXA_API_KEY),
+      tavily: Boolean(process.env.TAVILY_API_KEY),
+      apify: Boolean(process.env.APIFY_TOKEN),
+      supadata: Boolean(process.env.SUPADATA_API_KEY),
+      openai: Boolean(process.env.OPENAI_API_KEY),
+      anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+      google: Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY),
+      openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+      typesafe: Boolean(process.env.TYPESAFE_API_KEY),
+    },
+  });
+}
+
+export async function validateFlowActivation(id: string): Promise<{ ok: boolean; issues: ValidationIssue[] }> {
+  const tenantId = await getActiveTenantId();
+  const flow = await db.query.flows.findFirst({ where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)) });
+  if (!flow) return { ok: false, issues: [{ severity: "error", message: "Flow not found" }] };
+  const graph = await validateFlowGraph(flow.graph);
+  if (!graph.ok) return graph;
+  const issues = await activationIssues(tenantId, flow.graph);
+  return { ok: issues.length === 0, issues: [...graph.issues, ...issues] };
+}
+
 export async function saveFlow(
   id: string,
   data: { name?: string; description?: string | null; graph?: unknown },
@@ -190,8 +227,10 @@ export async function setFlowStatus(
   }
 
   if (status === "active") {
-    const result = await validateFlowGraph(existing.graph);
-    if (!result.ok) return { issues: result.issues };
+    const graph = await validateFlowGraph(existing.graph);
+    if (!graph.ok) return { issues: graph.issues };
+    const issues = await activationIssues(tenantId, existing.graph);
+    if (issues.length) return { issues };
   }
 
   const writeConditions = [
@@ -203,6 +242,7 @@ export async function setFlowStatus(
   // authorization decision at the write boundary as well, so a concurrent
   // owner activation cannot be reverted by a stale member request.
   if (existing.status === "draft") writeConditions.push(eq(flows.status, "draft"));
+  if (status === "active") writeConditions.push(eq(flows.executionRevision, existing.executionRevision));
 
   const [updated] = await db
     .update(flows)
@@ -214,6 +254,15 @@ export async function setFlowStatus(
     .where(and(...writeConditions))
     .returning({ id: flows.id });
   if (!updated) {
+    if (status === "active") {
+      const current = await db.query.flows.findFirst({
+        where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
+        columns: { status: true, executionRevision: true },
+      });
+      if (current?.status !== "active" || current.executionRevision !== existing.executionRevision) {
+        return { error: "This flow changed while activation was checked. Review it and try again." };
+      }
+    }
     const current = await db.query.flows.findFirst({
       where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
       columns: { status: true },

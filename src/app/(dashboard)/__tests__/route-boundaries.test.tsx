@@ -18,4 +18,9 @@ describe("dashboard route boundaries", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(reset).toHaveBeenCalledOnce();
   });
+
+  it("identifies a stale client bundle and offers a full reload", () => {
+    render(<DashboardError error={new Error("ChunkLoadError: Failed to load chunk /_next/static/immutable/chunks/old.js")} reset={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Reload Joey" })).toBeInTheDocument();
+  });
 });
