@@ -1,16 +1,17 @@
-version: '3.8'
-
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    env_file:
+      - .env
     ports:
-      - "3000:3000"
+      - "${JOEY_PORT:-3000}:3000"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
-      - NODE_ENV=production
+      DATABASE_URL: ${JOEY_DATABASE_URL:?Set JOEY_DATABASE_URL in .env to the URL-encoded internal db connection string}
+      NODE_ENV: production
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -21,10 +22,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: npx drizzle-kit push
+      target: migrator
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/joey}
-      - NODE_ENV=production
+      DATABASE_URL: ${JOEY_DATABASE_URL:?Set JOEY_DATABASE_URL in .env to the URL-encoded internal db connection string}
+      NODE_ENV: production
     depends_on:
       db:
         condition: service_healthy
@@ -35,14 +38,14 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       - POSTGRES_DB=${POSTGRES_DB:-joey}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - joey_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d joey"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5

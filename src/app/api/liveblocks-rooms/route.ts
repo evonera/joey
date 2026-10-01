@@ -3,6 +3,12 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { drafts, flows } from "@/lib/db/schema";
 import { inArray, and, eq } from "drizzle-orm";
+import { z } from "zod";
+import { readBoundedJson } from "@/lib/http/read-bounded-json";
+
+const requestSchema = z.object({
+  roomIds: z.array(z.string().min(1).max(256)).max(100),
+}).strict();
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({
@@ -18,10 +24,15 @@ export async function POST(request: Request) {
 
   try {
     const { tenantId } = await getActiveTenantMembership();
-    const body = await request.json();
-    const roomIds: string[] = body.roomIds || [];
+    const parsed = await readBoundedJson<unknown>(request, 64 * 1024);
+    if (!parsed.ok) {
+      return Response.json({ error: parsed.reason === "too_large" ? "Request body is too large" : "Invalid JSON body" }, { status: parsed.reason === "too_large" ? 413 : 400 });
+    }
+    const body = requestSchema.safeParse(parsed.value);
+    if (!body.success) return Response.json({ error: "Invalid room lookup request" }, { status: 400 });
+    const roomIds = body.data.roomIds;
 
-    if (!Array.isArray(roomIds) || roomIds.length === 0) {
+    if (roomIds.length === 0) {
       return Response.json([]);
     }
 

@@ -11,6 +11,8 @@ const mockPrepareSession = vi.fn().mockReturnValue({
   FULL_ACCESS: ["*:write"],
   READ_ACCESS: ["*:read"],
 });
+const mockSelect = vi.fn();
+const mockAutocompleteLimit = vi.fn();
 
 let mockIsConfigured = true;
 let mockLiveblocksInstance: any = {
@@ -35,6 +37,7 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/db", () => ({
   db: {
+    select: mockSelect,
     query: {
       user: {
         findMany: vi.fn(),
@@ -59,6 +62,8 @@ vi.mock("next/headers", () => ({
 describe("Liveblocks Integration & Auth Scoping", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSelect.mockReset();
+    mockAutocompleteLimit.mockReset();
     mockIsConfigured = true;
     mockLiveblocksInstance = {
       prepareSession: mockPrepareSession,
@@ -244,9 +249,8 @@ describe("Liveblocks Integration & Auth Scoping", () => {
   });
 
   describe("GET /api/liveblocks-users (Mentions)", () => {
-    it("returns active workspace member user IDs matching search filter", async () => {
+    it("searches tenant members before applying a stable bounded result limit", async () => {
       const { getActiveTenantMembership } = await import("@/lib/auth");
-      const { db } = await import("@/lib/db");
 
       (getActiveTenantMembership as any).mockResolvedValue({
         tenantId: "org_alpha",
@@ -254,15 +258,14 @@ describe("Liveblocks Integration & Auth Scoping", () => {
         role: "admin",
       });
 
-      (db.query.member.findMany as any).mockResolvedValue([
-        { userId: "usr_1" },
-        { userId: "usr_2" },
-      ]);
-
-      (db.query.user.findMany as any).mockResolvedValue([
-        { id: "usr_1", name: "Alice Cooper", email: "alice@cooper.com" },
-        { id: "usr_2", name: "Bob Martin", email: "bob@martin.com" },
-      ]);
+      const builder: any = {};
+      builder.from = vi.fn(() => builder);
+      builder.innerJoin = vi.fn(() => builder);
+      builder.where = vi.fn(() => builder);
+      builder.orderBy = vi.fn(() => builder);
+      builder.limit = mockAutocompleteLimit;
+      mockSelect.mockReturnValue(builder);
+      mockAutocompleteLimit.mockResolvedValue([{ userId: "usr_201" }]);
 
       const { GET } = await import("@/app/api/liveblocks-users/route");
 
@@ -271,7 +274,21 @@ describe("Liveblocks Integration & Auth Scoping", () => {
       const res = await GET(req);
       expect(res.status).toBe(200);
       const data = await res.json();
-      expect(data.userIds).toEqual(["usr_2"]);
+      expect(data.userIds).toEqual(["usr_201"]);
+      expect(mockSelect).toHaveBeenCalled();
+      expect(builder.where).toHaveBeenCalled();
+      expect(builder.orderBy).toHaveBeenCalled();
+      expect(mockAutocompleteLimit).toHaveBeenCalledWith(50);
+    });
+
+    it("rejects oversized search text", async () => {
+      const { getActiveTenantMembership } = await import("@/lib/auth");
+      (getActiveTenantMembership as any).mockResolvedValue({ tenantId: "org_alpha" });
+      const { GET } = await import("@/app/api/liveblocks-users/route");
+      const req = new Request(`http://localhost:3000/api/liveblocks-users?text=${"x".repeat(129)}`);
+      const res = await GET(req);
+      expect(res.status).toBe(400);
+      expect(mockSelect).not.toHaveBeenCalled();
     });
   });
 

@@ -62,7 +62,7 @@ export async function installTelegramBot(input: { tenantId: string; token: strin
   const existing = await db.query.telegramBotInstallations.findFirst({ where: eq(telegramBotInstallations.tenantId, input.tenantId) });
   const id = existing?.id ?? crypto.randomUUID();
   const webhookUrl = `${input.appUrl.replace(/\/$/, "")}/api/webhooks/telegram/${id}`;
-  const values = { encryptedToken: encrypt(input.token), webhookSecretHash: hashWebhookSecret(secret), botTelegramId: me.id, botUsername: me.username, allowedUserIds: allowlist, status: "configuring", updatedAt: new Date() };
+  const values = { encryptedToken: encrypt(input.token, input.tenantId), webhookSecretHash: hashWebhookSecret(secret), botTelegramId: me.id, botUsername: me.username, allowedUserIds: allowlist, status: "configuring", updatedAt: new Date() };
   await db.insert(telegramBotInstallations).values({ id, tenantId: input.tenantId, ...values }).onConflictDoUpdate({ target: telegramBotInstallations.tenantId, set: values });
   try {
     await bot.api.setWebhook(webhookUrl, { secret_token: secret, allowed_updates: ["message", "callback_query"] });
@@ -77,7 +77,7 @@ export async function installTelegramBot(input: { tenantId: string; token: strin
 export async function telegramInstallationStatus(tenantId: string) {
   const installation = await db.query.telegramBotInstallations.findFirst({ where: eq(telegramBotInstallations.tenantId, tenantId) });
   if (!installation) return null;
-  const info = await telegramBot(decrypt(installation.encryptedToken)).api.getWebhookInfo();
+  const info = await telegramBot(decrypt(installation.encryptedToken, installation.tenantId)).api.getWebhookInfo();
   return { id: installation.id, username: installation.botUsername, status: installation.status, webhookUrl: info.url, pendingUpdates: info.pending_update_count, lastError: info.last_error_message };
 }
 
@@ -87,7 +87,7 @@ export async function processTelegramUpdate(
   payload: Record<string, unknown>
 ) {
   try {
-    const token = decrypt(installation.encryptedToken);
+    const token = decrypt(installation.encryptedToken, installation.tenantId);
     const bot = telegramBot(token);
     await bot.handleUpdate(payload as any);
     await db

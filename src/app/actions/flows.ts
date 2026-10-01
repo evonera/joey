@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowTemplates, drafts, apiKeys, socialAccounts } from "@/lib/db/schema";
 import { and, eq, desc, inArray, isNull, sql } from "drizzle-orm";
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
 import type { FlowStep, RunStatus } from "@/lib/flows/types";
 import { getNode } from "@/lib/flows/registry";
@@ -64,11 +64,27 @@ function generateWebhookSecret(): string {
   return `wf_${randomBytes(32).toString("base64url")}`;
 }
 
+async function requireFlowOperator(): Promise<
+  | { authorized: true; tenantId: string }
+  | { authorized: false; error: string }
+> {
+  try {
+    return { authorized: true, tenantId: await requireRole(["owner", "admin"]) };
+  } catch (error) {
+    return {
+      authorized: false,
+      error: error instanceof Error ? error.message : "You do not have permission to manage flow runs.",
+    };
+  }
+}
+
 /** Provisions once. A concurrent loser never receives a secret that was not persisted. */
 export async function provisionFlowWebhookSecret(
   id: string,
 ): Promise<{ secret?: string; configured?: boolean; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const secret = generateWebhookSecret();
   const [updated] = await db
     .update(flows)
@@ -89,7 +105,9 @@ export async function provisionFlowWebhookSecret(
 export async function rotateFlowWebhookSecret(
   id: string,
 ): Promise<{ secret?: string; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const secret = generateWebhookSecret();
   const [updated] = await db
     .update(flows)
@@ -156,14 +174,21 @@ export async function saveFlow(
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
   if (!existing) return { error: "Flow not found" };
+  if (existing.status !== "draft") {
+    const authorization = await requireFlowOperator();
+    if (!authorization.authorized) return { error: authorization.error };
+    if (authorization.tenantId !== tenantId) return { error: "Workspace changed. Refresh and try again." };
+  }
 
   if (data.graph !== undefined) {
     const result = await validateFlowGraph(data.graph);
     if (!result.ok) return { issues: result.issues };
   }
   const graphJson = data.graph === undefined ? undefined : JSON.stringify(data.graph);
+  const writeConditions = [eq(flows.id, id), eq(flows.tenantId, tenantId)];
+  if (existing.status === "draft") writeConditions.push(eq(flows.status, "draft"));
 
-  await db
+  const [updated] = await db
     .update(flows)
     .set({
       ...(data.name !== undefined ? { name: data.name.trim().slice(0, 120) || existing.name } : {}),
@@ -176,7 +201,12 @@ export async function saveFlow(
         : {}),
       updatedAt: new Date(),
     })
-    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)));
+    .where(and(...writeConditions))
+    .returning({ id: flows.id });
+
+  if (!updated) {
+    return { error: "Flow changed before it could be saved. Refresh and try again." };
+  }
 
   return { ok: true };
 }
@@ -190,6 +220,11 @@ export async function setFlowStatus(
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
   if (!existing) return { error: "Flow not found" };
+  if (status !== "draft" || existing.status !== "draft") {
+    const authorization = await requireFlowOperator();
+    if (!authorization.authorized) return { error: authorization.error };
+    if (authorization.tenantId !== tenantId) return { error: "Workspace changed. Refresh and try again." };
+  }
 
   if (status === "active") {
     const graph = await validateFlowGraph(existing.graph);
@@ -198,6 +233,17 @@ export async function setFlowStatus(
     if (issues.length) return { issues };
   }
 
+  const writeConditions = [
+    eq(flows.id, id),
+    eq(flows.tenantId, tenantId),
+    sql`${flows.status} <> ${status}`,
+  ];
+  // A member may only change a flow they observed in draft. Preserve that
+  // authorization decision at the write boundary as well, so a concurrent
+  // owner activation cannot be reverted by a stale member request.
+  if (existing.status === "draft") writeConditions.push(eq(flows.status, "draft"));
+  if (status === "active") writeConditions.push(eq(flows.executionRevision, existing.executionRevision));
+
   const [updated] = await db
     .update(flows)
     .set({
@@ -205,12 +251,7 @@ export async function setFlowStatus(
       executionRevision: sql`${flows.executionRevision} + 1`,
       updatedAt: new Date(),
     })
-    .where(and(
-      eq(flows.id, id),
-      eq(flows.tenantId, tenantId),
-      ...(status === "active" ? [eq(flows.executionRevision, existing.executionRevision)] : []),
-      sql`${flows.status} <> ${status}`,
-    ))
+    .where(and(...writeConditions))
     .returning({ id: flows.id });
   if (!updated) {
     if (status === "active") {
@@ -222,9 +263,12 @@ export async function setFlowStatus(
         return { error: "This flow changed while activation was checked. Review it and try again." };
       }
     }
-    // The database observed the requested status at the write boundary, so a
-    // concurrent same-target submission does not create a second revision.
-    return { ok: true };
+    const current = await db.query.flows.findFirst({
+      where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
+      columns: { status: true },
+    });
+    if (current?.status === status) return { ok: true };
+    return { error: "Flow changed before the status update. Refresh and try again." };
   }
   return { ok: true };
 }
@@ -233,7 +277,9 @@ export async function runFlow(
   id: string,
   triggerPayload?: unknown,
 ): Promise<{ runId?: string; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const flow = await db.query.flows.findFirst({
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
@@ -251,14 +297,18 @@ export async function resumeRun(
   runId: string,
   approve: boolean,
 ): Promise<{ ok?: boolean; status?: RunStatus; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const { resumeFlowRunInternal } = await import("@/lib/flows/resume-flow");
   return resumeFlowRunInternal(tenantId, runId, approve);
 }
 
 /** Re-runs a failed/finished run reusing succeeded node outputs. */
 export async function restartRun(runId: string): Promise<{ runId?: string; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
 
   // Atomically claim the original run and insert the replacement run in a single transaction
   let newRunId: string;
@@ -375,7 +425,9 @@ export async function publishTemplate(
   flowId: string,
   meta: { name: string; description?: string; category?: string },
 ): Promise<{ slug?: string; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const authorization = await requireFlowOperator();
+  if (!authorization.authorized) return { error: authorization.error };
+  const { tenantId } = authorization;
   const flow = await db.query.flows.findFirst({
     where: and(eq(flows.id, flowId), eq(flows.tenantId, tenantId)),
   });
@@ -457,9 +509,17 @@ export async function installTemplate(templateId: string): Promise<{ flowId?: st
 
 export async function deleteFlow(id: string): Promise<{ ok?: boolean; error?: string }> {
   const tenantId = await getActiveTenantId();
+  const existing = await db.query.flows.findFirst({
+    where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
+    columns: { status: true },
+  });
+  if (!existing) return { error: "Flow not found" };
+  if (existing.status !== "draft") await requireRole(["owner", "admin"]);
+  const deleteConditions = [eq(flows.id, id), eq(flows.tenantId, tenantId)];
+  if (existing.status === "draft") deleteConditions.push(eq(flows.status, "draft"));
   const deleted = await db
     .delete(flows)
-    .where(and(eq(flows.id, id), eq(flows.tenantId, tenantId)))
+    .where(and(...deleteConditions))
     .returning();
   if (deleted.length === 0) return { error: "Flow not found" };
   return { ok: true };

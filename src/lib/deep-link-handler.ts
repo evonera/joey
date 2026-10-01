@@ -10,9 +10,9 @@ export function setupDeepLinkHandler() {
           const code = url.searchParams.get('code');
           const state = url.searchParams.get('state');
           if (code && state) {
-            // Note: Validation and exchanging of code for token should happen here 
-            // depending on app specific implementation.
-            console.log('OAuth Callback Received:', { code, state });
+            // Desktop OAuth exchange is not implemented yet. Never write the
+            // authorization code or state token to logs.
+            return;
           }
         }
       } catch (err) {

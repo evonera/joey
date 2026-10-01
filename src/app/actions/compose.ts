@@ -27,7 +27,9 @@ export async function createManualPost(data: {
         if (!parsed.success) return { error: parsed.error.issues[0].message };
         data = parsed.data;
 
-        const tenantId = await getActiveTenantId(); // auth check
+        const { tenantId, role } = await getActiveTenantMembership(
+            data.scheduleType === "draft" ? undefined : ["owner", "admin"],
+        );
         
         // Fetch active account info to store platformOptions
         const accounts = await db.query.socialAccounts.findMany({
@@ -81,7 +83,9 @@ export async function createManualPost(data: {
                         : values;
                     const [updated] = await tx.update(drafts).set(updatedValues).where(and(
                         eq(drafts.id, data.draftId), eq(drafts.tenantId, tenantId),
-                        inArray(drafts.status, ["draft", "pending_review", "approved", "rejected", "scheduled"]),
+                        inArray(drafts.status, role === "owner" || role === "admin"
+                            ? ["draft", "pending_review", "approved", "rejected", "scheduled"]
+                            : ["draft", "pending_review", "rejected"]),
                     )).returning({ id: drafts.id });
                     if (!updated) throw new Error("This draft cannot be edited. It may already be publishing or published.");
                     ids.push(updated.id);

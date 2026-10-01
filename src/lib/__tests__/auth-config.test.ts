@@ -31,12 +31,15 @@ describe("Better Auth Configuration", () => {
     expect(pluginIds.at(-1)).toBe("next-cookies");
   });
 
-  it("enables Google social provider and disables GitHub", () => {
+  it("registers Google only when both credentials are present and disables GitHub", () => {
     const socialProviders = auth.options.socialProviders;
     expect(socialProviders).toBeDefined();
-    expect(socialProviders?.google).toBeDefined();
-    expect(socialProviders?.google?.clientId).toBeDefined();
-    expect(socialProviders?.google?.clientSecret).toBeDefined();
+    expect(Boolean(socialProviders?.google)).toBe(Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET));
     expect((socialProviders as any)?.github).toBeUndefined();
+  });
+
+  it("encrypts stored OAuth tokens and never disables rate limiting in production", () => {
+    expect(auth.options.account?.encryptOAuthTokens).toBe(true);
+    expect(auth.options.rateLimit?.enabled).toBe(process.env.NODE_ENV === "production" || process.env.JOEY_E2E !== "1");
   });
 });

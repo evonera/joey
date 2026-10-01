@@ -2,8 +2,7 @@ import {
   authMutationKeys,
   authQueryKeys,
   getAuthErrorPresentation,
-  isPasswordCompromisedError,
-  isSessionNotFreshError
+  isPasswordCompromisedError
 } from "@better-auth-ui/core"
 import { oneTapMutationKeys } from "@better-auth-ui/core/plugins/one-tap"
 import {
@@ -27,9 +26,8 @@ export function ErrorToaster() {
 
       if (!matchQuery({ queryKey: authQueryKeys.all }, query)) return
       if (getAuthErrorPresentation(query.meta) !== "toast") return
-      if (isSessionNotFreshError(error)) return
-
       const err = error as BetterFetchError
+      if (err?.error?.code === "SESSION_NOT_FRESH") return
       if (err?.error?.code === "EMAIL_NOT_VERIFIED") return
       if (err?.error) toast.error(err.error.message)
     }
@@ -56,12 +54,12 @@ export function ErrorToaster() {
         return
       }
       if (getAuthErrorPresentation(mutation.meta) !== "toast") return
-      if (isSessionNotFreshError(error)) return
+      const err = error as BetterFetchError
+      if (err.error?.code === "SESSION_NOT_FRESH") return
       // Every form that sets a new password renders this one against the
       // password field, so a toast would just repeat it.
       if (isPasswordCompromisedError(error)) return
 
-      const err = error as BetterFetchError
       if (
         err.error?.code === "EMAIL_NOT_VERIFIED" &&
         !matchMutation({ mutationKey: oneTapMutationKeys.prompt }, mutation)

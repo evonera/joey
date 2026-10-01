@@ -1,89 +1,41 @@
 import { NextResponse } from 'next/server';
 import { authenticateApiRequest, requireScope, withRateLimitHeaders } from '@/lib/api-auth';
-import { db } from '@/lib/db';
-import { drafts } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { z } from 'zod';
+import { readBoundedJson } from '@/lib/http/read-bounded-json';
+import { reviewDraft } from '@/lib/draft-review';
+import { apiErrorResponse } from '@/lib/api-error-response';
+
+const bodySchema = z.object({
+    id: z.string().min(1).max(128),
+    variantName: z.string().trim().min(1).max(500).optional(),
+    content: z.string().max(50_000).optional(),
+}).strict().refine(
+    (body) => (body.variantName === undefined) === (body.content === undefined),
+    { message: "variantName and content must be provided together" },
+);
 
 export async function POST(request: Request) {
     try {
         const { tenantId, scopes, rateLimit } = await authenticateApiRequest(request);
         requireScope(scopes, "approve");
-        const body = await request.json();
-        const { id: draftId, variantName, content } = body;
-
-        if (!draftId) {
-            return withRateLimitHeaders(
-                NextResponse.json({ error: "Missing draft id" }, { status: 400 }),
-                rateLimit
-            );
+        const parsed = await readBoundedJson<unknown>(request, 256 * 1024);
+        if (!parsed.ok) {
+            const status = parsed.reason === "too_large" ? 413 : 400;
+            return withRateLimitHeaders(NextResponse.json({ error: parsed.reason === "too_large" ? "Request body is too large" : "Invalid JSON body" }, { status }), rateLimit);
         }
+        const body = bodySchema.safeParse(parsed.value);
+        if (!body.success) return withRateLimitHeaders(NextResponse.json({ error: "Invalid approval request" }, { status: 400 }), rateLimit);
 
-        const updateData: Partial<typeof drafts.$inferInsert> & { status: string; errorMessage: null } = { status: "approved", errorMessage: null };
-        if (variantName && content) {
-            updateData.selectedVariantId = variantName;
-            updateData.content = content;
+        const result = await reviewDraft({ tenantId, draftId: body.data.id, decision: "approve", variantName: body.data.variantName, content: body.data.content });
+        if ("error" in result && result.error) {
+            const status = result.error === "Draft not found" ? 404 : result.error.startsWith("This draft is already") ? 409 : 400;
+            return withRateLimitHeaders(NextResponse.json({ error: result.error }, { status }), rateLimit);
         }
-
-        // Existence + tenant check ALWAYS runs so a bad id or foreign draft
-        // can never report success.
-        const existing = await db.query.drafts.findFirst({
-            where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
-            columns: { content: true, variants: true }
-        });
-        if (!existing) {
-            return withRateLimitHeaders(
-                NextResponse.json({ error: "Draft not found" }, { status: 404 }),
-                rateLimit
-            );
-        }
-        if (!variantName && !existing.content) {
-            let autoVariantName: string | undefined;
-            let autoContent: string | undefined;
-
-            if (Array.isArray(existing.variants) && existing.variants.length > 0) {
-                const first = existing.variants[0] as any;
-                autoVariantName = first.variantName || first.name || "default";
-                autoContent = first.content || first.text || "";
-            } else if (existing.variants && typeof existing.variants === "object") {
-                const keys = Object.keys(existing.variants);
-                if (keys.length > 0) {
-                    autoVariantName = keys[0];
-                    const val = (existing.variants as any)[keys[0]];
-                    autoContent = typeof val === "string" ? val : (val?.content || val?.text || "");
-                }
-            }
-
-            if (autoVariantName && autoContent) {
-                updateData.selectedVariantId = autoVariantName;
-                updateData.content = autoContent;
-            } else {
-                return withRateLimitHeaders(
-                    NextResponse.json({ error: "Cannot approve a draft without content. Please select a variant." }, { status: 400 }),
-                    rateLimit
-                );
-            }
-        }
-
-        const updated = await db.update(drafts)
-            .set(updateData)
-            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)))
-            .returning();
-
-        if (updated.length === 0) {
-            return withRateLimitHeaders(
-                NextResponse.json({ error: "Draft not found" }, { status: 404 }),
-                rateLimit
-            );
-        }
-
         return withRateLimitHeaders(NextResponse.json({ success: true }), rateLimit);
-    } catch (error: any) {
-        if (error.name === 'RateLimitError') {
-            return NextResponse.json({ error: error.message }, { status: 429 });
+    } catch (error: unknown) {
+        if (error instanceof Error && !/Unauthorized|Insufficient scope|RateLimit/.test(error.message)) {
+            console.error("[api/v1/drafts/approve] unexpected error", error);
         }
-        if (error.message.startsWith('Insufficient scope')) {
-            return NextResponse.json({ error: error.message }, { status: 403 });
-        }
-        return NextResponse.json({ error: error.message }, { status: 401 });
+        return apiErrorResponse(error);
     }
 }

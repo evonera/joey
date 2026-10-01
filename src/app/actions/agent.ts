@@ -1,6 +1,6 @@
 'use server';
 
-import { auth, getActiveTenantId } from "@/lib/auth";
+import { auth, getActiveTenantId, requireRole } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { agentConfigs, socialAccounts } from "@/lib/db/schema";
@@ -50,7 +50,7 @@ export async function saveAgentConfig(data: {
     postingSchedule: PostingSchedule;
 }) {
     try {
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
         const parsed = agentConfigSchema.safeParse(data);
         if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your configuration." };
         data = parsed.data;
@@ -99,7 +99,7 @@ export async function saveAgentConfig(data: {
 /** Update scheduling without overwriting brand guidance edited in Brand Kit. */
 export async function saveAgentSchedule(postingSchedule: PostingSchedule) {
     try {
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
         const parsed = agentConfigSchema.shape.postingSchedule.safeParse(postingSchedule);
         if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your schedule." };
         const schedule = parsed.data;

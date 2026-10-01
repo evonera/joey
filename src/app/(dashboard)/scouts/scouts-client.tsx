@@ -156,7 +156,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
         pollIntervalMinutes: newInterval,
       };
       const created = editingScout ? await updateScout(editingScout.id, values) : await createScout(values);
-      toast.success(editingScout ? "Scout updated" : created.isActive ? "Scout created. Daily monitoring is on." : "Scout saved paused. Connect Apify to start monitoring.");
+      toast.success(editingScout ? "Scout updated" : "Scout saved paused. An owner or admin can enable daily monitoring once Apify is connected.");
       setIsNewOpen(false);
       setScoutsList((prev) => editingScout ? prev.map((scout) => scout.id === created.id ? created as ScoutItem : scout) : [created as ScoutItem, ...prev]);
       setSelectedId(created.id);
@@ -228,7 +228,11 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
     if (!scoutToDelete) return;
     setIsDeleting(true);
     try {
-      await deleteScout(scoutToDelete.id);
+      const result = await deleteScout(scoutToDelete.id);
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
       const remaining = scoutsList.filter((s) => s.id !== scoutToDelete.id);
       setScoutsList(remaining);
       if (selectedId === scoutToDelete.id) {

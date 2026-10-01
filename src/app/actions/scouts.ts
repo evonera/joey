@@ -1,6 +1,6 @@
 'use server';
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, getActiveTenantMembership, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { scouts, scoutRuns } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -68,14 +68,15 @@ export async function getScoutRuns(scoutId: string) {
 export async function createScout(input: CreateScoutInput) {
   const tenantId = await getActiveTenantId();
   const values = validateScoutInput(input);
-  const setup = await getScoutSetup();
 
   const [created] = await db
     .insert(scouts)
     .values({
       tenantId,
       ...values,
-      isActive: setup.apifyReady,
+      // Creating a Scout is a drafting action. Activation remains a separate,
+      // owner/admin-only operation even when Apify is already configured.
+      isActive: false,
     })
     .returning();
 
@@ -84,22 +85,28 @@ export async function createScout(input: CreateScoutInput) {
 }
 
 export async function updateScout(scoutId: string, input: CreateScoutInput) {
-  const tenantId = await getActiveTenantId();
+  const { tenantId, role } = await getActiveTenantMembership();
   const values = validateScoutInput(input);
   const existing = await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) });
   if (!existing) throw new Error("Scout not found.");
+  const canOperate = role === "owner" || role === "admin";
+  if (existing.isActive && !canOperate) throw new Error("Only workspace admins can edit an active Scout.");
+  const conditions = [eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)];
+  // Do not let a member update a Scout that was activated after the read above.
+  if (!canOperate) conditions.push(eq(scouts.isActive, false));
   const changedTarget = existing.targetUrl !== values.targetUrl || existing.goalCondition !== values.goalCondition || existing.platform !== values.platform;
   const [updated] = await db.update(scouts).set({
     ...values,
     ...(changedTarget ? { latestAlert: null, lastPolledAt: null } : {}),
     updatedAt: new Date(),
-  }).where(and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId))).returning();
+  }).where(and(...conditions)).returning();
+  if (!updated) throw new Error("Scout changed before it could be saved. Refresh and try again.");
   revalidatePath("/scouts");
   return updated;
 }
 
 export async function runScoutNow(scoutId: string) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin"]);
   const scout = await db.query.scouts.findFirst({
     where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
   });
@@ -115,7 +122,10 @@ export async function runScoutNow(scoutId: string) {
 }
 
 export async function toggleScout(scoutId: string, isActive: boolean) {
-  const tenantId = await getActiveTenantId();
+  // Members can delete Scouts only when they were already inactive. Requiring
+  // an admin for both transitions prevents pausing an active Scout as a way to
+  // bypass the active-Scout deletion restriction.
+  const tenantId = await requireRole(["owner", "admin"]);
   if (isActive) await resolveToken(tenantId);
   await db
     .update(scouts)
@@ -127,10 +137,22 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
 }
 
 export async function deleteScout(scoutId: string) {
-  const tenantId = await getActiveTenantId();
-  await db
+  const { tenantId, role } = await getActiveTenantMembership();
+  const existing = await db.query.scouts.findFirst({
+    where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
+    columns: { isActive: true },
+  });
+  if (!existing) return { error: "Scout not found" };
+  if (existing.isActive && role !== "owner" && role !== "admin") {
+    return { error: "Only workspace admins can remove an active Scout." };
+  }
+  const conditions = [eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)];
+  if (role !== "owner" && role !== "admin") conditions.push(eq(scouts.isActive, false));
+  const [deleted] = await db
     .delete(scouts)
-    .where(and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)));
+    .where(and(...conditions))
+    .returning({ id: scouts.id });
+  if (!deleted) return { error: "Scout changed before it could be removed. Refresh and try again." };
 
   revalidatePath("/scouts");
   return { success: true };

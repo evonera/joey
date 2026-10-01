@@ -23,6 +23,10 @@ export default defineTool({
         { ...metadata, source: "agent", createdAt: new Date().toISOString() },
       );
 
+      if (!memory) {
+        return { message: "Memory was not saved because no embedding provider is configured for this workspace." };
+      }
+
       return { id: memory.id, message: "Insight saved to memory." };
     } catch (err: any) {
       console.warn("[remember] Failed to persist memory:", err?.message);

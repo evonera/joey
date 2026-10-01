@@ -6,7 +6,13 @@ import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export function AuthProviderClient({ children }: { children: React.ReactNode }) {
+export function AuthProviderClient({
+  children,
+  socialProviders,
+}: {
+  children: React.ReactNode;
+  socialProviders: string[];
+}) {
   const router = useRouter();
 
   return (
@@ -20,7 +26,7 @@ export function AuthProviderClient({ children }: { children: React.ReactNode }) 
           router.push(to);
         }
       }}
-      socialProviders={["google"]}
+      socialProviders={socialProviders}
       basePaths={{
         auth: "",
       }}

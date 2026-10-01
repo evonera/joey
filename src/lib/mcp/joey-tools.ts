@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { parseGraphDoc, validateGraph } from "@/lib/flows/validation";
+import { reviewDraft } from "@/lib/draft-review";
 
 export interface McpAuth {
   tenantId: string;
@@ -77,9 +78,9 @@ export function createJoeyMcpServer(auth: McpAuth): McpServer {
     "Create a new draft in pending_review. A human must approve it in the Joey UI before it publishes.",
     {
       content: z.string().min(1).max(10000),
-      mediaUrls: z.array(z.string().url()).optional(),
-      accountIds: z.array(z.string()).optional(),
-      scheduledFor: z.string().optional(),
+      mediaUrls: z.array(z.string().url().max(2048)).max(10).optional(),
+      accountIds: z.array(z.string().min(1).max(128)).max(20).optional(),
+      scheduledFor: z.string().datetime().optional(),
     },
     async ({ content, mediaUrls, accountIds, scheduledFor }) => {
       assertScope(auth, "write");
@@ -114,18 +115,8 @@ export function createJoeyMcpServer(auth: McpAuth): McpServer {
     { draftId: z.string().min(1) },
     async ({ draftId }) => {
       assertScope(auth, "approve");
-      const existing = await db.query.drafts.findFirst({
-        where: and(eq(drafts.id, draftId), eq(drafts.tenantId, auth.tenantId)),
-        columns: { content: true },
-      });
-      if (!existing) throw new Error("Draft not found");
-      if (!existing.content) {
-        throw new Error("Cannot approve a draft without content.");
-      }
-      await db
-        .update(drafts)
-        .set({ status: "approved", errorMessage: null })
-        .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, auth.tenantId)));
+      const result = await reviewDraft({ tenantId: auth.tenantId, draftId, decision: "approve" });
+      if ("error" in result && result.error) throw new Error(result.error);
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ success: true, draftId }) }],
       };
@@ -138,12 +129,8 @@ export function createJoeyMcpServer(auth: McpAuth): McpServer {
     { draftId: z.string().min(1), reason: z.string().optional() },
     async ({ draftId, reason }) => {
       assertScope(auth, "approve");
-      const updated = await db
-        .update(drafts)
-        .set({ status: "rejected", errorMessage: reason ?? "Rejected via MCP" })
-        .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, auth.tenantId)))
-        .returning({ id: drafts.id });
-      if (updated.length === 0) throw new Error("Draft not found");
+      const result = await reviewDraft({ tenantId: auth.tenantId, draftId, decision: "reject", feedback: reason });
+      if ("error" in result && result.error) throw new Error(result.error);
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ success: true, draftId }) }],
       };

@@ -1,6 +1,6 @@
 'use server';
 
-import { auth, getActiveTenantId } from "@/lib/auth";
+import { auth, getActiveTenantId, requireRole } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import {
@@ -378,7 +378,7 @@ export async function getPendingReplyCount() {
 
 export async function approveReply(replyDraftId: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     const [approved] = await db.update(replyDrafts)
       .set({ status: "approved" })
@@ -400,7 +400,7 @@ export async function approveReply(replyDraftId: string) {
 
 export async function rejectReply(replyDraftId: string, feedback: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     const [rejected] = await db.update(replyDrafts)
       .set({ status: "rejected", feedback })
@@ -422,7 +422,7 @@ export async function rejectReply(replyDraftId: string, feedback: string) {
 
 export async function sendReply(replyDraftId: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     // Claim the approved draft before performing the external side effect. This
     // compare-and-swap prevents double clicks and concurrent workers from sending

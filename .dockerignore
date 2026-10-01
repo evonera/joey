@@ -16,3 +16,9 @@ __tests__/
 .vscode
 .idea
 .DS_Store
+repomix.xml
+temp
+output/
+coverage/
+.pytest_cache/
+*.log

@@ -1,6 +1,6 @@
 'use server';
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { themeSources, themePages } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -63,7 +63,7 @@ export async function getThemeSources(themePageId: string) {
 
 export async function createThemeSource(data: CreateThemeSourceInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     if (!data.name || !data.name.trim()) {
       return { error: "Source name is required" };
@@ -109,7 +109,7 @@ export async function createThemeSource(data: CreateThemeSourceInput) {
 
 export async function updateThemeSource(id: string, data: UpdateThemeSourceInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     if (data.sourceType !== undefined && !['rss', 'http', 'reddit', 'exa_domain', 'exa_topic'].includes(data.sourceType)) return { error: "Unsupported source type" };
     if (data.rightsCategory !== undefined && !RIGHTS_CATEGORIES.has(data.rightsCategory)) return { error: "Choose a supported rights category" };
     let normalizedUrl: string | undefined;
@@ -154,7 +154,7 @@ export async function updateThemeSource(id: string, data: UpdateThemeSourceInput
 
 export async function deleteThemeSource(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     await db.delete(themeSources)
       .where(and(eq(themeSources.id, id), eq(themeSources.tenantId, tenantId)));
 
@@ -167,7 +167,7 @@ export async function deleteThemeSource(id: string) {
 
 export async function toggleThemeSource(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     const existing = await db.query.themeSources.findFirst({
       where: and(eq(themeSources.id, id), eq(themeSources.tenantId, tenantId)),
     });

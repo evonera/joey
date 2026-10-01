@@ -25,7 +25,7 @@ export default defineConfig({
     command: 'npm run build && npm run start',
     url: 'http://localhost:3000',
     timeout: 180 * 1000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     env: {
       ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || 'MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=',
       DATABASE_URL: process.env.DATABASE_URL || 'postgres://dummy:dummy@localhost:5432/dummy',

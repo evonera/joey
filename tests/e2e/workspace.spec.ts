@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { requireDisposableDatabase } from "../integration/require-disposable-database";
+
+test.beforeAll(() => requireDisposableDatabase());
 
 async function captureScreenshot(page: Page, testInfo: TestInfo, name: string, fullPage = true) {
   // CI verifies every interaction and viewport; local QA keeps the 64-image gallery.
@@ -30,6 +33,9 @@ test(`authenticated workspace routes remain usable at ${width}px`, async ({ page
       if (process.env.CI) console.log(`Checking ${route} at ${width}px`);
       const response = await page.goto(route);
       expect(response?.status(), route).toBe(200);
+      const csp = response?.headers()["content-security-policy"] ?? "";
+      expect(csp).toContain("https://fonts.googleapis.com");
+      expect(csp).toContain("https://fonts.gstatic.com");
       await expect(page.locator("h1").first()).toBeVisible({ timeout: 60_000 });
       if (["/compose", "/calendar"].includes(route)) await expect(page.locator(".animate-spin:visible")).toHaveCount(0, { timeout: 60_000 });
       if (route === "/calendar") await expect(page.getByText("Loading posts…")).toHaveCount(0, { timeout: 60_000 });

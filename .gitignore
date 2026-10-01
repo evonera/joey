@@ -12,3 +12,9 @@ dist
 *.tsbuildinfo
 .neon
 repos/
+repomix.xml
+temp
+output/
+coverage/
+.pytest_cache/
+*.log
