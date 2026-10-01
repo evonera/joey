@@ -116,7 +116,6 @@ export async function saveAgentSchedule(postingSchedule: PostingSchedule) {
             .onConflictDoUpdate({ target: agentConfigs.tenantId, set: {
                 postingSchedule: schedule,
                 nextDraftAt,
-                updatedAt: sql`GREATEST(now(), ${agentConfigs.updatedAt} + interval '1 millisecond')`,
             } });
         return { success: true };
     } catch (error) {

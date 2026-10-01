@@ -80,7 +80,7 @@ import {
 import { getNodeMeta as getNode, getNodeOutputs, catalog } from "@/lib/flows/catalog";
 import type { FlowGraphDoc } from "@/lib/flows/types";
 import { createFlowWebMcpTools } from "@/lib/flows/webmcp";
-import { builderStateToGraphDoc, isAgentReviewSnapshotCurrent } from "@/lib/flows/builder-state";
+import { builderStateToGraphDoc, isAgentReviewSnapshotCurrent, mobileAppendSource } from "@/lib/flows/builder-state";
 import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
 import { ZodForm } from "./zod-form";
 import { RunsPanel } from "./runs-panel";
@@ -352,7 +352,12 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
   function addNodeType(type: string, screenPos?: { x: number; y: number }, connectAfterLast = false) {
     const def = getNode(type);
     if (!def) return;
-    const previous = connectAfterLast ? rfNodes.at(-1) : undefined;
+    const append = connectAfterLast ? mobileAppendSource(toGraphDoc()) : { ok: true, sourceId: undefined };
+    if (!append.ok) {
+      toast.error("This flow has branches or disconnected steps. Use the canvas editor to choose the correct connection.");
+      return;
+    }
+    const previous = connectAfterLast ? rfNodes.find(node => node.id === append.sourceId) : undefined;
     if (connectAfterLast && rfNodes.length === 0 && def.category !== "trigger") {
       toast.error("Add a start trigger first.");
       return;
