@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getActiveTenantId: vi.fn(),
   getActiveTenantMembership: vi.fn(),
   resolveToken: vi.fn(),
+  setup: vi.fn(),
   evaluateScout: vi.fn(),
   findFirst: vi.fn(),
   insert: vi.fn(),
@@ -29,7 +30,7 @@ vi.mock("@/lib/db", () => ({ db: {
 } }));
 vi.mock("@/lib/agency/service", () => ({ detachAgencyResource: vi.fn(), guardAgencyScoutChange: vi.fn() }));
 vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: mocks.evaluateScout }));
-vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({ resolveToken: mocks.resolveToken }));
+vi.mock("@/lib/scouts/data-provider", () => ({ getScoutDataProvider: mocks.resolveToken, getScoutProviderSetup: mocks.setup }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { createScout, getScoutSetup, runScoutNow, toggleScout, updateScout } from "@/app/actions/scouts";
@@ -44,6 +45,7 @@ beforeEach(() => {
   mocks.getActiveTenantMembership.mockResolvedValue({ tenantId: "tenant-1", role: "member" });
   mocks.requireRole.mockResolvedValue("tenant-1");
   mocks.resolveToken.mockResolvedValue("test-token");
+  mocks.setup.mockResolvedValue({ ready: true, provider: "custom", customEnabled: true });
   mocks.findFirst.mockResolvedValue({ id: "scout-1", ...input, platform: "instagram", isActive: false });
   mocks.returning.mockResolvedValue([{ id: "scout-1", isActive: false }]);
   mocks.where.mockReturnValue({ returning: mocks.returning });
@@ -52,12 +54,11 @@ beforeEach(() => {
 });
 
 describe("toggleScout authorization", () => {
-  it("allows explicitly enabled mock scans without calling the live token preflight", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("ENABLE_MOCK_SCOUTS", "true");
-    expect(await getScoutSetup()).toEqual({ apifyReady: true });
+  it("uses the same provider resolver for setup and manual scans", async () => {
+    expect(await getScoutSetup()).toEqual({ ready: true, provider: "custom", customEnabled: true });
+    expect(mocks.setup).toHaveBeenCalledWith("tenant-1");
     await runScoutNow("scout-1");
-    expect(mocks.resolveToken).not.toHaveBeenCalled();
+    expect(mocks.resolveToken).toHaveBeenCalledWith("tenant-1");
     expect(mocks.evaluateScout).toHaveBeenCalledWith("scout-1", { tenantId: "tenant-1", force: true });
     expect(mocks.requireRole).toHaveBeenCalledWith(["owner", "admin"]);
   });
@@ -85,7 +86,7 @@ describe("toggleScout authorization", () => {
     expect(mocks.update).toHaveBeenCalledOnce();
   });
 
-  it("checks Apify before activating, but not when pausing", async () => {
+  it("checks the configured provider before activating, but not when pausing", async () => {
     await toggleScout("scout-1", false);
     expect(mocks.resolveToken).not.toHaveBeenCalled();
     mocks.resolveToken.mockRejectedValueOnce(new Error("Missing Apify token"));

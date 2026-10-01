@@ -6,7 +6,7 @@ import { scouts, scoutRuns } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
 import { revalidatePath } from "next/cache";
-import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
+import { getScoutDataProvider, getScoutProviderSetup } from "@/lib/scouts/data-provider";
 import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/service";
 
 export interface CreateScoutInput {
@@ -38,9 +38,7 @@ function validateScoutInput(input: CreateScoutInput) {
 
 export async function getScoutSetup() {
   const tenantId = await getActiveTenantId();
-  if (process.env.NODE_ENV === "test" || process.env.ENABLE_MOCK_SCOUTS === "true") return { apifyReady: true };
-  try { await resolveToken(tenantId); return { apifyReady: true }; }
-  catch { return { apifyReady: false, issue: "Connect an Apify token in Settings before automatic monitoring can run." }; }
+  return getScoutProviderSetup(tenantId);
 }
 
 export async function getScouts() {
@@ -121,7 +119,7 @@ export async function runScoutNow(scoutId: string) {
 
   // A missing token is a setup problem, not a failed scan. Avoid creating a
   // misleading failed run that the user could never have completed.
-  if (process.env.NODE_ENV !== "test" && process.env.ENABLE_MOCK_SCOUTS !== "true") await resolveToken(tenantId);
+  await getScoutDataProvider(tenantId);
 
   const result = await evaluateScout(scoutId, { tenantId, force: true });
   revalidatePath("/scouts");
@@ -134,7 +132,7 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
   // bypass the active-Scout deletion restriction.
   const tenantId = await requireRole(["owner", "admin"]);
   const { userId } = await getActiveTenantMembership();
-  if (isActive) await resolveToken(tenantId);
+  if (isActive) await getScoutDataProvider(tenantId);
   await db.transaction(async tx => {
   await guardAgencyScoutChange(tx, { tenantId, userId }, scoutId, isActive);
   await tx

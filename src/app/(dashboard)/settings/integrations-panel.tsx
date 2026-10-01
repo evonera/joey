@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
+import { getScoutSetup } from "@/app/actions/scouts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckmarkCircle02Icon as CheckCircle2, Loading03Icon as Loader2, Delete02Icon as Trash2 } from "hugeicons-react";
@@ -16,15 +17,24 @@ const INTEGRATIONS = [
   { provider: "tavily", label: "Tavily", placeholder: "tvly-…", url: "https://app.tavily.com/home", hint: "Fast web search + answers" },
 ] as const;
 
+const CUSTOM_SCOUT_INTEGRATION = {
+  provider: "scout-data", label: "Custom Scout provider", placeholder: "Workspace-scoped provider API key",
+  url: "", hint: "Collection endpoint configured by your Joey operator. Use a key bound to this workspace at the provider.",
+};
+
 export function IntegrationsPanel() {
   const [existing, setExisting] = useState<Record<string, boolean>>({});
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [customEnabled, setCustomEnabled] = useState(false);
+  const integrations = customEnabled ? [...INTEGRATIONS, CUSTOM_SCOUT_INTEGRATION] : INTEGRATIONS;
 
   useEffect(() => {
     void (async () => {
+      const setup = await getScoutSetup().catch(() => null);
+      setCustomEnabled(setup?.customEnabled === true);
       const next: Record<string, boolean> = {};
-      for (const i of INTEGRATIONS) {
+      for (const i of setup?.customEnabled ? [...INTEGRATIONS, CUSTOM_SCOUT_INTEGRATION] : INTEGRATIONS) {
         try {
           const res = await getApiKey(i.provider);
           next[i.provider] = Boolean(res?.id);
@@ -81,7 +91,7 @@ export function IntegrationsPanel() {
 
   return (
     <div className="space-y-4">
-      {INTEGRATIONS.map((i) => (
+      {integrations.map((i) => (
         <div key={i.provider} className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 space-y-2">
           <div className="flex items-center justify-between">
             <div>
@@ -100,6 +110,7 @@ export function IntegrationsPanel() {
           <div className="flex gap-2">
             <Input
               type="password"
+              aria-label={`${i.label} API key`}
               placeholder={existing[i.provider] ? "Replace existing key" : i.placeholder}
               value={inputs[i.provider] ?? ""}
               onChange={(e) => setInputs((v) => ({ ...v, [i.provider]: e.target.value }))}
@@ -114,11 +125,11 @@ export function IntegrationsPanel() {
             </Button>
           </div>
           <p className="text-[11px] text-zinc-500">
-            Get one at{" "}
-            <a href={i.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-              {new URL(i.url).hostname}
-            </a>
-            . Stored AES-256-GCM encrypted.
+            {i.url && <>Get one at{" "}
+              <a href={i.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                {new URL(i.url).hostname}
+              </a>. </>}
+            Stored AES-256-GCM encrypted.
           </p>
         </div>
       ))}

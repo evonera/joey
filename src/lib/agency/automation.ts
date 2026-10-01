@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { customAgents, customAgentRuns, member, themeSlots, themeContentFormats } from "@/lib/db/schema";
 import { and, eq, gt, asc, sql } from "drizzle-orm";
-import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
+import { getScoutDataProvider } from "@/lib/scouts/data-provider";
 import { resolveExaKey } from "@/lib/search/exa-client";
 import { resolveModelForTurn } from "@/lib/agent-model-resolver";
 import { evaluateScout, type ScoutAlert, type EvaluateScoutResult } from "@/lib/scouts/evaluator";
@@ -39,7 +39,7 @@ export async function preflightAgencyAutomation(actor: AgencyActor, agentId: str
   if (format?.platform !== "instagram")
     throw new Error("Configure this Theme Page's first active slot with an Instagram format before enabling drafts.");
   // Resolve/check only; never return credentials or SDK model objects to UI.
-  await resolveToken(actor.tenantId);
+  await getScoutDataProvider(actor.tenantId);
   await resolveExaKey(actor.tenantId);
   await resolveModelForTurn({ preferredModel: "google/gemini-3.8-flash", tenantId: actor.tenantId });
 }

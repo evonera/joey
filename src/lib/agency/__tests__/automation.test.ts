@@ -31,7 +31,7 @@ vi.mock("@/lib/agency/service", () => ({
 }));
 vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: mocks.evaluate }));
 vi.mock("@/lib/scouts/remix-pipeline", () => ({ remixScoutAlertToThemeStudio: mocks.remix }));
-vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({ resolveToken: mocks.apify }));
+vi.mock("@/lib/scouts/data-provider", () => ({ getScoutDataProvider: mocks.apify }));
 vi.mock("@/lib/search/exa-client", () => ({ resolveExaKey: mocks.exa }));
 vi.mock("@/lib/agent-model-resolver", () => ({ resolveModelForTurn: mocks.model }));
 import { executeAgencyDraft, agencyDailyEventKey } from "../automation";

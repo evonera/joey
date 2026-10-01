@@ -83,6 +83,11 @@ vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({
   resolveToken: vi.fn().mockRejectedValue(new Error("No Apify token")),
 }));
 
+vi.mock("@/lib/flows/outbound-request", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/flows/outbound-request")>(),
+  resolveOutboundTarget: vi.fn().mockResolvedValue({ address: "8.8.8.8" }),
+}));
+
 const mockEvaluateScoutTriggerSemantically = vi.fn().mockResolvedValue(null);
 
 vi.mock("@/lib/typesafe", () => ({
