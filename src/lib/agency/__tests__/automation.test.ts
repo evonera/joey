@@ -57,7 +57,7 @@ beforeEach(() => {
   mocks.finish.mockResolvedValue(true);
   mocks.evaluate.mockResolvedValue({ triggered: true, alert });
   mocks.remix.mockResolvedValue({ success: true, packageId: "draft", renderState: "queued" });
-  mocks.expiry.mockResolvedValue("expired-receipt");
+  mocks.expiry.mockResolvedValue({ id: "expired-receipt", status: "cancelled", packageId: null, duplicate: false });
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("Governed draft automation (no provider calls)", () => {
@@ -128,6 +128,13 @@ describe("Governed draft automation (no provider calls)", () => {
     expect(mocks.expiry).toHaveBeenCalledWith(actor, "agent", 1, "2000-01-01");
     expect(mocks.reserve).not.toHaveBeenCalled();
     expect(mocks.apify).not.toHaveBeenCalled();
+  });
+  it.each(["completed", "queued", "running", "failed"])("preserves an existing %s receipt when a delayed dispatch expires", async (status) => {
+    mocks.expiry.mockResolvedValue({ id: "existing-receipt", status, packageId: "existing-draft", duplicate: true });
+    expect(await executeAgencyDraft(actor, "agent", 1, undefined, "2000-01-01")).toMatchObject({ status, expired: true, runId: "existing-receipt", packageId: "existing-draft", duplicate: true });
+    expect(mocks.reserve).not.toHaveBeenCalled();
+    expect(mocks.evaluate).not.toHaveBeenCalled();
+    expect(mocks.model).not.toHaveBeenCalled();
   });
   it("uses the pinned current schedule day as its shared manual receipt", async () => {
     await executeAgencyDraft(actor, "agent", 1, undefined, agencyDailyEventKey().slice(6));

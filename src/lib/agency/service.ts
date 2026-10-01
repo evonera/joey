@@ -183,10 +183,11 @@ export async function recordAgencyDispatchExpiry(actor: AgencyActor, id: string,
     const [saved] = await tx.insert(customAgentRuns).values({ tenantId: actor.tenantId, agentId: id, configVersion: version, eventKey,
       status: "cancelled", attempt: 0, leaseToken: randomUUID(), leaseExpiresAt: new Date(),
       error: "Scheduled check expired before execution. No provider work or quota consumed.",
-    }).onConflictDoNothing({ target: [customAgentRuns.tenantId, customAgentRuns.agentId, customAgentRuns.configVersion, customAgentRuns.eventKey] }).returning({ id: customAgentRuns.id });
-    if (saved) return saved.id;
-    const existing = await tx.query.customAgentRuns.findFirst({ where: and(eq(customAgentRuns.tenantId, actor.tenantId), eq(customAgentRuns.agentId, id), eq(customAgentRuns.configVersion, version), eq(customAgentRuns.eventKey, eventKey)) });
-    return existing?.id;
+    }).onConflictDoNothing({ target: [customAgentRuns.tenantId, customAgentRuns.agentId, customAgentRuns.configVersion, customAgentRuns.eventKey] }).returning({ id: customAgentRuns.id, status: customAgentRuns.status, packageId: customAgentRuns.packageId });
+    if (saved) return { ...saved, duplicate: false };
+    const existing = await tx.query.customAgentRuns.findFirst({ where: and(eq(customAgentRuns.tenantId, actor.tenantId), eq(customAgentRuns.agentId, id), eq(customAgentRuns.configVersion, version), eq(customAgentRuns.eventKey, eventKey)), columns: { id: true, status: true, packageId: true } });
+    if (!existing) throw new Error("Dispatch receipt unavailable.");
+    return { ...existing, duplicate: true };
   });
 }
 

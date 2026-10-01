@@ -69,8 +69,10 @@ destination; configuration presence alone does not prove alert delivery.
 Cross-midnight delayed dispatches log `agency.dispatch_expired` and record a
 cancelled, zero-attempt history receipt when the actor still has permission.
 These receipts are not executions and consume no daily quota. They never
-overwrite a day that already ran. If membership is revoked, the structured
-expiry log remains available even when the historical write is denied.
+overwrite a day that already ran; a delayed child returns the existing run's
+actual status and draft link rather than reporting it as cancelled. If
+membership is revoked, the structured expiry log remains available even when
+the historical write is denied.
 
 Run the existing authenticated 30-minute soak against this staging workspace;
 record browser errors, 5xxs, failed requests and heap/listener growth. Include

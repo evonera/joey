@@ -52,8 +52,10 @@ export async function executeAgencyDraft(actor: AgencyActor, agentId: string, ve
   // or race today's scheduled check. Manual checks use the current UTC day.
   if (dispatchedDay !== undefined && eventKey !== `daily:${dispatchedDay}`) {
     console.warn("[agency.dispatch_expired]", { tenantId: actor.tenantId, agentId, configVersion: version, dispatchDay: dispatchedDay });
-    const runId = await recordAgencyDispatchExpiry(actor, agentId, version, dispatchedDay);
-    return { status: "cancelled", expired: true, runId };
+    const receipt = await recordAgencyDispatchExpiry(actor, agentId, version, dispatchedDay);
+    // Only this dispatch expired. A manual/scheduled check may already have
+    // run for that day; preserve its recorded outcome and draft link.
+    return { status: receipt.status, expired: true, runId: receipt.id, packageId: receipt.packageId, duplicate: receipt.duplicate };
   }
   const claim = await reserveAgencyRun(actor, agentId, version, eventKey);
   if (!claim.claimed)

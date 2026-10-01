@@ -85,10 +85,15 @@ try {
   const workerAgent = await saveAgencyAgent(owner, { ...config, name: "Async acceptance", dailyDraftLimit: 12 });
   await changeAgencyAgentState(owner, workerAgent.id, 1, "active");
   await assert.rejects(recordAgencyDispatchExpiry(drafter, workerAgent.id, 1, "2000-01-01"), /admins/);
-  const expiryId = await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-01");
-  assert.equal(await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-01"), expiryId, "expired dispatches deduplicate without replacing history");
-  const expiry = await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, expiryId!) });
+  const expiryReceipt = await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-01");
+  assert.equal(expiryReceipt.duplicate, false);
+  assert.deepEqual(await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-01"), { ...expiryReceipt, duplicate: true }, "expired dispatches deduplicate without replacing history");
+  const expiry = await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, expiryReceipt.id) });
   assert.equal(expiry?.status, "cancelled"); assert.equal(expiry?.attempt, 0, "an expired dispatch does not consume quota");
+  const priorDayRun = await reserveAgencyRun(owner, workerAgent.id, 1, "daily:2000-01-02");
+  assert.equal(await finishAgencyRun(priorDayRun.run, "completed", { packageId: historicalPackage.id }), true);
+  assert.deepEqual(await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-02"), { id: priorDayRun.run.id, status: "completed", packageId: historicalPackage.id, duplicate: true }, "a delayed child preserves the completed manual outcome and draft link");
+  assert.equal((await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, priorDayRun.run.id) }))?.attempt, 1, "expiry replay cannot replace a paid receipt");
   const expiryOnly = await saveAgencyAgent(owner, { ...config, name: "Zero-credit expiry", dailyDraftLimit: 1 });
   await changeAgencyAgentState(owner, expiryOnly.id, 1, "active");
   await recordAgencyDispatchExpiry(owner, expiryOnly.id, 1, "2000-01-01");
