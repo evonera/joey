@@ -66,7 +66,7 @@ export default async function ThemePageTemplatesRoute({
               </div>
 
               <div className="flex flex-wrap gap-2 border-t p-4 text-xs font-semibold">
-                <Link href={`/dashboard?create=post&templateId=${encodeURIComponent(template.id)}`} className="rounded-lg bg-primary px-3 py-2 text-primary-foreground">Use in Chat</Link>
+                <Link href={`/dashboard?create=post&templateId=${encodeURIComponent(template.id)}`} title="Draft text copy; apply the visual style in Theme Studio" className="rounded-lg bg-primary px-3 py-2 text-primary-foreground">Draft copy in Chat</Link>
                 <Link href={`/theme-studio/${id}/templates/${template.id}`} className="rounded-lg border px-3 py-2 hover:bg-muted">Edit style</Link>
               </div>
             </article>

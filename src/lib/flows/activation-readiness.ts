@@ -45,7 +45,7 @@ export function checkActivationReadiness(
         requireKey(node.id, "supadata", "YouTube Transcript");
         break;
       case "ai.decision":
-        if (!hasKey("typesafe")) {
+        if (!hasKey("typesafe") && config.fallbackOnError !== true) {
           issues.push({ nodeId: node.id, severity: "error", message: "AI Decision needs a TypeSafe key before activating. Ask an admin to configure TYPESAFE_API_KEY." });
         }
         break;

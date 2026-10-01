@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useQueryState } from "nuqs";
 import type { CalendarViewMode } from "./post-calendar";
 import { getCalendarPosts, rescheduleDraft, type CalendarPost } from "@/app/actions/calendar";
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, format, subMonths } from "date-fns";
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PostDetailsDialog } from "./post-details-dialog";
@@ -100,13 +100,19 @@ export function CalendarView() {
     .filter((post) => format(new Date(post.start), "yyyy-MM") === mobileMonth)
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
+  function navigateMobileMonth(delta: number) {
+    const next = addMonths(currentDate, delta);
+    setCurrentDate(next);
+    setMobileDate(format(next, "yyyy-MM-dd"));
+  }
+
   return (
     <div className="flex min-w-0 flex-col w-full min-h-[640px] rounded-xl border border-border bg-card p-2 sm:p-4 shadow-xs">
       <div className="space-y-4 sm:hidden" aria-label="Mobile post agenda">
         <div className="flex items-center justify-between gap-2">
-          <button type="button" onClick={() => setCurrentDate(subMonths(currentDate, 1))} aria-label="Previous month" className="rounded-lg border px-3 py-2">←</button>
+          <button type="button" onClick={() => navigateMobileMonth(-1)} aria-label="Previous month" className="rounded-lg border px-3 py-2">←</button>
           <h2 className="text-base font-semibold">{format(currentDate, "MMMM yyyy")}</h2>
-          <button type="button" onClick={() => setCurrentDate(addMonths(currentDate, 1))} aria-label="Next month" className="rounded-lg border px-3 py-2">→</button>
+          <button type="button" onClick={() => navigateMobileMonth(1)} aria-label="Next month" className="rounded-lg border px-3 py-2">→</button>
         </div>
         <div className="flex flex-wrap items-end gap-2 rounded-xl border bg-background p-3">
           <label className="min-w-0 flex-1 text-xs font-medium">Post date<input type="date" value={mobileDate} onChange={(event) => setMobileDate(event.target.value)} className="mt-1 block w-full rounded-md border bg-background px-2 py-2 text-sm" /></label>

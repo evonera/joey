@@ -1,6 +1,6 @@
 'use server';
 
-import { auth, getActiveTenantId, requireRole } from "@/lib/auth";
+import { auth, getActiveTenantMembership, requireRole } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { agentConfigs, socialAccounts } from "@/lib/db/schema";
@@ -12,7 +12,8 @@ export type { PostingSchedule };
 
 export async function getAgentConfig() {
     try {
-        const tenantId = await getActiveTenantId();
+        const { tenantId, role } = await getActiveTenantMembership();
+        const canManage = role === "owner" || role === "admin";
         
         let config = await db.query.agentConfigs.findFirst({
             where: eq(agentConfigs.tenantId, tenantId)
@@ -37,10 +38,10 @@ export async function getAgentConfig() {
             config = await db.query.agentConfigs.findFirst({ where: eq(agentConfigs.tenantId, tenantId) });
         }
 
-        return { config };
+        return { config, canManage };
     } catch (error: any) {
         console.error("Failed to fetch agent config:", error);
-        return { error: "Failed to fetch agent configuration" };
+        return { error: "Failed to fetch agent configuration", canManage: false };
     }
 }
 

@@ -27,6 +27,7 @@ export default function BrandKitPage() {
   const [currentSchedule, setCurrentSchedule] = useState<any>(null);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [configSaved, setConfigSaved] = useState(false);
+  const [canManage, setCanManage] = useState(false);
 
   const [data, setData] = useState<{
     config: { brandVoice: string | null; postingGoals: string | null } | null;
@@ -46,6 +47,7 @@ export default function BrandKitPage() {
       }
 
       if (agentRes.config) {
+        setCanManage(agentRes.canManage);
         setBrandVoice(agentRes.config.brandVoice || "");
         setPostingGoals(agentRes.config.postingGoals || "");
         setCurrentSchedule(agentRes.config.postingSchedule);
@@ -155,7 +157,7 @@ export default function BrandKitPage() {
           <Button
             size="sm"
             onClick={handleSaveGuidelines}
-            disabled={isSavingConfig}
+            disabled={isSavingConfig || !canManage}
             className="gap-1.5 shrink-0"
           >
             {isSavingConfig ? (
@@ -170,6 +172,7 @@ export default function BrandKitPage() {
         </div>
 
         <div className="space-y-5 p-4 sm:p-6">
+          {!canManage && <p className="text-sm text-muted-foreground">Only workspace owners and admins can change brand guidelines.</p>}
           <div className="space-y-1.5">
             <label htmlFor="brand-voice" className="text-xs font-semibold text-foreground">Brand Voice & Persona</label>
             <p className="text-[11px] text-muted-foreground">
@@ -177,6 +180,7 @@ export default function BrandKitPage() {
             </p>
             <Textarea
               id="brand-voice"
+              readOnly={!canManage}
               value={brandVoice}
               onChange={(e) => setBrandVoice(e.target.value)}
               placeholder="e.g. Professional yet conversational. Direct sentences with high information density. Focus on actionable insights for engineers."
@@ -192,6 +196,7 @@ export default function BrandKitPage() {
             </p>
             <Textarea
               id="posting-goals"
+              readOnly={!canManage}
               value={postingGoals}
               onChange={(e) => setPostingGoals(e.target.value)}
               placeholder="e.g. Drive awareness for our open-source tools. Share 1 architectural case study, 1 quick terminal tip, and 1 community highlight each week."

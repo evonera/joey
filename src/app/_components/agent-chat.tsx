@@ -3,6 +3,7 @@
 import { useChatStorageScope } from "@/components/chat/chat-storage-provider";
 
 import type { UserContent } from "ai";
+import { toast } from "sonner";
 import { useEveAgent } from "eve/react";
 import {
   AlertCircleIcon,
@@ -92,6 +93,7 @@ export function AgentChat() {
   const [videoAssetId, setVideoAssetId] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const assetId = sessionStorage.getItem('joey_create_video_asset');
     const params = new URLSearchParams(window.location.search);
     const requestedMode = params.get('create');
@@ -103,13 +105,14 @@ export function AgentChat() {
     setIsSidepanelOpen(true);
     if (templateId) {
       void getThemeTemplateById(templateId).then((result) => {
-        if (!result.template) return;
+        if (cancelled || !result.template) return;
         const template = result.template;
         const cleanName = template.name.replace(/\s*\([0-9a-f-]{36}\)$/, '');
-        setInitialPrompt(`Help me create an original post using the ${cleanName} visual style (${template.format?.name || 'post'}). Ask me for the topic and audience, then save a draft. Keep the post in this Chat workspace.`);
+        setInitialPrompt(`Help me draft original copy to accompany the ${cleanName} template (${template.format?.name || 'post'}). Ask me for the topic and audience. Chat saves text drafts only; the visual template must be applied in Theme Studio, not by the Chat post editor.`);
         setSessionKey(`template_${template.id}_${Date.now()}`);
-      });
+      }).catch(() => { if (!cancelled) toast.error('Could not load this template. Open Theme Studio and try again.'); });
     }
+    return () => { cancelled = true; };
   }, []);
 
   // Load saved session data when activeSessionId changes

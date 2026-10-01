@@ -12,9 +12,10 @@ async function captureScreenshot(page: Page, testInfo: TestInfo, name: string, f
 function signupHeaders(testInfo: TestInfo) {
   // Better Auth intentionally limits sign-up attempts to three per IP per
   // ten-second window. Give each test/retry its own documentation-range IPv6
-  // address so retries test the application rather than the auth limiter.
+  // /64 so retries test the application rather than the auth limiter. Better
+  // Auth groups IPv6 addresses by subnet, not their final host segments.
   const suffix = randomUUID().replace(/-/g, "").slice(0, 8);
-  return { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8::${suffix.slice(0, 4)}:${suffix.slice(4)}` };
+  return { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8:${suffix.slice(0, 4)}:${suffix.slice(4)}::1` };
 }
 
 for (const width of [1440, 390, 320] as const) {
@@ -100,6 +101,9 @@ test(`authenticated workspace routes remain usable at ${width}px`, async ({ page
     if (key) sessionStorage.setItem(key, JSON.stringify({ content: "Keep this restored draft", scheduleType: "now", scheduledDate: "2020-01-01" }));
   });
   await page.goto("/calendar?view=day");
+  const previousPostDate = await page.getByLabel("Post date").inputValue();
+  await page.getByRole("button", { name: "Next month", exact: true }).click();
+  await expect(page.getByLabel("Post date")).not.toHaveValue(previousPostDate);
   const requestedDate = "2030-01-12";
   await page.getByLabel("Post date").fill(requestedDate);
   await page.getByRole("button", { name: "Create post", exact: true }).click();

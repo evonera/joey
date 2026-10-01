@@ -49,6 +49,11 @@ describe("flow activation readiness", () => {
     })).toEqual([]);
   });
 
+  it("allows an explicitly configured AI Decision fallback without a TypeSafe key", () => {
+    const decision: FlowGraphDoc = { nodes: [{ id: "choose", type: "ai.decision", config: { fallbackOnError: true, defaultChoice: "review" }, position: { x: 0, y: 0 } }], edges: [] };
+    expect(checkActivationReadiness(decision, { keys: [], accounts: [], env: {} })).toEqual([]);
+  });
+
   it("checks AI Decision against TypeSafe rather than text model keys", () => {
     const decision: FlowGraphDoc = { nodes: [{ id: "choose", type: "ai.decision", config: {}, position: { x: 0, y: 0 } }], edges: [] };
     expect(checkActivationReadiness(decision, { keys: [{ provider: "openai", status: "active" }], accounts: [], env: {} }).map((issue) => issue.nodeId)).toEqual(["choose"]);

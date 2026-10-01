@@ -29,7 +29,8 @@ export default async function TemplateLibraryPage() {
           <div className="space-y-2 p-4">
             <h2 className="truncate font-semibold" title={template.name}>{template.name.replace(/\s*\([0-9a-f-]{36}\)$/, "")}</h2>
             <p className="text-xs text-muted-foreground">{template.themePageId ? pages.get(template.themePageId) || "Theme Page" : "Saved standalone template"} · {template.format?.name || "Visual"}</p>
-            <div className="flex flex-wrap gap-2 pt-1"><Link href={useHref} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Use in Chat</Link><Link href={editHref} className="rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-muted">Edit style</Link></div>
+            <p className="text-xs text-muted-foreground">Chat drafts copy; apply this visual style in Theme Studio.</p>
+            <div className="flex flex-wrap gap-2 pt-1"><Link href={useHref} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Draft copy in Chat</Link><Link href={editHref} className="rounded-lg border px-3 py-2 text-xs font-semibold hover:bg-muted">Edit style</Link></div>
           </div>
         </article>;
       })}</div>}

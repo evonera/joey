@@ -94,6 +94,7 @@ function SettingsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [configReady, setConfigReady] = useState(false);
+  const [canManage, setCanManage] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   
   
@@ -125,6 +126,7 @@ function SettingsContent() {
     async function loadData() {
       try {
         const { configRes, accountsRes, usageRes, prefsRes, keys: [openaiKey, anthropicKey, googleKey, falKey] } = await getSettingsData();
+        setCanManage(configRes.canManage);
         if (usageRes.usage) setUsageStats(usageRes.usage);
         if (configRes.error || accountsRes.error || usageRes.error || prefsRes.error) {
           toast.error("Some settings couldn’t load. Refresh before making changes.");
@@ -302,7 +304,7 @@ function SettingsContent() {
           <button
             type="button"
             onClick={() => submitSave()}
-            disabled={isSaving || !configReady}
+            disabled={isSaving || !configReady || !canManage}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             {isSaving ? (
@@ -352,6 +354,8 @@ function SettingsContent() {
         {/* Schedule is edited here; brand guidance has one home in Brand Kit. */}
         <TabsContent value="persona">
           <form onSubmit={handleSaveForm} className="space-y-6">
+            {!canManage && <p className="text-sm text-muted-foreground">Only workspace owners and admins can change automation schedules.</p>}
+            <fieldset disabled={!canManage} className="min-w-0 space-y-6">
             <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">Set your brand voice and posting goals in <Link href="/brandkit" className="font-semibold text-primary underline">Brand Kit</Link>.</p>
 
             {/* Schedule Section */}
@@ -460,6 +464,7 @@ function SettingsContent() {
                 )}
               </div>
             </section>
+            </fieldset>
           </form>
         </TabsContent>
 
