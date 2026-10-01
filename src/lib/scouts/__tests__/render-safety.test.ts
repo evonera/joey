@@ -9,7 +9,7 @@ vi.mock("@/lib/db", () => ({ db: {
     assets: { findFirst: async () => null },
     storyClusters: { findFirst: async () => ({ facts: [{ claim: "Supported", corroborationStatus: "corroborated" }, { claim: "Uncertain", corroborationStatus: "unverified" }] }) },
   },
-  update: () => ({ set: () => ({ where: mocks.update }) }),
+  update: () => ({ set: () => ({ where: (...args: unknown[]) => { mocks.update(...args); return { returning: async () => [{ id: "pkg" }] }; } }) }),
 } }));
 vi.mock("@/lib/theme-studio/renderers/static-card-renderer", () => ({ renderCardSvg: mocks.card, renderCarouselSlideSvgs: mocks.carousel }));
 vi.mock("@/lib/theme-studio/renderers/rasterize-svg", () => ({ renderSvgPng: async () => Buffer.from("png") }));
@@ -45,6 +45,13 @@ describe("Scout evidence-to-render safety", () => {
   it("blocks direct publishing while fact review is outstanding", async () => {
     const result = await publishContentPackage("pkg", "tenant");
     expect(result).toMatchObject({ success: false, error: expect.stringContaining("fact review") });
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+  it("does not render rejected packages through draft-only recovery", async () => {
+    mocks.pkg.mockResolvedValue({ id: "pkg", status: "rejected", updatedAt: new Date() });
+    const result = await renderPackageMedia("pkg", "tenant", "stable-run", undefined, undefined, { preserveReviewDecision: true });
+    expect(result.success).toBe(false);
+    expect(mocks.card).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
   });
 });

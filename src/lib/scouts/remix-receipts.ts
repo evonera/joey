@@ -36,7 +36,9 @@ export async function claimScoutRemixRender(receipt: typeof scoutRemixes.$inferS
   }).where(and(
     eq(scoutRemixes.id, receipt.id), eq(scoutRemixes.tenantId, receipt.tenantId),
     sql`${scoutRemixes.packageId} IS NOT NULL`,
-    or(inArray(scoutRemixes.status, ["prepared", "failed"]), and(eq(scoutRemixes.status, "rendering"), lte(scoutRemixes.leaseExpiresAt, now))),
+    // Recovery is draft-only, including when a review decision races a replay.
+    sql`EXISTS (SELECT 1 FROM ${contentPackages} WHERE ${contentPackages.id} = ${scoutRemixes.packageId} AND ${contentPackages.tenantId} = ${scoutRemixes.tenantId} AND ${contentPackages.status} IN ('pending_review', 'failed'))`,
+    or(inArray(scoutRemixes.status, ["prepared", "failed"]), and(inArray(scoutRemixes.status, ["rendering", "queued"]), lte(scoutRemixes.leaseExpiresAt, now))),
   )).returning();
   return claimed;
 }
@@ -138,7 +140,8 @@ export async function finishScoutRemix(
       and(
         eq(scoutRemixes.id, receipt.id),
         eq(scoutRemixes.tenantId, receipt.tenantId),
-        eq(scoutRemixes.leaseToken, receipt.leaseToken)
+        eq(scoutRemixes.leaseToken, receipt.leaseToken),
+        inArray(scoutRemixes.status, ["processing", "rendering"])
       )
     );
 }
