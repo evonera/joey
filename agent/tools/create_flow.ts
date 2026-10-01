@@ -1,4 +1,5 @@
 import { defineTool } from "eve/tools";
+import { assertGeneralWorkspaceTool } from "../lib/agency-session";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
@@ -32,6 +33,7 @@ export default defineTool({
       .describe("Target platform to generate drafts for."),
   }),
   execute: async ({ name, description, templateSlug, queryOrUrl, targetPlatform }, ctx) => {
+    assertGeneralWorkspaceTool(ctx.session);
     const tenantId = ctx.session?.auth?.current?.attributes?.tenantId as string | undefined;
     if (!tenantId) {
       return { error: "No active tenant session found. Please sign in to create flows." };

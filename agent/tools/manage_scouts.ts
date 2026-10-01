@@ -1,4 +1,5 @@
 import { defineTool } from "eve/tools";
+import { assertGeneralWorkspaceTool } from "../lib/agency-session";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { scouts } from "@/lib/db/schema";
@@ -25,6 +26,7 @@ export default defineTool({
     response: (ctx) => workspaceApproval().response!(ctx),
   },
   execute: async ({ action, scoutId, name, targetUrl, platform, goalCondition, pollIntervalMinutes }, ctx) => {
+    if (!["list", "get_alert"].includes(action)) assertGeneralWorkspaceTool(ctx.session);
     const tenantId = ctx.session.auth.current?.attributes?.tenantId;
     if (!tenantId) throw new Error("Unable to identify tenant from session auth.");
 

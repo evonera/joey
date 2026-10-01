@@ -3,11 +3,13 @@ import { resolveModelForTurn } from "@/lib/agent-model-resolver";
 import { estimateTextCallCost } from "@/lib/ai-pricing";
 import { getModelById } from "@/lib/models";
 import { eveUsageReservationId, reserveUsageBudget } from "@/lib/usage";
+import { agencyProfileForSession } from "./lib/agency-session";
 
 export default defineAgent({
   model: defineDynamic({
     events: {
       "step.started": async (event, ctx) => {
+        await agencyProfileForSession(ctx.session);
         const step = event as { data: { turnId: string; stepIndex: number; sequence: number } };
         const preferredModel = (ctx.session.auth.current?.attributes?.preferredModel as string | undefined) || undefined;
         const tenantId = (ctx.session.auth.current?.attributes?.tenantId as string | undefined) || undefined;
