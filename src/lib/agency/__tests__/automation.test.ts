@@ -11,9 +11,12 @@ const mocks = vi.hoisted(() => ({
   exa: vi.fn(),
   model: vi.fn(),
   update: vi.fn(),
+  slot: vi.fn(),
+  format: vi.fn(),
 }));
 vi.mock("@/lib/db", () => ({
   db: {
+    query: { themeSlots: { findFirst: mocks.slot }, themeContentFormats: { findFirst: mocks.format } },
     transaction: (fn: (tx: unknown) => unknown) => fn({ update: () => ({ set: () => ({ where: mocks.update }) }) }),
   },
 }));
@@ -47,6 +50,8 @@ beforeEach(() => {
   mocks.reserve.mockResolvedValue({ claimed: true, run });
   mocks.current.mockResolvedValue({ actor, config });
   mocks.profile.mockResolvedValue(config);
+  mocks.slot.mockResolvedValue({ formatId: "instagram-format" });
+  mocks.format.mockResolvedValue({ platform: "instagram" });
   mocks.finish.mockResolvedValue(true);
   mocks.evaluate.mockResolvedValue({ triggered: true, alert });
   mocks.remix.mockResolvedValue({ success: true, packageId: "draft", renderState: "queued" });
@@ -113,6 +118,19 @@ describe("Governed draft automation (no provider calls)", () => {
   it("fails closed on missing credentials/budget without scraping", async () => {
     mocks.model.mockRejectedValue(new Error("Budget exhausted"));
     expect(await executeAgencyDraft(actor, "agent", 1)).toMatchObject({ status: "failed" });
+    expect(mocks.evaluate).not.toHaveBeenCalled();
+  });
+  it.each([undefined, { platform: "linkedin" }])("rejects missing/non-Instagram formats before resolving paid providers", async (format) => {
+    mocks.format.mockResolvedValue(format);
+    expect(await executeAgencyDraft(actor, "agent", 1)).toMatchObject({ status: "failed" });
+    expect(mocks.apify).not.toHaveBeenCalled();
+    expect(mocks.evaluate).not.toHaveBeenCalled();
+  });
+  it("rejects a slotless page before provider resolution", async () => {
+    mocks.slot.mockResolvedValue(undefined);
+    expect(await executeAgencyDraft(actor, "agent", 1)).toMatchObject({ status: "failed" });
+    expect(mocks.format).not.toHaveBeenCalled();
+    expect(mocks.apify).not.toHaveBeenCalled();
     expect(mocks.evaluate).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { customAgents, customAgentRuns, member } from "@/lib/db/schema";
+import { customAgents, customAgentRuns, member, themeSlots, themeContentFormats } from "@/lib/db/schema";
 import { and, eq, gt, asc, sql } from "drizzle-orm";
 import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
 import { resolveExaKey } from "@/lib/search/exa-client";
@@ -28,6 +28,15 @@ export async function preflightAgencyAutomation(actor: AgencyActor, agentId: str
   const agent = await getAgencyProfile(actor, agentId);
   if (!agent.scoutId || !agent.themePageId || !agent.accountIds.length)
     throw new Error("Choose an Instagram Scout, Theme Page and destinations first.");
+  const slot = await db.query.themeSlots.findFirst({
+    where: and(eq(themeSlots.tenantId, actor.tenantId), eq(themeSlots.themePageId, agent.themePageId), eq(themeSlots.isActive, true)),
+    orderBy: [themeSlots.priority],
+  });
+  const format = slot?.formatId ? await db.query.themeContentFormats.findFirst({
+    where: and(eq(themeContentFormats.tenantId, actor.tenantId), eq(themeContentFormats.id, slot.formatId)),
+  }) : undefined;
+  if (format?.platform !== "instagram")
+    throw new Error("Configure this Theme Page's first active slot with an Instagram format before enabling drafts.");
   // Resolve/check only; never return credentials or SDK model objects to UI.
   await resolveToken(actor.tenantId);
   await resolveExaKey(actor.tenantId);
