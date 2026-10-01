@@ -3,6 +3,7 @@ import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contentPackages, scoutRemixes, storyClusters } from "@/lib/db/schema";
 import type { ScoutAlert } from "./evaluator";
+import type { AgencyDb } from "@/lib/agency/service";
 
 export function scoutRemixEventKey(targetUrl: string, goal: string, alert: ScoutAlert): string {
   let source = alert.samplePost?.url;
@@ -91,9 +92,13 @@ export async function claimScoutRemix(input: {
 export async function saveScoutRemixDraft(
   receipt: typeof scoutRemixes.$inferSelect,
   cluster: typeof storyClusters.$inferInsert,
-  pkg: Omit<typeof contentPackages.$inferInsert, "clusterId">
+  pkg: Omit<typeof contentPackages.$inferInsert, "clusterId">,
+  beforeCommit?: (tx: AgencyDb) => Promise<void>,
+  afterCommit?: (tx: AgencyDb, packageId: string) => Promise<void>
 ) {
   return db.transaction(async (tx) => {
+    // Governance lock precedes the receipt/package locks everywhere.
+    await beforeCommit?.(tx);
     const [owned] = await tx
       .update(scoutRemixes)
       .set({ updatedAt: new Date() })
@@ -120,6 +125,7 @@ export async function saveScoutRemixDraft(
       .insert(contentPackages)
       .values({ ...pkg, clusterId: savedCluster.id })
       .returning();
+    await afterCommit?.(tx, savedPackage.id);
     await tx
       .update(scoutRemixes)
       .set({ status: "prepared", packageId: savedPackage.id, clusterId: savedCluster.id, updatedAt: new Date() })

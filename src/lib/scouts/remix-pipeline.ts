@@ -14,12 +14,15 @@ import { renderPackageMedia } from "@/lib/theme-studio/renderers/media-assembler
 import type { ScoutAlert } from "./evaluator";
 import { claimScoutRemix, claimScoutRemixRender, finishScoutRemix, saveScoutRemixDraft, scoutRemixEventKey } from "./remix-receipts";
 import { synthesizeScoutResearch } from "./remix-research";
+import type { AgencyDb } from "@/lib/agency/service";
 
 export interface RemixScoutAlertOptions {
   tenantId: string;
   scoutId: string;
   themePageId?: string;
   signal?: AbortSignal;
+  alert?: ScoutAlert;
+  governance?: { agentId: string; configVersion: number; accountIds: string[]; runId: string; beforePhase: () => Promise<void>; beforeCommit: (tx: AgencyDb) => Promise<void>; afterCommit: (tx: AgencyDb, packageId: string) => Promise<void> };
 }
 
 export interface RemixScoutAlertResult {
@@ -65,7 +68,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
     return { success: false, error: "Scout not found" };
   }
 
-  const alert = scout.latestAlert as ScoutAlert | null;
+  const alert = options.alert ?? scout.latestAlert as ScoutAlert | null;
   if (!alert) {
     return { success: false, error: "No active alert on this Scout to remix" };
   }
@@ -89,6 +92,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
       error: "No active Theme Page found for this workspace. Please create or activate a Theme Page first.",
     };
   }
+  await options.governance?.beforePhase();
 
   const { claimed, receipt } = await claimScoutRemix({
     tenantId: options.tenantId,
@@ -100,6 +104,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
     const common = { packageId: pkg.id, clusterId: renderReceipt.clusterId ?? undefined, title: pkg.title, status: pkg.status, duplicate };
     try {
       options.signal?.throwIfAborted();
+      await options.governance?.beforePhase();
       const renderRes = await renderPackageMedia(pkg.id, options.tenantId, `scout_remix_${receipt.id}`, options.signal, undefined, { preserveReviewDecision: true });
       const renderedUrls = renderRes?.renderedUrls || [];
       if (renderRes?.queued) {
@@ -125,6 +130,10 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
           where: and(eq(contentPackages.id, receipt.packageId), eq(contentPackages.tenantId, options.tenantId)),
         })
       : undefined;
+    if (existing && options.governance) {
+      const origin = existing.provenance as Record<string, unknown> | null;
+      if (origin?.customAgentId !== options.governance.agentId || origin?.customAgentVersion !== options.governance.configVersion) return { success: false, duplicate: true, error: "This source already has a draft under another configuration. Review that draft instead." };
+    }
     const outputs = Array.isArray(existing?.renderedAssetUrls)
       ? (existing.renderedAssetUrls as Array<{ url: string; type: string }>)
       : [];
@@ -168,6 +177,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
     // Deep research via Exa Search
     let searchRes;
     try {
+      await options.governance?.beforePhase();
       searchRes = await searchWithExa(
         {
           query: searchQuery,
@@ -177,8 +187,8 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
         },
         options.tenantId
       );
-    } catch (err) {
-      console.warn("[scouts-remix] Exa research query failed:", err);
+    } catch {
+      console.warn("[scouts-remix] Research query failed; check provider configuration.");
       return {
         success: false,
         error: "Research search failed. Try again after checking the Exa integration.",
@@ -213,6 +223,8 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
         where: and(eq(themeContentFormats.id, slot.formatId), eq(themeContentFormats.tenantId, options.tenantId)),
       });
     }
+
+    if (options.governance && format?.platform !== "instagram") return { success: false, error: "Choose an Instagram format for this agent's Theme Page." };
 
     if (!format) {
       format = await db.query.themeContentFormats.findFirst({
@@ -254,6 +266,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
     }
 
     signal.throwIfAborted();
+    await options.governance?.beforePhase();
     const editorial = await synthesizeScoutResearch({
       tenantId: options.tenantId,
       page: targetPage,
@@ -291,6 +304,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
         status: "pending_review",
         renderedAssetUrls: [],
         provenance: {
+          ...(options.governance ? { customAgentId: options.governance.agentId, customAgentVersion: options.governance.configVersion, customAgentRunId: options.governance.runId, destinationAccountIds: options.governance.accountIds } : {}),
           scoutId: scout.id,
           competitorUrl: scout.targetUrl,
           heroImageReference,
@@ -304,7 +318,9 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
             heroImageReference: r.heroImage,
           })),
         },
-      }
+      },
+      options.governance?.beforeCommit,
+      options.governance?.afterCommit
     );
 
     // Claim a separate render lease: a crash after the draft commit can replay

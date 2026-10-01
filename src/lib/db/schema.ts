@@ -984,6 +984,7 @@ export const customAgents = pgTable("custom_agents", {
   state: varchar("state", { length: 20 }).notNull().default("paused"),
   configVersion: integer("config_version").notNull().default(1),
   approvedVersion: integer("approved_version"),
+  approvedBy: text("approved_by").references(() => user.id),
   dailyDraftLimit: integer("daily_draft_limit").notNull().default(3),
   scoutId: text("scout_id"),
   themePageId: text("theme_page_id"),
@@ -998,6 +999,7 @@ export const customAgents = pgTable("custom_agents", {
   quota: check("custom_agents_quota_check", sql`${table.dailyDraftLimit} BETWEEN 1 AND 12`),
   stateCheck: check("custom_agents_state_check", sql`${table.state} IN ('paused', 'active', 'archived')`),
   approval: check("custom_agents_approval_check", sql`${table.state} <> 'active' OR (${table.approvedVersion} IS NOT NULL AND ${table.approvedVersion} = ${table.configVersion})`),
+  approver: check("custom_agents_approver_check", sql`${table.state} <> 'active' OR ${table.approvedBy} IS NOT NULL`),
 }));
 
 export const customAgentAccounts = pgTable("custom_agent_accounts", {
@@ -1035,6 +1037,7 @@ export const customAgentRuns = pgTable("custom_agent_runs", {
   leaseExpiresAt: timestamp("lease_expires_at").notNull(),
   attempt: integer("attempt").notNull().default(1),
   packageId: text("package_id").references(() => contentPackages.id, { onDelete: "set null" }),
+  sourceAlert: jsonb("source_alert"),
   error: varchar("error", { length: 500 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

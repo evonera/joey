@@ -13,6 +13,7 @@ import { canOperateAgency } from "@/lib/agency/config";
 import { cn } from "@/lib/utils";
 import { AgentWizard } from "./agent-wizard";
 import { AgentIdentity } from "./agent-identity";
+import { AgentAutomationControls } from "./agent-automation-controls";
 import type { AgencyAgent, AgencyChoices } from "./types";
 
 type Thread = Awaited<ReturnType<typeof getAgencyThreads>>[number];
@@ -184,6 +185,7 @@ export function AgencyWorkspace({
               </Button>
             </header>
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-xs sm:px-5">
+              {canOperateAgency(actor.role) && <AgentAutomationControls key={selected.id} agent={selected} choices={choices} onChanged={changed => { setRoster(previous => previous.map(item => item.id === changed.id ? { ...item, ...changed } : item)); refreshHistory(); }} />}
               <Button
                 variant="outline"
                 size="sm"
@@ -215,7 +217,7 @@ export function AgencyWorkspace({
                   ))}
                 </select>
               </label>
-              <details className="relative">
+              <details className="relative ml-auto">
                 <summary className="cursor-pointer rounded-md px-2 py-2 text-muted-foreground focus-visible:outline-ring">
                   Run history ({runs.length})
                 </summary>

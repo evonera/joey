@@ -61,17 +61,17 @@ vi.mock("@/lib/agent-model-resolver", () => ({
   }),
 }));
 
-vi.mock("ai", () => ({
-  generateText: vi.fn().mockResolvedValue({
+vi.mock("@/lib/llm", () => ({
+  runLlm: vi.fn().mockResolvedValue({
     text: JSON.stringify({
       triggered: true,
-      summary: "Viral spike detected on recent post with 125,000 views.",
+      title: "Viral spike detected on recent post with 125,000 views.", topPostIndex: 0,
       changes: [
         {
-          metric: "views",
+          type: "SPIKE", label: "Views",
           before: "12,000 avg",
           after: "125,000 spike",
-          detail: "Stop scrolling hook drove 10x normal views",
+          rationale: "Stop scrolling hook drove 10x normal views",
         },
       ],
       recommendedAction: "Remix hook into Theme Studio reel.",
@@ -162,12 +162,12 @@ describe("Scouts Evaluator and Tool", () => {
       probability: 0.98,
     });
 
-    const { generateText } = await import("ai");
+    const { runLlm } = await import("@/lib/llm");
     const { evaluateScout } = await import("../evaluator");
     const res = await evaluateScout("scout-quiet", { force: true });
 
     expect(res.triggered).toBe(false);
-    expect(generateText).not.toHaveBeenCalled();
+    expect(runLlm).not.toHaveBeenCalled();
     expect(mockUpdate).toHaveBeenCalled();
   });
 

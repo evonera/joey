@@ -4,6 +4,7 @@
   "project": ["src/**/*.{js,ts,jsx,tsx}!"],
   "ignore": ["repos/**", "src/components/**", "src/lib/**"],
   "ignoreDependencies": [
+    "workflow",
     "@dnd-kit/*",
     "@shikijs/*",
     "@hugeicons/*",
