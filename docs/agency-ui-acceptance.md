@@ -23,7 +23,7 @@ References: [Eve Next integration](https://eve.dev/docs/guides/frontend/nextjs),
 
 ## Completed checks
 
-- 785 tests across 130 suites passed.
+- 787 tests across 130 suites passed.
 - Next production build and Eve build passed.
 - Lint with zero warnings passed.
 - 54 ordered PostgreSQL migrations validated.
@@ -35,13 +35,27 @@ References: [Eve Next integration](https://eve.dev/docs/guides/frontend/nextjs),
 
 The Vercel `codex/agency-ui-acceptance` preview branch points to the disposable `codex-agency-staging-20261001` Neon branch, not production. Auth and application encryption secrets are scoped to the preview branch. Existing copied production credentials are not a valid acceptance fixture under these new keys; create a new disposable workspace and its own fixtures. Production credentials/secrets and schema are unchanged by this staging setup. Preview protection remains enabled.
 
+## Live staging pass (2026-10-01)
+
+- Signed in through the existing Ego Lite profile and reached the protected staging preview; Vercel preview protection remains enabled.
+- Created a disposable staging signup/workspace, a paused custom agent, and a staging-only Theme Page. No production user or production database was used.
+- Confirmed a real Gemini reply from the custom agent.
+- Captured an empty roster at desktop width and the creation wizard and populated chat at 390px. The mobile wizard fits the viewport; the mobile chat keeps its composer visible. Screenshots were saved under `/tmp/joey-agency-*-ego17.png` for review.
+- The next attempted delegation was blocked by the new workspace's three-generation free trial limit. No specialist delegation event or approval was produced; further model-backed checks need a workspace API key or an approved staging budget.
+- The staging account screen reports `No API key configured for this tenant`; this disposable workspace has no connected social accounts. Therefore account-targeted approval/draft acceptance is not yet demonstrated.
+- The staging Scout screen has no Scout configured and requires an Apify key before manual or scheduled checks. Retry, cancellation, and failure recovery have not been exercised against a live scheduled Scout.
+- Added branch-scoped Preview settings for R2 and the Modal worker dispatch, and limited this branch to five render jobs per workspace/month. These settings are not active in the existing deployment until the next branch deployment. They reuse the configured `joey-assets` bucket and `joey-media` worker; generated staging objects must remain tenant-namespaced and be cleaned up after acceptance.
+- A real Modal render and attached MP4 are still pending the deployment with those settings. No external post was published.
+
 ## Still required
 
-1. Complete Vercel viewer sign-in and deploy/verify this exact integrated head.
-2. Capture roster, wizard, populated chat, and real pending approval at 1440px and 390px. Check keyboard navigation, clipping, long content, and mobile composer reachability.
-3. Execute a real bounded model-backed create → chat → approval → draft scenario on disposable fixtures; record session/run IDs and deny/approve outcomes.
-4. Verify reconnect, pause/resume, cancellation and failure recovery through the actual Eve runtime.
-5. Run authenticated product Playwright and retain its report. Existing agency UI cases deliberately do not call models or activate providers.
-6. Complete deployed media/alert/soak acceptance separately. Never publish a real social post without approval of its exact content and final action.
+1. Deploy and verify the current integrated head so the branch-scoped R2/Modal environment settings are active.
+2. Capture a real pending approval at 1440px and 390px, then execute approval → resume → account-targeted draft on disposable connected-account fixtures.
+3. Run the delegated LinkedIn/Twitter specialist after adding the staging workspace's own model key or explicitly allocating its staging model budget.
+4. Add staging Apify credentials, configure a paused Scout, and test one bounded scheduled execution with retries, cancellation, and failure recovery.
+5. Upload a synthetic short MP4, run the real Modal → R2 → browser playback path, and verify the video attaches to its disposable draft.
+6. Verify reconnect and pause/resume through the actual Eve runtime. Keep live publishing disabled.
+7. Run authenticated product Playwright and retain its report. Existing agency UI cases deliberately do not call models or activate providers.
+8. Complete alert and soak acceptance separately. Never publish a real social post without approval of its exact content and final action.
 
 Do not replace these remaining checks with a green unit-test count or screenshots of the old production UI.
