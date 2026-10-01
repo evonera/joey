@@ -38,6 +38,7 @@ function validateScoutInput(input: CreateScoutInput) {
 
 export async function getScoutSetup() {
   const tenantId = await getActiveTenantId();
+  if (process.env.NODE_ENV === "test" || process.env.ENABLE_MOCK_SCOUTS === "true") return { apifyReady: true };
   try { await resolveToken(tenantId); return { apifyReady: true }; }
   catch { return { apifyReady: false, issue: "Connect an Apify token in Settings before automatic monitoring can run." }; }
 }
@@ -117,6 +118,10 @@ export async function runScoutNow(scoutId: string) {
     where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
   });
   if (!scout) throw new Error("Scout not found.");
+
+  // A missing token is a setup problem, not a failed scan. Avoid creating a
+  // misleading failed run that the user could never have completed.
+  if (process.env.NODE_ENV !== "test" && process.env.ENABLE_MOCK_SCOUTS !== "true") await resolveToken(tenantId);
 
   const result = await evaluateScout(scoutId, { tenantId, force: true });
   revalidatePath("/scouts");

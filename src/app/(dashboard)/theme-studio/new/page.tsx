@@ -1,4 +1,3 @@
-import * as React from "react";
 import { getContentFormats } from "@/app/actions/theme-content-formats";
 import { getConnectedAccounts } from "@/app/actions/zernio";
 import { ThemePageWizard } from "@/components/theme-studio/ThemePageWizard";
@@ -12,9 +11,9 @@ export default async function NewThemePage() {
   const connectedAccounts = accountsRes.accounts || [];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="text-center max-w-md mx-auto mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Create Niche Theme Page</h1>
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5 p-0 sm:space-y-6 sm:p-8">
+      <div className="mx-auto max-w-md px-1 pt-2 text-center sm:mb-8 sm:p-0">
+        <h1 className="text-2xl font-bold tracking-tight">Create a Theme Page</h1>
         <p className="text-xs text-muted-foreground mt-1">
           Configure publishing channels, trusted sources, daily content mix, and brand templates.
         </p>

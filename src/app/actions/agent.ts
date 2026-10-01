@@ -1,6 +1,6 @@
 'use server';
 
-import { auth, getActiveTenantId } from "@/lib/auth";
+import { auth, getActiveTenantMembership, requireRole } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { agentConfigs, socialAccounts } from "@/lib/db/schema";
@@ -12,7 +12,8 @@ export type { PostingSchedule };
 
 export async function getAgentConfig() {
     try {
-        const tenantId = await getActiveTenantId();
+        const { tenantId, role } = await getActiveTenantMembership();
+        const canManage = role === "owner" || role === "admin";
         
         let config = await db.query.agentConfigs.findFirst({
             where: eq(agentConfigs.tenantId, tenantId)
@@ -37,10 +38,10 @@ export async function getAgentConfig() {
             config = await db.query.agentConfigs.findFirst({ where: eq(agentConfigs.tenantId, tenantId) });
         }
 
-        return { config };
+        return { config, canManage };
     } catch (error: any) {
         console.error("Failed to fetch agent config:", error);
-        return { error: "Failed to fetch agent configuration" };
+        return { error: "Failed to fetch agent configuration", canManage: false };
     }
 }
 
@@ -50,7 +51,7 @@ export async function saveAgentConfig(data: {
     postingSchedule: PostingSchedule;
 }) {
     try {
-        const tenantId = await getActiveTenantId();
+        const tenantId = await requireRole(["owner", "admin"]);
         const parsed = agentConfigSchema.safeParse(data);
         if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your configuration." };
         data = parsed.data;
@@ -93,5 +94,32 @@ export async function saveAgentConfig(data: {
     } catch (error: any) {
         console.error("Failed to save agent config:", error);
         return { error: "Failed to save configuration" };
+    }
+}
+
+/** Update scheduling without overwriting brand guidance edited in Brand Kit. */
+export async function saveAgentSchedule(postingSchedule: PostingSchedule) {
+    try {
+        const tenantId = await requireRole(["owner", "admin"]);
+        const parsed = agentConfigSchema.shape.postingSchedule.safeParse(postingSchedule);
+        if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your schedule." };
+        const schedule = parsed.data;
+        if (schedule.selectedAccountIds.length) {
+            const accounts = await db.query.socialAccounts.findMany({
+                where: and(eq(socialAccounts.tenantId, tenantId), eq(socialAccounts.isActive, true), inArray(socialAccounts.id, schedule.selectedAccountIds)),
+                columns: { id: true },
+            });
+            if (accounts.length !== schedule.selectedAccountIds.length) return { error: "Select connected accounts from this workspace." };
+        }
+        const nextDraftAt = computeNextDraftTime(new Date(), schedule);
+        await db.insert(agentConfigs).values({ tenantId, brandVoice: "", postingGoals: "", postingSchedule: schedule, nextDraftAt })
+            .onConflictDoUpdate({ target: agentConfigs.tenantId, set: {
+                postingSchedule: schedule,
+                nextDraftAt,
+            } });
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to save agent schedule:", error);
+        return { error: "Failed to save schedule" };
     }
 }
