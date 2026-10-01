@@ -230,7 +230,7 @@ export function AgencyWorkspace({
                         {run.error && <p className="mt-1 break-words text-destructive">{run.error}</p>}
                         {run.packageId && (
                           <Link
-                            href={selected.themePageId ? `/theme-studio/${selected.themePageId}` : "/theme-studio"}
+                          href={run.packageThemePageId ? `/theme-studio/${run.packageThemePageId}` : "/theme-studio"}
                             className="mt-2 inline-block underline"
                           >
                             Review draft in Theme Studio

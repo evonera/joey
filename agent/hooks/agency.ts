@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { customAgentThreads, eveSessionOwners } from "@/lib/db/schema";
 import { registerAgencyThread, requireAgencyMember } from "@/lib/agency/service";
 import { agencySessionIdentity } from "../lib/agency-session";
+import { userPromptText } from "@/lib/chat-title";
 
 export default defineHook({
   events: {
@@ -32,7 +33,7 @@ export default defineHook({
       const identity = agencySessionIdentity(ctx.session);
       if (!identity || ctx.session.parent) return;
       if (event.type === "message.received") {
-        const title = event.data.message.replace(/\s+/g, " ").trim().slice(0, 120);
+        const title = userPromptText(event.data.message).slice(0, 120);
         if (title)
           await db
             .update(customAgentThreads)

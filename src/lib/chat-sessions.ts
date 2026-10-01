@@ -1,4 +1,5 @@
 import { getModelById, getModelCost } from "@/lib/models";
+import { userPromptText } from "./chat-title";
 
 export interface TokenMetrics {
   inputTokens: number;
@@ -142,7 +143,7 @@ export function deriveTitleFromMessages(messages: readonly any[]): string {
           }
         }
       }
-      text = text.replace(/\s+/g, " ").trim();
+      text = userPromptText(text);
       if (text.length > 0) {
         return text.length > 42 ? `${text.slice(0, 42)}…` : text;
       }

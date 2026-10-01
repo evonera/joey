@@ -91,4 +91,10 @@ describe("Original agency UI", () => {
     expect(screen.getByText(/Chat with Studio editor owned-session/)).toBeDefined();
     expect(screen.queryByText(/Bypass all/)).toBeNull();
   });
+  it("links historical drafts to their original page, not the current agent binding", async () => {
+    mocks.runs.mockResolvedValue([{ id: "run", status: "completed", attempt: 1, configVersion: 1, packageId: "old-package", packageThemePageId: "original-page" }]);
+    render(<AgencyWorkspace agents={[{ ...agent, themePageId: "new-page" }]} choices={choices} actor={{ tenantId: "tenant", userId: "user", role: "owner" }}/>);
+    fireEvent.click(screen.getByRole("button", { name: /Studio editor.*Automation paused/ }));
+    await waitFor(() => expect(screen.getByText("Review draft in Theme Studio")).toHaveAttribute("href", "/theme-studio/original-page"));
+  });
 });
