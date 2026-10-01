@@ -17,8 +17,11 @@ export function checkActivationReadiness(
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const keyState = new Map(resources.keys.map((key) => [key.provider, key.status]));
+  // Match the two provider resolvers that explicitly permit a server fallback
+  // when the workspace row is inactive. Other providers fail closed on revocation.
+  const permitsInactiveFallback = new Set(["supadata", "typesafe"]);
   const hasKey = (provider: string) => keyState.get(provider) === "active" ||
-    (!keyState.has(provider) && Boolean(resources.env[provider]));
+    ((!keyState.has(provider) || permitsInactiveFallback.has(provider)) && Boolean(resources.env[provider]));
   const requireKey = (nodeId: string, provider: string, label: string) => {
     if (!hasKey(provider)) {
       issues.push({ nodeId, severity: "error", message: `${label} needs a ${provider} key. Add it in Settings → API Keys before activating.` });

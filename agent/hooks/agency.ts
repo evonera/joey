@@ -70,9 +70,9 @@ export default defineHook({
         ])], status: "needs_input" }));
       } else if (event.type === "input.resolved") {
         const resolved = new Set(event.data.resolutions.map(resolution => resolution.requestId));
-        lifecycle.update(state => ({ ...state, pendingRequestIds: state.pendingRequestIds.filter(id => !resolved.has(id)), status: "working" }));
+        lifecycle.update(state => ({ ...state, pendingRequestIds: state.pendingRequestIds.filter(id => !resolved.has(id)), status: ["failed", "cancelled"].includes(state.status) ? state.status : "working" }));
       } else if (event.type === "session.waiting") {
-        lifecycle.update(state => ({ ...state, status: state.pendingRequestIds.length ? "needs_input" : ["failed", "cancelled"].includes(state.status) ? state.status : "ready" }));
+        lifecycle.update(state => ({ ...state, status: ["failed", "cancelled"].includes(state.status) ? state.status : state.pendingRequestIds.length ? "needs_input" : "ready" }));
       } else {
         const next = statuses[event.type];
         if (!next) return;

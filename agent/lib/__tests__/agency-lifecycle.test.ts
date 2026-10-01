@@ -38,7 +38,10 @@ describe("Agency durable lifecycle projection", () => {
     expect(await event("session.waiting")).toBe("ready");
   });
   it.each(["failed", "cancelled"])("preserves %s until the next turn starts", async status => {
+    await event("input.requested", { requests: [{ requestId: "pending" }] });
     await event(`turn.${status}`);
+    expect(await event("session.waiting")).toBe(status);
+    await event("input.resolved", { resolutions: [{ requestId: "pending" }] });
     expect(await event("session.waiting")).toBe(status);
     expect(await event("turn.started")).toBe("working");
     expect(await event("session.waiting")).toBe("ready");
