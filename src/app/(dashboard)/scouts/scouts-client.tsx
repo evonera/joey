@@ -65,7 +65,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   );
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [editingScout, setEditingScout] = useState<ScoutItem | null>(null);
-  const [setup, setSetup] = useState<{ apifyReady: boolean; issue?: string } | null>(null);
+  const [setup, setSetup] = useState<Awaited<ReturnType<typeof getScoutSetup>> | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
   function createFromScout(scout: ScoutItem) {
@@ -156,7 +156,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
         pollIntervalMinutes: newInterval,
       };
       const created = editingScout ? await updateScout(editingScout.id, values) : await createScout(values);
-      toast.success(editingScout ? "Scout updated" : "Scout saved paused. An owner or admin can enable daily monitoring once Apify is connected.");
+      toast.success(editingScout ? "Scout updated" : "Scout saved paused. An owner or admin can enable daily monitoring once a Scout provider is connected.");
       setIsNewOpen(false);
       setScoutsList((prev) => editingScout ? prev.map((scout) => scout.id === created.id ? created as ScoutItem : scout) : [created as ScoutItem, ...prev]);
       setSelectedId(created.id);
@@ -360,7 +360,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
         </div>
       </div>
 
-      {setup && !setup.apifyReady && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>{setup.issue}</p><Link href="/settings?tab=apps" className="font-medium underline">Connect Apify</Link></div>}
+      {setup && !setup.ready && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>{setup.issue}</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
 
       {scoutsList.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-border/60 p-12 text-center bg-card/30">
@@ -369,7 +369,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           </div>
           <h3 className="text-base font-semibold text-foreground">No Scouts Active Yet</h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1 mb-5">
-            Save a source and a clear goal. Connect Apify before running manual or daily checks.
+            Save a source and a clear goal. Configure a Scout provider before running manual or daily checks.
           </p>
           <Button size="sm" onClick={beginCreate} className="gap-1.5 text-xs">
             <Plus className="size-3.5" />
@@ -517,9 +517,9 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       variant="outline"
                       size="sm"
                       onClick={() => handleRunNow(selectedScout.id)}
-                      disabled={isRunning || setup?.apifyReady === false}
+                      disabled={isRunning || setup?.ready === false}
                       className="h-11 w-11 p-0 sm:h-8 sm:w-auto sm:px-2.5 text-xs gap-1"
-                      title={setup?.apifyReady === false ? "Connect Apify in Settings to run a scan" : "Run scout scan right now"}
+                      title={setup?.ready === false ? "Configure a Scout provider in Settings to run a scan" : "Run scout scan right now"}
                       aria-label="Run scout scan right now"
                     >
                       <RefreshCw className={cn("size-4 sm:size-3", isRunning && "animate-spin")} />

@@ -1,10 +1,9 @@
 import { db } from "@/lib/db";
 import { scouts, scoutRuns, member, notifications } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
+import { getScoutDataProvider } from "@/lib/scouts/data-provider";
 import { runLlm } from "@/lib/llm";
 import { z } from "zod";
-import { readBoundedJson } from "@/lib/http/read-bounded-json";
 import { evaluateScoutTriggerSemantically } from "@/lib/typesafe";
 
 export interface ScoutAlert {
@@ -56,7 +55,6 @@ const judgementSchema = z.object({
 });
 
 const inFlightEvaluations = new Map<string, Promise<EvaluateScoutResult>>();
-function boundedMetric(value: unknown) { const number = Number(value); return Number.isFinite(number) && number >= 0 ? Math.min(number, 1e12) : 0; }
 
 export function isRepeatedScoutAlert(previous: ScoutAlert | null, next: ScoutAlert): boolean {
   if (!previous?.samplePost?.url || !next.samplePost?.url || previous.samplePost.url !== next.samplePost.url) return false;
@@ -96,110 +94,11 @@ export async function evaluateScout(
     }
 
     try {
-      // 1. Resolve posts / items from Apify or fallback
-      let items: Array<{ id: string; url: string; text: string; views?: number; likes?: number; timestamp?: string }> = [];
-
-      let apifyToken: string | null = null;
-      try {
-        apifyToken = await resolveToken(scout.tenantId);
-      } catch {
-        apifyToken = null;
-      }
-
-      if (apifyToken) {
-        signal.throwIfAborted();
-        await options?.beforePaidPhase?.();
-        // Map platform to common Apify actors
-        const actorId =
-          scout.platform === "instagram"
-            ? "apify/instagram-reel-scraper"
-            : scout.platform === "tiktok"
-              ? "clockworks/tiktok-scraper"
-              : "apify/web-scraper";
-
-        const scrapeUrl =
-          `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}` +
-          `/run-sync-get-dataset-items?timeout=45`;
-
-        const input =
-          scout.platform === "instagram"
-            ? { usernames: [scout.targetUrl.replace(/^.*instagram\.com\//, "").replace(/\/.*$/, "")], resultsLimit: 15 }
-            : { directUrls: [scout.targetUrl] };
-
-        const response = await fetch(scrapeUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apifyToken}` },
-          body: JSON.stringify(input),
-          signal: AbortSignal.any([signal, AbortSignal.timeout(50_000)]),
-        });
-
-        if (!response.ok) {
-          await response.body?.cancel();
-          const errorMsg = `Apify scraper returned HTTP ${response.status}.`;
-          await db.insert(scoutRuns).values({
-            scoutId: scout.id,
-            tenantId: scout.tenantId,
-            status: "failed",
-            itemsFound: 0,
-            error: errorMsg,
-          });
-          return {
-            triggered: false,
-            itemsFound: 0,
-            error: errorMsg,
-          };
-        }
-
-        const bounded = await readBoundedJson(response as unknown as Request, 2 * 1024 * 1024);
-        if (!bounded.ok) throw new Error("Invalid or oversized Scout source response.");
-        const data = bounded.value;
-        if (Array.isArray(data)) {
-          items = data.slice(0, 15).filter(row => row && typeof row === "object").map((row: any, i: number) => ({
-            id: String(row.id || i).slice(0, 120),
-            url: String(row.url || row.postUrl || scout.targetUrl).slice(0, 2048),
-            text: String(row.caption || row.text || row.description || "").slice(0, 6000),
-            views: boundedMetric(row.videoViewCount || row.playCount || row.views),
-            likes: boundedMetric(row.likesCount || row.diggCount || row.likes),
-            timestamp: String(row.timestamp || row.createTimeISO || new Date().toISOString()).slice(0, 64),
-          }));
-        }
-      } else {
-        const isMockAllowed = process.env.NODE_ENV === "test" || (process.env.NODE_ENV !== "production" && process.env.ENABLE_MOCK_SCOUTS === "true");
-        if (isMockAllowed) {
-          items = [
-            {
-              id: "sim-1",
-              url: `${scout.targetUrl}/p/recent-viral-hook`,
-              text: "Stop scrolling: The 1 reason 90% of creators fail before reaching 10k followers. [Split-screen reaction with bold subtitle captions]",
-              views: 125000,
-              likes: 8400,
-              timestamp: new Date(Date.now() - 3600000).toISOString(),
-            },
-            {
-              id: "sim-2",
-              url: `${scout.targetUrl}/p/standard-post`,
-              text: "Quick reminder to take a break this weekend.",
-              views: 12000,
-              likes: 800,
-              timestamp: new Date(Date.now() - 86400000).toISOString(),
-            },
-          ];
-        } else {
-          const errorMsg = "Apify integration not configured. Please add an Apify API token in Integrations to enable live scout monitoring.";
-          await db.insert(scoutRuns).values({
-            scoutId: scout.id,
-            tenantId: scout.tenantId,
-            status: "failed",
-            itemsFound: 0,
-            error: errorMsg,
-          });
-          return {
-            triggered: false,
-            itemsFound: 0,
-            error: errorMsg,
-          };
-        }
-      }
+      const provider = await getScoutDataProvider(scout.tenantId);
+      const items = await provider.fetchRecentPosts(
+        { targetUrl: scout.targetUrl, platform: scout.platform },
+        { signal, beforePaidPhase: options?.beforePaidPhase },
+      );
 
       if (items.length === 0) {
         await db.insert(scoutRuns).values({

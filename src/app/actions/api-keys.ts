@@ -15,6 +15,7 @@ const ALLOWED_PROVIDERS = new Set([
   'openrouter',
   'supadata',
   'apify',
+  'scout-data',
   'exa',
   'tavily',
   'zernio'

@@ -89,6 +89,15 @@ Same env vars as Vercel above.
 
 The complete environment template is [.env.example](.env.example). Optional providers are only needed for the feature that uses them.
 
+### Scouts and the open-core boundary
+
+Public Joey remains independently usable with BYOK AI, Apify collection, and
+self-hosted media infrastructure. Apify is the default Scout provider; no Joey
+Cloud account is required. Development mocks and an optional, workspace-keyed
+external collection adapter are also available. See [the provider protocol and
+public/private boundary](docs/open-core.md), and the limited
+[UI source-provenance review](docs/source-provenance.md).
+
 ## Getting Started
 
 ### Prerequisites
