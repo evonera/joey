@@ -32,7 +32,7 @@ export default defineConfig({
     },
   ],
   webServer: managedLocalServer ? undefined : {
-    command: `npm run build && npm run start -- --port ${port}`,
+    command: `npm run build:eve && npm run build && npm run start -- --port ${port}`,
     url: baseURL,
     timeout: 180 * 1000,
     // Authenticated cases write data. Never reuse a local server whose DB

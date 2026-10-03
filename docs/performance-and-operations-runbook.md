@@ -66,6 +66,9 @@ For an already-running isolated Docker stack on localhost, use
 disposable `DATABASE_URL`, and `JOEY_INTEGRATION_TEST=true`. This opt-in disables
 the suite's own server launcher; it never points at a remote host. Verify that
 the container uses that same disposable database before running mutating cases.
+For the unchanged full browser suite, build the disposable fixture with
+`NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN=WEBMCP_ORIGIN_TRIAL_DUMMY_TOKEN_FOR_E2E`;
+this checks the public meta tag, not real origin-trial eligibility.
 
 The JSON report is attached to the Playwright result under `test-results/`; the HTML report is written to `playwright-report/soak/`. Retain the release report with the deployment record. Passing means no unhandled errors, non-aborted request failures, HTTP error responses, excessive request loops, or budget breaches.
 

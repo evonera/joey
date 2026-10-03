@@ -24,7 +24,7 @@ export default defineConfig({
   webServer: remoteBaseUrl
     ? undefined
     : {
-        command: "npm run build && npm run start",
+        command: "npm run build:eve && npm run build && npm run start",
         url: "http://localhost:3000",
         timeout: 180 * 1000,
         reuseExistingServer: true,

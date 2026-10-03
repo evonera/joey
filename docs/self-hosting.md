@@ -20,6 +20,11 @@ For browser monitoring, set `NEXT_PUBLIC_SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_ENV
 
 Provider keys are optional for signup, manual drafting and setup. AI trials and workspace AI budgets still apply; installing Joey does not include unlimited model, scraping, media or publishing service usage. Configure the services you use and their provider-side spend limits. Keep `AGENCY_AUTOMATION_ENABLED=false` until controlled acceptance passes.
 
+The optional `NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN` is also public build-time
+configuration. Set it before building so Next can emit its origin-trial meta
+tag; changing it requires rebuilding the image. A test dummy token validates
+the markup only and does not enable a real browser origin trial.
+
 ## Scheduled work
 
 The Compose application starts both Next.js and the built Eve runtime through
