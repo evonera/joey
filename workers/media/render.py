@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -132,6 +133,46 @@ def prepare_fonts(root, font_directory=None):
         shutil.copy(font_directory / name, root / name)
 
 
+def probe_media(path, required_stream):
+    """Reject corrupt/nonfinite metadata without exposing local paths or stderr."""
+    try:
+        probe = json.loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)
+        ], stderr=subprocess.PIPE, timeout=20))
+        streams = probe["streams"]
+        matching = [stream for stream in streams if stream.get("codec_type") == required_stream]
+        if not matching or matching[0].get("disposition", {}).get("attached_pic"):
+            raise ValueError()
+        # The v1 filter graph uses [0:v]/[0:a], i.e. the first stream of each
+        # type. Probe that same stream rather than an unrelated alternate track.
+        selected = matching[0]
+        durations = [float(probe["format"]["duration"])]
+        if selected.get("duration") is not None:
+            durations.append(float(selected["duration"]))
+        if any(not math.isfinite(value) or value <= 0 for value in durations):
+            raise ValueError()
+        if required_stream == "video" and any(
+            not isinstance(selected.get(key), int) or selected[key] <= 0
+            for key in ("width", "height")
+        ):
+            raise ValueError()
+        return min(durations), any(stream.get("codec_type") == "audio" for stream in streams)
+    except (KeyError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        raise ValueError(f"Invalid media: a playable {required_stream} stream with finite duration is required") from error
+
+
+def validate_trim(timing, source_duration):
+    start, duration = timing.get("start"), timing.get("duration")
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+           for value in (start, duration, source_duration)):
+        raise ValueError("Invalid trim metadata")
+    if not 0 <= start <= 86400 or not 1 <= duration <= 60:
+        raise ValueError("Invalid video trim range")
+    # One frame of tolerance accommodates container rounding, not overlong trims.
+    if source_duration <= 0 or source_duration + 1 / 30 < start + duration:
+        raise ValueError("Trim exceeds source duration")
+
+
 def render(job, root, encoder="libx264"):
     spec = job["spec"]
     if job["rendererVersion"] != "joey-media-1" or job["fontVersion"] != "joey-fonts-1":
@@ -141,6 +182,11 @@ def render(job, root, encoder="libx264"):
         if spec.get(name):
             item = next(item for item in job["inputs"] if item["id"] == spec[name]["id"])
             download(item["url"], root / name)
+    if spec["format"] == "mp4":
+        source_duration, source_has_audio = probe_media(root / "media", "video")
+        validate_trim(spec["video"], source_duration)
+        if spec.get("music"):
+            probe_media(root / "music", "audio")
     cached = False
     if job.get("captureCache"):
         try:
@@ -158,12 +204,7 @@ def render(job, root, encoder="libx264"):
     if spec["format"] == "png":
         return root / "overlay.png"
     timing = spec["video"]
-    if not 1 <= timing["duration"] <= 60:
-        raise ValueError("Invalid video duration")
-    probe = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(root / "media")], timeout=20))
-    if float(probe["format"]["duration"]) + .05 < timing["start"] + timing["duration"]:
-        raise ValueError("Trim exceeds source duration")
-    has_audio = timing["sourceAudio"] and any(s["codec_type"] == "audio" for s in probe["streams"])
+    has_audio = timing["sourceAudio"] and source_has_audio
     if timing.get("captions") and has_audio:
         # Only the selected <=60-second audio is sent for independently cached
         # transcription. Publishing and provider credentials stay on Joey.

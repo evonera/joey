@@ -6,6 +6,7 @@ import Link from "next/link";
 import { cancelMediaRender, getMediaRender, retryMediaRender } from "@/app/actions/media";
 import { getThemeRenderSetup, renderThemePackage } from "@/app/actions/theme-packages";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { maximumTrimDuration, trimError } from "@/lib/media-engine/trim";
 
 export function RenderControls({ packageId, renderJobId }: { packageId: string; renderJobId?: string }) {
   const [busy, setBusy] = useState(false);
@@ -28,6 +29,9 @@ export function RenderControls({ packageId, renderJobId }: { packageId: string; 
   const [renderStatus, setRenderStatus] = useState<string>();
 
   useEffect(() => {
+    setSourceDuration(null);
+    setStart(0);
+    setDuration(15);
     if (!assetId || !setup?.video) {
       setSourceDuration(null);
       return;
@@ -36,20 +40,22 @@ export function RenderControls({ packageId, renderJobId }: { packageId: string; 
     if (!asset?.publicUrl) return;
     const video = document.createElement("video");
     video.preload = "metadata";
-    video.src = asset.publicUrl;
     const onLoaded = () => {
-      const dur = Math.round(video.duration);
+      const dur = video.duration;
       if (Number.isFinite(dur) && dur > 0) {
         setSourceDuration(dur);
         setDuration(prev => (prev > dur || prev === 15 ? Math.min(dur, 60) : prev));
       }
     };
     video.addEventListener("loadedmetadata", onLoaded);
+    video.src = asset.publicUrl;
     return () => {
       video.removeEventListener("loadedmetadata", onLoaded);
       video.src = "";
     };
   }, [assetId, setup]);
+  const maxDuration = maximumTrimDuration(start, sourceDuration);
+  const rangeError = setup?.video ? trimError(start, duration, sourceDuration) : null;
   useEffect(() => setActiveJob(renderJobId), [renderJobId]);
   useEffect(() => {
     if (!activeJob) return;
@@ -98,11 +104,18 @@ export function RenderControls({ packageId, renderJobId }: { packageId: string; 
           {setup.video ? <>
             <label className="text-sm">Optional background music<select className="mt-1 w-full rounded border bg-background p-2" value={musicId} onChange={e => setMusicId(e.target.value)}><option value="">No music</option>{setup.music.map(asset => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>
             <label className="text-sm flex items-center gap-2"><input type="checkbox" checked={captions} onChange={e => setCaptions(e.target.checked)} />Generate timed captions using your workspace OpenAI key</label>
-            <label className="text-sm">Clip starts at (seconds)<input type="number" min={0} max={86400} value={start} onChange={e => setStart(Number(e.target.value))} className="ml-2 w-24 rounded border bg-background p-2" /></label>
-            <label className="text-sm">Duration (seconds){sourceDuration ? ` (source: ${sourceDuration}s)` : ""}<input type="number" min={1} max={sourceDuration ? Math.max(1, sourceDuration) : 60} value={duration} onChange={e => setDuration(Number(e.target.value))} className="ml-2 w-24 rounded border bg-background p-2" /></label>
+            <label className="text-sm">Clip starts at (seconds)<input type="number" min={0} max={sourceDuration === null ? 86400 : Math.max(0, Math.min(86400, sourceDuration - 1))} step="any" value={Number.isFinite(start) ? start : ""} onChange={e => {
+              const nextStart = e.target.valueAsNumber;
+              setStart(nextStart);
+              const remaining = maximumTrimDuration(nextStart, sourceDuration);
+              if (remaining >= 1) setDuration(value => Math.min(value, remaining));
+            }} className="ml-2 w-24 rounded border bg-background p-2" /></label>
+            <label className="text-sm">Duration (seconds){sourceDuration !== null ? ` (source: ${sourceDuration}s)` : ""}<input type="number" min={1} max={maxDuration} step="any" value={Number.isFinite(duration) ? duration : ""} onChange={e => setDuration(e.target.valueAsNumber)} className="ml-2 w-24 rounded border bg-background p-2" /></label>
+            {rangeError && <p role="alert" className="text-sm text-destructive">{rangeError}</p>}
             <label className="text-sm flex items-center gap-2"><input type="checkbox" checked={minimal} onChange={e => setMinimal(e.target.checked)} />Minimal layout without account header</label>
           </> : <label className="text-sm">Optional inset image<select className="mt-1 w-full rounded border bg-background p-2" value={insetId} onChange={e => setInsetId(e.target.value)}><option value="">No inset</option>{setup.images.map(asset => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
-          <button disabled={busy || !assetId} className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50" onClick={async () => {
+          <button disabled={busy || !assetId || Boolean(rangeError)} className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50" onClick={async () => {
+            if (setup.video && trimError(start, duration, sourceDuration)) return;
             setBusy(true);
             try { const job = await renderThemePackage(packageId, { mediaAssetId: assetId, ...(!setup.video && insetId ? { insetAssetId: insetId } : {}), templateFamily: setup.video ? minimal ? "minimal_meme" : "branded_clip" : insetId ? "photo_inset" : "photo_headline", ...(setup.video && musicId ? { musicAssetId: musicId } : {}), captions: setup.video && captions, cropX, cropY, cropMode: crop, durationSeconds: duration, trimStart: start, zoom: 1 }); toast.success(job.status === "succeeded" ? "Render ready" : "Render queued"); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); router.refresh(); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue render"); } finally { setBusy(false); }
