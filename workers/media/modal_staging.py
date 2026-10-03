@@ -4,6 +4,12 @@ Deploy: modal deploy workers/media/modal_staging.py
 Execute exactly one queued staging job: modal run workers/media/modal_staging.py
 """
 import modal
+import sys
+from pathlib import Path
+
+# Modal imports this entrypoint from /root, while the shared worker files are
+# baked into /worker. Locally, resolve the sibling module instead.
+sys.path.insert(0, "/worker" if Path("/worker/modal_app.py").is_file() else str(Path(__file__).parent))
 from modal_app import image
 
 app = modal.App("joey-media-staging")
