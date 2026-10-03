@@ -99,6 +99,8 @@ describe("source event identity", () => {
   it("separates source posts and changed monitoring goals", () => {
     const key = scoutRemixEventKey("target", "goal", alert);
     expect(scoutRemixEventKey("target", "other goal", alert)).not.toBe(key);
+    expect(scoutRemixEventKey("target", "goal", alert, { agentId: "agent-a", configVersion: 1 })).not.toBe(scoutRemixEventKey("target", "goal", alert, { agentId: "agent-b", configVersion: 1 }));
+    expect(scoutRemixEventKey("target", "goal", alert, { agentId: "agent-a", configVersion: 1 })).not.toBe(scoutRemixEventKey("target", "goal", alert, { agentId: "agent-a", configVersion: 2 }));
     expect(
       scoutRemixEventKey("target", "goal", {
         ...alert,

@@ -12,5 +12,7 @@ temp
 output/
 coverage/
 tests
+scripts/__tests__/
 .playwright
 playwright-report
+test-results/

@@ -32,6 +32,11 @@ Create alerts for:
 
 The soak cycles through the authenticated product without generating AI content, changing connections, approving drafts, publishing posts, or opening checkout. It records page errors, console errors, failed requests, 5xx responses, high-frequency endpoints, garbage-collected heap, DOM nodes, documents, and event listeners.
 
+Default routes include Agents and Drafts. Each measurement cycle exercises
+roster search/selection, draft filtering, local Compose edits and calendar date
+navigation. The report includes counts for these interactions. Composer text
+is restored and never submitted; automation controls remain untouched.
+
 Create an authenticated state file with a disposable test account. Keep it outside the repository and delete it after the run:
 
 ```bash
@@ -50,7 +55,63 @@ For a short authenticated harness check, set `JOEY_SOAK_DURATION_MS=30000`. The 
 
 The authenticated gate requires both a storage-state file and a successful Better Auth session probe. `JOEY_SOAK_ALLOW_PUBLIC=true` is reserved for short harness checks of explicitly public routes; it must not be used as release evidence.
 
+For isolated localhost acceptance, `JOEY_E2E_PORT` selects a free application
+port for the product suite (default 3000). Its desktop agency case can export
+the new test workspace's session with `JOEY_E2E_STORAGE_STATE_PATH` pointing to
+a private path outside the repository. Use that state with the soak's matching
+`JOEY_SOAK_BASE_URL`. Retain measurement reports, not the session-cookie file.
+
+For an already-running isolated Docker stack on localhost, use
+`JOEY_E2E_MANAGED_LOCAL_SERVER=true` with its `JOEY_E2E_PORT`, explicit
+disposable `DATABASE_URL`, and `JOEY_INTEGRATION_TEST=true`. This opt-in disables
+the suite's own server launcher; it never points at a remote host. Verify that
+the container uses that same disposable database before running mutating cases.
+For the unchanged full browser suite, build the disposable fixture with
+`NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN=WEBMCP_ORIGIN_TRIAL_DUMMY_TOKEN_FOR_E2E`;
+this checks the public meta tag, not real origin-trial eligibility.
+
 The JSON report is attached to the Playwright result under `test-results/`; the HTML report is written to `playwright-report/soak/`. Retain the release report with the deployment record. Passing means no unhandled errors, non-aborted request failures, HTTP error responses, excessive request loops, or budget breaches.
+
+The default active-session loop opens collapsed workspace menus and follows
+their real SPA links. Every warm-up, measured and final visit waits for the
+route's actual ready controls, client loaders and workspace hydration, with
+the unchanged five-second assertion budget. A heading alone is not readiness;
+active dashboard conversations are checked through their composer instead.
+Final garbage-collected metrics return to the baseline route so different UI
+compositions are not mistaken for leaks. The report counts document navigation
+and retains warm-up versus measurement request timings with URL queries removed.
+A passing SPA soak does not certify cold or hard-reload latency; preserve and
+investigate failures from those navigation paths separately.
+Vercel preview measurements retain the actual toolbar and include its resource
+and listener overhead. Do not set `x-vercel-skip-toolbar` as a global browser
+header: it also reaches third-party telemetry and can trigger CORS failures.
+The harness does not intercept or mask toolbar/telemetry errors, disable HTTP
+cache, or bypass deployment protection. Keep this preview-specific overhead
+explicit when comparing results with production.
+
+Hold deployment changes for the whole measured session. An alias changing
+builds can trigger a framework full reload even without application source
+changes; retain that evidence and do not call it a single-deployment pass.
+Use an immutable preview URL only if the configured auth client and trusted
+origin genuinely support it. Otherwise freeze the canonical staging alias;
+do not rewrite auth origins or weaken security just to run a test.
+
+Run a long browser check on a host connected to AC power, with adequate battery,
+the lid open and sleep disabled for the session. On macOS, wrap the command with
+`caffeinate -dis npm run test:soak -- --grep 'authenticated active-session soak'`.
+The installed `caffeinate(8)` manual defines `-i` for idle system sleep, `-d`
+for display sleep and `-s` for system sleep on AC power. Do not rely on it to
+protect against critical-battery, lid-close or manually requested sleep.
+An `ERR_NETWORK_IO_SUSPENDED` run fails the gate; correlate its trace with the
+relevant host power-log interval before attributing it to the website.
+
+Keep auth state, JSON reports and traces in a persistent private location
+outside Git, not only `/tmp`, for example
+`/Users/shakthi/.codex/acceptance/joey-2026-10-03-4e44605` (directory 700,
+files 600). Set Playwright's `--output` to that private location and preserve
+the HTML reporter's accompanying data too. Traces may contain session cookies;
+never upload them publicly. Recover the actual report after an interruption
+before retrying; missing process handles are not proof of success.
 
 ## Cold and warm route profiling
 

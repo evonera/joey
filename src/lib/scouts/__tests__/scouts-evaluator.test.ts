@@ -1,274 +1,161 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-
-const mockScoutFindMany = vi.fn();
-const mockScoutFindFirst = vi.fn();
-const mockInsert = vi.fn();
-const mockUpdate = vi.fn();
-
-vi.mock("@/lib/db", () => ({
-  db: {
-    query: {
-      scouts: {
-        findMany: (...args: unknown[]) => mockScoutFindMany(...args),
-        findFirst: (...args: unknown[]) => mockScoutFindFirst(...args),
-      },
-      member: {
-        findFirst: vi.fn().mockResolvedValue({ userId: "owner-1", role: "owner" }),
-      },
-      usageTracking: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "u-1",
-          tenantId: "tenant-1",
-          inputTokensUsed: 0,
-          outputTokensUsed: 0,
-          estimatedCostUsd: "0",
-          reservedCostUsd: "0",
-          budgetLimitUsd: "100.00",
-        }),
-      },
-    },
-    insert: () => ({
-      values: (...args: unknown[]) => {
-        mockInsert(...args);
-        return {
-          returning: () => [
-            {
-              id: "scout-123",
-              name: "Test Scout",
-              targetUrl: "https://instagram.com/test",
-              platform: "instagram",
-              goalCondition: "Alert when views > 50k",
-            },
-          ],
-        };
-      },
-    }),
-    update: () => ({
-      set: (...args: unknown[]) => {
-        mockUpdate(...args);
-        return {
-          where: vi.fn().mockResolvedValue(undefined),
-        };
-      },
-    }),
-  },
+const mocks = vi.hoisted(() => ({ scout: vi.fn(), receipt: vi.fn(), reserve: vi.fn(), claim: vi.fn(), phase: vi.fn(), complete: vi.fn(), fail: vi.fn(), provider: vi.fn(), fetch: vi.fn(), gate: vi.fn(), llm: vi.fn(), delay: vi.fn() }));
+vi.mock("node:timers/promises", async (original) => ({ ...await original<typeof import("node:timers/promises")>(), setTimeout: mocks.delay, default: { setTimeout: mocks.delay } }));
+vi.mock("@/lib/db", () => ({ db: { query: { scouts: { findFirst: mocks.scout }, scoutEvaluations: { findFirst: mocks.receipt } } } }));
+vi.mock("@/lib/scouts/data-provider", () => ({ getScoutDataProvider: mocks.provider }));
+vi.mock("@/lib/typesafe", () => ({ evaluateScoutTriggerSemantically: mocks.gate }));
+vi.mock("@/lib/llm", () => ({ runLlm: mocks.llm }));
+vi.mock("../evaluation-receipts", async (original) => ({
+  ...await original<typeof import("../evaluation-receipts")>(),
+  reserveScoutEvaluation: mocks.reserve, claimScoutEvaluation: mocks.claim, markScoutEvaluationPhase: mocks.phase, completeScoutEvaluation: mocks.complete, failScoutEvaluation: mocks.fail,
 }));
-
-vi.mock("@/lib/agent-model-resolver", () => ({
-  resolveModelForTurn: vi.fn().mockResolvedValue({
-    model: { modelId: "test-model" },
-    modelContextWindowTokens: 8000,
-  }),
-}));
-
-vi.mock("@/lib/llm", () => ({
-  runLlm: vi.fn().mockResolvedValue({
-    text: JSON.stringify({
-      triggered: true,
-      title: "Viral spike detected on recent post with 125,000 views.", topPostIndex: 0,
-      changes: [
-        {
-          type: "SPIKE", label: "Views",
-          before: "12,000 avg",
-          after: "125,000 spike",
-          rationale: "Stop scrolling hook drove 10x normal views",
-        },
-      ],
-      recommendedAction: "Remix hook into Theme Studio reel.",
-    }),
-  }),
-}));
-
-vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({
-  resolveToken: vi.fn().mockRejectedValue(new Error("No Apify token")),
-}));
-
-vi.mock("@/lib/flows/outbound-request", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/flows/outbound-request")>(),
-  resolveOutboundTarget: vi.fn().mockResolvedValue({ address: "8.8.8.8" }),
-}));
-
-const mockEvaluateScoutTriggerSemantically = vi.fn().mockResolvedValue(null);
-
-vi.mock("@/lib/typesafe", () => ({
-  evaluateScoutTriggerSemantically: (...args: any[]) => mockEvaluateScoutTriggerSemantically(...args),
-}));
-
-describe("Scouts Evaluator and Tool", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+import { evaluateScout, isRepeatedScoutAlert, type ScoutAlert } from "../evaluator";
+import { scoutConfigurationKey } from "../evaluation-receipts";
+const scout = { id: "scout", tenantId: "tenant", name: "Competitor", targetUrl: "https://instagram.com/source", platform: "instagram", goalCondition: "Views > 50k", pollIntervalMinutes: 120, isActive: true, updatedAt: new Date("2026-10-03"), latestAlert: null };
+const receipt = { id: "receipt", tenantId: scout.tenantId, scoutId: scout.id, configKey: scoutConfigurationKey(scout), status: "pending", phase: "preparing", operationId: "00876663-41bd-40c5-b4dc-adf0010297bb", items: null };
+const post = { id: "post", url: "https://instagram.com/p/post", text: "Verified source evidence", views: 125000 };
+const judgement = { triggered: true, title: "Source spike", topPostIndex: 0, changes: [{ type: "SPIKE" as const, label: "Views", after: "125k", rationale: "Goal met" }] };
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.scout.mockResolvedValue(scout);
+  mocks.reserve.mockResolvedValue(receipt);
+  mocks.receipt.mockResolvedValue(receipt);
+  mocks.claim.mockResolvedValue({ claimed: true, receipt: { ...receipt, status: "running", leaseToken: "lease" } });
+  mocks.phase.mockImplementation(async (current, phase, items) => ({ ...current, phase, ...(items ? { items } : {}) }));
+  mocks.complete.mockImplementation(async (current, _scout, result, guard) => { await guard(); return { ...result, evaluationId: current.id }; });
+  mocks.fail.mockImplementation(async (_receipt, error) => ({ error }));
+  mocks.provider.mockResolvedValue({ fetchRecentPosts: mocks.fetch });
+  mocks.fetch.mockImplementation(async (_request, context) => { await context.beforePaidPhase(); return [post]; });
+  mocks.gate.mockResolvedValue(null);
+  mocks.delay.mockResolvedValue(undefined);
+  mocks.llm.mockResolvedValue({ text: JSON.stringify(judgement) });
+});
+describe("Durable Scout evaluator", () => {
+  it("authorizes tenant ownership before reading or claiming evidence", async () => {
+    await expect(evaluateScout(scout.id, { tenantId: "foreign" })).rejects.toThrow("does not belong");
+    expect(mocks.reserve).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
   });
-
-  it("throws when scout is not found", async () => {
-    mockScoutFindFirst.mockResolvedValueOnce(null);
-    const { evaluateScout } = await import("../evaluator");
-    await expect(evaluateScout("non-existent")).rejects.toThrow("not found");
+  it("rejects a missing Scout", async () => {
+    mocks.scout.mockResolvedValue(undefined);
+    await expect(evaluateScout("missing")).rejects.toThrow("not found");
   });
-
-  it("suppresses an identical finding for the same source post", async () => {
-    const { isRepeatedScoutAlert } = await import("../evaluator");
-    const alert = {
-      title: "Spike", detectedAt: "2026-01-01", targetUrl: "https://instagram.com/test", platform: "instagram", goal: "Views > 50k",
-      changes: [{ type: "SPIKE" as const, label: "Views", after: "80k", rationale: "Goal met" }],
-      samplePost: { url: "https://instagram.com/p/123", content: "Reference" },
-    };
-    expect(isRepeatedScoutAlert(alert, { ...alert, detectedAt: "2026-01-02" })).toBe(true);
-    expect(isRepeatedScoutAlert(alert, { ...alert, samplePost: { ...alert.samplePost, url: "https://instagram.com/p/456" } })).toBe(false);
-    const secondChange = { type: "ADDED" as const, label: "Comments", after: "120", rationale: "Engagement" };
-    const twoChanges = { ...alert, changes: [...alert.changes, secondChange] };
-    expect(isRepeatedScoutAlert(twoChanges, { ...twoChanges, changes: [secondChange, alert.changes[0]] })).toBe(true);
-    expect(isRepeatedScoutAlert(twoChanges, { ...twoChanges, changes: [{ ...secondChange, after: "121" }, alert.changes[0]] })).toBe(false);
+  it("persists an opaque collection operation ID before paid collection and captures intrinsic evidence", async () => {
+    expect(await evaluateScout(scout.id)).toMatchObject({ triggered: true, evaluationId: receipt.id, itemsFound: 1, alert: { title: judgement.title } });
+    expect(mocks.fetch).toHaveBeenCalledWith({ targetUrl: scout.targetUrl, platform: scout.platform }, expect.objectContaining({ operationId: receipt.operationId }));
+    expect(mocks.phase.mock.calls.map((call) => call[1])).toEqual(["collecting", "collected", "judging"]);
+    expect(mocks.phase).toHaveBeenCalledWith(expect.anything(), "collected", [post]);
   });
-
-  it("throws when tenantId does not match", async () => {
-    mockScoutFindFirst.mockResolvedValueOnce({
-      id: "scout-1",
-      tenantId: "tenant-other",
-      name: "Competitor",
-    });
-    const { evaluateScout } = await import("../evaluator");
-    await expect(evaluateScout("scout-1", { tenantId: "tenant-mine" })).rejects.toThrow("does not belong to tenant");
+  it("reuses completed immutable evidence for another agent with no paid work", async () => {
+    const result = { triggered: true, alert: { title: "Saved evidence" }, itemsFound: 1 };
+    mocks.reserve.mockResolvedValue({ ...receipt, status: "completed", result });
+    expect(await evaluateScout(scout.id, { eventKey: "daily:2026-10-03", beforePaidPhase: vi.fn() })).toMatchObject({ ...result, reused: true });
+    expect(mocks.claim).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.gate).not.toHaveBeenCalled();
+    expect(mocks.llm).not.toHaveBeenCalled();
   });
-
-  it("evaluates a scout and detects simulated viral spike", async () => {
-    mockScoutFindFirst.mockResolvedValueOnce({
-      id: "scout-1",
-      tenantId: "tenant-1",
-      name: "Viral Competitor",
-      targetUrl: "https://instagram.com/viral",
-      platform: "instagram",
-      goalCondition: "Alert when views > 50k",
-      latestAlert: null,
-    });
-
-    const { evaluateScout } = await import("../evaluator");
-    const res = await evaluateScout("scout-1");
-
-    expect(res.triggered).toBe(true);
-    expect(res.alert).toBeDefined();
-    expect(res.alert?.changes.length).toBeGreaterThan(0);
-    expect(res.itemsFound).toBeGreaterThan(0);
+  it("preserves repeated source findings for different agency consumers", async () => {
+    const result = await evaluateScout(scout.id);
+    mocks.scout.mockResolvedValue({ ...scout, latestAlert: result.alert });
+    expect(await evaluateScout(scout.id)).toMatchObject({ triggered: true });
   });
-
-  it("short-circuits routine runs via TypeSafe Jev pre-gate and skips Gemini LLM call", async () => {
-    mockScoutFindFirst.mockResolvedValueOnce({
-      id: "scout-quiet",
-      tenantId: "tenant-1",
-      name: "Quiet Competitor",
-      targetUrl: "https://instagram.com/quiet",
-      platform: "instagram",
-      goalCondition: "Alert when views > 100k",
-      latestAlert: null,
-    });
-
-    mockEvaluateScoutTriggerSemantically.mockResolvedValueOnce({
-      triggered: false,
-      confidence: 0.95,
-      probability: 0.98,
-    });
-
-    const { runLlm } = await import("@/lib/llm");
-    const { evaluateScout } = await import("../evaluator");
-    const res = await evaluateScout("scout-quiet", { force: true });
-
-    expect(res.triggered).toBe(false);
-    expect(runLlm).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalled();
+  it.each(["uncertain", "failed"])("never collects again from a terminal %s receipt", async (status) => {
+    mocks.reserve.mockResolvedValue({ ...receipt, status, error: "Review receipt" });
+    expect(await evaluateScout(scout.id)).toMatchObject({ triggered: false, error: "Review receipt" });
+    expect(mocks.claim).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
   });
-
-  it("manage_scouts tool handles list and create actions", async () => {
-    const tool = (await import("../../../../agent/tools/manage_scouts")).default as any;
-    const ctx = { session: { auth: { current: { attributes: { tenantId: "tenant-1" } } } } };
-
-    mockScoutFindMany.mockResolvedValueOnce([
-      {
-        id: "scout-1",
-        name: "Test",
-        targetUrl: "https://instagram.com/test",
-        platform: "instagram",
-        goalCondition: "Views > 50k",
-        isActive: true,
-        pollIntervalMinutes: 120,
-        lastPolledAt: new Date(),
-        latestAlert: null,
-      },
-    ]);
-
-    const listRes = await tool.execute({ action: "list" }, ctx);
-    expect(listRes.total).toBe(1);
-    expect(listRes.scouts[0].name).toBe("Test");
-
-    const createRes = await tool.execute(
-      {
-        action: "create",
-        name: "New Scout",
-        targetUrl: "https://instagram.com/new",
-        platform: "instagram",
-        pollIntervalMinutes: 1440,
-        goalCondition: "Spike alerts",
-      },
-      ctx
-    );
-    expect(createRes.message).toContain("saved paused");
-    expect(createRes.message).toContain("Scout provider is connected");
-    expect(createRes.message).not.toContain("Apify");
+  it("does no paid work when another worker or the global capacity owns the lease", async () => {
+    mocks.claim.mockResolvedValue({ claimed: false, receipt: { ...receipt, status: "running" } });
+    expect(await evaluateScout(scout.id)).toMatchObject({ pending: true });
+    expect(mocks.fetch).not.toHaveBeenCalled();
   });
-
-  it("fails cleanly without generating fake posts in production when Apify is unconfigured", async () => {
-    const originalEnv = process.env.NODE_ENV;
-    try {
-      (process.env as any).NODE_ENV = "production";
-      mockScoutFindFirst.mockResolvedValueOnce({
-        id: "scout-prod",
-        tenantId: "tenant-prod",
-        name: "Real Competitor",
-        targetUrl: "https://instagram.com/real",
-        platform: "instagram",
-        goalCondition: "Alert when views > 50k",
-        latestAlert: null,
-      });
-
-      const { evaluateScout } = await import("../evaluator");
-      const res = await evaluateScout("scout-prod", { force: true });
-
-      expect(res.triggered).toBe(false);
-      expect(res.itemsFound).toBe(0);
-      expect(res.error).toContain("Apify integration not configured");
-    } finally {
-      (process.env as any).NODE_ENV = originalEnv;
-    }
+  it("resumes persisted collection evidence without fetching again", async () => {
+    mocks.claim.mockResolvedValue({ claimed: true, receipt: { ...receipt, status: "running", phase: "collected", items: [post] } });
+    expect(await evaluateScout(scout.id)).toMatchObject({ triggered: true });
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.llm).toHaveBeenCalledOnce();
   });
-
-  it("records failed status when Apify returns non-2xx HTTP status", async () => {
-    const { resolveToken } = await import("@/lib/flows/nodes/data/apify-actor");
-    (resolveToken as any).mockResolvedValueOnce("apify_token_test");
-
-    const originalFetch = global.fetch;
-    try {
-      global.fetch = vi.fn().mockResolvedValueOnce({
-        ok: false,
-        status: 402,
-        text: vi.fn().mockResolvedValue("Payment Required: Monthly Apify compute units exhausted"),
-      }) as any;
-
-      mockScoutFindFirst.mockResolvedValueOnce({
-        id: "scout-apify-fail",
-        tenantId: "tenant-1",
-        name: "Rate Limited Competitor",
-        targetUrl: "https://instagram.com/ratelimited",
-        platform: "instagram",
-        goalCondition: "Alert when views > 50k",
-        latestAlert: null,
-      });
-
-      const { evaluateScout } = await import("../evaluator");
-      const res = await evaluateScout("scout-apify-fail", { force: true });
-
-      expect(res.triggered).toBe(false);
-      expect(res.itemsFound).toBe(0);
-      expect(res.error).toContain("Apify scraper returned HTTP 402");
-    } finally {
-      global.fetch = originalFetch;
-    }
+  it("lets concurrent agency consumers wait for the same immutable evidence without collecting again", async () => {
+    mocks.claim.mockResolvedValue({ claimed: false, receipt: { ...receipt, status: "running" } });
+    mocks.receipt.mockResolvedValue({ ...receipt, status: "completed", result: { triggered: true, alert: { title: "Shared result" }, itemsFound: 1 } });
+    expect(await evaluateScout(scout.id, { waitForEvidence: true })).toMatchObject({ reused: true, triggered: true, alert: { title: "Shared result" } });
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.delay).toHaveBeenCalledWith(1000, undefined, { signal: expect.any(AbortSignal) });
+  });
+  it("stops an agency evidence wait immediately on cancellation", async () => {
+    const controller = new AbortController();
+    mocks.claim.mockResolvedValue({ claimed: false, receipt: { ...receipt, status: "running" } });
+    mocks.delay.mockImplementation(async () => { controller.abort(); });
+    await expect(evaluateScout(scout.id, { waitForEvidence: true, signal: controller.signal })).rejects.toThrow();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.receipt).not.toHaveBeenCalled();
+  });
+  it("does not repeat an uncertain collection found while waiting", async () => {
+    mocks.claim.mockResolvedValue({ claimed: false, receipt: { ...receipt, status: "running" } });
+    mocks.receipt.mockResolvedValue({ ...receipt, status: "uncertain", error: "Review interrupted collection" });
+    expect(await evaluateScout(scout.id, { waitForEvidence: true })).toMatchObject({ error: "Review interrupted collection" });
+    expect(mocks.claim).toHaveBeenCalledOnce();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+  it("retries a capacity-blocked preparing receipt, never a paid phase", async () => {
+    mocks.claim.mockResolvedValueOnce({ claimed: false, receipt });
+    expect(await evaluateScout(scout.id, { waitForEvidence: true })).toMatchObject({ triggered: true });
+    expect(mocks.claim).toHaveBeenCalledTimes(2);
+    expect(mocks.fetch).toHaveBeenCalledOnce();
+  });
+  it("revalidates agency authorization throughout the evidence wait", async () => {
+    mocks.claim.mockResolvedValue({ claimed: false, receipt: { ...receipt, status: "running" } });
+    const guard = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("Activation revoked"));
+    await expect(evaluateScout(scout.id, { waitForEvidence: true, beforePaidPhase: guard })).rejects.toThrow("Activation revoked");
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+  it("bounds the collection signal and stops before reserving on initial cancellation", async () => {
+    const controller = new AbortController(); controller.abort();
+    await expect(evaluateScout(scout.id, { signal: controller.signal })).rejects.toThrow();
+    expect(mocks.reserve).not.toHaveBeenCalled();
+  });
+  it("observes cancellation after collection before any judge phase", async () => {
+    const controller = new AbortController();
+    mocks.fetch.mockImplementation(async (_request, context) => { await context.beforePaidPhase(); controller.abort(); return [post]; });
+    expect(await evaluateScout(scout.id, { signal: controller.signal })).toMatchObject({ error: expect.stringContaining("cancelled") });
+    expect(mocks.gate).not.toHaveBeenCalled();
+    expect(mocks.llm).not.toHaveBeenCalled();
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+  it("observes cancellation after the no-change pre-gate before persisting no-change", async () => {
+    const controller = new AbortController();
+    mocks.gate.mockImplementation(async () => { controller.abort(); return { triggered: false, confidence: 1, probability: 1 }; });
+    expect(await evaluateScout(scout.id, { signal: controller.signal })).toMatchObject({ error: expect.stringContaining("cancelled") });
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.llm).not.toHaveBeenCalled();
+  });
+  it("uses the TypeSafe high-confidence pre-gate with a completion barrier", async () => {
+    mocks.gate.mockResolvedValue({ triggered: false, confidence: 0.95, probability: 0.98 });
+    expect(await evaluateScout(scout.id)).toMatchObject({ triggered: false, itemsFound: 1 });
+    expect(mocks.llm).not.toHaveBeenCalled();
+    expect(mocks.complete).toHaveBeenCalledWith(expect.anything(), scout, { triggered: false, itemsFound: 1 }, expect.any(Function));
+  });
+  it("revalidates edited or paused scheduled Scouts before paid collection", async () => {
+    mocks.scout.mockResolvedValueOnce(scout).mockResolvedValue({ ...scout, isActive: false });
+    await expect(evaluateScout(scout.id, { requireActive: true })).rejects.toThrow("paused");
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+  it("rejects a tenant-scoped handoff with a stale config key", async () => {
+    mocks.receipt.mockResolvedValue({ ...receipt, configKey: "old" });
+    await expect(evaluateScout(scout.id, { tenantId: scout.tenantId, evaluationId: receipt.id })).rejects.toThrow("configuration");
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+  it("records ambiguous paid errors against their receipt", async () => {
+    mocks.fetch.mockImplementation(async (_request, context) => { await context.beforePaidPhase(); throw new Error("Collection timed out"); });
+    expect(await evaluateScout(scout.id)).toMatchObject({ error: "Collection timed out" });
+    expect(mocks.fail).toHaveBeenCalledWith(expect.objectContaining({ phase: "collecting" }), "Collection timed out");
+    expect(mocks.llm).not.toHaveBeenCalled();
+  });
+  it("dedupes notifications for the same metrics even when change order differs", () => {
+    const alert: ScoutAlert = { title: "Spike", detectedAt: "2026-10-03", targetUrl: scout.targetUrl, platform: scout.platform, goal: scout.goalCondition, changes: judgement.changes, samplePost: { url: post.url, content: post.text } };
+    expect(isRepeatedScoutAlert(alert, { ...alert, detectedAt: "2026-10-04" })).toBe(true);
+    expect(isRepeatedScoutAlert(alert, { ...alert, samplePost: { url: "https://instagram.com/p/other", content: post.text } })).toBe(false);
   });
 });

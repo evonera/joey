@@ -724,17 +724,17 @@ function AgentChatInner({
     <>
       <main className="flex flex-1 flex-col min-h-0 min-w-0 h-full overflow-hidden bg-background text-foreground relative">
         {/* Top Minimal Navigation Bar */}
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-3 sm:px-6 bg-background/50 backdrop-blur-xs">
+        <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/40 px-3 sm:px-6 bg-background/50 backdrop-blur-xs">
           {/* Left View Switcher Dropdown */}
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 px-2.5 text-xs font-semibold gap-1.5 hover:bg-muted/40 max-w-[220px] sm:max-w-xs truncate"
+                  className="h-8 min-w-0 max-w-full shrink px-2.5 text-xs font-semibold gap-1.5 hover:bg-muted/40 sm:max-w-xs"
                 >
-                  <span className="truncate">
+                  <span className="min-w-0 truncate">
                     {sessionTitle || "New Chat"}
                   </span>
                   <ArrowDown01Icon className="size-3 opacity-60 shrink-0" />
@@ -758,11 +758,11 @@ function AgentChatInner({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <StatusDot status={agent.status} />
+            <span className="shrink-0"><StatusDot status={agent.status} /></span>
           </div>
 
           {/* Right Minimal Controls: Sidepanel Toggle */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             {!persona && <Button
               type="button"
               variant={isSidepanelOpen && sidepanelTab === "studio" ? "secondary" : "ghost"}
@@ -794,6 +794,7 @@ function AgentChatInner({
               onClick={() => onToggleSidepanel("context")}
               className="h-8 px-2 text-xs gap-1.5 font-mono text-muted-foreground hover:text-foreground"
               title="Context & Cost Inspector (OpenCode)"
+              aria-label="Open context and cost inspector"
             >
               <BrainIcon className="size-3.5 text-primary" />
               <span className="text-[11px]">

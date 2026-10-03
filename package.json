@@ -9,7 +9,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "start": "next start",
+    "start": "node scripts/start-production.mjs",
     "lint": "eslint .",
     "lint:ci": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -36,6 +36,7 @@
     "test:integration": "node --import tsx tests/integration/publishing-and-usage.ts",
     "test:integration:media": "node --import tsx tests/integration/media-engine.ts",
     "test:integration:scouts": "node --import tsx tests/integration/scout-remix.ts",
+    "test:integration:cloud-contract": "vitest run --config vitest.cloud-contract.config.ts",
     "test:integration:agency": "node --import tsx tests/integration/agency.ts",
     "check:dependencies": "node scripts/validate-dependencies.mjs"
   },
@@ -64,6 +65,7 @@
     "@mdx-js/react": "3.1.1",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@neondatabase/serverless": "1.1.0",
+    "@next/env": "16.3.8",
     "@next/mdx": "16.3.8",
     "@opentelemetry/api": "1.9.1",
     "@radix-ui/react-use-controllable-state": "1.2.2",

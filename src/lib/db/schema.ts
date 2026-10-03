@@ -950,6 +950,51 @@ export const scoutRuns = pgTable("scout_runs", {
   tenantIdx: index("scout_runs_tenant_id_idx").on(table.tenantId),
 }));
 
+// Collection operation IDs are opaque and stable across durable handoffs. A
+// completed result is immutable evidence, independently consumed by each agent.
+export const scoutEvaluations = pgTable("scout_evaluations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  scoutId: text("scout_id").notNull(),
+  configKey: text("config_key").notNull(),
+  eventKey: text("event_key").notNull(),
+  operationId: text("operation_id").notNull().$defaultFn(() => crypto.randomUUID()),
+  status: varchar("status", { length: 24 }).notNull().default("pending"),
+  phase: varchar("phase", { length: 24 }).notNull().default("preparing"),
+  leaseToken: text("lease_token"),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  items: jsonb("items"),
+  result: jsonb("result"),
+  dispatchAttempts: integer("dispatch_attempts").notNull().default(0),
+  dispatchLeaseUntil: timestamp("dispatch_lease_until"),
+  nextDispatchAt: timestamp("next_dispatch_at").notNull().defaultNow(),
+  error: text("error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  eventIdx: uniqueIndex("scout_evaluations_event_key").on(table.tenantId, table.scoutId, table.configKey, table.eventKey),
+  operationIdx: uniqueIndex("scout_evaluations_operation_id").on(table.operationId),
+  tenantIdentity: uniqueIndex("scout_evaluations_tenant_identity").on(table.tenantId, table.id),
+  pendingIdx: index("scout_evaluations_pending_idx").on(table.status, table.nextDispatchAt),
+  scoutOwner: foreignKey({ columns: [table.tenantId, table.scoutId], foreignColumns: [scouts.tenantId, scouts.id] }).onDelete("cascade"),
+}));
+
+// Multiple logical requests (poll interval / agency UTC day) can consume one
+// receipt. Persist the alias before collection to preserve replay identity.
+export const scoutEvaluationEvents = pgTable("scout_evaluation_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: text("tenant_id").notNull(),
+  scoutId: text("scout_id").notNull(),
+  configKey: text("config_key").notNull(),
+  eventKey: text("event_key").notNull(),
+  evaluationId: text("evaluation_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  eventIdx: uniqueIndex("scout_evaluation_events_key").on(table.tenantId, table.scoutId, table.configKey, table.eventKey),
+  evaluationOwner: foreignKey({ columns: [table.tenantId, table.evaluationId], foreignColumns: [scoutEvaluations.tenantId, scoutEvaluations.id] }).onDelete("cascade"),
+  scoutOwner: foreignKey({ columns: [table.tenantId, table.scoutId], foreignColumns: [scouts.tenantId, scouts.id] }).onDelete("cascade"),
+}));
+
 // A durable receipt for a source event, separate from polling history. Network
 // work runs outside transactions; the lease token fences a resumed/stale worker.
 export const scoutRemixes = pgTable("scout_remixes", {
@@ -1038,6 +1083,7 @@ export const customAgentRuns = pgTable("custom_agent_runs", {
   attempt: integer("attempt").notNull().default(1),
   packageId: text("package_id").references(() => contentPackages.id, { onDelete: "set null" }),
   sourceAlert: jsonb("source_alert"),
+  sourceEvaluationId: text("source_evaluation_id"),
   error: varchar("error", { length: 500 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1046,6 +1092,7 @@ export const customAgentRuns = pgTable("custom_agent_runs", {
   history: index("custom_agent_run_history").on(table.tenantId, table.agentId, table.createdAt),
   agentOwner: foreignKey({ columns: [table.tenantId, table.agentId], foreignColumns: [customAgents.tenantId, customAgents.id] }).onDelete("cascade"),
   statusCheck: check("custom_agent_run_status_check", sql`${table.status} IN ('running', 'queued', 'completed', 'failed', 'cancelled')`),
+  evaluationOwner: foreignKey({ columns: [table.tenantId, table.sourceEvaluationId], foreignColumns: [scoutEvaluations.tenantId, scoutEvaluations.id] }),
 }));
 
 export const customAgentThreads = pgTable("custom_agent_threads", {
