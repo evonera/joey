@@ -35,6 +35,7 @@ export async function GET(request: Request) {
   const results = await Promise.allSettled([
     withTimeout(publishDueDrafts({ limit: 10 }), CRON_TASK_TIMEOUT_MS, "publishDrafts"),
     withTimeout(runFlowsTick(), CRON_TASK_TIMEOUT_MS, "flowsTick"),
+    // Scout collection/judging runs in Workflow steps after this bounded handoff.
     withTimeout(runScoutsTick(), CRON_TASK_TIMEOUT_MS, "scoutsTick"),
     withTimeout(processTelegramOutbox(), CRON_TASK_TIMEOUT_MS, "telegramOutbox"),
     withTimeout(pruneExpiredRateLimits(), CRON_TASK_TIMEOUT_MS, "pruneRateLimits"),

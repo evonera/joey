@@ -85,7 +85,9 @@ export default defineTool({
         });
         if (!scout) throw new Error("Scout not found.");
 
-        const result = await evaluateScout(scoutId, { tenantId: tenantId as string, force: true });
+        ctx.abortSignal.throwIfAborted();
+        const result = await evaluateScout(scoutId, { tenantId: tenantId as string, force: true, signal: ctx.abortSignal });
+        ctx.abortSignal.throwIfAborted();
         return {
           scoutId,
           name: scout.name,

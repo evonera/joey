@@ -71,5 +71,10 @@ for (const width of [1440, 390]) {
     await page.getByRole("textbox", { name: "Search agents" }).clear();
     await expect(roster.getByRole("button", { name: /Research editor/ })).toBeVisible();
     expect(errors).toEqual([]);
+    // An explicitly requested local acceptance state can feed the read-only
+    // soak. It contains session cookies; keep it outside source/report folders.
+    if (width === 1440 && process.env.JOEY_E2E_STORAGE_STATE_PATH) {
+      await context.storageState({ path: process.env.JOEY_E2E_STORAGE_STATE_PATH });
+    }
   });
 }

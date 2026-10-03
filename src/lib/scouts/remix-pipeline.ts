@@ -98,7 +98,7 @@ export async function remixScoutAlertToThemeStudio(options: RemixScoutAlertOptio
     tenantId: options.tenantId,
     scoutId: scout.id,
     themePageId: targetPage.id,
-    eventKey: scoutRemixEventKey(scout.targetUrl, scout.goalCondition, alert),
+    eventKey: scoutRemixEventKey(scout.targetUrl, scout.goalCondition, alert, options.governance),
   });
   async function renderSavedDraft(renderReceipt: typeof receipt, pkg: { id: string; title: string; status: string }, duplicate = false): Promise<RemixScoutAlertResult> {
     const common = { packageId: pkg.id, clusterId: renderReceipt.clusterId ?? undefined, title: pkg.title, status: pkg.status, duplicate };

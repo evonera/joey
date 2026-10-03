@@ -3,6 +3,7 @@ import createMDX from "@next/mdx";
 import bundleAnalyzer from "@next/bundle-analyzer";
 import { withEve } from "eve/next";
 import { withSentryConfig } from "@sentry/nextjs/config";
+import { withScoutWorkflowRouting } from "./scripts/eve-scout-routing";
 
 const withMDX = createMDX({
   extension: /\.mdx?$/,
@@ -140,7 +141,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(withEve(withMDX(withAnalyze(nextConfig))), {
+export default withSentryConfig(withScoutWorkflowRouting(withEve(withMDX(withAnalyze(nextConfig)))), {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   authToken: process.env.SENTRY_AUTH_TOKEN,

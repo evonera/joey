@@ -32,6 +32,11 @@ Create alerts for:
 
 The soak cycles through the authenticated product without generating AI content, changing connections, approving drafts, publishing posts, or opening checkout. It records page errors, console errors, failed requests, 5xx responses, high-frequency endpoints, garbage-collected heap, DOM nodes, documents, and event listeners.
 
+Default routes include Agents and Drafts. Each measurement cycle exercises
+roster search/selection, draft filtering, local Compose edits and calendar date
+navigation. The report includes counts for these interactions. Composer text
+is restored and never submitted; automation controls remain untouched.
+
 Create an authenticated state file with a disposable test account. Keep it outside the repository and delete it after the run:
 
 ```bash
@@ -49,6 +54,18 @@ npm run test:soak
 For a short authenticated harness check, set `JOEY_SOAK_DURATION_MS=30000`. The release acceptance remains 30 minutes. `JOEY_SOAK_WARMUP_TIMEOUT_MS` defaults to ten minutes and is accounted for separately from the measurement duration. Optional budgets are `JOEY_SOAK_MAX_HEAP_GROWTH_MB` (default 64), `JOEY_SOAK_MAX_LISTENER_GROWTH` (default 200), and `JOEY_SOAK_MAX_REQUESTS_PER_MINUTE` (default 30 per method/path in any sliding one-minute window). Override a budget only with a documented baseline and reviewer approval.
 
 The authenticated gate requires both a storage-state file and a successful Better Auth session probe. `JOEY_SOAK_ALLOW_PUBLIC=true` is reserved for short harness checks of explicitly public routes; it must not be used as release evidence.
+
+For isolated localhost acceptance, `JOEY_E2E_PORT` selects a free application
+port for the product suite (default 3000). Its desktop agency case can export
+the new test workspace's session with `JOEY_E2E_STORAGE_STATE_PATH` pointing to
+a private path outside the repository. Use that state with the soak's matching
+`JOEY_SOAK_BASE_URL`. Retain measurement reports, not the session-cookie file.
+
+For an already-running isolated Docker stack on localhost, use
+`JOEY_E2E_MANAGED_LOCAL_SERVER=true` with its `JOEY_E2E_PORT`, explicit
+disposable `DATABASE_URL`, and `JOEY_INTEGRATION_TEST=true`. This opt-in disables
+the suite's own server launcher; it never points at a remote host. Verify that
+the container uses that same disposable database before running mutating cases.
 
 The JSON report is attached to the Playwright result under `test-results/`; the HTML report is written to `playwright-report/soak/`. Retain the release report with the deployment record. Passing means no unhandled errors, non-aborted request failures, HTTP error responses, excessive request loops, or budget breaches.
 

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApprovalConfiguration } from "eve/tools/approval";
 
-const mocks = vi.hoisted(() => ({ request: vi.fn(), response: vi.fn(), insert: vi.fn(), values: vi.fn(), returning: vi.fn() }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), response: vi.fn(), insert: vi.fn(), values: vi.fn(), returning: vi.fn(), scout: vi.fn(), evaluate: vi.fn() }));
 
 vi.mock("eve/tools", () => ({ defineTool: (definition: unknown) => definition }));
-vi.mock("@/lib/db", () => ({ db: { insert: mocks.insert } }));
-vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: vi.fn() }));
+vi.mock("@/lib/db", () => ({ db: { insert: mocks.insert, query: { scouts: { findFirst: mocks.scout } } } }));
+vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: mocks.evaluate }));
 vi.mock("../workspace-approval", () => ({ workspaceApproval: () => ({ request: mocks.request, response: mocks.response }) }));
 
 import tool from "../../tools/manage_scouts";
@@ -41,5 +41,14 @@ describe("Scout tool authorization", () => {
       session: { auth: { current: { attributes: { tenantId: "tenant-1" } } } },
     } as never);
     expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({ tenantId: "tenant-1", isActive: false }));
+  });
+  it("forwards Stop cancellation and never returns a cancelled result", async () => {
+    const controller = new AbortController();
+    mocks.scout.mockResolvedValue({ id: "scout-1", name: "Scout" });
+    mocks.evaluate.mockImplementation(async () => { controller.abort(); return { triggered: false, itemsFound: 0 }; });
+    await expect(tool.execute({ action: "evaluate", scoutId: "scout-1", platform: "instagram", pollIntervalMinutes: 1440 }, {
+      session: { auth: { current: { attributes: { tenantId: "tenant-1" } } } }, abortSignal: controller.signal,
+    } as never)).rejects.toThrow();
+    expect(mocks.evaluate).toHaveBeenCalledWith("scout-1", expect.objectContaining({ signal: controller.signal }));
   });
 });

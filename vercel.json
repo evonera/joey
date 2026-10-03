@@ -1,11 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "git": {
-    "deploymentEnabled": {
-      "codex/paid-launch-remediation": false
-    }
-  },
   "crons": [
     {
       "path": "/api/cron",

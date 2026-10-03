@@ -5,13 +5,18 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        EVE_NEXT_PRODUCTION_PORT: ${EVE_NEXT_PRODUCTION_PORT:-4274}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+        NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${NEXT_PUBLIC_SENTRY_ENVIRONMENT:-production}
     env_file:
-      - .env
+      - ${JOEY_ENV_FILE:-.env}
     ports:
       - "${JOEY_PORT:-3000}:3000"
     environment:
       DATABASE_URL: ${JOEY_DATABASE_URL:?Set JOEY_DATABASE_URL in .env to the URL-encoded internal db connection string}
       NODE_ENV: production
+    volumes:
+      - joey_eve_data:/app/.eve
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -24,7 +29,7 @@ services:
       dockerfile: Dockerfile
       target: migrator
     env_file:
-      - .env
+      - ${JOEY_ENV_FILE:-.env}
     environment:
       DATABASE_URL: ${JOEY_DATABASE_URL:?Set JOEY_DATABASE_URL in .env to the URL-encoded internal db connection string}
       NODE_ENV: production
@@ -57,3 +62,4 @@ networks:
 
 volumes:
   joey_postgres_data:
+  joey_eve_data:

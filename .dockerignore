@@ -7,6 +7,9 @@ node_modules
 .next
 .vercel
 .output
+.eve
+playwright-report/
+test-results/
 *.md
 docs/
 tests/

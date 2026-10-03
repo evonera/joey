@@ -47,6 +47,9 @@ beforeEach(() => {
   vi.stubEnv("SCOUT_DATA_PROVIDER", "apify");
   vi.stubEnv("ENABLE_MOCK_SCOUTS", "false");
   vi.stubEnv("SCOUT_PROVIDER_ENDPOINT", endpoint);
+  vi.stubEnv("SCOUT_MODAL_ENDPOINT", "");
+  vi.stubEnv("SCOUT_MODAL_KEY", "");
+  vi.stubEnv("SCOUT_MODAL_SECRET", "");
   vi.stubEnv("NODE_ENV", "production");
   vi.stubGlobal("fetch", mocks.fetch);
   mocks.apify.mockResolvedValue("apify-key");
@@ -162,7 +165,7 @@ describe("Custom provider collection contract", () => {
   it("does not leak upstream bodies or retry/fall back after failure", async () => {
     mocks.outbound.mockResolvedValue(response({ error: "secret-token private-path" }, 429));
     await expect(new CustomScoutProvider(endpoint, "key").fetchRecentPosts(request, context())).rejects.toThrow(
-      "Custom Scout provider returned HTTP 429."
+      "Custom Scout provider returned HTTP 429. Cloud collection quota reached."
     );
     expect(mocks.outbound).toHaveBeenCalledOnce();
     expect(mocks.fetch).not.toHaveBeenCalled();
@@ -196,6 +199,45 @@ describe("Custom provider collection contract", () => {
     expect(ctx.beforePaidPhase).not.toHaveBeenCalled();
     expect(mocks.outbound).not.toHaveBeenCalled();
   });
+  it("pins Modal proxy credentials and preserves the workspace bearer key", async () => {
+    vi.stubEnv("SCOUT_MODAL_ENDPOINT", endpoint);
+    vi.stubEnv("SCOUT_MODAL_KEY", "proxy-id");
+    vi.stubEnv("SCOUT_MODAL_SECRET", "proxy-secret");
+    const ctx = { ...context(), operationId: "durable-operation-123" };
+    const provider = new CustomScoutProvider(endpoint, "workspace-key");
+    await provider.fetchRecentPosts(request, ctx);
+    const options = mocks.outbound.mock.calls[0][1];
+    expect(options.headers).toMatchObject({ Authorization: "Bearer workspace-key", "Modal-Key": "proxy-id", "Modal-Secret": "proxy-secret" });
+    expect(options.headers["Idempotency-Key"]).toMatch(/^jsc_[a-f0-9]{64}$/);
+    await provider.fetchRecentPosts(request, ctx);
+    expect(mocks.outbound.mock.calls[1][1].headers["Idempotency-Key"]).toBe(options.headers["Idempotency-Key"]);
+    expect(options.maxRedirects).toBe(0);
+  });
+  it("never forwards proxy credentials to a changed endpoint or path", async () => {
+    vi.stubEnv("SCOUT_MODAL_ENDPOINT", "https://different.vendor.com/v1/scouts/collect");
+    vi.stubEnv("SCOUT_MODAL_KEY", "proxy-id");
+    vi.stubEnv("SCOUT_MODAL_SECRET", "proxy-secret");
+    await expect(new CustomScoutProvider(endpoint, "key").fetchRecentPosts(request, { ...context(), operationId: "op" })).rejects.toThrow("exact approved");
+    expect(mocks.outbound).not.toHaveBeenCalled();
+  });
+  it("rejects partial transport configuration or missing durable operation IDs before spending", async () => {
+    vi.stubEnv("SCOUT_MODAL_KEY", "proxy-id");
+    const ctx = context();
+    await expect(new CustomScoutProvider(endpoint, "key").fetchRecentPosts(request, ctx)).rejects.toThrow("all three");
+    vi.stubEnv("SCOUT_MODAL_ENDPOINT", endpoint);
+    vi.stubEnv("SCOUT_MODAL_SECRET", "proxy-secret");
+    await expect(new CustomScoutProvider(endpoint, "key").fetchRecentPosts(request, ctx)).rejects.toThrow("durable operation ID");
+    expect(ctx.beforePaidPhase).not.toHaveBeenCalled();
+    expect(mocks.outbound).not.toHaveBeenCalled();
+  });
+  it.each([401, 403, 409, 410, 429, 503, 504])("surfaces HTTP %s without retrying or exposing upstream bodies", async status => {
+    mocks.outbound.mockResolvedValue(response({ error: "private-secret-caption" }, status));
+    const promise = new CustomScoutProvider(endpoint, "key").fetchRecentPosts(request, context());
+    await expect(promise).rejects.toMatchObject({ name: "ScoutProviderError", status });
+    await expect(promise).rejects.not.toThrow("private-secret-caption");
+    expect(mocks.outbound).toHaveBeenCalledOnce();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("Apify adapter", () => {
@@ -216,6 +258,7 @@ describe("Apify adapter", () => {
       expect.objectContaining({ redirect: "error" })
     );
     expect(ctx.beforePaidPhase).toHaveBeenCalledOnce();
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({ username: [request.targetUrl], resultsLimit: 15 });
   });
   it.each([{}, [null], [{ url: "https://10.0.0.1/secret" }]])("rejects invalid dataset responses", async (dataset) => {
     mocks.fetch.mockResolvedValue(new Response(JSON.stringify(dataset)));

@@ -3,7 +3,9 @@ import { maximumEventsInWindow } from "@/lib/performance-soak";
 
 const DEFAULT_ROUTES = [
   "/dashboard",
+  "/agents",
   "/compose",
+  "/drafts",
   "/flows",
   "/theme-studio",
   "/calendar",
@@ -55,14 +57,60 @@ async function collectGarbage(page: Page) {
 }
 
 async function navigateWithinApp(page: Page, route: string) {
-  const link = page.locator(`a[href="${route}"]`).first();
+  const link = page.locator(`a[href="${route}"]:visible`).first();
   if (await link.count()) {
-    await link.click({ force: true });
-    await page.waitForURL((url) => url.pathname === route, { timeout: 15_000 });
+    // Let Playwright wait for sidebar animation/hit-target stability. A forced
+    // coordinate click can hit a neighboring link during first hydration.
+    await link.click();
+    await page.waitForURL((url) => url.pathname === route, { timeout: 15_000, waitUntil: "domcontentloaded" });
   } else {
     await page.goto(route, { waitUntil: "domcontentloaded" });
   }
   await page.waitForLoadState("domcontentloaded");
+}
+
+// Exercise controls repeatedly without submitting prompts, saving workspace
+// changes, activating automation or calling paid providers.
+async function exerciseReadOnlyControls(page: Page, route: string): Promise<string[]> {
+  const exercised: string[] = [];
+  if (route === "/agents") {
+    const search = page.getByRole("textbox", { name: "Search agents" });
+    await expect(search).toBeVisible();
+    const original = await search.inputValue();
+    await search.fill("soak-nonexistent-agent");
+    await expect(page.getByText("No matching agents.", { exact: true })).toBeVisible();
+    await search.fill(original);
+    exercised.push("agent-roster-search");
+    const identity = page.getByRole("complementary", { name: "Agent roster" }).locator("ul button").first();
+    if (await identity.count()) {
+      await identity.click();
+      exercised.push("agent-selection");
+    }
+  } else if (route === "/drafts") {
+    const search = page.getByRole("textbox", { name: "Search drafts by content or title" });
+    await expect(search).toBeVisible();
+    const original = await search.inputValue();
+    await search.fill("soak-nonexistent-draft");
+    await search.fill(original);
+    exercised.push("draft-filter");
+  } else if (route === "/compose") {
+    const composer = page.getByRole("textbox", { name: "Post content" });
+    await expect(composer).toBeVisible();
+    const original = await composer.inputValue();
+    await composer.fill("Local soak text; never submitted.");
+    await expect(composer).toHaveValue("Local soak text; never submitted.");
+    await composer.fill(original);
+    exercised.push("local-compose-edit");
+  } else if (route === "/calendar") {
+    // The soak's Chromium viewport uses Joey's desktop calendar toolbar.
+    const next = page.getByRole("button", { name: "Next period", exact: true });
+    const back = page.getByRole("button", { name: "Previous period", exact: true });
+    await expect(next).toBeVisible();
+    await next.click();
+    await back.click();
+    exercised.push("calendar-navigation");
+  }
+  return exercised;
 }
 
 function isSignInPath(page: Page) {
@@ -106,6 +154,10 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   const serverErrors: string[] = [];
   const requestTimes = new Map<string, number[]>();
   const samples: BrowserMetrics[] = [];
+  const interactions: Record<string, number> = {};
+  let measurementStartedAt: number | null = null;
+  let iteration = 0;
+  let reportAttached = false;
 
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -135,6 +187,7 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
       "JOEY_SOAK_STORAGE_STATE is required. Set JOEY_SOAK_ALLOW_PUBLIC=true only for a public harness check.",
     );
   }
+  try {
   await page.goto(routes[0], { waitUntil: "domcontentloaded" });
   if (!allowPublic) await verifyAuthenticatedSession(page);
 
@@ -151,12 +204,17 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   requestTimes.clear();
 
   const startedAt = Date.now();
-  let iteration = 0;
+  measurementStartedAt = startedAt;
   while (Date.now() - startedAt < durationMs) {
     const route = routes[iteration % routes.length];
     await navigateWithinApp(page, route);
     if (!allowPublic && isSignInPath(page)) {
       throw new Error(`Authentication expired while soaking ${route}.`);
+    }
+    if (!allowPublic) {
+      for (const interaction of await exerciseReadOnlyControls(page, route)) {
+        interactions[interaction] = (interactions[interaction] ?? 0) + 1;
+      }
     }
     await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }));
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
@@ -185,6 +243,7 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
     heapGrowthBytes: finalMetrics.heapUsedBytes - baseline.heapUsedBytes,
     httpErrors,
     iterations: iteration,
+    interactions,
     listenerGrowth: finalMetrics.listeners - baseline.listeners,
     noisyEndpoints,
     pageErrors,
@@ -194,6 +253,7 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
     serverErrors,
   };
   await attachReport(testInfo, report);
+  reportAttached = true;
 
   expect(pageErrors, "Unhandled browser errors or promise rejections").toEqual([]);
   expect(consoleErrors, "Browser console errors").toEqual([]);
@@ -203,4 +263,15 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   expect(noisyEndpoints, "Endpoints exceeding the polling/request-rate budget").toEqual([]);
   expect(report.heapGrowthBytes, "Garbage-collected JavaScript heap growth").toBeLessThanOrEqual(maxHeapGrowthBytes);
   expect(report.listenerGrowth, "JavaScript event-listener growth").toBeLessThanOrEqual(maxListenerGrowth);
+  } catch (error) {
+    if (!reportAttached) await attachReport(testInfo, {
+      baseURL: testInfo.project.use.baseURL,
+      completed: false,
+      durationMs: measurementStartedAt === null ? 0 : Date.now() - measurementStartedAt,
+      consoleErrors, httpErrors, pageErrors, requestFailures, serverErrors,
+      iterations: iteration, interactions, routes, samples,
+      failure: error instanceof Error ? error.message : 'Soak stopped before final measurement.',
+    });
+    throw error;
+  }
 });

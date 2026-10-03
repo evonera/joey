@@ -5,7 +5,7 @@ import { contentPackages, scoutRemixes, storyClusters } from "@/lib/db/schema";
 import type { ScoutAlert } from "./evaluator";
 import type { AgencyDb } from "@/lib/agency/service";
 
-export function scoutRemixEventKey(targetUrl: string, goal: string, alert: ScoutAlert): string {
+export function scoutRemixEventKey(targetUrl: string, goal: string, alert: ScoutAlert, owner?: { agentId: string; configVersion: number }): string {
   let source = alert.samplePost?.url;
   if (source) {
     try {
@@ -26,7 +26,7 @@ export function scoutRemixEventKey(targetUrl: string, goal: string, alert: Scout
   // source story. A configured target/goal change does change the identity.
   const identity = source || alert.samplePost?.content?.trim() || alert.title.trim();
   return createHash("sha256")
-    .update(JSON.stringify([targetUrl, goal, identity]))
+    .update(JSON.stringify([targetUrl, goal, identity, owner?.agentId ?? null, owner?.configVersion ?? null]))
     .digest("hex");
 }
 
