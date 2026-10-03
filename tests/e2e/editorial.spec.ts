@@ -1,0 +1,44 @@
+import { randomUUID } from "node:crypto";
+import postgres from "postgres";
+import { expect, test } from "@playwright/test";
+import { requireDisposableDatabase } from "../integration/require-disposable-database";
+test.beforeAll(() => requireDisposableDatabase());
+for (const width of [1440, 390]) test(`assisted schedule preferences and confirmation persist at ${width}px`, async ({ page, context }, testInfo) => {
+  test.skip(process.env.EDITORIAL_SCHEDULING_ENABLED !== "true", "Requires the opt-in staging/CI scheduling feature.");
+  test.setTimeout(150_000);
+  const email = `editorial-${randomUUID()}@example.test`;
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 8);
+  const response = await context.request.post("/api/auth/sign-up/email", { headers: { origin: testInfo.project.use.baseURL as string, "x-forwarded-for": `2001:db8:${suffix.slice(0, 4)}:${suffix.slice(4)}::1` }, data: { name: "Editorial fixture", email, password: "Local-E2E-Only-2026!" } });
+  expect(response.ok(), await response.text()).toBe(true);
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  await page.setViewportSize({ width, height: 900 }); await page.goto("/calendar");
+  const sql = postgres(process.env.DATABASE_URL!, { max: 1 });
+  const accountId = randomUUID(); const draftId = randomUUID(); const title = `Reviewed editorial fixture ${randomUUID()}`;
+  try {
+    const [membership] = await sql`SELECT m."organizationId" AS tenant FROM member m JOIN "user" u ON u.id = m."userId" WHERE u.email = ${email}`;
+    expect(membership?.tenant).toBeTruthy();
+    await sql`INSERT INTO social_accounts (id,tenant_id,platform,platform_account_id,account_name) VALUES (${accountId},${membership.tenant},'x','fixture-never-published','Editorial test account')`;
+    const scheduled = new Date(); scheduled.setHours(23, 45, 0, 0);
+    if (scheduled <= new Date()) scheduled.setDate(scheduled.getDate() + 1);
+    await sql`INSERT INTO drafts (id,tenant_id,content,status,platform_options,scheduled_for) VALUES (${draftId},${membership.tenant},${title},'approved',${JSON.stringify({ accountId, platform: "x" })}::jsonb,${scheduled.toISOString()}::timestamp)`;
+    await page.reload(); await page.getByText("Account posting preferences", { exact: true }).click();
+    await page.getByRole("textbox", { name: "IANA timezone" }).fill("UTC");
+    await page.getByLabel("Window 1 day").selectOption(String(new Date().getUTCDay()));
+    await page.getByLabel("Window 1 start").fill("00:00"); await page.getByLabel("Window 1 end").fill("23:59");
+    await page.getByRole("button", { name: "Save preferences" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Preferences saved" })).toBeVisible();
+    await page.reload(); await page.getByText("Account posting preferences", { exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "IANA timezone" })).toHaveValue("UTC");
+    await page.getByText(title, { exact: true }).filter({ visible: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Post details" });
+    await dialog.getByRole("button", { name: "Suggest posting times" }).click();
+    await expect(dialog.getByText("Not an engagement prediction", { exact: false }).first()).toBeVisible();
+    await dialog.getByRole("button", { name: "Confirm this publication time" }).first().click();
+    await expect(dialog).toHaveCount(0);
+    const [saved] = await sql`SELECT status,scheduled_for FROM drafts WHERE id = ${draftId}`;
+    expect(saved.status).toBe("scheduled"); expect(saved.scheduled_for).not.toBeNull();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    expect(errors).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath(`editorial-${width}.png`), fullPage: true });
+  } finally { await sql`DELETE FROM drafts WHERE id = ${draftId}`; await sql`DELETE FROM social_accounts WHERE id = ${accountId}`; await sql.end(); }
+});

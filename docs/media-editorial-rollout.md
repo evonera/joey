@@ -1,37 +1,52 @@
-# Media and assisted-editorial rollout
+# Media/editorial acceptance and rollout
 
-## Foundation (first scoped change)
+Timeline and sparse effects default off (`MEDIA_TIMELINE_ENABLED`,
+`MEDIA_SFX_ENABLED`). Assisted scheduling defaults off
+(`EDITORIAL_SCHEDULING_ENABLED`). Publication cadence defaults off
+(`PUBLICATION_TICK_ENABLED`); activating it additionally needs verified hosting
+and a deployed cron entry. Never enable unattended agent publication.
 
-- Preserve fractional browser metadata; bound duration by remaining source and
-  the 60-second export ceiling. Invalid/empty ranges cannot be submitted.
-- Reset source metadata and trim state on asset changes.
-- Independently probe the worker's selected video stream and optional music.
-  Reject corrupt inputs, attached-cover first video streams, missing streams and
-  nonfinite duration before capture/transcription/compositing.
-- Storyboard playback is explicitly approximate and silent. Empty/invalid
-  scenes are safe; edits reset playback. Finished native MP4 playback remains
-  authoritative.
+## Reproducible local gates
 
-Local verification: 143 Vitest suites / 920 tests; typecheck; focused ESLint;
-Python worker tests, including synthetic silent/audio FFmpeg exports. Local
-fixtures stub storage download and overlay capture; they do **not** establish
-Modal, R2, attachment, transcription or browser acceptance.
+Use Node 24 (the pinned project runtime), Python worker requirements, FFmpeg and
+a disposable PostgreSQL database. Do not use production credentials/database.
 
-## Required next gates
+```sh
+npm run check:migrations
+npm run typecheck
+npm run lint:ci
+npm test -- --maxWorkers=2
+npm run knip
+npm run build
+npm run build:eve
+python3 -m unittest discover -s workers/media -p 'test_*.py'
+JOEY_INTEGRATION_TEST=true npm run test:integration:editorial
+EDITORIAL_SCHEDULING_ENABLED=true JOEY_INTEGRATION_TEST=true npm run test:e2e
+```
 
-1. Deploy the coordinated app/worker foundation to disposable staging and retain
-   one single-source render → R2 → attachment → playable MP4 result.
-2. Introduce the backward-compatible v2 timeline and editor (1–6 tenant-owned
-   clips/images/brand cards, ≤60 seconds; cut/fade only).
-3. Add rights-vetted manual/sparse-preset SFX, default off; assembled-speech
-   transcription and independent cache; no new paid audio/semantic providers.
-4. Add account-scoped timezone/window preferences and confirmed recommendations.
-   Recheck role, account, content revision and media, then serialize scheduling
-   conflicts. Agency agents remain draft-only.
-5. Separate bounded publication dispatch from maintenance. Do not activate
-   minute cron until the existing hosting plan is verified to support it.
-6. Retain desktop/390px playback, invalidation, cancellation, race and benchmark
-   evidence before enabling timeline/SFX in staging and rolling out.
+The PostgreSQL suite verifies same-account schedule races, independent accounts,
+revoked membership, foreign users, disconnected accounts and stale content.
+Playwright verifies real saved preferences and explicit schedule confirmation at
+1440px/390px without invoking providers or publishing. Worker fixtures verify
+normalized cut/fade joins and silent/speech/music/effect output.
 
-Paid acceptance has a $10 ceiling. Live publication requires separate approval
-of the exact post. No hosting-plan upgrade is implied by this rollout.
+## Staging gates (not established by mocked/local fixtures)
+
+- Real clip → image/card → clip export through Modal → R2, with attached native
+  MP4 playback on desktop/mobile. Include failed/stale completion and retry.
+- Listen to the complete export, verify intelligible speech, sparse effects,
+  caption synchronization and measured clipping/ducking. Captions must transcribe
+  assembled speech, not the finished music/effect mix. Verify transcription cache
+  reuse after visual-only edits and no retry of ambiguous paid requests.
+- Record queue, capture, transcription, rendering, upload and attachment time
+  separately. Compare identical CPU/T4 fixtures before changing CPU default.
+- Recheck media/caption revision fences and default-off legacy compatibility.
+- Verify deployed cron discovery, overlapping atomic claims, receipts and actual
+  delivery lag on a minute-capable hosting plan. HTTP success is insufficient.
+
+Keep paid acceptance within the previously approved $10 total; no live social
+publication without exact-post approval. Existing single-clip staging evidence
+is in `docs/benchmarks/media-staging-2026-10-04.md`; it does not establish the
+new multi-scene/SFX gates. Retain private cookies/provider credentials outside
+tracked reports. Enable each feature only in a disposable workspace after its
+corresponding hosted acceptance passes, then review production rollout separately.
