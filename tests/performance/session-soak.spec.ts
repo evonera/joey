@@ -1,5 +1,7 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { maximumEventsInWindow } from "@/lib/performance-soak";
+import { navigateWithinApp, waitForSettledRoute } from './navigation';
+import { writeFile } from 'node:fs/promises';
 
 const DEFAULT_ROUTES = [
   "/dashboard",
@@ -54,19 +56,6 @@ async function collectGarbage(page: Page) {
   } finally {
     await session.detach();
   }
-}
-
-async function navigateWithinApp(page: Page, route: string) {
-  const link = page.locator(`a[href="${route}"]:visible`).first();
-  if (await link.count()) {
-    // Let Playwright wait for sidebar animation/hit-target stability. A forced
-    // coordinate click can hit a neighboring link during first hydration.
-    await link.click();
-    await page.waitForURL((url) => url.pathname === route, { timeout: 15_000, waitUntil: "domcontentloaded" });
-  } else {
-    await page.goto(route, { waitUntil: "domcontentloaded" });
-  }
-  await page.waitForLoadState("domcontentloaded");
 }
 
 // Exercise controls repeatedly without submitting prompts, saving workspace
@@ -127,8 +116,10 @@ async function verifyAuthenticatedSession(page: Page) {
 }
 
 async function attachReport(testInfo: TestInfo, report: unknown) {
+  const path = testInfo.outputPath('session-soak-report.json');
+  await writeFile(path, JSON.stringify(report, null, 2));
   await testInfo.attach("session-soak-report", {
-    body: Buffer.from(JSON.stringify(report, null, 2)),
+    path,
     contentType: "application/json",
   });
 }
@@ -158,15 +149,25 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   let measurementStartedAt: number | null = null;
   let iteration = 0;
   let reportAttached = false;
+  let documentNavigations = 0;
+  let currentRoute = routes[0];
+  const networkTimings: Array<{ method: string; path: string; phase: string; startTime: number; responseStart: number; responseEnd: number }> = [];
+  const requestPhases = new WeakMap<object, string>();
+  const sanitizedUrl = (value: string) => {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  };
 
   page.on("console", (message) => {
     if (message.type() === "error") {
       const source = message.location().url;
-      consoleErrors.push(source ? `${message.text()} (${source})` : message.text());
+      consoleErrors.push(source ? `${message.text()} (${sanitizedUrl(source)})` : message.text());
     }
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("request", (request) => {
+    requestPhases.set(request, measurementStartedAt === null ? 'warmup' : 'measurement');
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentNavigations += 1;
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
     requestTimes.set(key, [...(requestTimes.get(key) ?? []), Date.now()]);
@@ -174,12 +175,20 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   page.on("requestfailed", (request) => {
     const reason = request.failure()?.errorText ?? "unknown failure";
     if (!/ERR_ABORTED|NS_BINDING_ABORTED/i.test(reason)) {
-      requestFailures.push(`${request.method()} ${request.url()}: ${reason}`);
+      requestFailures.push(`${request.method()} ${sanitizedUrl(request.url())}: ${reason}`);
     }
   });
+  page.on('requestfinished', request => {
+    const timing = request.timing();
+    networkTimings.push({
+      method: request.method(), path: sanitizedUrl(request.url()),
+      phase: requestPhases.get(request) ?? 'warmup',
+      startTime: timing.startTime, responseStart: timing.responseStart, responseEnd: timing.responseEnd,
+    });
+  });
   page.on("response", (response) => {
-    if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`);
-    else if (response.status() >= 400) httpErrors.push(`${response.status()} ${response.url()}`);
+    if (response.status() >= 500) serverErrors.push(`${response.status()} ${sanitizedUrl(response.url())}`);
+    else if (response.status() >= 400) httpErrors.push(`${response.status()} ${sanitizedUrl(response.url())}`);
   });
 
   if (!allowPublic && !process.env.JOEY_SOAK_STORAGE_STATE) {
@@ -194,7 +203,9 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   // Warm every route before recording the baseline so module loading and route
   // caches are not mistaken for leaks.
   for (const route of routes) {
+    currentRoute = route;
     await navigateWithinApp(page, route);
+    if (!allowPublic) await waitForSettledRoute(page, route);
     if (!allowPublic && isSignInPath(page)) {
       throw new Error(`Authentication expired while warming ${route}.`);
     }
@@ -207,11 +218,13 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   measurementStartedAt = startedAt;
   while (Date.now() - startedAt < durationMs) {
     const route = routes[iteration % routes.length];
+    currentRoute = route;
     await navigateWithinApp(page, route);
     if (!allowPublic && isSignInPath(page)) {
       throw new Error(`Authentication expired while soaking ${route}.`);
     }
     if (!allowPublic) {
+      await waitForSettledRoute(page, route);
       for (const interaction of await exerciseReadOnlyControls(page, route)) {
         interactions[interaction] = (interactions[interaction] ?? 0) + 1;
       }
@@ -223,6 +236,11 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
     await page.waitForTimeout(Math.min(dwellMs, Math.max(1, durationMs - (Date.now() - startedAt))));
   }
 
+  // Compare equivalent UI, not a settings baseline against a potentially much
+  // larger agent/editor page merely because the duration ended on that route.
+  currentRoute = routes[routes.length - 1];
+  await navigateWithinApp(page, currentRoute);
+  if (!allowPublic) await waitForSettledRoute(page, currentRoute);
   await collectGarbage(page);
   const finalMetrics = await readMetrics(page);
   samples.push(finalMetrics);
@@ -244,6 +262,8 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
     httpErrors,
     iterations: iteration,
     interactions,
+    documentNavigations,
+    networkTimings,
     listenerGrowth: finalMetrics.listeners - baseline.listeners,
     noisyEndpoints,
     pageErrors,
@@ -269,7 +289,8 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
       completed: false,
       durationMs: measurementStartedAt === null ? 0 : Date.now() - measurementStartedAt,
       consoleErrors, httpErrors, pageErrors, requestFailures, serverErrors,
-      iterations: iteration, interactions, routes, samples,
+      iterations: iteration, interactions, documentNavigations, routes, samples,
+      currentRoute, networkTimings,
       failure: error instanceof Error ? error.message : 'Soak stopped before final measurement.',
     });
     throw error;

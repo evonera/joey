@@ -72,6 +72,20 @@ this checks the public meta tag, not real origin-trial eligibility.
 
 The JSON report is attached to the Playwright result under `test-results/`; the HTML report is written to `playwright-report/soak/`. Retain the release report with the deployment record. Passing means no unhandled errors, non-aborted request failures, HTTP error responses, excessive request loops, or budget breaches.
 
+The default active-session loop opens collapsed workspace menus and follows
+their real SPA links. Every warm-up, measured and final visit waits for the
+route's actual ready controls, client loaders and workspace hydration, with
+the unchanged five-second assertion budget. A heading alone is not readiness;
+active dashboard conversations are checked through their composer instead.
+Final garbage-collected metrics return to the baseline route so different UI
+compositions are not mistaken for leaks. The report counts document navigation
+and retains warm-up versus measurement request timings with URL queries removed.
+A passing SPA soak does not certify cold or hard-reload latency; preserve and
+investigate failures from those navigation paths separately.
+Vercel previews use the documented `x-vercel-skip-toolbar: 1` automation header
+to exclude Vercel's toolbar from product measurements. This does not bypass
+deployment protection; toolbar compatibility remains a separate visual check.
+
 ## Cold and warm route profiling
 
 Profile Dashboard, Compose, Flows, Theme Studio, Calendar, Analytics, Engagement, Accounts, and Settings against the exact deployment SHA. Use a clean browser profile for cold navigation, then revisit the same routes for warm navigation. Record transferred JavaScript, LCP, CLS, INP, long tasks, and cache status. Compare the result with `docs/benchmarks/client-bundle-2026-09-07.json`; that file is a build-manifest ceiling, not a browser trace.

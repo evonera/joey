@@ -100,6 +100,11 @@ export function ChatContextInspector({
 
   return (
     <div className={cn("flex flex-col gap-6 p-4 text-xs font-sans", className)}>
+      <p className="text-muted-foreground">
+        Transcript estimates, not billed usage. Hidden prompts, repeated model
+        calls and specialist usage are excluded. See Settings for recorded
+        workspace usage.
+      </p>
       {/* 2-Column Metrics Grid matching OpenCode Context Tab */}
       <div className="grid grid-cols-2 gap-x-6 gap-y-4">
         {/* Row 1 */}
@@ -130,7 +135,7 @@ export function ChatContextInspector({
           <span className="font-mono text-foreground">{contextLimit.toLocaleString()}</span>
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-muted-foreground text-[11px]">Total Tokens</span>
+          <span className="text-muted-foreground text-[11px]">Estimated Transcript Tokens</span>
           <span className="font-mono font-medium text-foreground">
             {tokenMetrics.totalTokens.toLocaleString()}
           </span>
@@ -138,7 +143,7 @@ export function ChatContextInspector({
 
         {/* Row 4 */}
         <div className="flex flex-col gap-1">
-          <span className="text-muted-foreground text-[11px]">Usage</span>
+          <span className="text-muted-foreground text-[11px]">Estimated Context Usage</span>
           <span className="font-mono text-foreground">{usagePercentage}%</span>
         </div>
         <div className="flex flex-col gap-1">
@@ -160,10 +165,8 @@ export function ChatContextInspector({
 
         {/* Row 6 */}
         <div className="flex flex-col gap-1">
-          <span className="text-muted-foreground text-[11px]">Cache Tokens (read/write)</span>
-          <span className="font-mono text-foreground">
-            {tokenMetrics.cacheTokens.toLocaleString()} / 0
-          </span>
+          <span className="text-muted-foreground text-[11px]">Cache Usage</span>
+          <span className="font-mono text-foreground">Not available from transcript</span>
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-muted-foreground text-[11px]">User Messages</span>
@@ -176,7 +179,7 @@ export function ChatContextInspector({
           <span className="font-mono text-foreground">{assistantMessagesCount}</span>
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-muted-foreground text-[11px]">Total Cost</span>
+          <span className="text-muted-foreground text-[11px]">Estimated Transcript Cost</span>
           <span className="font-mono font-semibold text-foreground">
             {estimatedCostUsd === 0 ? "$0.00" : `$${estimatedCostUsd.toFixed(4)}`}
           </span>

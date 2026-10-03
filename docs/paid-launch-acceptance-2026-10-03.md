@@ -41,6 +41,12 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
 - The authenticated local product Playwright suite passed 24/24 on desktop and
   390px fixtures, including draft edit/reopen and tutorial pause/reload/resume.
   This does not establish real-mobile keyboard behavior or paid-provider E2E.
+- The final canonical Docker image passed the unchanged authenticated product
+  suite 24/24, including public WebMCP build-time markup. Fresh migration startup,
+  replay and restart persistence were verified. Actual durable Workflow records
+  survived a container restart, and Next/Eve run under UID 1001 with writable,
+  persistent Eve storage. This proves local/container behavior, not hosted
+  provider acceptance.
 - Real disposable PostgreSQL checks covered receipt races, event aliases,
   crash recovery, stale configuration, global two-run capacity, dispatch retry
   accounting and two agents consuming the same completed evidence.
@@ -51,10 +57,15 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
 - Actual local Eve HTTP dispatch rejected unauthenticated requests (401) and
   invalid authenticated envelopes (400), accepted a bounded nonexistent-source
   fixture (202), and completed its durable Workflow/step with one attempt and
-  a stopped-before-provider result. This proves runtime dispatch, **not** actual
-  specialist delegation or a parked human approval resuming to a saved draft.
+  a stopped-before-provider result. This proves runtime dispatch, **not** a
+  parked human approval resuming to a saved draft.
 - Production was backed up to a restricted local custom-format PostgreSQL 18
-  archive. Its journal has 13 entries through 0049 (historical baseline). The
+  archive. A single-transaction restore to an isolated, network-disabled,
+  tmpfs PostgreSQL 18 instance passed, with 13 migration-journal entries.
+  Earlier restore attempts reached the temporary initialization server; waiting
+  for the final TCP listener resolved the readiness race. The verification
+  container was stopped; the restricted backup is retained. Its journal has
+  13 entries through 0049 (historical baseline). The
   isolated Neon child `codex-paid-launch-staging-20261003` / `br-hidden-glade-axnz0mxd`
   rehearsed 0050–0054, replayed successfully and has 18 journal entries through
   0054, zero active agents and zero running agent runs. Production migrations
@@ -64,21 +75,89 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
   unbound fallback is disabled **only in this fresh staging configuration**.
   Existing copied application/provider secrets must not be used with its fresh
   encryption key; create fresh encrypted credentials in a disposable workspace.
-- The authenticated 30-minute soak did **not pass**: an attempt stopped at
-  23.2 minutes on a navigation/loading assertion during severe local build/test
-  contention. Retain its failed report; rerun on the accepted staging SHA with
-  builds quiet. Do not relax timeouts or call a shorter run a pass.
+- Deployed preview signup created a disposable workspace successfully. The
+  browser verified tour step 2 surviving pause/reload/resume, desktop and 390px
+  tour layout, and creation of a paused, destination-free research agent.
+  Its UI explicitly requires a destination before saving posts. Unauthenticated
+  `/scout-dispatch` returned 401 on the actual Vercel deployment.
+  Manual Compose create/save/reopen/edit also passed in that disposable
+  workspace, with no account, media, scheduling or publishing provider involved.
+- Authorized raw Gemini and Exa credentials were configured server-side only
+  for the isolated preview; copied encrypted application credentials were not
+  reused. One real Gemini request delegated to `eve:subagent:twitter`, completed
+  and returned a short fictional-product post in chat. Desktop and 390px
+  screenshots captured the completed tool card and result. Recorded usage cost
+  was **$0.01314450**, with zero reserved cost under a stricter $3 staging budget.
+  The workspace still had one content package (the manual Compose fixture).
+  This does not prove account-targeted draft creation or approval resumption.
+  Usage evidence comprises two parent Eve calls and one specialist call,
+  exhausting 3/3 free model generations. A subsequent harmless request showed
+  the deployed "Limit reached" recovery UI with plan/BYOK links and restored
+  Submit. Cost and event count remained unchanged with zero reservations.
+  No quota bypass was introduced. These are model-call credits, not three
+  guaranteed user-message turns; communicate this distinction clearly.
+- The real conversation exposed a clipped context control beside a long title
+  at 390px. The chat header now lets its title shrink while retaining controls,
+  and the context inspector has an accessible name. Its character-based token
+  and cost estimates were misleadingly labelled as totals; they are now
+  explicitly transcript estimates, excluding hidden prompts/repeated calls/
+  specialists, with cache usage marked unavailable rather than falsely zero.
+  A focused rendering regression passes. Final deployed visual recheck remains
+  required; these changes do not replace provider accounting.
+- Three read-only Dodo **test-mode** catalog requests confirmed the configured
+  Creator/Pro/Agency products are USD monthly subscriptions at $19/$59/$149,
+  matching the code catalog. Billing/auth focused regressions passed 27/27.
+  No checkout, subscription or catalog mutation occurred. The authorized local
+  env file lacks a webhook signing secret, so real signed delivery and payment
+  lifecycle acceptance remain blocked; live catalog/compliance remain unverified.
+- The existing Joey Sentry error monitor now has a persisted email alert to
+  Shakthi, throttled to five minutes. One test notification was requested;
+  recipient receipt and controlled frontend/server/Eve/media alert delivery
+  remain unverified.
+- Fresh GitHub CI exposed a browser-fixture setup defect: it built Next but not
+  Eve before the supervised launcher. Both Playwright launch configurations now
+  build Eve first. Corrected SHA `4456a43` passed Application quality,
+  Playwright E2E (24/24), Tauri quality and Vercel deployment checks. Recheck any
+  later accepted SHA before merge.
+- The authenticated 30-minute soak did **not pass**: attempts stopped at
+  23.2 minutes during build/test contention and at 15.8 minutes with builds
+  quiet, on a Drafts loading assertion. The latter report recorded 146
+  iterations and no observed console/HTTP/request errors, but the final GC
+  and leak checks were never reached. Diagnosis found the harness bypassed
+  collapsed navigation links using hard reloads (44 document loads), and took
+  its listener baseline before initial loading settled. A corrected real-menu
+  navigation harness and strict rerun are required. A Compose document TTFB
+  of 22.59 seconds and the failed Drafts RSC response at 5.19 seconds remain
+  performance evidence; a later SPA pass does not erase those observations.
+  Corrected menu navigation also failed locally at 4.1 minutes on Agents.
+  A hosted short comparison then failed during warmup on Settings, before
+  measurement began: two required JS chunks took about 4.5 seconds to arrive;
+  no full hosted soak was started. This is not proof of a database-query cause.
+  The preview also blocked Vercel's injected toolbar script via CSP. Independent
+  review found generic `h1`/loading checks could falsely settle some client
+  pages. Route-specific checks now run on every warm/active/final navigation;
+  six helper unit tests and two actual isolated Chromium regressions pass,
+  including rejecting `h1` plus a loading body at the unchanged five-second
+  deadline. These are harness regressions, not a completed product soak.
+- Preview CSP now admits only Vercel's documented toolbar origins in both
+  policies for the exact `VERCEL_ENV=preview` environment. Eleven regressions
+  prove non-preview production policies are unchanged and eval remains dev-only.
+  Automated preview measurements use Vercel's documented skip-toolbar header,
+  not disabled deployment protection; manual toolbar compatibility is separate.
 
-No paid AI, scraping, rendering, checkout or live social action was performed
-by these checks. Provider acceptance retains the $10 ceiling and separate final
+One paid AI delegation was performed as described above. No scraping, checkout
+or live social action was performed. Real media acceptance stopped at Vercel
+preview protection before enqueue or paid execution; an appropriately scoped
+temporary bypass requires approval. It has not passed. Provider acceptance
+retains the $10 total ceiling and separate final
 live-payment/publication confirmations.
 
 ## Outstanding release gates
 
 1. Final-SHA CI/local gates, fresh Docker startup/restart/persistent runtime
    storage, and exact deployed Eve dispatch/cron discovery.
-2. Fresh staging BYOK, Exa, Apify, owned account and scoped media credentials;
-   owner/admin/member acceptance of delegation, reconnect/approval/resume,
+2. Apify and an owned staging social account; remaining owner/admin/member
+   acceptance of reconnect/approval/resume,
    rejection/Stop, stale configuration and permission revocation.
 3. Deployed Scout overlap, shared evidence, recovery and replay; Compose
    scheduling/unscheduling and final publication confirmation.
