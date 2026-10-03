@@ -97,9 +97,9 @@ export function RenderControls({ packageId, renderJobId }: { packageId: string; 
       <DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>Render finished media</DialogTitle><DialogDescription>Choose an uploaded source, then review the exported file before approving this post.</DialogDescription></DialogHeader>
         {!setup?.enabled ? <p>The media worker is not enabled for this installation yet.</p> : <>
           {setup.timelineEnabled && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={timelineMode} onChange={e => setTimelineMode(e.target.checked)} />Use multiple scenes</label>}
-          {timelineMode && setup.timelineEnabled ? <TimelineEditor videos={setup.assets} images={setup.images} initialScenes={setup.savedTimeline} busy={busy} onExport={async timeline => {
+          {timelineMode && setup.timelineEnabled ? <TimelineEditor videos={setup.assets} images={setup.images} music={setup.music} sfxEnabled={setup.sfxEnabled} initialSound={setup.savedSound} initialScenes={setup.savedTimeline} busy={busy} onExport={async (timeline, sound) => {
             setBusy(true);
-            try { const job = await renderThemePackage(packageId, { timeline, templateFamily: "branded_clip" }); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); toast.success("Timeline render queued"); router.refresh(); }
+            try { const job = await renderThemePackage(packageId, { timeline, ...sound, templateFamily: "branded_clip" }); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); toast.success("Timeline render queued"); router.refresh(); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue timeline"); } finally { setBusy(false); }
           }} /> : <>
           <label className="text-sm">Source asset<select className="mt-1 w-full rounded border bg-background p-2" value={assetId} onChange={e => setAssetId(e.target.value)}><option value="">Choose an asset</option>{setup.assets.map(asset => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>

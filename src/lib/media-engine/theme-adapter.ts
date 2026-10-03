@@ -6,6 +6,7 @@ import { dispatchQueuedRender } from "./dispatch";
 import { renderSpecSchema } from "./spec";
 import { themePackageRenderRevision } from "./theme-revision";
 import { timelineSchema, timelineFrames } from "./timeline";
+import { soundCuesSchema } from "./sound";
 
 export async function themeRenderInput(tenantId: string, packageId: string, settingsOverride?: Record<string, unknown>) {
   const pkg = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
@@ -49,7 +50,8 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
   const input: Record<string, unknown> = timeline ? {
     ...legacy, version: 2, format: "mp4", media: undefined,
     timeline: await Promise.all(timeline.map(async scene => scene.kind === "card" ? scene : { ...scene, asset: await assetRef(scene.asset.id, undefined) })),
-    video: { start: 0, duration: timelineFrames(timeline) / 30, captions: false, zoom: 1, sourceAudio: true, words: [] },
+    soundCues: soundCuesSchema.parse(component.soundCues ?? []),
+    video: { start: 0, duration: timelineFrames(timeline) / 30, captions: component.captions === true, zoom: 1, sourceAudio: true, words: [] },
   } : legacy;
   if (input.template === "photo_inset") input.inset = await assetRef(component.insetAssetId, component.pipInsetUrl);
   if (video && component.musicAssetId) input.music = await assetRef(component.musicAssetId, undefined);

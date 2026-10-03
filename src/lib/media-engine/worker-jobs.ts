@@ -45,16 +45,16 @@ export async function claimRenderJob() {
     const mimeType = spec.format === "mp4" ? "video/mp4" : "image/png";
     const urls = await mediaWorkerUrls(keys, outputKey, mimeType);
     const version = rendererVersion(spec);
-    if (spec.version === 2) {
-      const sceneLayouts = await Promise.all(spec.timeline.map(scene => renderTemplateHtml({ ...spec, title: scene.headline || spec.title }, scene.kind === "card")));
-      return { jobId: job.id, attemptToken: job.attemptToken, spec, rendererVersion: version, fontVersion: FONT_VERSION,
-        sceneLayouts, inputs: refs.map((ref, i) => ({ id: ref.id, url: urls.inputs[i] })), uploadUrl: urls.uploadUrl, mimeType };
-    }
     let audioUploadUrl: string | undefined;
     if (spec.video?.captions) {
       const audioKey = `${job.tenantId}/renders/${job.id}/${job.attemptToken}.mp3`;
       await enqueueR2Cleanup(job.tenantId, audioKey, "Temporary transcription audio", { notBefore: new Date(Date.now() + 30 * 60_000) });
       audioUploadUrl = (await mediaWorkerUrls([], audioKey, "audio/mpeg")).uploadUrl;
+    }
+    if (spec.version === 2) {
+      const sceneLayouts = await Promise.all(spec.timeline.map(scene => renderTemplateHtml({ ...spec, title: scene.headline || spec.title }, scene.kind === "card")));
+      return { jobId: job.id, attemptToken: job.attemptToken, spec, rendererVersion: version, fontVersion: FONT_VERSION,
+        audioUploadUrl, sceneLayouts, inputs: refs.map((ref, i) => ({ id: ref.id, url: urls.inputs[i] })), uploadUrl: urls.uploadUrl, mimeType };
     }
     const layout = await renderTemplateHtml(spec);
     const layoutHash = createHash("sha256").update(JSON.stringify({ html: layout.html, renderer: version, fonts: FONT_VERSION, images: spec.format === "png" ? [spec.media, spec.inset] : [] })).digest("hex");

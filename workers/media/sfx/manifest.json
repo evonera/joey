@@ -1,0 +1,22 @@
+{
+  "provenance": "Original deterministic mathematical synthesis; no third-party recordings",
+  "license": "MIT (repository LICENSE)",
+  "sampleRate": 48000,
+  "assets": {
+    "whoosh": {
+      "file": "whoosh.wav",
+      "duration": 0.35,
+      "sha256": "938fd391d02f544408a686a341687bc3d27fd037e7d1fe187a4629ff5c96d1ab"
+    },
+    "pop": {
+      "file": "pop.wav",
+      "duration": 0.12,
+      "sha256": "f1ffff807879fd75d466590c786cc92d45bf1f5b84cd65bac8f5ca9fc938c2e6"
+    },
+    "ding": {
+      "file": "ding.wav",
+      "duration": 0.4,
+      "sha256": "44177780944ce58059925a22f72adfd4b8523e1a4b17377043e4aea2ace5ef7c"
+    }
+  }
+}
