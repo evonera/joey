@@ -9,6 +9,7 @@ import { assets, contentPackages } from "@/lib/db/schema";
 import { assertThemeRenderCurrent, queueThemeRender } from "@/lib/media-engine/theme-adapter";
 import { publishContentPackage } from "@/lib/theme-studio/publishing/publisher";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
+import { timelineSchema } from "@/lib/media-engine/timeline";
 
 export async function reviewThemePackage(
   packageId: string,
@@ -61,6 +62,11 @@ export async function renderThemePackage(packageId: string, input?: unknown) {
   const tenantId = await getActiveTenantId();
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") throw new Error("The media renderer is not enabled.");
   if (input !== undefined) {
+    const timelineInput = z.object({ timeline: timelineSchema, templateFamily: z.enum(["branded_clip", "minimal_meme"]) }).strict();
+    if (typeof input === "object" && input !== null && "timeline" in input) {
+      if (process.env.MEDIA_TIMELINE_ENABLED !== "true") throw new Error("Multi-scene rendering is not enabled.");
+      return queueThemeRender(tenantId, packageId, timelineInput.parse(input));
+    }
     const settings = z.object({
       mediaAssetId: z.uuid(), insetAssetId: z.uuid().optional(), musicAssetId: z.uuid().optional(),
       templateFamily: z.enum(["branded_clip", "minimal_meme", "photo_headline", "photo_inset"]),
@@ -86,8 +92,9 @@ export async function renderThemePackage(packageId: string, input?: unknown) {
 export async function getThemeRenderSetup(packageId: string) {
   const tenantId = await getActiveTenantId();
   const { themeRenderInput } = await import("@/lib/media-engine/theme-adapter");
-  const { format } = await themeRenderInput(tenantId, packageId);
+  const { format, component } = await themeRenderInput(tenantId, packageId);
   const { assets } = await import("@/lib/db/schema");
   const rows = await db.query.assets.findMany({ where: eq(assets.tenantId, tenantId), columns: { id: true, filename: true, mimeType: true, publicUrl: true }, limit: 100 });
-  return { enabled: process.env.MEDIA_ENGINE_ENABLED === "true" && format.mediaType !== "carousel", video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
+  const savedTimeline = timelineSchema.safeParse(component.timeline);
+  return { enabled: process.env.MEDIA_ENGINE_ENABLED === "true" && format.mediaType !== "carousel", timelineEnabled: process.env.MEDIA_TIMELINE_ENABLED === "true" && format.mediaType === "video", savedTimeline: savedTimeline.success ? savedTimeline.data : undefined, video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
 }

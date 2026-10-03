@@ -2,12 +2,13 @@ import { dispatchQueuedRender } from "./dispatch";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assets, contentPackages, drafts, flows, mediaRenderJobs } from "@/lib/db/schema";
-import { renderHash, renderSpecSchema, referencedAssets } from "./spec";
+import { renderHash, renderSpecSchema, referencedAssets, expectedAssetTypes } from "./spec";
 
 /** Server runtime only. The tenant is derived by the authenticated caller. */
 export async function submitRender(tenantId: string, input: unknown, options: { dispatch?: boolean } = {}) {
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") throw new Error("The new media renderer is not enabled.");
   const spec = renderSpecSchema.parse(input);
+  if (spec.version === 2 && process.env.MEDIA_TIMELINE_ENABLED !== "true") throw new Error("Multi-scene rendering is not enabled.");
   const result = await db.transaction(async tx => {
     // Serialize quota checks and identical submissions within a workspace.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`media:${tenantId}`}))`);
@@ -22,8 +23,7 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
     for (const ref of refs) {
       const row = owned.find(item => item.id === ref.id);
       if (!row || row.key !== ref.version) throw new Error("A source asset is missing or its version changed.");
-      const expected = ref === spec.music ? "audio/" : ref === spec.media && spec.format === "mp4" ? "video/" : "image/";
-      if (!row.mimeType.startsWith(expected)) throw new Error("Source asset type does not match the template.");
+      if (!expectedAssetTypes(spec, ref.id).every(expected => row.mimeType.startsWith(expected))) throw new Error("Source asset type does not match the template.");
     }
     const inputHash = renderHash(spec);
     const associateDraft = async (jobId: string, status: string) => {

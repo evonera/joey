@@ -26,6 +26,7 @@ export async function transcribeRender(jobId: string, attemptToken: string, depe
   if (!job || job.updatedAt.getTime() < Date.now() - 600_000) throw new Error("Render lease expired.");
   const spec = renderSpecSchema.parse(job.spec);
   if (!spec.video?.captions) throw new Error("This render does not request automatic captions.");
+  if (spec.version !== 1) throw new Error("Timeline transcription is not enabled.");
   const inputHash = transcriptHash(spec.media, spec.video.start, spec.video.duration);
   const cached = await db.query.mediaTranscripts.findFirst({ where: and(eq(mediaTranscripts.tenantId, job.tenantId), eq(mediaTranscripts.inputHash, inputHash)) });
   if (cached?.status === "succeeded") return { words: cached.words };

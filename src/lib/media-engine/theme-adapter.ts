@@ -3,8 +3,9 @@ import { db } from "@/lib/db";
 import { assets, contentPackages, customAgentRuns, mediaRenderJobs, scoutRemixes, themeContentFormats, themePages, themeVisualTemplates } from "@/lib/db/schema";
 import { getRender, retryRender, submitRender } from "./engine";
 import { dispatchQueuedRender } from "./dispatch";
-import type { RenderSpec } from "./spec";
+import { renderSpecSchema } from "./spec";
 import { themePackageRenderRevision } from "./theme-revision";
+import { timelineSchema, timelineFrames } from "./timeline";
 
 export async function themeRenderInput(tenantId: string, packageId: string, settingsOverride?: Record<string, unknown>) {
   const pkg = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
@@ -34,8 +35,10 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
     if (!asset) throw new Error("Choose an uploaded workspace asset in the template before rendering.");
     return { id: asset.id, version: asset.key };
   }
-  const media = await assetRef(component.mediaAssetId, video ? component.videoUrl : component.imageUrl);
-  const spec: RenderSpec = {
+  const timeline = component.timeline === undefined ? undefined : timelineSchema.parse(component.timeline);
+  if (timeline && (!video || process.env.MEDIA_TIMELINE_ENABLED !== "true")) throw new Error("Multi-scene video rendering is not enabled.");
+  const media = timeline ? undefined : await assetRef(component.mediaAssetId, video ? component.videoUrl : component.imageUrl);
+  const legacy: Record<string, unknown> = {
     version: 1, source: { kind: "theme_package", id: packageId, revision }, templateVersion: 1,
     template: video ? component.templateFamily === "minimal_meme" ? "minimal_meme" : "branded_clip" : component.pipInsetUrl || component.insetAssetId ? "photo_inset" : "photo_headline",
     format: video ? "mp4" : "png", title: pkg.title, media,
@@ -43,8 +46,14 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
     crop: { mode: component.cropMode === "contain" ? "contain" : component.cropMode === "cover" || !video ? "cover" : "contain", x: Number(component.cropX ?? .5), y: Number(component.cropY ?? .5) },
     ...(video ? { video: { start: Number(component.trimStart ?? 0), duration: Number(component.durationSeconds ?? 15), zoom: Number(component.zoom ?? 1), sourceAudio: true, captions: component.captions === true, words: [] } } : {}),
   };
-  if (spec.template === "photo_inset") spec.inset = await assetRef(component.insetAssetId, component.pipInsetUrl);
-  if (video && component.musicAssetId) spec.music = await assetRef(component.musicAssetId, undefined);
+  const input: Record<string, unknown> = timeline ? {
+    ...legacy, version: 2, format: "mp4", media: undefined,
+    timeline: await Promise.all(timeline.map(async scene => scene.kind === "card" ? scene : { ...scene, asset: await assetRef(scene.asset.id, undefined) })),
+    video: { start: 0, duration: timelineFrames(timeline) / 30, captions: false, zoom: 1, sourceAudio: true, words: [] },
+  } : legacy;
+  if (input.template === "photo_inset") input.inset = await assetRef(component.insetAssetId, component.pipInsetUrl);
+  if (video && component.musicAssetId) input.music = await assetRef(component.musicAssetId, undefined);
+  const spec = renderSpecSchema.parse(input);
   // Persist the package ↔ job reference before waking Modal. A short export
   // can otherwise finish before `settleThemeRender` can identify its package.
   const job = await submitRender(tenantId, spec, { dispatch: false });
