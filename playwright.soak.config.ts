@@ -18,11 +18,8 @@ export default defineConfig({
   use: {
     ...devices["Desktop Chrome"],
     baseURL: remoteBaseUrl ?? "http://localhost:3000",
-    // Official automation header: exclude the preview toolbar from product
-    // performance measurements without changing project protection or CSP.
-    extraHTTPHeaders: remoteBaseUrl && new URL(remoteBaseUrl).hostname.endsWith(".vercel.app")
-      ? { "x-vercel-skip-toolbar": "1" }
-      : undefined,
+    // Keep the actual preview toolbar. Global extraHTTPHeaders also reach
+    // third-party telemetry and can break its CORS preflight.
     storageState: process.env.JOEY_SOAK_STORAGE_STATE,
     trace: "retain-on-failure",
   },

@@ -157,14 +157,23 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
     const url = new URL(value);
     return `${url.origin}${url.pathname}`;
   };
+  const sanitizedMessage = (value: string) => value.replace(/https?:\/\/[^\s'"<>]+/g, sanitizedUrl);
+  const assertObservedErrors = () => {
+    expect(pageErrors, 'Unhandled browser errors or promise rejections').toEqual([]);
+    expect(consoleErrors, 'Browser console errors').toEqual([]);
+    expect(httpErrors, 'HTTP client errors').toEqual([]);
+    expect(requestFailures, 'Non-aborted network failures').toEqual([]);
+    expect(serverErrors, 'Server responses with status 5xx').toEqual([]);
+  };
 
   page.on("console", (message) => {
     if (message.type() === "error") {
       const source = message.location().url;
-      consoleErrors.push(source ? `${message.text()} (${sanitizedUrl(source)})` : message.text());
+      const messageText = sanitizedMessage(message.text());
+      consoleErrors.push(source ? `${messageText} (${sanitizedUrl(source)})` : messageText);
     }
   });
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("pageerror", (error) => pageErrors.push(sanitizedMessage(error.message)));
   page.on("request", (request) => {
     requestPhases.set(request, measurementStartedAt === null ? 'warmup' : 'measurement');
     if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentNavigations += 1;
@@ -209,6 +218,7 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
     if (!allowPublic && isSignInPath(page)) {
       throw new Error(`Authentication expired while warming ${route}.`);
     }
+    assertObservedErrors();
   }
   await collectGarbage(page);
   samples.push(await readMetrics(page));
@@ -229,6 +239,9 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
         interactions[interaction] = (interactions[interaction] ?? 0) + 1;
       }
     }
+    // Stop on observed errors instead of spending the remaining 30 minutes
+    // collecting evidence for a run that already cannot pass.
+    assertObservedErrors();
     await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" }));
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
     if (iteration % routes.length === routes.length - 1) samples.push(await readMetrics(page));
@@ -275,11 +288,7 @@ test("authenticated active-session soak", async ({ page }, testInfo) => {
   await attachReport(testInfo, report);
   reportAttached = true;
 
-  expect(pageErrors, "Unhandled browser errors or promise rejections").toEqual([]);
-  expect(consoleErrors, "Browser console errors").toEqual([]);
-  expect(httpErrors, "HTTP client errors").toEqual([]);
-  expect(requestFailures, "Non-aborted network failures").toEqual([]);
-  expect(serverErrors, "Server responses with status 5xx").toEqual([]);
+  assertObservedErrors();
   expect(noisyEndpoints, "Endpoints exceeding the polling/request-rate budget").toEqual([]);
   expect(report.heapGrowthBytes, "Garbage-collected JavaScript heap growth").toBeLessThanOrEqual(maxHeapGrowthBytes);
   expect(report.listenerGrowth, "JavaScript event-listener growth").toBeLessThanOrEqual(maxListenerGrowth);

@@ -102,8 +102,13 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
   and cost estimates were misleadingly labelled as totals; they are now
   explicitly transcript estimates, excluding hidden prompts/repeated calls/
   specialists, with cache usage marked unavailable rather than falsely zero.
-  A focused rendering regression passes. Final deployed visual recheck remains
-  required; these changes do not replace provider accounting.
+  A focused rendering regression passes. The deployed `03d32f0` visual recheck
+  reopened the saved completed specialist conversation without another prompt:
+  at 390px the context button's right edge was 361px, document width was 390px,
+  and the inspector's disclosure and cache-unavailable state were visible.
+  Screenshots are retained privately. Recorded usage remained $0.01314450,
+  three events and zero reservations; these estimates do not replace provider
+  accounting.
 - Three read-only Dodo **test-mode** catalog requests confirmed the configured
   Creator/Pro/Agency products are USD monthly subscriptions at $19/$59/$149,
   matching the code catalog. Billing/auth focused regressions passed 27/27.
@@ -113,12 +118,20 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
 - The existing Joey Sentry error monitor now has a persisted email alert to
   Shakthi, throttled to five minutes. One test notification was requested;
   recipient receipt and controlled frontend/server/Eve/media alert delivery
-  remain unverified.
+  remain unverified. The successful `03d32f0` preview build explicitly logged
+  source-map upload success. This proves upload, not delivered alerts or a
+  deobfuscated acceptance event.
 - Fresh GitHub CI exposed a browser-fixture setup defect: it built Next but not
   Eve before the supervised launcher. Both Playwright launch configurations now
   build Eve first. Corrected SHA `4456a43` passed Application quality,
   Playwright E2E (24/24), Tauri quality and Vercel deployment checks. Recheck any
-  later accepted SHA before merge.
+  later accepted SHA before merge. Follow-up `4b4512b` passed GitHub checks but
+  its Vercel build failed because a script unit test imported the intentionally
+  excluded browser-test folder. `03d32f0` excludes only script tests and private
+  test results from deployment uploads, retaining runtime helpers and CI
+  coverage; Application quality (139 suites / 909 tests), Playwright E2E
+  (24/24), Tauri quality and Vercel deployment then passed. Any later accepted
+  SHA still needs its gates.
 - The authenticated 30-minute soak did **not pass**: attempts stopped at
   23.2 minutes during build/test contention and at 15.8 minutes with builds
   quiet, on a Drafts loading assertion. The latter report recorded 146
@@ -139,11 +152,22 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
   six helper unit tests and two actual isolated Chromium regressions pass,
   including rejecting `h1` plus a loading body at the unchanged five-second
   deadline. These are harness regressions, not a completed product soak.
+  The strict hosted short run on application SHA `03d32f0` completed 122,249ms
+  of measurement and 18 iterations with all route readiness checks passing:
+  agent search/selection, local Compose edit, Drafts filter and calendar
+  navigation each ran twice; one document navigation, GC heap growth 1,557,816
+  bytes, listener growth -1 and no noisy endpoints were recorded. It still
+  **failed**, with 12 console errors and six Sentry CORS failures because the
+  harness's global `x-vercel-skip-toolbar` header reached cross-origin telemetry.
+  There were no page errors or HTTP/server error responses; all completed
+  recorded requests were below two seconds. The actual failure report is
+  retained privately; no 30-minute hosted acceptance passed on this evidence.
 - Preview CSP now admits only Vercel's documented toolbar origins in both
   policies for the exact `VERCEL_ENV=preview` environment. Eleven regressions
   prove non-preview production policies are unchanged and eval remains dev-only.
-  Automated preview measurements use Vercel's documented skip-toolbar header,
-  not disabled deployment protection; manual toolbar compatibility is separate.
+  The erroneous global skip-toolbar header has been removed. Future hosted
+  measurements retain the actual toolbar and its overhead, without intercepting
+  requests, masking errors or disabling deployment protection.
 
 One paid AI delegation was performed as described above. No scraping, checkout
 or live social action was performed. Real media acceptance stopped at Vercel

@@ -82,9 +82,12 @@ compositions are not mistaken for leaks. The report counts document navigation
 and retains warm-up versus measurement request timings with URL queries removed.
 A passing SPA soak does not certify cold or hard-reload latency; preserve and
 investigate failures from those navigation paths separately.
-Vercel previews use the documented `x-vercel-skip-toolbar: 1` automation header
-to exclude Vercel's toolbar from product measurements. This does not bypass
-deployment protection; toolbar compatibility remains a separate visual check.
+Vercel preview measurements retain the actual toolbar and include its resource
+and listener overhead. Do not set `x-vercel-skip-toolbar` as a global browser
+header: it also reaches third-party telemetry and can trigger CORS failures.
+The harness does not intercept or mask toolbar/telemetry errors, disable HTTP
+cache, or bypass deployment protection. Keep this preview-specific overhead
+explicit when comparing results with production.
 
 ## Cold and warm route profiling
 
