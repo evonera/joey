@@ -89,6 +89,30 @@ The harness does not intercept or mask toolbar/telemetry errors, disable HTTP
 cache, or bypass deployment protection. Keep this preview-specific overhead
 explicit when comparing results with production.
 
+Hold deployment changes for the whole measured session. An alias changing
+builds can trigger a framework full reload even without application source
+changes; retain that evidence and do not call it a single-deployment pass.
+Use an immutable preview URL only if the configured auth client and trusted
+origin genuinely support it. Otherwise freeze the canonical staging alias;
+do not rewrite auth origins or weaken security just to run a test.
+
+Run a long browser check on a host connected to AC power, with adequate battery,
+the lid open and sleep disabled for the session. On macOS, wrap the command with
+`caffeinate -dis npm run test:soak -- --grep 'authenticated active-session soak'`.
+The installed `caffeinate(8)` manual defines `-i` for idle system sleep, `-d`
+for display sleep and `-s` for system sleep on AC power. Do not rely on it to
+protect against critical-battery, lid-close or manually requested sleep.
+An `ERR_NETWORK_IO_SUSPENDED` run fails the gate; correlate its trace with the
+relevant host power-log interval before attributing it to the website.
+
+Keep auth state, JSON reports and traces in a persistent private location
+outside Git, not only `/tmp`, for example
+`/Users/shakthi/.codex/acceptance/joey-2026-10-03-4e44605` (directory 700,
+files 600). Set Playwright's `--output` to that private location and preserve
+the HTML reporter's accompanying data too. Traces may contain session cookies;
+never upload them publicly. Recover the actual report after an interruption
+before retrying; missing process handles are not proof of success.
+
 ## Cold and warm route profiling
 
 Profile Dashboard, Compose, Flows, Theme Studio, Calendar, Analytics, Engagement, Accounts, and Settings against the exact deployment SHA. Use a clean browser profile for cold navigation, then revisit the same routes for warm navigation. Record transferred JavaScript, LCP, CLS, INP, long tasks, and cache status. Compare the result with `docs/benchmarks/client-bundle-2026-09-07.json`; that file is a build-manifest ceiling, not a browser trace.

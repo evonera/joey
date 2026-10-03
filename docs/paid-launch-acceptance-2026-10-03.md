@@ -64,7 +64,9 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
   tmpfs PostgreSQL 18 instance passed, with 13 migration-journal entries.
   Earlier restore attempts reached the temporary initialization server; waiting
   for the final TCP listener resolved the readiness race. The verification
-  container was stopped; the restricted backup is retained. Its journal has
+  container was stopped. The prior temporary archive is no longer available
+  after host recovery; a fresh durable backup and verified restore are mandatory
+  before production rollout. The restored snapshot's journal had
   13 entries through 0049 (historical baseline). The
   isolated Neon child `codex-paid-launch-staging-20261003` / `br-hidden-glade-axnz0mxd`
   rehearsed 0050–0054, replayed successfully and has 18 journal entries through
@@ -106,7 +108,8 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
   reopened the saved completed specialist conversation without another prompt:
   at 390px the context button's right edge was 361px, document width was 390px,
   and the inspector's disclosure and cache-unavailable state were visible.
-  Screenshots are retained privately. Recorded usage remained $0.01314450,
+  Screenshots were inspected during that check; their temporary files are now
+  unavailable after host recovery. Recorded usage remained $0.01314450,
   three events and zero reservations; these estimates do not replace provider
   accounting.
 - Three read-only Dodo **test-mode** catalog requests confirmed the configured
@@ -131,7 +134,9 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
   test results from deployment uploads, retaining runtime helpers and CI
   coverage; Application quality (139 suites / 909 tests), Playwright E2E
   (24/24), Tauri quality and Vercel deployment then passed. Any later accepted
-  SHA still needs its gates.
+  SHA still needs its gates. The test/config-only follow-up `4e44605` also
+  passed Application quality (140 suites / 911 tests), Playwright (24/24),
+  Tauri quality and Vercel deployment.
 - The authenticated 30-minute soak did **not pass**: attempts stopped at
   23.2 minutes during build/test contention and at 15.8 minutes with builds
   quiet, on a Drafts loading assertion. The latter report recorded 146
@@ -160,8 +165,30 @@ Cloud checks. No hosted Cloud database or collection deployment was provisioned.
   **failed**, with 12 console errors and six Sentry CORS failures because the
   harness's global `x-vercel-skip-toolbar` header reached cross-origin telemetry.
   There were no page errors or HTTP/server error responses; all completed
-  recorded requests were below two seconds. The actual failure report is
-  retained privately; no 30-minute hosted acceptance passed on this evidence.
+  recorded requests were below two seconds. These were observed historical
+  results; their temporary report path is no longer available after recovery.
+  No 30-minute hosted acceptance passed on this evidence.
+  Removing the global header allowed strict two-minute hosted comparisons to
+  pass with the actual toolbar, zero observed errors and all read-only controls
+  exercised. They are short diagnostics, not 30-minute acceptance. An ensuing
+  long attempt crossed the alias change from `03d32f0` to `4e44605`, then
+  performed an app-initiated full Dashboard reload and failed its loading
+  assertion. The new deployment became ready at 16:41:24.966 UTC, about eleven
+  seconds before that navigation; this is consistent with deployment skew,
+  not conclusive causal proof. No runtime application files differed.
+  A fresh, frozen-`4e44605` long run also **failed**: 20,991ms of measurement,
+  two completed iterations, one agent search/selection and local Compose edit,
+  then `POST /compose: net::ERR_NETWORK_IO_SUSPENDED`. It recorded one console
+  error and one failed request, with no page/HTTP/server errors, and never
+  reached final GC/leak checks. The retained Chromium console event is at
+  approximately 16:52:11.757 UTC. The host power log records
+  `2026-10-03 22:22:24 +0530` (16:52:24 UTC): entering **Low Power Sleep** on
+  battery at **1%**, TCP keep-alive inactive. This nearby host event strongly
+  supports host suspension as the cause; it does not prove a website defect
+  or establish a passing run. Earlier temporary artifact/auth paths disappeared
+  after recovery. The recovered failure JSON and trace are now retained outside
+  Git under `/Users/shakthi/.codex/acceptance/joey-2026-10-03-4e44605`, directory
+  mode 700/files 600. No replacement browser, auth state or soak was created.
 - Preview CSP now admits only Vercel's documented toolbar origins in both
   policies for the exact `VERCEL_ENV=preview` environment. Eleven regressions
   prove non-preview production policies are unchanged and eval remains dev-only.
@@ -196,8 +223,9 @@ live-payment/publication confirmations.
 7. Successful 30-minute authenticated staging soak with retained heap/listener,
    failed-request/5xx/console and cold/warm evidence; real mobile browsers with
    keyboards open.
-8. Verified existing encrypted credentials before retiring production legacy
-   fallback. Only then apply the rehearsed migrations once, deploy the exact
+8. A fresh durable production backup with verified restore, and verified
+   existing encrypted credentials before retiring production legacy fallback.
+   Only then apply the rehearsed migrations once, deploy the exact
    accepted SHA and explicitly activate draft-only automation after its gates.
 
 Do not merge the public stack merely because Cloud or mocked contracts pass.
