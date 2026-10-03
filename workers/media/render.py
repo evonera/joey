@@ -29,11 +29,26 @@ sentry_sdk.set_tag("runtime", "modal-python")
 
 
 def api(path, payload):
+    headers = {"content-type": "application/json"}
+    bypass = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET")
+    if bypass:
+        from urllib.parse import urlparse
+        origin = os.environ["JOEY_URL"].rstrip("/")
+        parsed = urlparse(origin)
+        if (os.environ.get("MEDIA_WORKER_ENVIRONMENT") != "staging"
+                or origin != os.environ.get("MEDIA_STAGING_ORIGIN")
+                or parsed.scheme != "https" or not parsed.hostname
+                or not parsed.hostname.endswith(".vercel.app")
+                or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password
+                or path not in ("/api/media-worker/claim", "/api/media-worker/complete", "/api/media-worker/transcribe")):
+            raise ValueError("Staging bypass requires an exact approved staging origin and worker path")
+        headers["x-vercel-protection-bypass"] = bypass
     body = json.dumps(payload, separators=(",", ":"))
     timestamp = str(int(time.time() * 1000))
     signature = hmac.new(os.environ["MEDIA_WORKER_SECRET"].encode(), f"{timestamp}.{body}".encode(), hashlib.sha256).hexdigest()
+    headers.update({"x-render-timestamp": timestamp, "x-render-signature": signature})
     response = httpx.post(os.environ["JOEY_URL"].rstrip("/") + path, content=body,
-                          headers={"content-type": "application/json", "x-render-timestamp": timestamp, "x-render-signature": signature}, timeout=180 if path.endswith("/transcribe") else 45)
+                          headers=headers, follow_redirects=False, timeout=180 if path.endswith("/transcribe") else 45)
     response.raise_for_status()
     return response.json()
 

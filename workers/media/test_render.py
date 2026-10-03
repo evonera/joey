@@ -3,10 +3,31 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from render import ass_time, download, write_captions, prepare_fonts, probe_media, validate_trim
+from render import api, ass_time, download, write_captions, prepare_fonts, probe_media, validate_trim
+import os
 
 
 class RenderContractTests(unittest.TestCase):
+    def test_bypass_is_sent_only_to_pinned_staging_worker_routes(self):
+        env = {"JOEY_URL": "https://isolated-staging.vercel.app", "MEDIA_STAGING_ORIGIN": "https://isolated-staging.vercel.app",
+               "MEDIA_WORKER_ENVIRONMENT": "staging", "MEDIA_WORKER_SECRET": "test-hmac-secret",
+               "VERCEL_AUTOMATION_BYPASS_SECRET": "test-bypass"}
+        with patch.dict(os.environ, env, clear=True), patch("render.httpx.post") as post:
+            api("/api/media-worker/claim", {})
+            self.assertEqual(post.call_args.kwargs["headers"]["x-vercel-protection-bypass"], "test-bypass")
+            self.assertFalse(post.call_args.kwargs["follow_redirects"])
+        for override in [{"MEDIA_WORKER_ENVIRONMENT": "production"}, {"JOEY_URL": "https://other.vercel.app"},
+                         {"JOEY_URL": "http://isolated-staging.vercel.app"}, {"JOEY_URL": "https://isolated-staging.vercel.app/path"}]:
+            with patch.dict(os.environ, {**env, **override}, clear=True), patch("render.httpx.post") as post, self.assertRaises(ValueError):
+                api("/api/media-worker/claim", {})
+            post.assert_not_called()
+        with patch.dict(os.environ, env, clear=True), patch("render.httpx.post") as post, self.assertRaises(ValueError):
+            api("/api/other", {})
+        post.assert_not_called()
+        with patch.dict(os.environ, env, clear=True), patch("render.httpx.post") as post, self.assertRaises(ValueError):
+            api("/api/media-worker/../other", {})
+        post.assert_not_called()
+
     def test_fractional_trim_and_nonfinite_inputs(self):
         validate_trim({"start": 1.2, "duration": 2.4}, 3.6)
         for start, duration, source in [(0, 4, 3.6), (2.8, 1, 3.6), (-1, 2, 4),
