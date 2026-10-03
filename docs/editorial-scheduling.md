@@ -1,6 +1,8 @@
 # Assisted editorial scheduling
 
-Apply migration 0055 before enabling `EDITORIAL_SCHEDULING_ENABLED=true`.
+Apply migration 0055 before deploying this code, including deployments with
+`EDITORIAL_SCHEDULING_ENABLED=false`: ordinary Compose/review scheduling also
+checks stored cadence preferences. Enable assisted UI separately after acceptance.
 Owners/admins save explicit per-account IANA timezones and weekly windows in
 Calendar. Suggestions return up to three UTC/local instants within fourteen
 days; they are preferences, not claimed engagement predictions. Six-hour

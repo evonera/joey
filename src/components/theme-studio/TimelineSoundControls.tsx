@@ -5,6 +5,7 @@ export function TimelineSoundControls({ value, onChange, enabled, frames, music,
   return <fieldset disabled={busy} className="space-y-3 rounded-lg border p-3"><legend className="px-1 text-sm font-medium">Audio and captions</legend>
     <label className="block text-sm">Background music<select value={value.musicAssetId ?? ""} onChange={e => onChange({ ...value, musicAssetId: e.target.value || undefined })} className="mt-1 w-full rounded border bg-background p-2"><option value="">No music</option>{music.map(asset => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.captions} onChange={e => onChange({ ...value, captions: e.target.checked })} />Generate captions from assembled source audio (workspace OpenAI key; provider cost applies)</label>
+    {!enabled && value.soundCues.length > 0 && <button type="button" className="rounded border px-3 py-2" onClick={() => onChange({ ...value, soundCues: [] })}>Remove disabled sound effects</button>}
     {enabled && <>
       <p className="text-sm text-muted-foreground">Effects are optional. Maximum six, at least one second apart. Keep speech clear; listen to the finished export.</p>
       {value.soundCues.map((cue, index) => <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-3">

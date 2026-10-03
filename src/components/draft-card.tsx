@@ -26,6 +26,7 @@ import { DraftComments } from "@/components/drafts/draft-comments";
 import { PublishConfirmDialog } from "@/components/compose/publish-confirm-dialog";
 import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
 import { useThreads, useIsInsideRoom } from "@liveblocks/react";
+import { EditorialSuggestions } from "@/components/calendar/editorial-suggestions";
 
 interface DraftCardProps {
   draft: any;
@@ -33,6 +34,7 @@ interface DraftCardProps {
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
+  assistedScheduling?: boolean;
 }
 
 function InnerDraftCommentBadge({ draftId }: { draftId: string }) {
@@ -55,7 +57,7 @@ function DraftCommentBadge({ draftId }: { draftId: string }) {
   return <InnerDraftCommentBadge draftId={draftId} />;
 }
 
-function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggleSelect }: DraftCardProps) {
+function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggleSelect, assistedScheduling }: DraftCardProps) {
     const { isConfigured } = useLiveblocksConfig();
     const { broadcastApproval, broadcastRejection, broadcastUpdate } = useDraftCollaboration();
     const [isEditing, setIsEditing] = useState(false);
@@ -265,6 +267,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
             )}
 
             {/* Failed Retry */}
+            {assistedScheduling && !platformOpts?.isThemePackage && !isEditing && !isRejecting && ["approved", "scheduled"].includes(draft.status) && <EditorialSuggestions draftId={draft.id} onConfirmed={onActionComplete} />}
             {draft.status === 'failed' && !publicationLocked && (
                 <div className="flex gap-2 pt-2 border-t border-border">
                     <Button onClick={() => setIsEditing(true)} variant="outline" size="sm" disabled={loading} className="gap-1 text-xs">

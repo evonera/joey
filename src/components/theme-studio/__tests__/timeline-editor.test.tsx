@@ -28,4 +28,10 @@ describe("Timeline editor acceptance", () => {
     view.rerender(<TimelineEditor {...properties} sfxEnabled={false} />);
     expect(screen.queryByRole("button", { name: "Sparse intro preset" })).not.toBeInTheDocument();
   });
+  it("lets a saved timeline recover when sound effects are rolled back", () => {
+    render(<TimelineEditor {...properties} sfxEnabled={false} initialSound={{ captions: false, soundCues: [{ effect: "pop", frame: 0, gain: .2 }] }} />);
+    expect(screen.getByRole("button", { name: "Create timeline export" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove disabled sound effects" }));
+    expect(screen.getByRole("button", { name: "Create timeline export" })).toBeEnabled();
+  });
 });
