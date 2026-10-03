@@ -147,6 +147,16 @@ export const socialAccounts = pgTable("social_accounts", {
   tenantIdentity: uniqueIndex("social_accounts_tenant_identity").on(table.tenantId, table.id),
 }));
 
+export const editorialPreferences = pgTable("editorial_preferences", {
+  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull(),
+  preferences: jsonb("preferences").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, table => ({
+  identity: uniqueIndex("editorial_preferences_identity").on(table.tenantId, table.accountId),
+  account: foreignKey({ columns: [table.tenantId, table.accountId], foreignColumns: [socialAccounts.tenantId, socialAccounts.id] }).onDelete("cascade"),
+}));
+
 export const socialEntities = pgTable("social_entities", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   socialAccountId: text("social_account_id").notNull().references(() => socialAccounts.id, { onDelete: "cascade" }),

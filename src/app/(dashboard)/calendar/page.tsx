@@ -2,8 +2,11 @@ import { Suspense } from "react";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { CalendarView } from "@/components/calendar/calendar-view";
 import { Loading03Icon as Loader2 } from "hugeicons-react";
+import { getEditorialSetup } from "@/app/actions/editorial-calendar";
+import { EditorialSettings } from "@/components/calendar/editorial-settings";
 
-export default function CalendarPage() {
+export default async function CalendarPage() {
+  const editorial = await getEditorialSetup();
   return (
     <Suspense fallback={<div className="flex items-center justify-center h-72"><Loader2 className="animate-spin text-muted-foreground" /></div>}>
       <NuqsAdapter>
@@ -12,6 +15,7 @@ export default function CalendarPage() {
             <h1 className="text-2xl font-bold tracking-tight text-foreground">Content Calendar</h1>
             <p className="text-sm text-muted-foreground mt-1">Manage and track your scheduled and published posts across channels.</p>
           </div>
+          {editorial.enabled && <EditorialSettings accounts={editorial.accounts} preferences={editorial.preferences} />}
           <div className="flex-1 min-h-[640px]">
             <CalendarView />
           </div>
