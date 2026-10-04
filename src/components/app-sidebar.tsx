@@ -76,6 +76,11 @@ export function AppSidebar({
       label: "Explore & automate",
       items: [
         {
+          title: "Agents",
+          url: "/agents",
+          icon: UserMultiple02Icon,
+        },
+        {
           title: "Theme Studio",
           url: "/theme-studio",
           icon: SparklesIcon,

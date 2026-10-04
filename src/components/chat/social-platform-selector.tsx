@@ -115,6 +115,7 @@ interface SocialPlatformSelectorProps {
   selectedAccountIds: Record<string, string[]>;
   onSelectAccounts: (platformId: string, accountIds: string[]) => void;
   className?: string;
+  allowedAccountIds?: readonly string[];
 }
 
 export function SocialPlatformSelector({
@@ -123,6 +124,7 @@ export function SocialPlatformSelector({
   selectedAccountIds,
   onSelectAccounts,
   className,
+  allowedAccountIds,
 }: SocialPlatformSelectorProps) {
   const [accounts, setAccounts] = React.useState<ConnectedAccount[]>([]);
   const [accountThemeMap, setAccountThemeMap] = React.useState<Record<string, string>>({});
@@ -173,10 +175,10 @@ export function SocialPlatformSelector({
     (platform: PlatformConfig) => {
       return accounts.filter((acc) => {
         const p = acc.platform?.toLowerCase() || "";
-        return platform.aliases.includes(p) && acc.isActive !== false;
+        return platform.aliases.includes(p) && acc.isActive !== false && (allowedAccountIds === undefined || allowedAccountIds.includes(acc.id));
       });
     },
-    [accounts]
+    [accounts, allowedAccountIds]
   );
 
   // Compute total selected items count

@@ -3,6 +3,7 @@
 import { useChatStorageScope } from "@/components/chat/chat-storage-provider";
 
 import type { UserContent } from "ai";
+import type { ClientSessionState } from "eve/client";
 import { toast } from "sonner";
 import { useEveAgent } from "eve/react";
 import {
@@ -65,6 +66,7 @@ import {
   type SavedChatSession,
 } from "@/lib/chat-sessions";
 import { ChatLibraryView } from "@/components/chat/chat-library-view";
+import { messageWithChatContext } from "@/lib/chat-title";
 import { SocialPlatformSelector } from "@/components/chat/social-platform-selector";
 import {
   SourcesPillButton,
@@ -81,9 +83,13 @@ const ChatSidepanel = dynamic(() => import("@/components/chat/chat-sidepanel").t
 type AgentStatus = ReturnType<typeof useEveAgent>["status"];
 type CancellationState = "idle" | "cancelling";
 
-export function AgentChat() {
+type ChatPersona = { id: string; name: string; description: string; accountIds: readonly string[] };
+export function AgentChat({ persona, embedded = false, initialServerSession, onConversationSettled }: {
+  persona?: ChatPersona; embedded?: boolean; initialServerSession?: ClientSessionState; onConversationSettled?: () => void;
+} = {}) {
   const storageScope = useChatStorageScope();
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
+  const [serverSession, setServerSession] = useState(initialServerSession);
   const [sessionKey, setSessionKey] = useState<string>(() => `chat_${Date.now()}`);
   const [initialPrompt, setInitialPrompt] = useState<string | undefined>(undefined);
   const [activeView, setActiveView] = useState<"chat" | "library">("chat");
@@ -93,6 +99,7 @@ export function AgentChat() {
   const [videoAssetId, setVideoAssetId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (persona) return;
     let cancelled = false;
     const assetId = sessionStorage.getItem('joey_create_video_asset');
     const params = new URLSearchParams(window.location.search);
@@ -113,7 +120,7 @@ export function AgentChat() {
       }).catch(() => { if (!cancelled) toast.error('Could not load this template. Open Theme Studio and try again.'); });
     }
     return () => { cancelled = true; };
-  }, []);
+  }, [persona]);
 
   // Load saved session data when activeSessionId changes
   const activeSavedSession = useMemo(() => {
@@ -122,6 +129,7 @@ export function AgentChat() {
   }, [activeSessionId, storageScope]);
 
   const handleSelectSession = (session: SavedChatSession) => {
+    setServerSession(undefined);
     setActiveSessionId(session.id);
     setInitialPrompt(undefined);
     setSessionKey(`session_${session.id}`);
@@ -129,6 +137,7 @@ export function AgentChat() {
   };
 
   const handleNewChat = (prompt?: string) => {
+    setServerSession(undefined);
     setActiveSessionId(undefined);
     setInitialPrompt(prompt);
     setSessionKey(`chat_${Date.now()}`);
@@ -146,7 +155,7 @@ export function AgentChat() {
 
   if (activeView === "library") {
     return (
-      <div className="flex flex-col h-[calc(100dvh-var(--header-height)-3.5rem)] w-full overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs">
+      <div className={cn("flex flex-col w-full overflow-hidden bg-card text-foreground", embedded ? "h-full" : "h-[calc(100dvh-var(--header-height)-3.5rem)] rounded-xl border border-border shadow-xs")}>
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-4 sm:px-6 bg-background/50 backdrop-blur-xs">
           <div className="flex items-center gap-2">
             <Button
@@ -188,9 +197,12 @@ export function AgentChat() {
   }
 
   return (
-    <div className="relative flex h-[calc(100dvh-var(--header-height)-3.5rem)] w-full overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs">
+    <div className={cn("relative flex w-full overflow-hidden bg-card text-foreground", embedded ? "h-full" : "h-[calc(100dvh-var(--header-height)-3.5rem)] rounded-xl border border-border shadow-xs")}>
       <AgentChatInner
         key={sessionKey}
+        persona={persona}
+        initialServerSession={serverSession}
+        onConversationSettled={onConversationSettled}
         initialSavedSession={activeSavedSession}
         initialPrompt={initialPrompt}
         onSessionCreated={(newId) => setActiveSessionId(newId)}
@@ -212,6 +224,9 @@ export function AgentChat() {
 }
 
 interface AgentChatInnerProps {
+  persona?: ChatPersona;
+  initialServerSession?: ClientSessionState;
+  onConversationSettled?: () => void;
   initialSavedSession?: SavedChatSession | null;
   initialPrompt?: string;
   onSessionCreated: (id: string) => void;
@@ -230,6 +245,9 @@ interface AgentChatInnerProps {
 }
 
 function AgentChatInner({
+  persona,
+  initialServerSession,
+  onConversationSettled,
   initialSavedSession,
   initialPrompt,
   onSessionCreated,
@@ -301,16 +319,18 @@ function AgentChatInner({
   const agent = useEveAgent({
     headers: async () => ({
       "x-joey-model": selectedModel,
+      ...(persona ? { "x-joey-agent": persona.id } : {}),
     }),
     initialEvents: initialSavedSession?.events ?? [],
-    initialSession: initialSavedSession?.session,
-    resume: initialSavedSession?.session !== undefined,
+    initialSession: initialSavedSession?.session ?? initialServerSession,
+    resume: (initialSavedSession?.session ?? initialServerSession) !== undefined,
     onSessionChange(session) {
       if (session?.sessionId) {
         onSessionCreated(session.sessionId);
       }
     },
     onFinish(snapshot) {
+      onConversationSettled?.();
       if (snapshot.session?.sessionId && snapshot.data.messages.length > 0) {
         const { tokenMetrics, estimatedCostUsd } = calculateSessionTokensAndCost(
           snapshot.data.messages,
@@ -488,7 +508,7 @@ function AgentChatInner({
             .join("; ")}]\n\n`
         : "";
 
-    const fullText = `${sourcesPreamble}${targetPreamble}${text}`.trim();
+    const fullText = messageWithChatContext(text, `${sourcesPreamble}${targetPreamble}`);
 
     if (message.files.length === 0) {
       await agent.send(fullText);
@@ -550,6 +570,7 @@ function AgentChatInner({
           />
         </div>
         <SocialPlatformSelector
+          allowedAccountIds={persona?.accountIds}
           selectedPlatforms={selectedPlatforms}
           onTogglePlatform={handleTogglePlatform}
           selectedAccountIds={selectedAccountIds}
@@ -745,7 +766,7 @@ function AgentChatInner({
 
           {/* Right Minimal Controls: Sidepanel Toggle */}
           <div className="flex items-center gap-1.5">
-            <Button
+            {!persona && <Button
               type="button"
               variant={isSidepanelOpen && sidepanelTab === "studio" ? "secondary" : "ghost"}
               size="sm"
@@ -754,7 +775,7 @@ function AgentChatInner({
               aria-label="Open creation workspace"
             >
               <span>Create</span>
-            </Button>
+            </Button>}
             {hasArtifacts && (
               <Button
                 type="button"
@@ -867,7 +888,7 @@ function AgentChatInner({
               : "max-w-3xl shrink-0 pb-6"
           )}
         >
-          {isEmpty ? (
+          {isEmpty && persona ? <div className="space-y-2 text-center"><h2 className="break-words text-xl font-semibold">Work with {persona.name}</h2><p className="line-clamp-3 max-w-sm break-words text-sm text-muted-foreground">{persona.description || "Research an idea or ask for an original draft. Publishing always needs human review."}</p>{!persona.accountIds.length && <p className="text-xs text-muted-foreground">Add a destination in agent settings before saving posts.</p>}</div> : isEmpty ? (
             <div className="flex flex-col items-center gap-3 text-center">
               <div className="relative flex items-center justify-center py-1">
                 <Image

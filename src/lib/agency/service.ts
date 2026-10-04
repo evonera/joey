@@ -165,7 +165,13 @@ export async function finishAgencyRun(run: typeof customAgentRuns.$inferSelect, 
 export async function listAgencyRuns(actor: AgencyActor, id: string) {
   await getAgencyProfile(actor, id);
   await settleExpiredAgencyRuns(db, actor.tenantId, id);
-  return db.query.customAgentRuns.findMany({ where: and(eq(customAgentRuns.tenantId, actor.tenantId), eq(customAgentRuns.agentId, id)), orderBy: [desc(customAgentRuns.createdAt)], limit: 30 });
+  const runs = await db.query.customAgentRuns.findMany({ where: and(eq(customAgentRuns.tenantId, actor.tenantId), eq(customAgentRuns.agentId, id)), orderBy: [desc(customAgentRuns.createdAt)], limit: 30 });
+  const packageIds = runs.flatMap(run => run.packageId ? [run.packageId] : []);
+  const packages = packageIds.length ? await db.query.contentPackages.findMany({
+    where: and(eq(contentPackages.tenantId, actor.tenantId), inArray(contentPackages.id, packageIds)),
+    columns: { id: true, themePageId: true }, limit: 30,
+  }) : [];
+  return runs.map(run => ({ ...run, packageThemePageId: packages.find(pkg => pkg.id === run.packageId)?.themePageId ?? null }));
 }
 // Call only with the actual ID emitted by Eve's server-side session.started
 // hook. No browser API accepts an arbitrary session ID for registration.
