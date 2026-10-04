@@ -62,7 +62,7 @@ export default function DraftsPage() {
     const [statusFilter, setStatusFilter] = useState<string>(() => {
         const requested = searchParams.get("tab");
         return requested && ["draft", "pending_review", "scheduled", "approved", "publishing", "published", "failed", "rejected", "all"].includes(requested)
-            ? requested : "pending_review";
+            ? requested : "draft";
     });
     const [platformFilter, setPlatformFilter] = useState<string>("all");
     const [sourceFilter, setSourceFilter] = useState<string>(() => {
@@ -211,9 +211,9 @@ export default function DraftsPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground">Drafts Queue</h1>
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground">Posts & drafts</h1>
                     <p className="text-sm text-muted-foreground">
-                        Universal review hub — approve, edit, and schedule drafts from Compose, Theme Studio, and Flows in one place.
+                        Find your saved posts here, then edit, review, or schedule them when you are ready.
                     </p>
                 </div>
                 <div className="flex items-center gap-3 self-start sm:self-auto">

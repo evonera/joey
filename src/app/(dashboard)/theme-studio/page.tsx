@@ -29,7 +29,7 @@ export default async function ThemeStudioOverviewPage() {
             <h1 className="text-2xl font-bold tracking-tight">Theme Studio</h1>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Create a post or video now. Set up a Theme Page when you want a repeatable series.
+            Create a post or brand an MP4 now. Set up a Theme Page when you want a repeatable series.
           </p>
         </div>
 
@@ -44,14 +44,14 @@ export default async function ThemeStudioOverviewPage() {
       <section className="rounded-2xl border border-primary/25 bg-primary/5 p-5 sm:p-8">
         <h2 className="text-xl font-semibold">Make something now</h2>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">Start in Chat, preview your work, and save a draft before connecting a publishing account.</p>
-        <div className="mt-4 flex flex-wrap gap-2"><Link href="/dashboard?create=post" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Create a post</Link><Link href="/dashboard?create=video" className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Create a video</Link></div>
+        <div className="mt-4 flex flex-wrap gap-2"><Link href="/dashboard?create=post" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Create a post</Link><Link href="/dashboard?create=video" className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Brand an MP4</Link></div>
       </section>
 
       {(shelf.posts.length > 0 || shelf.templates.length > 0) && <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Your recent work</h2>
+        <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Your recent work</h2><Link href="/theme-studio/templates" className="text-sm font-medium text-primary hover:underline">All templates</Link></div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {shelf.posts.slice(0, 4).map((post) => <Link key={post.id} href={`/drafts?tab=all&source=theme_studio&search=${encodeURIComponent(post.title)}`} className="min-w-0 rounded-xl border border-border bg-card p-3 hover:border-primary/40"><span className="text-[11px] uppercase text-muted-foreground">Post · {post.status.replace('_', ' ')}</span>{post.mediaUrls[0] && <img src={post.mediaUrls[0]} alt={`Preview of ${post.title}`} className="mt-2 h-28 w-full rounded-md object-contain" />}<span className="mt-2 block truncate text-sm font-medium">{post.title}</span></Link>)}
-          {shelf.templates.slice(0, 4).map((template) => <Link key={template.id} href={template.themePageId ? `/theme-studio/${template.themePageId}/templates/${template.id}` : '/theme-studio'} className="min-w-0 rounded-xl border border-border bg-card p-3 hover:border-primary/40"><span className="text-[11px] uppercase text-muted-foreground">Template · {template.formatName}</span>{template.previewUrl && <img src={template.previewUrl} alt={`Preview of ${template.name}`} className="mt-2 h-28 w-full rounded-md object-contain" />}<span className="mt-2 block truncate text-sm font-medium">{template.name}</span></Link>)}
+          {shelf.templates.slice(0, 4).map((template) => <Link key={template.id} href={template.themePageId ? `/theme-studio/${template.themePageId}/templates/${template.id}` : `/theme-studio/templates/${template.id}`} className="min-w-0 rounded-xl border border-border bg-card p-3 hover:border-primary/40"><span className="text-[11px] uppercase text-muted-foreground">Template · {template.formatName}</span>{template.previewUrl ? <img src={template.previewUrl} alt={`Preview of ${template.name}`} className="mt-2 h-28 w-full rounded-md object-contain" /> : <div className="mt-2 flex h-28 items-center justify-center rounded-md bg-gradient-to-br from-slate-900 to-slate-700 p-3 text-center text-xs font-semibold text-white">{template.formatName}</div>}<span className="mt-2 block truncate text-sm font-medium" title={template.name}>{template.name.replace(/\s*\([0-9a-f-]{36}\)$/, "")}</span></Link>)}
         </div>
       </section>}
 
