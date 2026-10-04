@@ -590,8 +590,10 @@ export async function evaluateScoutTriggerSemantically(
     client?: TypeSafeClient;
     confidenceThreshold?: number;
     probabilityThreshold?: number;
+    signal?: AbortSignal;
   },
 ): Promise<ScoutTriggerResult | null> {
+  options?.signal?.throwIfAborted();
   if (!goalCondition?.trim() || !items || items.length === 0) {
     return null;
   }
@@ -616,6 +618,7 @@ export async function evaluateScoutTriggerSemantically(
   }
 
   try {
+    options?.signal?.throwIfAborted();
     const startedAt = Date.now();
     const response = await client.systemOne({
       state: {
@@ -643,7 +646,7 @@ export async function evaluateScoutTriggerSemantically(
           },
         ),
       },
-    });
+    }, { signal: options?.signal, retry: { maxRetries: 0 } });
 
     const answer = response.answers.is_triggered;
     const latencyMs = Date.now() - startedAt;
@@ -677,6 +680,7 @@ export async function evaluateScoutTriggerSemantically(
       probability,
     };
   } catch (error) {
+    options?.signal?.throwIfAborted();
     console.warn("[typesafe] Scout trigger evaluation failed gracefully:", error);
     await recordJevUsage({
       tenantId,
@@ -687,5 +691,4 @@ export async function evaluateScoutTriggerSemantically(
     return null;
   }
 }
-
 

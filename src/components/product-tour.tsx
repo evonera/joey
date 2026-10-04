@@ -32,36 +32,66 @@ export function ProductTour() {
   const [step, setStep] = React.useState<number | null>(null);
   const [rect, setRect] = React.useState<DOMRect | null>(null);
   const cardRef = React.useRef<HTMLElement>(null);
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
   const hasLoadedProgress = React.useRef(false);
   const persistenceQueue = React.useRef(Promise.resolve());
+  const pending = React.useRef(false);
+  const failedAction = React.useRef<(() => Promise<void>) | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
 
-  const save = React.useCallback((currentStep: number, status: "in_progress" | "dismissed" | "completed") => {
-    // Preserve the user's input order. The server also rejects stale writes
-    // after completion in case another tab has an older in-flight request.
-    persistenceQueue.current = persistenceQueue.current
-      .catch(() => undefined)
-      .then(() => updateProductTourProgress({ currentStep, status }))
-      .then(() => undefined)
-      .catch(() => undefined);
+  const enqueue = React.useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
+    const task = persistenceQueue.current.catch(() => undefined).then(operation);
+    persistenceQueue.current = task.then(() => undefined, () => undefined);
+    return task;
   }, []);
 
-  const start = React.useCallback((restart = false) => {
-    void startProductTourProgress(restart)
-      .then(progress => setStep(Math.min(progress.currentStep, PRODUCT_TOUR_STEPS.length - 1)))
-      .catch(() => undefined);
+  const runTransition = React.useCallback(async (operation: () => Promise<void>) => {
+    if (pending.current) return;
+    pending.current = true;
+    setSaving(true);
+    setSaveError(null);
+    failedAction.current = null;
+    try {
+      await operation();
+    } catch {
+      failedAction.current = operation;
+      setSaveError("Tour progress could not be saved. Retry before continuing.");
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
   }, []);
+
+  const start = React.useCallback(function begin(restart = false) {
+    // A restart is a write too: never let it overtake an in-flight checkpoint.
+    if (pending.current) {
+      void persistenceQueue.current.then(() => begin(restart));
+      return;
+    }
+    void runTransition(async () => {
+      const progress = await enqueue(() => startProductTourProgress(restart));
+      setStep(Math.min(progress.currentStep, PRODUCT_TOUR_STEPS.length - 1));
+    });
+  }, [enqueue, runTransition]);
 
   const dismiss = React.useCallback(() => {
-    if (step !== null) save(step, "dismissed");
-    setStep(null);
-    setRect(null);
-  }, [save, step]);
+    if (step === null) return;
+    void runTransition(async () => {
+      await enqueue(() => updateProductTourProgress({ currentStep: step, status: "dismissed" }));
+      setStep(null);
+      setRect(null);
+    });
+  }, [enqueue, runTransition, step]);
 
   const finish = React.useCallback(() => {
-    if (step !== null) save(step, "completed");
-    setStep(null);
-    setRect(null);
-  }, [save, step]);
+    if (step === null) return;
+    void runTransition(async () => {
+      await enqueue(() => updateProductTourProgress({ currentStep: step, status: "completed" }));
+      setStep(null);
+      setRect(null);
+    });
+  }, [enqueue, runTransition, step]);
 
   React.useEffect(() => {
     const handleStart = (event: Event) => {
@@ -156,25 +186,61 @@ export function ProductTour() {
   }, [pathname, router, step]);
 
   React.useEffect(() => {
-    if (step === null) return;
+    if (step === null) {
+      returnFocusRef.current?.focus();
+      returnFocusRef.current = null;
+      return;
+    }
+    if (!returnFocusRef.current && document.activeElement instanceof HTMLElement) {
+      returnFocusRef.current = document.activeElement;
+    }
     cardRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dismiss();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismiss();
+      }
+      if (event.key === "Tab") {
+        const controls = cardRef.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])");
+        if (!controls?.length) {
+          event.preventDefault();
+          return;
+        }
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === cardRef.current)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === cardRef.current)) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [dismiss, step]);
 
   const goTo = (nextStep: number) => {
-    setStep(nextStep);
-    save(nextStep, "in_progress");
+    void runTransition(async () => {
+      await enqueue(() => updateProductTourProgress({ currentStep: nextStep, status: "in_progress" }));
+      setStep(nextStep);
+    });
   };
 
-  if (step === null) return null;
+  const retry = () => {
+    if (failedAction.current) void runTransition(failedAction.current);
+  };
+  if (step === null) return saveError ? (
+    <div role="alert" className="fixed bottom-4 right-4 z-[100] max-w-sm rounded-xl border bg-background p-4 shadow-xl">
+      <p className="text-sm">{saveError}</p>
+      <Button className="mt-2" size="sm" disabled={saving} onClick={retry}>Retry tour</Button>
+    </div>
+  ) : null;
   const current = PRODUCT_TOUR_STEPS[step];
 
   return (
-    <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="Joey product tour">
+    <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-busy={saving} aria-label="Joey product tour">
       <div className="absolute inset-0 bg-black/55" aria-hidden="true" onClick={dismiss} />
       {rect ? (
         <div
@@ -188,13 +254,15 @@ export function ProductTour() {
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Step {step + 1} of {PRODUCT_TOUR_STEPS.length}</p>
             <h2 className="mt-1 text-base font-semibold">{current.title}</h2>
           </div>
-          <Button variant="ghost" size="icon" className="size-7" onClick={dismiss} aria-label="Pause tour"><Cancel01Icon className="size-4" /></Button>
+          <Button variant="ghost" size="icon" className="size-7" disabled={saving} onClick={dismiss} aria-label="Pause tour"><Cancel01Icon className="size-4" /></Button>
         </div>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{current.body}</p>
+        {saving ? <p role="status" className="mt-2 text-xs text-muted-foreground">Saving tour progress…</p> : null}
+        {saveError ? <div role="alert" className="mt-2 text-sm"><p>{saveError}</p><Button size="sm" className="mt-2" onClick={retry}>Retry save</Button></div> : null}
         {rect ? null : <p className="mt-2 text-xs text-muted-foreground">The matching control is unavailable on this screen, but you can continue the tour.</p>}
         <div className="mt-4 flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" disabled={step === 0} onClick={() => goTo(step - 1)}><ArrowLeft01Icon className="size-4" />Back</Button>
-          <Button size="sm" onClick={() => step === PRODUCT_TOUR_STEPS.length - 1 ? finish() : goTo(step + 1)}>
+          <Button variant="ghost" size="sm" disabled={saving || step === 0} onClick={() => goTo(step - 1)}><ArrowLeft01Icon className="size-4" />Back</Button>
+          <Button size="sm" disabled={saving} onClick={() => step === PRODUCT_TOUR_STEPS.length - 1 ? finish() : goTo(step + 1)}>
             {step === PRODUCT_TOUR_STEPS.length - 1 ? "Finish" : "Next"}{step < PRODUCT_TOUR_STEPS.length - 1 ? <ArrowRight01Icon className="size-4" /> : null}
           </Button>
         </div>

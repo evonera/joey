@@ -9,6 +9,7 @@ import { reconcileBillingWebhook } from "./billing-webhooks";
 import { db } from "./db";
 import * as schema from "./db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
+import { resolveAuthBaseURL } from "./auth-base-url";
 
 // Dodo Payments is optional at boot so the app can be built and self-hosted
 // without billing credentials. Billing routes fail gracefully at runtime if
@@ -37,22 +38,7 @@ if (process.env.NODE_ENV === "production" && !isBuildPhase && !authSecret) {
     throw new Error("BETTER_AUTH_SECRET or AUTH_SECRET is required in production");
 }
 
-const authBaseURL =
-    process.env.BETTER_AUTH_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-        : process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : process.env.URL
-            ? process.env.URL
-            : process.env.DEPLOY_PRIME_URL
-              ? process.env.DEPLOY_PRIME_URL
-              : isBuildPhase
-                ? "https://joey.evonera.com"
-                : process.env.NODE_ENV === "production"
-                  ? "https://joey.evonera.com"
-                  : "http://localhost:3000");
+const authBaseURL = resolveAuthBaseURL(process.env, isBuildPhase);
 
 export const auth = betterAuth({
     secret: authSecret,

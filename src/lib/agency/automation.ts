@@ -73,25 +73,23 @@ export async function executeAgencyDraft(actor: AgencyActor, agentId: string, ve
     const { config } = await assertAgencyRunCurrent(run);
     const captured = run.sourceAlert as ScoutAlert | null;
     const evaluation: EvaluateScoutResult = captured
-      ? { triggered: true, alert: captured, itemsFound: 0 }
+      ? { triggered: true, alert: captured, itemsFound: 0, evaluationId: run.sourceEvaluationId ?? undefined }
       : await evaluateScout(config.scoutId!, {
           tenantId: actor.tenantId,
           force: true,
           signal: deadline,
           beforePaidPhase: guard,
+          eventKey,
+          waitForEvidence: true,
         });
     if (evaluation.error) throw new Error(evaluation.error);
     await guard();
-    if (!evaluation.triggered || !evaluation.alert) {
-      const accepted = await finishAgencyRun(run, "completed");
-      return { status: accepted ? "completed" : "cancelled", runId: run.id, noChange: true };
-    }
     if (!captured)
       await db.transaction(async (tx) => {
         await assertAgencyRunCurrent(run, tx);
         await tx
           .update(customAgentRuns)
-          .set({ sourceAlert: evaluation.alert, updatedAt: new Date() })
+          .set({ sourceAlert: evaluation.alert ?? null, sourceEvaluationId: evaluation.evaluationId ?? null, updatedAt: new Date() })
           .where(
             and(
               eq(customAgentRuns.id, run.id),
@@ -101,6 +99,10 @@ export async function executeAgencyDraft(actor: AgencyActor, agentId: string, ve
             )
           );
       });
+    if (!evaluation.triggered || !evaluation.alert) {
+      const accepted = await finishAgencyRun(run, "completed");
+      return { status: accepted ? "completed" : "cancelled", runId: run.id, noChange: true };
+    }
     const draft = await remixScoutAlertToThemeStudio({
       tenantId: actor.tenantId,
       scoutId: config.scoutId!,

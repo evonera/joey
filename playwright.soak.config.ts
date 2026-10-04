@@ -18,13 +18,15 @@ export default defineConfig({
   use: {
     ...devices["Desktop Chrome"],
     baseURL: remoteBaseUrl ?? "http://localhost:3000",
+    // Keep the actual preview toolbar. Global extraHTTPHeaders also reach
+    // third-party telemetry and can break its CORS preflight.
     storageState: process.env.JOEY_SOAK_STORAGE_STATE,
     trace: "retain-on-failure",
   },
   webServer: remoteBaseUrl
     ? undefined
     : {
-        command: "npm run build && npm run start",
+        command: "npm run build:eve && npm run build && npm run start",
         url: "http://localhost:3000",
         timeout: 180 * 1000,
         reuseExistingServer: true,

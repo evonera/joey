@@ -11,7 +11,7 @@ export default defineConfig({
     },
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
-    exclude: ["**/node_modules/**", "**/.eve/**", "**/.next/**", "tests/e2e/**", "tests/performance/**", "repos/**"],
+    exclude: ["**/node_modules/**", "**/.eve/**", "**/.next/**", "tests/e2e/**", "tests/performance/**", "tests/integration/cloud-contract.test.ts", "repos/**"],
     env: {
       ENCRYPTION_KEY: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
     },

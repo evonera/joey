@@ -3,6 +3,7 @@ import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
 import { readBoundedJson } from "@/lib/http/read-bounded-json";
 import { outboundRequest, resolveOutboundTarget } from "@/lib/flows/outbound-request";
 import { isPublicScoutHttpsUrl as publicHttps, validateScoutSource } from "./source-validation";
+import { customProviderFailure, scoutCloudHeaders } from "./cloud-transport";
 
 /** Server-owned collection boundary. Providers supply evidence, never approvals or drafts. */
 export interface ScoutPostItem {
@@ -19,6 +20,7 @@ export interface ScoutCollectionRequest {
 }
 export interface ScoutCollectionContext {
   signal: AbortSignal;
+  operationId?: string;
   beforePaidPhase?: () => Promise<void>;
 }
 export interface ScoutDataProvider {
@@ -72,7 +74,7 @@ export class ApifyScoutProvider implements ScoutDataProvider {
           : "apify/web-scraper";
     const input =
       request.platform === "instagram"
-        ? { usernames: [new URL(request.targetUrl).pathname.split("/").filter(Boolean)[0]], resultsLimit: MAX_ITEMS }
+        ? { username: [request.targetUrl], resultsLimit: MAX_ITEMS }
         : { directUrls: [request.targetUrl] };
     let response: Response;
     try {
@@ -157,6 +159,7 @@ export class CustomScoutProvider implements ScoutDataProvider {
   }
   async fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext) {
     context.signal.throwIfAborted();
+    const transportHeaders = scoutCloudHeaders(this.endpoint, context.operationId);
     await validateTarget(request, context.signal);
     await context.beforePaidPhase?.();
     context.signal.throwIfAborted();
@@ -164,7 +167,7 @@ export class CustomScoutProvider implements ScoutDataProvider {
     try {
       response = await outboundRequest(this.endpoint, {
         method: "POST",
-        headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json", ...transportHeaders },
         body: JSON.stringify({
           version: 1,
           targetUrl: request.targetUrl,
@@ -180,7 +183,7 @@ export class CustomScoutProvider implements ScoutDataProvider {
       throw new Error("Custom Scout collection failed or timed out.");
     }
     if (response.status < 200 || response.status >= 300)
-      throw new Error(`Custom Scout provider returned HTTP ${response.status}.`);
+      throw customProviderFailure(response.status);
     try {
       return envelopeSchema.parse(JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(response.buffer))).items;
     } catch {

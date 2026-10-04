@@ -3,6 +3,8 @@ import createMDX from "@next/mdx";
 import bundleAnalyzer from "@next/bundle-analyzer";
 import { withEve } from "eve/next";
 import { withSentryConfig } from "@sentry/nextjs/config";
+import { withScoutWorkflowRouting } from "./scripts/eve-scout-routing";
+import { buildContentSecurityPolicies } from "./scripts/content-security-policy";
 
 const withMDX = createMDX({
   extension: /\.mdx?$/,
@@ -29,48 +31,10 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@resvg/resvg-js"],
   pageExtensions: ["ts", "tsx", "mdx"],
   async headers() {
-    // Turbopack/dev tooling (React refresh, HMR) requires eval; production does not.
-    const isDev = process.env.NODE_ENV === "development";
-    const scriptSrc = isDev ? "'self' 'unsafe-inline' 'unsafe-eval'" : "'self' 'unsafe-inline'";
-
-    // Enforced baseline. Kept intentionally permissive on img-src/connect-src
-    // until the tightened Report-Only policy below has run clean in production.
-    const cspEnforce = [
-      "default-src 'self'",
-      `script-src ${scriptSrc}`,
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", // recharts/rbc inject inline styles; template display fonts load from Google Fonts
-      "img-src 'self' blob: data: https:",
-      "font-src 'self' data: https://fonts.gstatic.com",
-      `connect-src 'self' https: wss://*.liveblocks.io${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
-      "media-src 'self' blob: data: https:",
-      "worker-src 'self' blob:",
-      "base-uri 'self'",
-      "object-src 'none'",
-      "frame-ancestors 'none'",
-    ].join("; ");
-
-    // Tightened candidate (Phase 4.4): runs in report-only mode so violations
-    // surface in the console without breaking anything. Enumerates every
-    // external origin the browser legitimately talks to:
-    //  - img.shields.io            GitHub star / MIT badges on the landing page
-    //  - *.r2.cloudflarestorage.com uploaded assets served from Cloudflare R2
-    //  - pbs.twimg.com / cdn.syndication.twimg.com / media.licdn.com /
-    //    graph.facebook.com         social account avatars & post media previews
-    // Liveblocks connects from the browser; R2 uploads use presigned HTTPS URLs.
-    const cspReportOnly = [
-      "default-src 'self'",
-      `script-src ${scriptSrc}`,
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "img-src 'self' blob: data: https://img.shields.io https://*.r2.cloudflarestorage.com https://pbs.twimg.com https://cdn.syndication.twimg.com https://media.licdn.com https://graph.facebook.com",
-      "font-src 'self' data: https://fonts.gstatic.com",
-      "connect-src 'self' https://*.liveblocks.io wss://*.liveblocks.io https://*.r2.cloudflarestorage.com https://*.ingest.sentry.io",
-      "media-src 'self' blob: data: https:",
-      "worker-src 'self' blob:",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "object-src 'none'",
-    ].join("; ");
+    const { enforce: cspEnforce, reportOnly: cspReportOnly } = buildContentSecurityPolicies({
+      NODE_ENV: process.env.NODE_ENV,
+      VERCEL_ENV: process.env.VERCEL_ENV,
+    });
 
     return [
       {
@@ -140,7 +104,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(withEve(withMDX(withAnalyze(nextConfig))), {
+export default withSentryConfig(withScoutWorkflowRouting(withEve(withMDX(withAnalyze(nextConfig)))), {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   authToken: process.env.SENTRY_AUTH_TOKEN,

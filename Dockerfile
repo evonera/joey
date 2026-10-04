@@ -20,6 +20,17 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+ARG EVE_NEXT_PRODUCTION_PORT=4274
+ENV EVE_NEXT_PRODUCTION_PORT=${EVE_NEXT_PRODUCTION_PORT}
+# Browser monitoring is inlined by Next at build time. DSNs are public;
+# private Sentry upload/auth tokens must never be passed as image build args.
+ARG NEXT_PUBLIC_SENTRY_DSN=""
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
+ENV NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}
+ENV NEXT_PUBLIC_SENTRY_ENVIRONMENT=${NEXT_PUBLIC_SENTRY_ENVIRONMENT}
+# Origin-trial tokens are public and emitted into static browser markup.
+ARG NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN=""
+ENV NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN=${NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN}
 # A placeholder for Docker builds so Next doesn't fail
 ENV DATABASE_URL="postgresql://placeholder" 
 ENV BETTER_AUTH_SECRET="placeholder"
@@ -54,6 +65,10 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/.output ./.output
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/start-production.mjs ./scripts/start-production.mjs
+
+# Eve's local durable runtime state must be writable by the non-root process.
+RUN mkdir -p /app/.eve && chown nextjs:nodejs /app/.eve
 
 USER nextjs
 
@@ -65,4 +80,4 @@ ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
-CMD ["node", "server.js"]
+CMD ["node", "scripts/start-production.mjs", "--standalone"]

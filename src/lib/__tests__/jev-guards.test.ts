@@ -16,6 +16,7 @@ vi.mock("@/lib/db", () => ({
 import {
   checkJevBudget,
   evaluateStoryAffinitySemantically,
+  evaluateScoutTriggerSemantically,
   getClusteringMode,
   hasCommentIntentMarkers,
   isJevFeatureEnabled,
@@ -128,5 +129,38 @@ describe("cautious Jev guards", () => {
     );
     expect(result).toBeNull();
     expect(systemOne).not.toHaveBeenCalled();
+  });
+
+  it("forwards Scout cancellation and disables implicit semantic retries", async () => {
+    const signal = new AbortController().signal;
+    const systemOne = vi.fn().mockResolvedValue({ answers: {
+      is_triggered: { choice: "not_triggered", confidence: 0.98, probabilities: { not_triggered: 0.99 } },
+    } });
+    expect(await evaluateScoutTriggerSemantically("Views spike", "https://instagram.com/source", "instagram",
+      [{ url: "https://instagram.com/p/example", text: "Small update" }], tenant,
+      { client: { systemOne } as never, signal })).toMatchObject({ triggered: false });
+    expect(systemOne).toHaveBeenCalledWith(expect.anything(), { signal, retry: { maxRetries: 0 } });
+  });
+
+  it("does not start a Scout semantic call after Stop", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("Stopped"));
+    const systemOne = vi.fn();
+    await expect(evaluateScoutTriggerSemantically("Views spike", "https://instagram.com/source", "instagram",
+      [{ url: "https://instagram.com/p/example", text: "Small update" }], tenant,
+      { client: { systemOne } as never, signal: controller.signal })).rejects.toThrow("Stopped");
+    expect(systemOne).not.toHaveBeenCalled();
+  });
+
+  it("does not swallow semantic cancellation as a Gemini fallback", async () => {
+    const controller = new AbortController();
+    const systemOne = vi.fn().mockImplementation(async () => {
+      controller.abort(new Error("Stopped"));
+      throw new Error("Provider aborted");
+    });
+    await expect(evaluateScoutTriggerSemantically("Views spike", "https://instagram.com/source", "instagram",
+      [{ url: "https://instagram.com/p/example", text: "Small update" }], tenant,
+      { client: { systemOne } as never, signal: controller.signal })).rejects.toThrow("Stopped");
+    expect(systemOne).toHaveBeenCalledOnce();
   });
 });
