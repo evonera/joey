@@ -22,6 +22,7 @@ export default function AccountsPage() {
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
   const [accountToDisconnect, setAccountToDisconnect] = useState<any | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [showAllPlatforms, setShowAllPlatforms] = useState(false);
 
   useEffect(() => {
     fetchAccounts();
@@ -86,16 +87,16 @@ export default function AccountsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)]">
-        <div className="col-span-1 rounded-xl border border-border bg-card p-4 shadow-xs sm:p-5" data-tour="accounts-connect">
+        <div className="order-2 col-span-1 rounded-xl border border-border bg-card p-4 shadow-xs sm:p-5 lg:order-1" data-tour="accounts-connect">
           <h2 className="font-semibold text-foreground">Connect a platform</h2>
-          <p className="mb-4 mt-1 text-xs text-muted-foreground">Connections open Zernio’s secure provider authorization flow.</p>
+          <p className="mb-4 mt-1 text-xs text-muted-foreground">Choose where you want to publish. You will approve the connection with that platform.</p>
           {connectionError ? (
             <p role="alert" className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs leading-relaxed text-destructive">
               {connectionError}
             </p>
           ) : null}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
-            {PLATFORMS.map((platform) => (
+            {(showAllPlatforms ? PLATFORMS : PLATFORMS.slice(0, 7)).map((platform) => (
               <button
                 key={platform.id}
                 onClick={() => handleConnect(platform.canonicalKey)}
@@ -114,10 +115,11 @@ export default function AccountsPage() {
               </button>
             ))}
           </div>
+          <button type="button" onClick={() => setShowAllPlatforms((value) => !value)} className="mt-3 text-xs font-semibold text-primary hover:underline">{showAllPlatforms ? "Show fewer platforms" : `Show all ${PLATFORMS.length} platforms`}</button>
         </div>
 
-        <div className="col-span-1 rounded-xl border border-border bg-card p-4 shadow-xs sm:p-6">
-          <h2 className="font-semibold mb-4 text-foreground">Your Accounts</h2>
+        <div className="order-1 col-span-1 rounded-xl border border-border bg-card p-4 shadow-xs sm:p-6 lg:order-2">
+          <h2 className="font-semibold mb-4 text-foreground">Your accounts</h2>
           
           {isLoading ? (
             <div className="flex justify-center items-center py-12">
@@ -126,7 +128,7 @@ export default function AccountsPage() {
           ) : accounts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed border-border rounded-xl bg-muted/20">
               <p className="text-muted-foreground font-medium mb-1">No accounts connected yet</p>
-              <p className="text-xs text-muted-foreground">Select a platform on the left to get started</p>
+              <p className="text-xs text-muted-foreground">Choose a platform below to get started.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
   getActiveTenantId: vi.fn(),
   getActiveTenantMembership: vi.fn(),
   resolveToken: vi.fn(),
+  evaluateScout: vi.fn(),
   findFirst: vi.fn(),
   insert: vi.fn(),
   values: vi.fn(),
@@ -25,11 +26,13 @@ vi.mock("@/lib/db", () => ({ db: {
   insert: mocks.insert,
   query: { scouts: { findFirst: mocks.findFirst } },
 } }));
-vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: vi.fn() }));
+vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: mocks.evaluateScout }));
 vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({ resolveToken: mocks.resolveToken }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { createScout, toggleScout, updateScout } from "@/app/actions/scouts";
+import { createScout, getScoutSetup, runScoutNow, toggleScout, updateScout } from "@/app/actions/scouts";
+
+afterEach(() => vi.unstubAllEnvs());
 
 const input = { name: "Daily Scout", targetUrl: "https://instagram.com/example", goalCondition: "New popular posts" };
 
@@ -47,6 +50,23 @@ beforeEach(() => {
 });
 
 describe("toggleScout authorization", () => {
+  it("allows explicitly enabled mock scans without calling the live token preflight", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ENABLE_MOCK_SCOUTS", "true");
+    expect(await getScoutSetup()).toEqual({ apifyReady: true });
+    await runScoutNow("scout-1");
+    expect(mocks.resolveToken).not.toHaveBeenCalled();
+    expect(mocks.evaluateScout).toHaveBeenCalledWith("scout-1", { tenantId: "tenant-1", force: true });
+    expect(mocks.requireRole).toHaveBeenCalledWith(["owner", "admin"]);
+  });
+
+  it("blocks live manual scans with no token before evaluating", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ENABLE_MOCK_SCOUTS", "false");
+    mocks.resolveToken.mockRejectedValueOnce(new Error("Missing Apify token"));
+    await expect(runScoutNow("scout-1")).rejects.toThrow("Missing Apify token");
+    expect(mocks.evaluateScout).not.toHaveBeenCalled();
+  });
   it("requires an owner or admin to pause an active Scout", async () => {
     mocks.requireRole.mockRejectedValueOnce(new Error("Forbidden"));
 

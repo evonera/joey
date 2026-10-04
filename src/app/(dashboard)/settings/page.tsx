@@ -2,7 +2,8 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { getAgentConfig, saveAgentConfig } from "@/app/actions/agent";
+import Link from "next/link";
+import { getAgentConfig, saveAgentSchedule } from "@/app/actions/agent";
 import { getConnectedAccounts } from "@/app/actions/zernio";
 import { getUsage } from "@/app/actions/usage";
 import { getApiKey, saveApiKey, deleteApiKey } from "@/app/actions/api-keys";
@@ -93,10 +94,9 @@ function SettingsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [configReady, setConfigReady] = useState(false);
+  const [canManage, setCanManage] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   
-  const [brandVoice, setBrandVoice] = useState("");
-  const [postingGoals, setPostingGoals] = useState("");
   
   const [timezone, setTimezone] = useState("UTC");
   const [activeDays, setActiveDays] = useState<string[]>([]);
@@ -126,6 +126,7 @@ function SettingsContent() {
     async function loadData() {
       try {
         const { configRes, accountsRes, usageRes, prefsRes, keys: [openaiKey, anthropicKey, googleKey, falKey] } = await getSettingsData();
+        setCanManage(configRes.canManage);
         if (usageRes.usage) setUsageStats(usageRes.usage);
         if (configRes.error || accountsRes.error || usageRes.error || prefsRes.error) {
           toast.error("Some settings couldn’t load. Refresh before making changes.");
@@ -149,8 +150,6 @@ function SettingsContent() {
         if (configRes.config) {
           setConfigReady(!accountsRes.error);
           const cfg = configRes.config;
-          setBrandVoice(cfg.brandVoice || "");
-          setPostingGoals(cfg.postingGoals || "");
           
           if (cfg.postingSchedule) {
             const schedule = cfg.postingSchedule as any;
@@ -184,15 +183,11 @@ function SettingsContent() {
     }
 
     try {
-      const res = await saveAgentConfig({
-        brandVoice,
-        postingGoals,
-        postingSchedule: {
+      const res = await saveAgentSchedule({
           timezone,
           activeDays,
           times,
           selectedAccountIds
-        }
       });
 
       if (res.success) {
@@ -309,7 +304,7 @@ function SettingsContent() {
           <button
             type="button"
             onClick={() => submitSave()}
-            disabled={isSaving || !configReady}
+            disabled={isSaving || !configReady || !canManage}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             {isSaving ? (
@@ -325,10 +320,15 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
-        <TabsList className="w-full max-w-full justify-start overflow-x-auto flex-nowrap h-auto p-1 bg-muted/60 border border-border">
+        <label className="block text-xs font-medium sm:hidden">Settings section
+          <select value={activeTab} onChange={(event) => setActiveTab(event.target.value)} className="mt-1 block w-full rounded-lg border bg-background px-3 py-2.5 text-sm">
+            <option value="persona">Schedule</option><option value="byok">AI providers</option><option value="apps">Integrations</option><option value="api">API tokens</option><option value="notifications">Notifications</option><option value="billing">Billing</option>
+          </select>
+        </label>
+        <TabsList className="hidden h-auto w-full max-w-full flex-nowrap justify-start overflow-x-auto border border-border bg-muted/60 p-1 sm:flex">
           <TabsTrigger value="persona" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
             <UserIcon className="h-4 w-4" />
-            <span>Voice & Schedule</span>
+            <span>Schedule</span>
           </TabsTrigger>
           <TabsTrigger value="byok" className="flex items-center gap-2 py-2 px-3 text-xs sm:text-sm">
             <Sparkles className="h-4 w-4" />
@@ -351,43 +351,12 @@ function SettingsContent() {
 
         <TabsContent value="billing"><BillingPanel /></TabsContent>
 
-        {/* Tab 1: Voice & Schedule */}
+        {/* Schedule is edited here; brand guidance has one home in Brand Kit. */}
         <TabsContent value="persona">
           <form onSubmit={handleSaveForm} className="space-y-6">
-        
-            {/* Persona Section */}
-            <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
-              <div className="bg-muted/40 px-6 py-4 border-b border-border">
-                <h2 className="font-semibold text-foreground">Brand Voice</h2>
-              </div>
-              <div className="p-6 space-y-6">
-                <div>
-                  <label htmlFor="settings-brand-voice" className="block text-sm font-medium text-foreground mb-2">
-                    Brand Voice
-                  </label>
-                  <textarea
-                    id="settings-brand-voice"
-                    value={brandVoice}
-                    onChange={(e) => setBrandVoice(e.target.value)}
-                    placeholder="e.g. Professional yet conversational. We use emojis sparingly. We always focus on providing actionable value to developers."
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[120px]"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="settings-posting-goals" className="block text-sm font-medium text-foreground mb-2">
-                    Posting Goals & Content Strategy
-                  </label>
-                  <textarea
-                    id="settings-posting-goals"
-                    value={postingGoals}
-                    onChange={(e) => setPostingGoals(e.target.value)}
-                    placeholder="e.g. Our main goal is to drive signups for our SaaS. We want to share 1 technical tip, 1 industry news piece, and 1 product update per week."
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[120px]"
-                  />
-                </div>
-              </div>
-            </section>
+            {!canManage && <p className="text-sm text-muted-foreground">Only workspace owners and admins can change automation schedules.</p>}
+            <fieldset disabled={!canManage} className="min-w-0 space-y-6">
+            <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">Set your brand voice and posting goals in <Link href="/brandkit" className="font-semibold text-primary underline">Brand Kit</Link>.</p>
 
             {/* Schedule Section */}
             <section className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
@@ -495,6 +464,7 @@ function SettingsContent() {
                 )}
               </div>
             </section>
+            </fieldset>
           </form>
         </TabsContent>
 

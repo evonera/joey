@@ -54,6 +54,7 @@ describe("Better Auth Configuration", () => {
       expect(billingPlugin?.schema).toBeUndefined();
       expect(billingPlugin?.init).toBeUndefined();
       expect(billingPlugin?.endpoints?.dodopaymentsWebhooks).toBeDefined();
+      // Force Better Auth's adapter schema validation with billing enabled.
       await expect(configuredAuth.$context).resolves.toBeDefined();
     } finally {
       vi.unstubAllEnvs();

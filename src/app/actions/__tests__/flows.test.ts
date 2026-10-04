@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 
 const mockFindFlow = vi.fn();
 const mockUpdateFlow = vi.fn();
@@ -6,7 +8,7 @@ const mockRequireRole = vi.fn(async () => "tenant_1");
 
 vi.mock("@/lib/db", () => ({
   db: {
-    query: { flows: { findFirst: mockFindFlow } },
+    query: { flows: { findFirst: mockFindFlow }, apiKeys: { findMany: vi.fn(async () => []) }, socialAccounts: { findMany: vi.fn(async () => []) } },
     update: mockUpdateFlow,
   },
 }));
@@ -14,6 +16,10 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/auth", () => ({
   getActiveTenantId: vi.fn(async () => "tenant_1"),
   requireRole: mockRequireRole,
+}));
+vi.mock("@/lib/flows/validation", () => ({
+  parseGraphDoc: (raw: unknown) => raw,
+  validateGraph: () => ({ ok: true, issues: [] }),
 }));
 
 describe("saveFlow concurrency handling", () => {
@@ -24,6 +30,7 @@ describe("saveFlow concurrency handling", () => {
       id: "flow_1",
       tenantId: "tenant_1",
       status: "draft",
+      executionRevision: 7,
       name: "Draft flow",
       graph: { nodes: [], edges: [] },
     });
@@ -74,5 +81,19 @@ describe("saveFlow concurrency handling", () => {
     await expect(publishTemplate("flow_1", { name: "Template" })).resolves.toEqual({
       error: "Forbidden: Action requires role owner or admin",
     });
+  });
+  it("keeps both draft-status and checked-revision fences during activation", async () => {
+    const where = vi.fn((_condition: SQL) => ({ returning: vi.fn(async () => [{ id: "flow_1" }]) }));
+    mockUpdateFlow.mockReturnValue({ set: vi.fn(() => ({ where })) });
+    const { setFlowStatus } = await import("@/app/actions/flows");
+    await expect(setFlowStatus("flow_1", "active")).resolves.toEqual({ ok: true });
+    expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toEqual(expect.arrayContaining(["draft", 7]));
+  });
+  it("does not accept an activation whose validated graph revision changed", async () => {
+    mockUpdateFlow.mockReturnValue({ set: vi.fn(() => ({ where: vi.fn(() => ({ returning: vi.fn(async () => []) })) })) });
+    mockFindFlow.mockResolvedValueOnce({ id: "flow_1", tenantId: "tenant_1", status: "draft", executionRevision: 7, graph: { nodes: [], edges: [] } });
+    mockFindFlow.mockResolvedValueOnce({ status: "active", executionRevision: 8 });
+    const { setFlowStatus } = await import("@/app/actions/flows");
+    await expect(setFlowStatus("flow_1", "active")).resolves.toEqual({ error: "This flow changed while activation was checked. Review it and try again." });
   });
 });
