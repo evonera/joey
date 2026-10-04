@@ -6,7 +6,7 @@ import { assets, drafts, mediaRenderJobs } from "@/lib/db/schema";
 import { buildPublicUrl, headObject, mediaWorkerUrls } from "@/lib/storage";
 import { enqueueR2Cleanup, cancelR2Cleanup } from "@/lib/storage-cleanup";
 import { renderTemplateHtml } from "./templates";
-import { referencedAssets, renderSpecSchema, RENDERER_VERSION, FONT_VERSION } from "./spec";
+import { referencedAssets, renderSpecSchema, rendererVersion, FONT_VERSION } from "./spec";
 
 export async function claimNextRender() {
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") return null;
@@ -44,6 +44,12 @@ export async function claimRenderJob() {
     await enqueueR2Cleanup(job.tenantId, outputKey, "Unsettled media render upload", { notBefore: new Date(Date.now() + 30 * 60_000) });
     const mimeType = spec.format === "mp4" ? "video/mp4" : "image/png";
     const urls = await mediaWorkerUrls(keys, outputKey, mimeType);
+    const version = rendererVersion(spec);
+    if (spec.version === 2) {
+      const sceneLayouts = await Promise.all(spec.timeline.map(scene => renderTemplateHtml({ ...spec, title: scene.headline || spec.title }, scene.kind === "card")));
+      return { jobId: job.id, attemptToken: job.attemptToken, spec, rendererVersion: version, fontVersion: FONT_VERSION,
+        sceneLayouts, inputs: refs.map((ref, i) => ({ id: ref.id, url: urls.inputs[i] })), uploadUrl: urls.uploadUrl, mimeType };
+    }
     let audioUploadUrl: string | undefined;
     if (spec.video?.captions) {
       const audioKey = `${job.tenantId}/renders/${job.id}/${job.attemptToken}.mp3`;
@@ -51,11 +57,11 @@ export async function claimRenderJob() {
       audioUploadUrl = (await mediaWorkerUrls([], audioKey, "audio/mpeg")).uploadUrl;
     }
     const layout = await renderTemplateHtml(spec);
-    const layoutHash = createHash("sha256").update(JSON.stringify({ html: layout.html, renderer: RENDERER_VERSION, fonts: FONT_VERSION, images: spec.format === "png" ? [spec.media, spec.inset] : [] })).digest("hex");
+    const layoutHash = createHash("sha256").update(JSON.stringify({ html: layout.html, renderer: version, fonts: FONT_VERSION, images: spec.format === "png" ? [spec.media, spec.inset] : [] })).digest("hex");
     const captureKey = `${job.tenantId}/media-cache/${layoutHash}.png`;
     await enqueueR2Cleanup(job.tenantId, captureKey, "Expired template capture cache", { notBefore: new Date(Date.now() + 30 * 24 * 60 * 60_000) });
     const captureUrls = await mediaWorkerUrls([captureKey], captureKey, "image/png");
-    return { ...layout, captureCache: { getUrl: captureUrls.inputs[0], putUrl: captureUrls.uploadUrl }, jobId: job.id, attemptToken: job.attemptToken, spec, rendererVersion: RENDERER_VERSION, fontVersion: FONT_VERSION,
+    return { ...layout, captureCache: { getUrl: captureUrls.inputs[0], putUrl: captureUrls.uploadUrl }, jobId: job.id, attemptToken: job.attemptToken, spec, rendererVersion: version, fontVersion: FONT_VERSION,
       audioUploadUrl, inputs: refs.map((ref, i) => ({ id: ref.id, url: urls.inputs[i] })), uploadUrl: urls.uploadUrl, mimeType };
   } catch (error) {
     await db.update(mediaRenderJobs).set({ status: job.attempt < 3 ? "queued" : "failed", attemptToken: null, error: error instanceof Error ? error.message : "Asset preparation failed", updatedAt: new Date() }).where(and(eq(mediaRenderJobs.id, job.id), eq(mediaRenderJobs.attemptToken, job.attemptToken!)));

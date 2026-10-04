@@ -190,6 +190,9 @@ def validate_trim(timing, source_duration):
 
 def render(job, root, encoder="libx264"):
     spec = job["spec"]
+    if spec.get("version") == 2:
+        from timeline import render_timeline
+        return render_timeline(job, root, encoder)
     if job["rendererVersion"] != "joey-media-1" or job["fontVersion"] != "joey-fonts-1":
         raise ValueError("Worker and template version mismatch")
     prepare_fonts(root)

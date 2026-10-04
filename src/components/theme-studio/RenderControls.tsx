@@ -7,6 +7,7 @@ import { cancelMediaRender, getMediaRender, retryMediaRender } from "@/app/actio
 import { getThemeRenderSetup, renderThemePackage } from "@/app/actions/theme-packages";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { maximumTrimDuration, trimError } from "@/lib/media-engine/trim";
+import { TimelineEditor } from "./TimelineEditor";
 
 export function RenderControls({ packageId, renderJobId }: { packageId: string; renderJobId?: string }) {
   const [busy, setBusy] = useState(false);
@@ -22,6 +23,7 @@ export function RenderControls({ packageId, renderJobId }: { packageId: string; 
   const [crop, setCrop] = useState<"contain" | "cover">("contain");
   const [captions, setCaptions] = useState(false);
   const [minimal, setMinimal] = useState(false);
+  const [timelineMode, setTimelineMode] = useState(false);
   const router = useRouter();
   const [activeJob, setActiveJob] = useState(renderJobId);
   const [canRetry, setCanRetry] = useState(false);
@@ -94,6 +96,12 @@ export function RenderControls({ packageId, renderJobId }: { packageId: string; 
     <Dialog open={Boolean(setup)} onOpenChange={open => { if (!open) setSetup(undefined); }}>
       <DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>Render finished media</DialogTitle><DialogDescription>Choose an uploaded source, then review the exported file before approving this post.</DialogDescription></DialogHeader>
         {!setup?.enabled ? <p>The media worker is not enabled for this installation yet.</p> : <>
+          {setup.timelineEnabled && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={timelineMode} onChange={e => setTimelineMode(e.target.checked)} />Use multiple scenes</label>}
+          {timelineMode && setup.timelineEnabled ? <TimelineEditor videos={setup.assets} images={setup.images} initialScenes={setup.savedTimeline} busy={busy} onExport={async timeline => {
+            setBusy(true);
+            try { const job = await renderThemePackage(packageId, { timeline, templateFamily: "branded_clip" }); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); toast.success("Timeline render queued"); router.refresh(); }
+            catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue timeline"); } finally { setBusy(false); }
+          }} /> : <>
           <label className="text-sm">Source asset<select className="mt-1 w-full rounded border bg-background p-2" value={assetId} onChange={e => setAssetId(e.target.value)}><option value="">Choose an asset</option>{setup.assets.map(asset => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>
           {!setup.assets.length && <Link href="/assets" className="text-sm underline">Upload source media in Assets</Link>}
           <label className="text-sm">Image placement<select className="mt-1 w-full rounded border bg-background p-2" value={crop} onChange={e => setCrop(e.target.value as "contain" | "cover")}><option value="contain">Fit entire source</option><option value="cover">Fill frame and crop edges</option></select></label>
@@ -120,6 +128,7 @@ export function RenderControls({ packageId, renderJobId }: { packageId: string; 
             try { const job = await renderThemePackage(packageId, { mediaAssetId: assetId, ...(!setup.video && insetId ? { insetAssetId: insetId } : {}), templateFamily: setup.video ? minimal ? "minimal_meme" : "branded_clip" : insetId ? "photo_inset" : "photo_headline", ...(setup.video && musicId ? { musicAssetId: musicId } : {}), captions: setup.video && captions, cropX, cropY, cropMode: crop, durationSeconds: duration, trimStart: start, zoom: 1 }); toast.success(job.status === "succeeded" ? "Render ready" : "Render queued"); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); router.refresh(); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue render"); } finally { setBusy(false); }
           }}>{busy ? "Queuing…" : "Create export"}</button>
+          </>}
         </>}
       </DialogContent>
     </Dialog>
