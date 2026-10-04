@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import type { BetterAuthPlugin } from "better-auth";
 import { auth } from "@/lib/auth";
 
 describe("Better Auth Configuration", () => {
@@ -41,5 +42,23 @@ describe("Better Auth Configuration", () => {
   it("encrypts stored OAuth tokens and never disables rate limiting in production", () => {
     expect(auth.options.account?.encryptOAuthTokens).toBe(true);
     expect(auth.options.rateLimit?.enabled).toBe(process.env.NODE_ENV === "production" || process.env.JOEY_E2E !== "1");
+  });
+
+  it("enables signed billing webhooks without adding a user customer schema or hooks", async () => {
+    vi.stubEnv("DODO_PAYMENTS_WEBHOOK_SECRET", "whsec_dGVzdC1vbmx5LWtleQ==");
+    vi.resetModules();
+    try {
+      const { auth: configuredAuth } = await import("@/lib/auth");
+      const billingPlugin: BetterAuthPlugin | undefined = configuredAuth.options.plugins?.find((plugin) => plugin.id === "dodopayments");
+      expect(billingPlugin).toBeDefined();
+      expect(billingPlugin?.schema).toBeUndefined();
+      expect(billingPlugin?.init).toBeUndefined();
+      expect(billingPlugin?.endpoints?.dodopaymentsWebhooks).toBeDefined();
+      // Force Better Auth's adapter schema validation with billing enabled.
+      await expect(configuredAuth.$context).resolves.toBeDefined();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 });

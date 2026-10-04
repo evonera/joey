@@ -115,23 +115,22 @@ export default async function ThemePageOverview({
             )}
           </div>
 
-          <div className="p-6 border rounded-2xl bg-card space-y-4 shadow-sm">
-            <div className="flex items-center justify-between">
+          <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-6">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-base font-bold">Recent Generated Posts</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Generated packages automatically flow into your global{" "}
+                  Generated posts appear in{" "}
                   <Link href="/drafts" className="text-primary font-medium hover:underline">
-                    Drafts Queue
-                  </Link>{" "}
-                  for 1-tap approval.
+                    Drafts
+                  </Link>{" "}for review.
                 </p>
               </div>
               <Link
                 href={`/theme-studio/${page.id}/preview-day`}
-                className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1 shrink-0"
+                className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
               >
-                <IconEye className="w-3.5 h-3.5" /> Simulate Next Run
+                <IconEye className="w-3.5 h-3.5" /> Preview samples
               </Link>
             </div>
 

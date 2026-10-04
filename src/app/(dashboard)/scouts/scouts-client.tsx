@@ -517,9 +517,9 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       variant="outline"
                       size="sm"
                       onClick={() => handleRunNow(selectedScout.id)}
-                      disabled={isRunning}
+                      disabled={isRunning || setup?.apifyReady === false}
                       className="h-11 w-11 p-0 sm:h-8 sm:w-auto sm:px-2.5 text-xs gap-1"
-                      title="Run scout scan right now"
+                      title={setup?.apifyReady === false ? "Connect Apify in Settings to run a scan" : "Run scout scan right now"}
                       aria-label="Run scout scan right now"
                     >
                       <RefreshCw className={cn("size-4 sm:size-3", isRunning && "animate-spin")} />
