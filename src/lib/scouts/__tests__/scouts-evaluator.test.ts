@@ -83,6 +83,11 @@ vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({
   resolveToken: vi.fn().mockRejectedValue(new Error("No Apify token")),
 }));
 
+vi.mock("@/lib/flows/outbound-request", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/flows/outbound-request")>(),
+  resolveOutboundTarget: vi.fn().mockResolvedValue({ address: "8.8.8.8" }),
+}));
+
 const mockEvaluateScoutTriggerSemantically = vi.fn().mockResolvedValue(null);
 
 vi.mock("@/lib/typesafe", () => ({
@@ -198,11 +203,15 @@ describe("Scouts Evaluator and Tool", () => {
         action: "create",
         name: "New Scout",
         targetUrl: "https://instagram.com/new",
+        platform: "instagram",
+        pollIntervalMinutes: 1440,
         goalCondition: "Spike alerts",
       },
       ctx
     );
     expect(createRes.message).toContain("saved paused");
+    expect(createRes.message).toContain("Scout provider is connected");
+    expect(createRes.message).not.toContain("Apify");
   });
 
   it("fails cleanly without generating fake posts in production when Apify is unconfigured", async () => {

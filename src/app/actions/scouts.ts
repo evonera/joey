@@ -6,7 +6,8 @@ import { scouts, scoutRuns } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
 import { revalidatePath } from "next/cache";
-import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
+import { getScoutDataProvider, getScoutProviderSetup } from "@/lib/scouts/data-provider";
+import { validateScoutSource } from "@/lib/scouts/source-validation";
 import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/service";
 
 export interface CreateScoutInput {
@@ -23,24 +24,13 @@ function validateScoutInput(input: CreateScoutInput) {
   if (!input.goalCondition?.trim()) throw new Error("Goal condition is required");
   if (input.name.length > 120 || input.goalCondition.length > 1000) throw new Error("Scout name or goal is too long.");
   const platform = input.platform || "instagram";
-  if (!["instagram", "tiktok", "twitter", "youtube", "web"].includes(platform)) throw new Error("Unsupported Scout platform.");
-  let url: URL;
-  try { url = new URL(input.targetUrl.trim()); } catch { throw new Error("Enter a full HTTPS target URL."); }
-  if (url.protocol !== "https:" || url.username || url.password) throw new Error("Enter a public HTTPS target URL without credentials.");
-  const expectedHosts: Record<string, string[]> = {
-    instagram: ["instagram.com"], tiktok: ["tiktok.com"], twitter: ["x.com", "twitter.com"], youtube: ["youtube.com", "youtu.be"], web: [],
-  };
-  if (expectedHosts[platform].length && !expectedHosts[platform].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
-    throw new Error(`Use a ${platform} URL for this platform.`);
-  }
-  return { name: input.name.trim(), targetUrl: url.toString(), platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: 1440 };
+  const targetUrl = validateScoutSource(input.targetUrl.trim(), platform);
+  return { name: input.name.trim(), targetUrl, platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: 1440 };
 }
 
 export async function getScoutSetup() {
   const tenantId = await getActiveTenantId();
-  if (process.env.NODE_ENV === "test" || process.env.ENABLE_MOCK_SCOUTS === "true") return { apifyReady: true };
-  try { await resolveToken(tenantId); return { apifyReady: true }; }
-  catch { return { apifyReady: false, issue: "Connect an Apify token in Settings before automatic monitoring can run." }; }
+  return getScoutProviderSetup(tenantId);
 }
 
 export async function getScouts() {
@@ -121,7 +111,7 @@ export async function runScoutNow(scoutId: string) {
 
   // A missing token is a setup problem, not a failed scan. Avoid creating a
   // misleading failed run that the user could never have completed.
-  if (process.env.NODE_ENV !== "test" && process.env.ENABLE_MOCK_SCOUTS !== "true") await resolveToken(tenantId);
+  await getScoutDataProvider(tenantId);
 
   const result = await evaluateScout(scoutId, { tenantId, force: true });
   revalidatePath("/scouts");
@@ -134,7 +124,7 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
   // bypass the active-Scout deletion restriction.
   const tenantId = await requireRole(["owner", "admin"]);
   const { userId } = await getActiveTenantMembership();
-  if (isActive) await resolveToken(tenantId);
+  if (isActive) await getScoutDataProvider(tenantId);
   await db.transaction(async tx => {
   await guardAgencyScoutChange(tx, { tenantId, userId }, scoutId, isActive);
   await tx
