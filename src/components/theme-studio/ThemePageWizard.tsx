@@ -130,7 +130,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
     setBrandInitial("🅟");
     setTopBadge("yellow_logo");
     setShowDivider(true);
-    toast.success("Applied Pubity editorial theme preset");
+    toast.success("Starter style applied");
   }
 
   async function handleFinish() {
@@ -183,7 +183,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
         })),
         slots,
         template: {
-          name: `${name.trim()} Pubity News Template`,
+          name: `${name.trim()} Post Style`,
           formatId: squareCard.id,
           renderer: "puppeteer",
           componentSpec: {
@@ -211,9 +211,9 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-8 border rounded-3xl bg-card shadow-xl space-y-8">
+    <div className="mx-auto w-full min-w-0 max-w-2xl space-y-6 rounded-2xl border bg-card p-4 shadow-xl sm:space-y-8 sm:rounded-3xl sm:p-8">
       {/* Step Indicators */}
-      <div className="flex items-center justify-between border-b pb-6">
+      <div className="flex items-center justify-between gap-1 border-b pb-4 sm:pb-6" aria-label={`Step ${step} of 5`}>
         {[
           { num: 1, label: "Niche & Voice" },
           { num: 2, label: "Channels" },
@@ -223,7 +223,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
         ].map((s) => (
           <div key={s.num} className="flex items-center gap-2">
             <span
-              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${
                 step === s.num
                   ? "bg-primary text-primary-foreground"
                   : step > s.num
@@ -395,7 +395,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
       {/* Step 3: Sources */}
       {step === 3 && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold">Connect Trusted Sources</h2>
               <p className="text-xs text-muted-foreground mt-1">
@@ -405,7 +405,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
             <button
               type="button"
               onClick={addSourceField}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80"
+              className="inline-flex shrink-0 items-center gap-1 px-3 py-1.5 text-xs font-medium bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80"
             >
               <IconPlus className="w-3.5 h-3.5" /> Add Feed
             </button>
@@ -419,21 +419,21 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
             )}
             {sources.map((src, idx) => (
               <div key={idx} className="p-3.5 border rounded-xl bg-card space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <input
                     aria-label={`Source ${idx + 1} name`}
                     type="text"
                     value={src.name}
                     onChange={(e) => updateSourceField(idx, "name", e.target.value)}
                     placeholder="Source Label (e.g. Cricinfo Cricket News)"
-                    className="text-xs font-semibold bg-transparent border-none focus:outline-none w-1/2"
+                    className="min-w-[130px] flex-1 bg-transparent text-xs font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <select
                       aria-label={`Source ${idx + 1} type`}
                       value={src.type}
                       onChange={(e) => updateSourceField(idx, "type", e.target.value)}
-                      className="px-2 py-1 text-xs border rounded bg-background"
+                      className="min-w-0 max-w-[170px] rounded border bg-background px-2 py-1 text-xs"
                     >
                       <option value="exa_domain">Exa news domain</option>
                       <option value="exa_topic">Exa topic news</option>
@@ -528,11 +528,11 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
       {/* Step 5: Brand Kit */}
       {step === 5 && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold">Brand Style & Visual Identity</h2>
               <p className="text-xs text-muted-foreground mt-1">
-                Pubity-inspired high-contrast visual design system.
+                Choose your colors and mark. You can edit them later.
               </p>
             </div>
             <button
@@ -540,11 +540,11 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
               onClick={applyPubityDefaults}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-xl hover:bg-amber-500/25"
             >
-              <IconSparkles className="w-3.5 h-3.5" /> Pubity Preset
+              <IconSparkles className="w-3.5 h-3.5" /> Use starter style
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-medium mb-1.5">Primary Background</label>
               <div className="flex items-center gap-2">
@@ -558,7 +558,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
                   type="text"
                   value={primaryColor}
                   onChange={(e) => setPrimaryColor(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border rounded-lg font-mono"
+                  className="min-w-0 flex-1 px-3 py-2 text-xs border rounded-lg font-mono"
                 />
               </div>
             </div>
@@ -576,7 +576,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
                   type="text"
                   value={accentColor}
                   onChange={(e) => setAccentColor(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border rounded-lg font-mono"
+                  className="min-w-0 flex-1 px-3 py-2 text-xs border rounded-lg font-mono"
                 />
               </div>
             </div>
@@ -609,7 +609,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
               </select>
             </div>
 
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label htmlFor="wizard-watermark" className="block text-xs font-medium mb-1.5">Watermark / Handle</label>
               <input
                 id="wizard-watermark"
@@ -621,7 +621,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
               />
             </div>
 
-            <div className="col-span-2 flex items-center gap-2 pt-2">
+            <div className="flex items-center gap-2 pt-2 sm:col-span-2">
               <input
                 type="checkbox"
                 id="showDivider"
@@ -638,7 +638,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
       )}
 
       {/* Navigation Buttons */}
-      <div className="flex items-center justify-between pt-6 border-t">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 sm:pt-6">
         {step > 1 ? (
           <button
             type="button"
@@ -670,7 +670,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
             type="button"
             onClick={handleFinish}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 shadow-lg disabled:opacity-50"
+            className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-lg hover:bg-primary/90 disabled:opacity-50"
           >
             {loading ? <IconLoader2 className="w-4 h-4 animate-spin" /> : <IconSparkles className="w-4 h-4" />}
             Create Theme Page

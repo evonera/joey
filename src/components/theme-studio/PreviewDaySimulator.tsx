@@ -141,7 +141,7 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
             Explore sample layouts for <strong>{themePage.name}</strong>. This uses example copy, not content from your sources.
           </p>
         </div>
-        <button
+        {hasRun && <button
           onClick={handleSimulate}
           disabled={simulating}
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
@@ -154,10 +154,10 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
           ) : (
             <>
               <IconSparkles className="w-4 h-4" />
-              <span>{hasRun ? "Refresh Samples" : "Show Samples"}</span>
+              <span>Refresh Samples</span>
             </>
           )}
-        </button>
+        </button>}
       </div>
 
       {!hasRun ? (
@@ -179,7 +179,7 @@ export function PreviewDaySimulator({ themePage, slots, sources }: PreviewDaySim
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 p-4 rounded-xl text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-200">
             <div className="flex items-center gap-2">
               <IconCheck className="w-4 h-4 shrink-0 font-bold" />
               <span>
@@ -229,7 +229,7 @@ function PackageCard({
   const watermark = brandKit.watermark || "@ThemeStudio";
 
   return (
-    <div className="p-5 border rounded-2xl bg-card space-y-4 shadow-sm flex flex-col justify-between">
+    <div className="flex min-w-0 flex-col justify-between space-y-4 rounded-2xl border bg-card p-3 shadow-sm sm:p-5">
       <div>
         <div className="flex items-center justify-between gap-2 mb-3">
           <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary flex items-center gap-1.5">
@@ -300,7 +300,7 @@ function PackageCard({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between px-1">
+                <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 px-1">
                   <button
                     onClick={() => setActiveSlide((prev) => Math.max(0, prev - 1))}
                     disabled={activeSlide === 0}
@@ -310,14 +310,14 @@ function PackageCard({
                     <IconChevronLeft className="w-4 h-4" />
                   </button>
 
-                  <div className="flex gap-1.5" role="group" aria-label="Slide indicators">
+                  <div className="flex min-w-0 justify-center gap-1" role="group" aria-label="Slide indicators">
                     {pkg.slides.map((_, i) => (
                       <button
                         key={i}
                         onClick={() => setActiveSlide(i)}
                         aria-label={`Slide ${i + 1}${i === activeSlide ? ", current" : ""}`}
                         style={{ backgroundColor: i === activeSlide ? accentColor : undefined }}
-                        className={`min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-full transition-all`}
+                        className="inline-flex min-h-[44px] min-w-0 w-6 items-center justify-center rounded-full transition-all sm:w-11"
                       >
                         <span className={`block h-2 rounded-full transition-all ${i === activeSlide ? "w-5" : "w-2 bg-muted-foreground/30"}`} />
                       </button>
@@ -361,7 +361,7 @@ function PackageCard({
 
                 <div className="flex items-center justify-between text-[11px] text-white/50 border-t border-white/10 pt-2">
                   <span>{watermark}</span>
-                  <span>{pkg.provenance.sourcesUsed[0] || "Verified feed"}</span>
+                  <span>{pkg.provenance.sourcesUsed[0] || "Example content"}</span>
                 </div>
               </div>
             )}

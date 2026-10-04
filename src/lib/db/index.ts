@@ -22,7 +22,11 @@ function getDb(): Db {
             throw new Error("DATABASE_PROVIDER=neon-http is unsupported: Joey requires transactions. Use DATABASE_PROVIDER=neon for Neon's WebSocket pool.");
         } else if (isNeon) {
             // Use WebSocket Pool for Neon deployments so transactions and advisory locks are fully supported
-            instance = drizzleNeonServerless({ client: new Pool({ connectionString }), schema }) as unknown as Db;
+            const pool = new Pool({ connectionString, connectionTimeoutMillis: 20_000, query_timeout: 30_000 });
+            // Idle connections can drop when Neon suspends or the network changes.
+            // Without a listener, node-postgres raises an uncaught exception.
+            pool.on('error', (error: Error) => console.error('[database] Neon pool connection error:', error));
+            instance = drizzleNeonServerless({ client: pool, schema }) as unknown as Db;
         } else {
             instance = drizzleNode({ client: postgres(connectionString), schema }) as unknown as Db;
         }
