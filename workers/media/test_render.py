@@ -3,10 +3,54 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from render import ass_time, download, write_captions, prepare_fonts
+from render import api, ass_time, download, write_captions, prepare_fonts, probe_media, validate_trim
+import os
 
 
 class RenderContractTests(unittest.TestCase):
+    def test_bypass_is_sent_only_to_pinned_staging_worker_routes(self):
+        env = {"JOEY_URL": "https://isolated-staging.vercel.app", "MEDIA_STAGING_ORIGIN": "https://isolated-staging.vercel.app",
+               "MEDIA_WORKER_ENVIRONMENT": "staging", "MEDIA_WORKER_SECRET": "test-hmac-secret",
+               "VERCEL_AUTOMATION_BYPASS_SECRET": "test-bypass"}
+        with patch.dict(os.environ, env, clear=True), patch("render.httpx.post") as post:
+            api("/api/media-worker/claim", {})
+            self.assertEqual(post.call_args.kwargs["headers"]["x-vercel-protection-bypass"], "test-bypass")
+            self.assertFalse(post.call_args.kwargs["follow_redirects"])
+        for override in [{"MEDIA_WORKER_ENVIRONMENT": "production"}, {"JOEY_URL": "https://other.vercel.app"},
+                         {"JOEY_URL": "http://isolated-staging.vercel.app"}, {"JOEY_URL": "https://isolated-staging.vercel.app/path"}]:
+            with patch.dict(os.environ, {**env, **override}, clear=True), patch("render.httpx.post") as post, self.assertRaises(ValueError):
+                api("/api/media-worker/claim", {})
+            post.assert_not_called()
+        with patch.dict(os.environ, env, clear=True), patch("render.httpx.post") as post, self.assertRaises(ValueError):
+            api("/api/other", {})
+        post.assert_not_called()
+        with patch.dict(os.environ, env, clear=True), patch("render.httpx.post") as post, self.assertRaises(ValueError):
+            api("/api/media-worker/../other", {})
+        post.assert_not_called()
+
+    def test_fractional_trim_and_nonfinite_inputs(self):
+        validate_trim({"start": 1.2, "duration": 2.4}, 3.6)
+        for start, duration, source in [(0, 4, 3.6), (2.8, 1, 3.6), (-1, 2, 4),
+                                        (0, 61, 100), (float("nan"), 2, 4), (0, float("inf"), 4), (0, 2, float("nan"))]:
+            with self.assertRaises(ValueError):
+                validate_trim({"start": start, "duration": duration}, source)
+
+    def test_probe_requires_playable_stream_and_finite_metadata(self):
+        video = {"codec_type": "video", "width": 1080, "height": 1920, "duration": "3.6"}
+        valid = {"format": {"duration": "4"}, "streams": [video]}
+        with patch("render.subprocess.check_output", return_value=json.dumps(valid).encode()):
+            self.assertEqual(probe_media(Path("source"), "video"), (3.6, False))
+        with patch("render.subprocess.check_output", return_value=json.dumps({**valid, "streams": [video, {**video, "duration": ".1"}]}).encode()):
+            self.assertEqual(probe_media(Path("source"), "video"), (3.6, False))
+        invalid = [b"not json", b"{}", json.dumps({"format": {"duration": "3"}, "streams": [{"codec_type": "audio"}]}).encode(),
+                   json.dumps({"format": {"duration": "nan"}, "streams": [video]}).encode(),
+                   json.dumps({"format": {"duration": "4"}, "streams": [{**video, "width": 0}]}).encode(),
+                   json.dumps({"format": {"duration": "4"}, "streams": [{**video, "disposition": {"attached_pic": 1}}]}).encode()]
+        invalid.append(json.dumps({**valid, "streams": [{**video, "disposition": {"attached_pic": 1}}, video]}).encode())
+        for payload in invalid:
+            with patch("render.subprocess.check_output", return_value=payload), self.assertRaisesRegex(ValueError, "playable video"):
+                probe_media(Path("source"), "video")
+
     def test_caption_timing_preserves_silence_and_strips_ass_commands(self):
         with tempfile.TemporaryDirectory() as folder:
             target = Path(folder) / "captions.ass"

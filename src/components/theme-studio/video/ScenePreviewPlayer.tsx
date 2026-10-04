@@ -5,8 +5,6 @@ import {
   IconPlayerPause,
   IconPlayerPlay,
   IconRefresh,
-  IconVolume,
-  IconVolumeOff,
 } from "@tabler/icons-react";
 import type { VideoPreviewComposition } from "@/lib/theme-studio/renderers/video-scene-spec";
 
@@ -17,44 +15,51 @@ interface ScenePreviewPlayerProps {
 export function ScenePreviewPlayer({ composition }: ScenePreviewPlayerProps) {
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [currentTime, setCurrentTime] = React.useState(0);
-  const [isMuted, setIsMuted] = React.useState(false);
+  const scenes = composition.scenes.filter(scene => Number.isFinite(scene.durationInSeconds) && scene.durationInSeconds > 0);
+  const compositionKey = JSON.stringify(composition);
+  React.useEffect(() => {
+    setCurrentTime(0);
+    setIsPlaying(false);
+  }, [compositionKey]);
 
-  const totalDuration = composition.scenes.reduce(
+  const totalDuration = scenes.reduce(
     (acc, scene) => acc + scene.durationInSeconds,
     0
   );
 
   // Determine active scene based on currentTime
-  let activeSceneIndex = 0;
+  let activeSceneIndex = Math.max(0, scenes.length - 1);
   let elapsed = 0;
-  for (let i = 0; i < composition.scenes.length; i++) {
-    const s = composition.scenes[i];
-    if (currentTime >= elapsed && currentTime < elapsed + s.durationInSeconds) {
+  for (let i = 0; i < scenes.length; i++) {
+    const s = scenes[i];
+    if (currentTime < elapsed + s.durationInSeconds || i === scenes.length - 1) {
       activeSceneIndex = i;
       break;
     }
     elapsed += s.durationInSeconds;
   }
-  const currentScene = composition.scenes[activeSceneIndex] || composition.scenes[0];
+  const currentScene = scenes[activeSceneIndex];
 
   React.useEffect(() => {
-    let interval: any;
-    if (isPlaying) {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    if (isPlaying && totalDuration > 0) {
       interval = setInterval(() => {
         setCurrentTime((prev) => {
-          if (prev >= totalDuration) {
-            setIsPlaying(false);
-            return 0;
-          }
-          return prev + 0.1;
+          return Math.min(totalDuration, prev + 0.1);
         });
       }, 100);
     }
     return () => clearInterval(interval);
   }, [isPlaying, totalDuration]);
+  React.useEffect(() => {
+    if (currentTime >= totalDuration) setIsPlaying(false);
+  }, [currentTime, totalDuration]);
+
+  if (!currentScene) return <div className="rounded-xl border p-6 text-center text-sm text-muted-foreground">No storyboard scenes yet.</div>;
 
   return (
     <div className="flex flex-col items-center space-y-4 max-w-xs mx-auto">
+      <p className="text-xs text-muted-foreground text-center">Storyboard preview · approximate timing, no audio. Review the finished MP4 before approval.</p>
       {/* 9:16 Vertical Video Screen */}
       <div
         style={{
@@ -68,7 +73,7 @@ export function ScenePreviewPlayer({ composition }: ScenePreviewPlayerProps) {
       >
         {/* Top Progress Bars (Story/Reel style) */}
         <div className="flex gap-1.5 w-full">
-          {composition.scenes.map((scene, idx) => (
+          {scenes.map((scene, idx) => (
             <div
               key={scene.id}
               className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden"
@@ -120,13 +125,17 @@ export function ScenePreviewPlayer({ composition }: ScenePreviewPlayerProps) {
       {/* Media Controls */}
       <div className="flex items-center gap-3 bg-muted/40 p-2 rounded-2xl border w-full justify-center text-xs">
         <button
-          onClick={() => setIsPlaying(!isPlaying)}
+          type="button"
+          aria-label={isPlaying ? "Pause storyboard" : "Play storyboard"}
+          onClick={() => { if (currentTime >= totalDuration) setCurrentTime(0); setIsPlaying(!isPlaying); }}
           className="p-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
         >
           {isPlaying ? <IconPlayerPause className="w-4 h-4" /> : <IconPlayerPlay className="w-4 h-4" />}
         </button>
 
         <button
+          type="button"
+          aria-label="Restart storyboard"
           onClick={() => {
             setCurrentTime(0);
             setIsPlaying(true);
@@ -137,12 +146,6 @@ export function ScenePreviewPlayer({ composition }: ScenePreviewPlayerProps) {
           <IconRefresh className="w-4 h-4" />
         </button>
 
-        <button
-          onClick={() => setIsMuted(!isMuted)}
-          className="p-2 rounded-xl border hover:bg-muted text-muted-foreground transition-colors"
-        >
-          {isMuted ? <IconVolumeOff className="w-4 h-4" /> : <IconVolume className="w-4 h-4" />}
-        </button>
       </div>
     </div>
   );
