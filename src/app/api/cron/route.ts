@@ -33,7 +33,9 @@ export async function GET(request: Request) {
   // stale webhook delivery recovery, Telegram DM retries, Theme Studio analytics sync,
   // and recipe optimization before executing active scheduled flows.
   const results = await Promise.allSettled([
-    withTimeout(publishDueDrafts({ limit: 10 }), CRON_TASK_TIMEOUT_MS, "publishDrafts"),
+    // Retain the existing daily publisher until the separate cadence has been
+    // explicitly activated; do not silently stop existing scheduled posts.
+    withTimeout<{ delegated: boolean } | { published: number; failed: number; recovered: number }>(process.env.PUBLICATION_TICK_ENABLED === "true" ? Promise.resolve({ delegated: true }) : publishDueDrafts({ limit: 10 }), CRON_TASK_TIMEOUT_MS, "publishDrafts"),
     withTimeout(runFlowsTick(), CRON_TASK_TIMEOUT_MS, "flowsTick"),
     // Scout collection/judging runs in Workflow steps after this bounded handoff.
     withTimeout(runScoutsTick(), CRON_TASK_TIMEOUT_MS, "scoutsTick"),
@@ -44,8 +46,10 @@ export async function GET(request: Request) {
   const summary = results.map((r, i) => ({
     task: ["publishDrafts", "flowsTick", "scoutsTick", "telegramOutbox", "pruneRateLimits"][i],
     status: r.status,
-    ...(r.status === "rejected" ? { error: String(r.reason) } : {}),
+    ...(r.status === "rejected" ? { error: "Task failed or timed out" } : {}),
+    ...(r.status === "fulfilled" && r.value && typeof r.value === "object" && "failed" in r.value && typeof r.value.failed === "number" && r.value.failed > 0 ? { error: "Task reported failed operations" } : {}),
   }));
 
-  return NextResponse.json({ ok: true, timestamp: new Date().toISOString(), summary });
+  const ok = summary.every(task => !("error" in task));
+  return NextResponse.json({ ok, timestamp: new Date().toISOString(), summary }, { status: ok ? 200 : 503 });
 }

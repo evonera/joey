@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { CalendarPost } from "@/app/actions/calendar";
 import { rescheduleDraft } from "@/app/actions/calendar";
 import { toast } from "sonner";
+import { EditorialSuggestions } from "./editorial-suggestions";
 
 interface PostDetailsDialogProps {
   open: boolean;
@@ -110,6 +111,7 @@ export function PostDetailsDialog({ open, onOpenChange, post, onRescheduled, onC
                 />
               </div>
             )}
+            {post.assistedScheduling && post.canReschedule && ["approved", "scheduled"].includes(post.status) && <EditorialSuggestions key={post.id} draftId={post.id} onConfirmed={() => { onRescheduled?.(); onOpenChange(false); }} />}
           </div>
         ) : (
           <p className="text-sm text-zinc-500">No post selected.</p>

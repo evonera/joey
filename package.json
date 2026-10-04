@@ -38,6 +38,7 @@
     "test:integration:scouts": "node --import tsx tests/integration/scout-remix.ts",
     "test:integration:cloud-contract": "vitest run --config vitest.cloud-contract.config.ts",
     "test:integration:agency": "node --import tsx tests/integration/agency.ts",
+    "test:integration:editorial": "node --import tsx tests/integration/editorial-scheduling.ts",
     "check:dependencies": "node scripts/validate-dependencies.mjs"
   },
   "dependencies": {

@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { publishDraft } from "./publisher";
 import { getActiveTenantId, getActiveTenantMembership } from "@/lib/auth";
 import { eq, and, inArray, sql } from "drizzle-orm";
+import { assertAvailableSchedule, assertSchedulingRole, lockSchedulingAccount } from "@/lib/editorial-scheduling";
 
 export async function getComposeAutosaveScope() {
     const { userId, tenantId } = await getActiveTenantMembership();
@@ -27,7 +28,7 @@ export async function createManualPost(data: {
         if (!parsed.success) return { error: parsed.error.issues[0].message };
         data = parsed.data;
 
-        const { tenantId, role } = await getActiveTenantMembership(
+        const { tenantId, role, userId } = await getActiveTenantMembership(
             data.scheduleType === "draft" ? undefined : ["owner", "admin"],
         );
         
@@ -50,6 +51,14 @@ export async function createManualPost(data: {
         }
         const initialStatus = data.scheduleType === "draft" ? "draft" : data.scheduleType === "scheduled" ? "scheduled" : "approved";
         const createdDraftIds = await db.transaction(async (tx) => {
+            if (data.scheduleType === "scheduled") {
+                // Stable lock order prevents multi-account confirmation deadlocks.
+                for (const account of [...selectedAccounts].sort((a, b) => a.id.localeCompare(b.id))) {
+                    await lockSchedulingAccount(tx, tenantId, account.id);
+                    await assertAvailableSchedule(tx, tenantId, account.id, new Date(data.scheduledFor!), data.draftId);
+                }
+                await assertSchedulingRole(tx, tenantId, userId);
+            }
             const ids: string[] = [];
             const targets: Array<typeof selectedAccounts[number] | null> = selectedAccounts.length > 0 ? selectedAccounts : [null];
             for (const account of targets) {

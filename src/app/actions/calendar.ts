@@ -3,7 +3,8 @@
 import { db } from "@/lib/db";
 import { drafts, posts, socialAccounts, contentPackages, themeContentFormats } from "@/lib/db/schema";
 import { and, eq, gte, lte, isNotNull, inArray, or, sql, isNull } from "drizzle-orm";
-import { getActiveTenantMembership, requireRole } from "@/lib/auth";
+import { getActiveTenantMembership } from "@/lib/auth";
+import { assertAvailableSchedule, assertSchedulingRole, lockSchedulingAccount } from "@/lib/editorial-scheduling";
 
 export type CalendarPost = {
   id: string;
@@ -18,6 +19,7 @@ export type CalendarPost = {
   canReschedule?: boolean;
   editUrl?: string;
   source?: "draft" | "theme";
+  assistedScheduling?: boolean;
 };
 
 export async function getCalendarPosts(startDate: Date | string, endDate: Date | string) {
@@ -73,6 +75,7 @@ export async function getCalendarPosts(startDate: Date | string, endDate: Date |
                     id: draft.id,
                     source: "draft",
                     canReschedule: (role === "owner" || role === "admin") && ["draft", "pending_review", "approved", "scheduled"].includes(draft.status),
+                    assistedScheduling: process.env.EDITORIAL_SCHEDULING_ENABLED === "true",
                     editUrl: `/compose?draftId=${draft.id}`,
                     title: draft.content || "Draft variants pending review",
                     start: new Date(draft.scheduledFor),
@@ -142,16 +145,28 @@ export async function getCalendarPosts(startDate: Date | string, endDate: Date |
  */
 export async function rescheduleDraft(draftId: string, scheduledFor: Date | string) {
     try {
-        const tenantId = await requireRole(["owner", "admin"]);
+        const { tenantId, userId } = await getActiveTenantMembership(["owner", "admin"]);
 
         const scheduledDate = scheduledFor instanceof Date ? scheduledFor : new Date(scheduledFor);
         if (!Number.isFinite(scheduledDate.getTime()) || scheduledDate <= new Date()) return { error: "Choose a future date and time." };
-        const changed = await db.update(drafts)
+        const changed = await db.transaction(async tx => {
+          const draft = await tx.query.drafts.findFirst({ where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)) });
+          const accountId = (draft?.platformOptions as { accountId?: string } | null)?.accountId;
+          if (!accountId) throw new Error("Choose an account-targeted draft.");
+          await lockSchedulingAccount(tx, tenantId, accountId);
+          await assertSchedulingRole(tx, tenantId, userId);
+          const [current] = await tx.select().from(drafts).where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId))).for("update");
+          if ((current?.platformOptions as { accountId?: string } | null)?.accountId !== accountId) throw new Error("The target account changed. Refresh the calendar.");
+          const media = current.platformOptions as { renderJobId?: string; renderStatus?: string } | null;
+          if (media?.renderJobId && media.renderStatus !== "succeeded") throw new Error("Wait for the finished media before rescheduling.");
+          await assertAvailableSchedule(tx, tenantId, accountId, scheduledDate, draftId);
+          return tx.update(drafts)
             .set({ scheduledFor: scheduledDate })
             .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), isNotNull(drafts.scheduledFor),
                 inArray(drafts.status, ["draft", "pending_review", "approved", "scheduled"]),
                 or(isNull(drafts.errorMessage), sql`${drafts.errorMessage} NOT LIKE 'verify:%'`)))
             .returning({ id: drafts.id });
+        });
         if (!changed.length) return { error: "This draft cannot be rescheduled. It may already be publishing; refresh the calendar." };
 
         return { success: true };
