@@ -92,7 +92,7 @@ export function VideoCreator({ onSaved, resume, initialAssetId, onStartNew }: { 
   }
 
   return <section aria-label="Video creator" className="space-y-3 rounded-xl border border-border/60 bg-card p-3 text-sm">
-    <div><h2 className="font-semibold">Create a video</h2><p className="text-xs text-muted-foreground">Choose an MP4, add a headline, and render a short vertical clip. Review the finished file before publishing.</p></div>
+    <div><h2 className="font-semibold">Brand an MP4 clip</h2><p className="text-xs text-muted-foreground">Start with a video you already have. Add a headline and make a short vertical clip you can review before publishing.</p></div>
     {!capability && !error && <p role="status" className="text-xs text-muted-foreground">Checking video setup…</p>}
     {capability?.issue && <p role="status" className="rounded-lg border border-amber-500/30 p-2 text-xs">{capability.issue}</p>}
     {capability?.available && <>
@@ -111,6 +111,6 @@ export function VideoCreator({ onSaved, resume, initialAssetId, onStartNew }: { 
     </>}
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {render && <div role="status" className="space-y-2 rounded-lg border border-border/60 p-3"><p className="text-xs font-medium capitalize">Render {render.status}</p>{render.error && <p className="text-xs text-destructive">{render.error}</p>}{render.status === 'succeeded' && render.output?.publicUrl && <video src={render.output.publicUrl} controls className="max-h-72 w-full rounded-lg bg-black" />}{render.status === 'failed' && render.canRetry && <Button size="sm" variant="outline" onClick={() => void retry()}>Retry render</Button>}{render.status === 'succeeded' && draftId && <Button asChild size="sm" variant="outline"><Link href={`/compose?draftId=${draftId}`}>Review draft and publish</Link></Button>}{render.status !== 'succeeded' && <p className="text-xs text-muted-foreground">Your draft is saved here while the video finishes.</p>}<Button size="sm" variant="ghost" onClick={() => { setJobId(null); setDraftId(null); setRender(null); setSelected(null); setTitle(''); onStartNew(); }}>Start another video</Button></div>}
-    {capability?.available && <p className="text-xs text-muted-foreground">Worker availability is confirmed by the render result. A queued job may take a few minutes.</p>}
+    {capability?.available && <p className="text-xs text-muted-foreground">Rendering may take a few minutes. Your draft stays here while it finishes.</p>}
   </section>;
 }

@@ -21,8 +21,7 @@ import {
   IconVolumeOff,
   IconLayoutGrid,
 } from "@tabler/icons-react";
-import { createThemeTemplate, updateThemeTemplate } from "@/app/actions/theme-templates";
-import { checkR2Status } from "@/app/actions/assets";
+import { createThemeTemplate, updateThemeTemplate, deleteThemeTemplate } from "@/app/actions/theme-templates";
 import { CURATED_MEME_CLIPS, MemeClip, searchMemeClips } from "@/lib/theme-studio/assets/meme-clips";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -228,16 +227,9 @@ export function TemplateCanvasEditor({
   const [canvasView, setCanvasView] = React.useState<"edit" | "preview">("edit");
   const [activeSlide, setActiveSlide] = React.useState<1 | 2 | 3 | 4>(1);
   const [saving, setSaving] = React.useState(false);
-  const [r2Configured, setR2Configured] = React.useState<boolean | null>(null);
   const [clipSearch, setClipSearch] = React.useState("");
   const [clipCategory, setClipCategory] = React.useState<"all" | "reaction" | "gaming_loop" | "streamer" | "cinema" | "b_roll">("all");
   const [videoMuted, setVideoMuted] = React.useState(true);
-
-  React.useEffect(() => {
-    checkR2Status()
-      .then((res) => setR2Configured(res.isConfigured))
-      .catch(() => setR2Configured(false));
-  }, []);
 
   const selectedFormat = availableFormats.find((f) => f.id === formatId) || availableFormats[0];
   const isPortrait = selectedFormat?.aspectRatio === "4:5";
@@ -577,11 +569,26 @@ export function TemplateCanvasEditor({
         // A create form has no template id to update on a subsequent click.
         // Return to the collection immediately so a second save cannot create
         // a duplicate template by accident.
-        router.replace(themePageId ? `/theme-studio/${themePageId}/templates` : "/theme-studio");
+        router.replace(themePageId ? `/theme-studio/${themePageId}/templates` : "/theme-studio/templates");
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to save template");
     } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!initialTemplate.id || !window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
+    setSaving(true);
+    try {
+      const result = await deleteThemeTemplate(initialTemplate.id);
+      if (result.error) throw new Error(result.error);
+      toast.success("Template deleted");
+      router.replace(themePageId ? `/theme-studio/${themePageId}/templates` : "/theme-studio/templates");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete template");
       setSaving(false);
     }
   }
@@ -610,31 +617,22 @@ export function TemplateCanvasEditor({
       {/* Top Header & Save */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="text-xl font-bold bg-transparent border-b border-dashed border-muted-foreground/30 hover:border-primary focus:border-primary focus:outline-none pb-0.5"
+              aria-label="Template name"
+              className="min-w-0 max-w-full text-xl font-bold bg-transparent border-b border-dashed border-muted-foreground/30 hover:border-primary focus:border-primary focus:outline-none pb-0.5"
             />
-            {r2Configured === true ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Cloudflare R2 Connected
-              </span>
-            ) : (
-              <span
-                title="Images are served via direct URLs and Exa news search hero images. Configure R2 credentials in .env.local if bucket uploads are required."
-                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Direct URLs & Exa Active (R2 Optional)
-              </span>
-            )}
           </div>
           <p className="text-xs text-muted-foreground">
             Format: <span className="font-semibold text-foreground">{selectedFormat?.name}</span> ({selectedFormat?.aspectRatio || "1:1"})
           </p>
         </div>
 
+        <div className="flex flex-wrap gap-2">
+        {initialTemplate.id && <button type="button" onClick={() => void handleDelete()} disabled={saving} className="rounded-xl border border-destructive/40 px-4 py-2.5 text-xs font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50">Delete</button>}
         <button
           onClick={handleSave}
           disabled={saving}
@@ -643,6 +641,7 @@ export function TemplateCanvasEditor({
           {saving ? <IconLoader2 className="w-4 h-4 animate-spin" /> : <IconDeviceFloppy className="w-4 h-4" />}
           Save Template
         </button>
+        </div>
       </div>
 
       {/* Preset Selector Bar */}
@@ -651,8 +650,9 @@ export function TemplateCanvasEditor({
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
             <IconSparkles className="w-3.5 h-3.5 text-amber-500" /> Viral Template Families & Formats
           </span>
-          <span className="text-[11px] text-muted-foreground">Choose a supported post style, then customize it below.</span>
+          <span className="hidden text-[11px] text-muted-foreground sm:inline">Choose a style, then customize it below.</span>
         </div>
+        <p className="text-xs text-muted-foreground sm:hidden">Swipe to see more styles →</p>
         <div className="flex gap-2 overflow-x-auto pb-2 snap-x sm:grid sm:grid-cols-4 sm:overflow-visible sm:pb-0 sm:snap-none [&>button]:snap-start [&>button]:shrink-0 [&>button]:min-w-[150px] sm:[&>button]:min-w-0">
           <button
             type="button"
@@ -707,7 +707,7 @@ export function TemplateCanvasEditor({
           </button>
 
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">Need a video? <Link href="/dashboard?create=video" className="underline">Create a finished MP4 in Chat</Link>.</p>
+        <p className="mt-2 text-xs text-muted-foreground">Have an MP4? <Link href="/dashboard?create=video" className="underline">Brand a clip in Chat</Link>.</p>
         {(spec.templateFamily === "video_reel" || spec.templateFamily === "mixed_carousel") && <p role="alert" className="mt-2 rounded-lg border border-amber-500/30 p-2 text-xs">This older style cannot be rendered from Theme Studio. Choose a supported post style above, or create a video in Chat.</p>}
         {spec.templateFamily === "tweet_grid4" && <p role="alert" className="mt-2 rounded-lg border border-amber-500/30 p-2 text-xs">This older four-post style exports as a single post. Choose Single Post above for a reliable preview and export.</p>}
       </div>

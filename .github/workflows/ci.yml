@@ -45,7 +45,7 @@ jobs:
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -64,6 +64,8 @@ jobs:
       DATABASE_URL: postgresql://joey:joey_password@localhost:5432/joey_test
       BETTER_AUTH_SECRET: 864875f0003027faaf83ef3e30eac56f006ef975238a4c6a4c08fbfbc9c61754
       ENCRYPTION_KEY: MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
+      # Exercise billing-enabled auth without real provider credentials.
+      DODO_PAYMENTS_WEBHOOK_SECRET: whsec_dGVzdC1vbmx5LWtleQ==
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       NEXT_PUBLIC_WEBMCP_ORIGIN_TRIAL_TOKEN: WEBMCP_ORIGIN_TRIAL_DUMMY_TOKEN_FOR_E2E
     steps:
@@ -95,6 +97,8 @@ jobs:
           JOEY_INTEGRATION_TEST: "true"
       - name: Run Playwright tests
         run: npm run test:e2e
+        env:
+          JOEY_INTEGRATION_TEST: "true"
       - uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         if: ${{ !cancelled() }}
         with:
