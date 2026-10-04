@@ -8,11 +8,13 @@ import { db } from "@/lib/db";
 import { assets, contentPackages } from "@/lib/db/schema";
 import { assertThemeRenderCurrent, queueThemeRender } from "@/lib/media-engine/theme-adapter";
 import { publishContentPackage } from "@/lib/theme-studio/publishing/publisher";
+import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 
 export async function reviewThemePackage(
   packageId: string,
   decision: "approve" | "reject",
   feedback?: string,
+  factReviewAcknowledged?: { updatedAt: string },
 ) {
   if (feedback !== undefined && (typeof feedback !== "string" || feedback.length > 5_000)) {
     return { error: "Feedback must be 5,000 characters or fewer." };
@@ -26,6 +28,9 @@ export async function reviewThemePackage(
     return { error: "Only staged or rejected packages can be reviewed" };
   }
   if (decision === "approve") {
+    if (scoutFactReviewRequired(pkg.provenance) && factReviewAcknowledged?.updatedAt !== pkg.updatedAt.toISOString()) {
+      return { error: "Source claims need human fact review. Open the package in Theme Studio, review the evidence, and acknowledge the uncertainty before approving." };
+    }
     try { await assertThemeRenderCurrent(tenantId, packageId); } catch (error) { return { error: error instanceof Error ? error.message : "Render is not ready" }; }
     const assets = Array.isArray(pkg.renderedAssetUrls) ? pkg.renderedAssetUrls : [];
     if (assets.length === 0) return { error: "Render the package media before approval" };
@@ -34,6 +39,9 @@ export async function reviewThemePackage(
   const [updated] = await db.update(contentPackages).set({
     status: decision === "approve" ? "approved" : "rejected",
     error: decision === "reject" ? (feedback?.trim() || "Rejected by reviewer") : null,
+    ...(decision === "approve" && scoutFactReviewRequired(pkg.provenance) ? {
+      provenance: { ...(pkg.provenance as Record<string, unknown>), requiresFactReview: false, factReviewAcknowledgedAt: new Date().toISOString() },
+    } : {}),
     updatedAt: new Date(),
   }).where(and(
     eq(contentPackages.id, packageId),

@@ -73,7 +73,7 @@ export async function cancelRender(tenantId: string, jobId: string) {
 }
 
 /** Explicit user retry; stale attempt tokens remain fenced and total claims stay bounded. */
-export async function retryRender(tenantId: string, jobId: string) {
+export async function retryRender(tenantId: string, jobId: string, options: { preserveReviewDecision?: boolean } = {}) {
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") throw new Error("The media renderer is not enabled.");
   await db.transaction(async tx => {
     const [job] = await tx.select().from(mediaRenderJobs).where(and(eq(mediaRenderJobs.id, jobId), eq(mediaRenderJobs.tenantId, tenantId))).for("update");
@@ -81,7 +81,7 @@ export async function retryRender(tenantId: string, jobId: string) {
     const spec = renderSpecSchema.parse(job.spec);
     if (spec.source.kind === "theme_package") {
       const [pkg] = await tx.update(contentPackages).set({ status: "pending_review", error: null, updatedAt: new Date(), metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || '{"failurePhase":"render_pending"}'::jsonb` })
-        .where(and(eq(contentPackages.id, spec.source.id), eq(contentPackages.tenantId, tenantId), inArray(contentPackages.status, ["pending_review", "failed", "rejected"]), sql`${contentPackages.metrics}->>'renderJobId' = ${jobId}`, sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning({ id: contentPackages.id });
+        .where(and(eq(contentPackages.id, spec.source.id), eq(contentPackages.tenantId, tenantId), inArray(contentPackages.status, options.preserveReviewDecision ? ["pending_review", "failed"] : ["pending_review", "failed", "rejected"]), sql`${contentPackages.metrics}->>'renderJobId' = ${jobId}`, sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning({ id: contentPackages.id });
       if (!pkg) throw new Error("This package changed or has been submitted for publishing.");
     } else if (spec.source.kind === "draft") {
       const [draft] = await tx.update(drafts).set({
