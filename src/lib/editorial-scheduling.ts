@@ -5,6 +5,12 @@ import { drafts, editorialPreferences, member, socialAccounts } from "@/lib/db/s
 import { conflictsWithSlot, editorialPreferencesSchema, isEditorialWindow } from "./editorial-calendar";
 
 export type SchedulingTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export function singleSchedulingAccount(options: unknown): string | undefined {
+  const value = options as { accountId?: unknown; accountIds?: unknown } | null;
+  if (typeof value?.accountId === "string") return value.accountId;
+  if (Array.isArray(value?.accountIds) && value.accountIds.length === 1 && typeof value.accountIds[0] === "string") return value.accountIds[0];
+  return undefined;
+}
 export function draftScheduleRevision(draft: typeof drafts.$inferSelect) {
   return createHash("sha256").update(JSON.stringify([draft.content, draft.variants, draft.selectedVariantId, draft.platformOptions, draft.status, draft.scheduledFor])).digest("hex");
 }
@@ -27,15 +33,15 @@ export async function occupiedAccountTimes(tx: SchedulingTransaction, tenantId: 
   const result = await tx.execute(sql`
     SELECT "time" FROM (
       SELECT scheduled_for AS "time" FROM drafts WHERE tenant_id = ${tenantId}
-        AND platform_options->>'accountId' = ${accountId} AND id <> ${excludeDraftId}
+        AND (platform_options->>'accountId' = ${accountId} OR platform_options->'accountIds' @> ${JSON.stringify([accountId])}::jsonb) AND id <> ${excludeDraftId}
         AND status IN ('draft','pending_review','approved','scheduled','publishing','failed')
       UNION ALL
       SELECT p.published_at AS "time" FROM posts p JOIN drafts d ON d.id = p.draft_id AND d.tenant_id = p.tenant_id
-        WHERE p.tenant_id = ${tenantId} AND p.status = 'published' AND d.platform_options->>'accountId' = ${accountId}
+        WHERE p.tenant_id = ${tenantId} AND p.status = 'published' AND (d.platform_options->>'accountId' = ${accountId} OR d.platform_options->'accountIds' @> ${JSON.stringify([accountId])}::jsonb)
       UNION ALL
       SELECT COALESCE(c.published_at,c.scheduled_for) AS "time" FROM content_packages c
         JOIN theme_pages t ON t.id = c.theme_page_id AND t.tenant_id = c.tenant_id
-        WHERE c.tenant_id = ${tenantId} AND t.connected_accounts @> ${JSON.stringify([accountId])}::jsonb
+        WHERE c.tenant_id = ${tenantId} AND c.id <> ${excludeDraftId} AND t.connected_accounts @> ${JSON.stringify([accountId])}::jsonb
         AND c.status IN ('pending_review','approved','publishing','published','failed')
     ) times WHERE "time" BETWEEN ${start.toISOString()}::timestamp AND ${end.toISOString()}::timestamp LIMIT 5001`);
   const rows = (Array.isArray(result) ? result : (result as unknown as { rows: { time: string | Date }[] }).rows) as { time: string | Date }[];
@@ -54,7 +60,7 @@ export async function assertAvailableSchedule(tx: SchedulingTransaction, tenantI
 
 export async function scheduleApprovedDraft(tx: SchedulingTransaction, tenantId: string, userId: string, draftId: string, revision: string, candidate: Date) {
   const before = await tx.query.drafts.findFirst({ where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)) });
-  const accountId = (before?.platformOptions as { accountId?: string } | null)?.accountId;
+  const accountId = singleSchedulingAccount(before?.platformOptions);
   if (!before || !accountId) throw new Error("Choose an account-targeted draft.");
   await lockSchedulingAccount(tx, tenantId, accountId);
   await assertSchedulingRole(tx, tenantId, userId);

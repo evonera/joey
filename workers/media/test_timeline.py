@@ -10,6 +10,10 @@ from render import render, probe_media
 
 
 class TimelineTests(unittest.TestCase):
+    def test_rejects_unvalidated_gpu_encoder_before_work(self):
+        from timeline import render_timeline
+        with self.assertRaisesRegex(ValueError, "CPU libx264 only"):
+            render_timeline({}, Path("/unused"), "h264_nvenc")
     def test_frame_arithmetic_and_bounds(self):
         card = {"kind": "card", "durationFrames": 90, "transition": "cut"}
         self.assertEqual(boundaries([{**card, "transition": "fade"}, card, card]), ([(0, 90, 12), (78, 168, 0), (168, 258, 0)], 258))

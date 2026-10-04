@@ -3,9 +3,10 @@
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 
-import { getActiveTenantId, requireRole } from "@/lib/auth";
+import { getActiveTenantId, getActiveTenantMembership, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { assets, contentPackages } from "@/lib/db/schema";
+import { assets, contentPackages, themePages } from "@/lib/db/schema";
+import { assertAvailableSchedule, assertSchedulingRole, lockSchedulingAccount } from "@/lib/editorial-scheduling";
 import { assertThemeRenderCurrent, queueThemeRender } from "@/lib/media-engine/theme-adapter";
 import { publishContentPackage } from "@/lib/theme-studio/publishing/publisher";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
@@ -38,7 +39,7 @@ export async function reviewThemePackage(
     if (assets.length === 0) return { error: "Render the package media before approval" };
   }
 
-  const [updated] = await db.update(contentPackages).set({
+  const applyUpdate = (client: Pick<typeof db, "update">) => client.update(contentPackages).set({
     status: decision === "approve" ? "approved" : "rejected",
     error: decision === "reject" ? (feedback?.trim() || "Rejected by reviewer") : null,
     ...(decision === "approve" && scoutFactReviewRequired(pkg.provenance) ? {
@@ -51,6 +52,25 @@ export async function reviewThemePackage(
     eq(contentPackages.updatedAt, pkg.updatedAt),
     inArray(contentPackages.status, ["pending_review", "rejected"]),
   )).returning();
+  let changed;
+  if (decision === "approve" && pkg.scheduledFor) {
+    const { tenantId: currentTenant, userId } = await getActiveTenantMembership(["owner", "admin"]);
+    if (currentTenant !== tenantId) return { error: "Workspace changed. Refresh before reviewing." };
+    try {
+      changed = await db.transaction(async tx => {
+        const [page] = await tx.select().from(themePages).where(and(eq(themePages.id, pkg.themePageId), eq(themePages.tenantId, tenantId))).for("update");
+        const accountIds = Array.isArray(page?.connectedAccounts) ? page.connectedAccounts.filter((id): id is string => typeof id === "string") : [];
+        if (!accountIds.length || accountIds.length > 20) throw new Error("Choose active target accounts before scheduling.");
+        for (const id of [...new Set(accountIds)].sort()) {
+          await lockSchedulingAccount(tx, tenantId, id);
+          await assertAvailableSchedule(tx, tenantId, id, pkg.scheduledFor!, pkg.id);
+        }
+        await assertSchedulingRole(tx, tenantId, userId);
+        return applyUpdate(tx);
+      });
+    } catch { return { error: "The proposed schedule conflicts with another post or its account is unavailable. Review the posting time before approving." }; }
+  } else changed = await applyUpdate(db);
+  const [updated] = changed;
   return updated ? { package: updated } : { error: "Package changed while it was being reviewed" };
 }
 

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { CollaborativeAvatars } from "@/components/collaboration/collaborative-avatars";
 import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
+import { canUseEditorialScheduling } from "@/app/actions/editorial-calendar";
 
 const PLATFORMS = [
   { id: "all", label: "All Platforms" },
@@ -47,6 +48,8 @@ export default function DraftsPage() {
     const searchParams = useSearchParams();
     const { isConfigured, tenantId } = useLiveblocksConfig();
     const [drafts, setDrafts] = useState<any[]>([]);
+    const [assistedScheduling, setAssistedScheduling] = useState(false);
+    useEffect(() => { let active = true; void canUseEditorialScheduling().then(value => { if (active) setAssistedScheduling(value); }).catch(() => {}); return () => { active = false; }; }, []);
     const [counts, setCounts] = useState<Record<string, number>>({
         all: 0,
         draft: 0,
@@ -402,6 +405,7 @@ export default function DraftsPage() {
                             draft={draft} 
                             onActionComplete={handleActionComplete}
                             selectable={true}
+                            assistedScheduling={assistedScheduling}
                             selected={selectedIds.has(draft.id)}
                             onToggleSelect={() => toggleSelect(draft.id)}
                         />

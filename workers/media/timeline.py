@@ -29,6 +29,8 @@ def run(cmd, root):
 
 def render_timeline(job, root, encoder="libx264"):
     from render import capture, download, prepare_fonts, probe_media, validate_trim
+    if encoder != "libx264":
+        raise ValueError("Timeline exports support CPU libx264 only; NVENC is not validated")
     spec = job["spec"]
     if job["rendererVersion"] not in ("joey-media-2", "joey-media-3") or job["fontVersion"] != "joey-fonts-1":
         raise ValueError("Worker and timeline version mismatch")

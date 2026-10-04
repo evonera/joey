@@ -6,10 +6,15 @@ import { getActiveTenantMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { drafts, editorialPreferences, socialAccounts } from "@/lib/db/schema";
 import { editorialPreferencesSchema, suggestEditorialSlots } from "@/lib/editorial-calendar";
-import { assertSchedulingRole, draftScheduleRevision, lockSchedulingAccount, occupiedAccountTimes, scheduleApprovedDraft } from "@/lib/editorial-scheduling";
+import { assertSchedulingRole, draftScheduleRevision, lockSchedulingAccount, occupiedAccountTimes, scheduleApprovedDraft, singleSchedulingAccount } from "@/lib/editorial-scheduling";
 
 function enabled() { if (process.env.EDITORIAL_SCHEDULING_ENABLED !== "true") throw new Error("Assisted scheduling is not enabled in this environment."); }
 function message(error: unknown) { return error instanceof Error ? error.message : "Unable to update the editorial schedule."; }
+
+export async function canUseEditorialScheduling() {
+  const { role } = await getActiveTenantMembership();
+  return process.env.EDITORIAL_SCHEDULING_ENABLED === "true" && ["owner", "admin"].includes(role);
+}
 
 export async function getEditorialSetup() {
   const { tenantId, role } = await getActiveTenantMembership();
@@ -41,7 +46,7 @@ export async function getDraftSlotSuggestions(draftId: string) {
     const { tenantId } = await getActiveTenantMembership(["owner", "admin"]);
     return await db.transaction(async tx => {
       const draft = await tx.query.drafts.findFirst({ where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)) });
-      const accountId = (draft?.platformOptions as { accountId?: string } | null)?.accountId;
+      const accountId = singleSchedulingAccount(draft?.platformOptions);
       if (!draft || !accountId) throw new Error("Choose an account-targeted draft.");
       const account = await lockSchedulingAccount(tx, tenantId, accountId);
       const stored = await tx.query.editorialPreferences.findFirst({ where: and(eq(editorialPreferences.tenantId, tenantId), eq(editorialPreferences.accountId, accountId)) });
