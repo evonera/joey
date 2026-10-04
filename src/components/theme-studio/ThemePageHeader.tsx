@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { 
   IconSparkles, 
   IconPlayerPlay, 
@@ -39,6 +39,7 @@ interface ThemePageHeaderProps {
 
 export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [status, setStatus] = React.useState(page.status);
   const [loading, setLoading] = React.useState(false);
   const [activationError, setActivationError] = React.useState<string | null>(null);
@@ -78,6 +79,8 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
     { label: "DM Automation", href: `/theme-studio/${page.id}/dm-rules`, icon: IconMessageCircle },
     { label: "Settings", href: `/theme-studio/${page.id}/settings`, icon: IconSettings },
   ];
+  const selectedTab = tabs.find((tab) => tab.href === pathname)?.href ??
+    tabs.slice(1).find((tab) => pathname.startsWith(`${tab.href}/`))?.href ?? tabs[0].href;
 
   async function handleToggleStatus() {
     setLoading(true);
@@ -105,7 +108,7 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
 
   return (
     <div className="border-b bg-card">
-      <div className="py-4 sm:px-6 pb-0 max-w-7xl mx-auto min-w-0">
+      <div className="min-w-0 max-w-7xl mx-auto px-4 pt-4 sm:px-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6">
           <div>
             <div className="flex items-center gap-3">
@@ -179,7 +182,12 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
         {activationError && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{activationError}</p>}
 
         {/* Tab Navigation */}
-        <nav className="flex space-x-1 overflow-x-auto no-scrollbar">
+        <label className="mb-3 block text-xs font-semibold sm:hidden">Theme Page section
+          <select aria-label="Theme Page section" value={selectedTab} onChange={(event) => router.push(event.target.value)} className="mt-1 block w-full rounded-lg border bg-background px-3 py-2.5 text-sm">
+            {tabs.map((tab) => <option key={tab.href} value={tab.href}>{tab.label}</option>)}
+          </select>
+        </label>
+        <nav className="hidden space-x-1 overflow-x-auto sm:flex" aria-label="Theme Page sections">
           {tabs.map((tab) => {
             const isActive = pathname === tab.href;
             const Icon = tab.icon;

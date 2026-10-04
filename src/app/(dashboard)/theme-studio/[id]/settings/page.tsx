@@ -264,7 +264,7 @@ export default function ThemePageSettingsRoute() {
           <DialogHeader>
             <DialogTitle>Delete Theme Page</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this theme page? All sources, mix slots, and templates will be permanently removed.
+              Delete this Theme Page and its sources and daily mix? Your visual templates will stay in Your templates so you can keep editing and using them.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">

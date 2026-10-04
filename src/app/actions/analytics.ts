@@ -80,14 +80,14 @@ export interface AnalyticsSnapshot {
   series: SeriesPoint[];
 }
 
-export type AnalyticsResult = AnalyticsSnapshot | { success: false; error: string };
+export type AnalyticsResult = AnalyticsSnapshot | { success: false; error: string; code?: "no_connected_account" };
 
 export async function getAnalytics(days = 30): Promise<AnalyticsResult> {
   try {
     const tenantId = await getActiveTenantId();
     if (!Number.isInteger(days) || days < 1 || days > 366) return { success: false, error: "Choose a date range between 1 and 366 days." };
     const tenant = await db.query.tenants.findFirst({ where: eq(tenants.id, tenantId), columns: { zernioProfileId: true } });
-    if (!tenant?.zernioProfileId) return { success: false, error: "Connect a social account in Accounts to view this workspace’s analytics." };
+    if (!tenant?.zernioProfileId) return { success: false, code: "no_connected_account", error: "Connect a social account to view this workspace’s analytics." };
     const { zernio } = await getZernioClientForTenant(tenantId);
 
     const toDate = new Date();
