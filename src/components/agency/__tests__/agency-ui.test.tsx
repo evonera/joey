@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-const mocks = vi.hoisted(() => ({ save: vi.fn(), refresh: vi.fn(), threads: vi.fn(), runs: vi.fn() }));
+const mocks = vi.hoisted(() => ({ save: vi.fn(), refresh: vi.fn(), threads: vi.fn(), runs: vi.fn(), state: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
 vi.mock("@/app/actions/agency", () => ({
   saveAgencyAgentAction: mocks.save,
   getAgencyThreads: mocks.threads,
   getAgencyRuns: mocks.runs,
+  setAgencyAgentState: mocks.state,
 }));
 vi.mock("@/app/_components/agent-chat", () => ({
   AgentChat: ({
@@ -22,6 +23,7 @@ vi.mock("@/app/_components/agent-chat", () => ({
 }));
 import { AgentWizard } from "../agent-wizard";
 import { AgencyWorkspace } from "../agency-workspace";
+import { AgentAutomationControls } from "../agent-automation-controls";
 const agent = {
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   name: "Studio editor",
@@ -43,6 +45,17 @@ describe("Original agency UI", () => {
     mocks.save.mockResolvedValue(agent);
     mocks.threads.mockResolvedValue([]);
     mocks.runs.mockResolvedValue([]);
+  });
+  it("requires the explicit draft-only activation confirmation and retains failed setup", async () => {
+    mocks.state.mockRejectedValue(new Error("Agency automation is disabled by the operator."));
+    render(<AgentAutomationControls agent={{ ...agent, scoutId: "source", themePageId: "page", accountIds: ["one"] }} choices={choices} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Enable daily drafts" }));
+    expect(mocks.state).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toHaveTextContent("never to publish or schedule");
+    fireEvent.click(screen.getByRole("button", { name: "Enable draft-only automation" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("disabled by the operator"));
+    expect(screen.getByRole("dialog")).toBeDefined();
+    expect(mocks.state).toHaveBeenCalledWith({ id: agent.id, version: 1, state: "active" });
   });
   it("requires a name, then creates through the reviewed paused configuration action", async () => {
     const saved = vi.fn();

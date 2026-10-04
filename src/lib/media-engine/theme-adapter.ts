@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assets, contentPackages, mediaRenderJobs, scoutRemixes, themeContentFormats, themePages, themeVisualTemplates } from "@/lib/db/schema";
+import { assets, contentPackages, customAgentRuns, mediaRenderJobs, scoutRemixes, themeContentFormats, themePages, themeVisualTemplates } from "@/lib/db/schema";
 import { getRender, retryRender, submitRender } from "./engine";
 import { dispatchQueuedRender } from "./dispatch";
 import type { RenderSpec } from "./spec";
@@ -91,6 +91,7 @@ export async function settleThemeRender(tenantId: string, packageId: string) {
   }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), eq(contentPackages.status, "pending_review"), sql`${contentPackages.metrics}->>'renderJobId' = ${job.jobId}`, sql`${contentPackages.metrics}->>'renderRevision' = ${revision}`)).returning({ id: contentPackages.id });
   if (attached.length) await tx.update(scoutRemixes).set({ status: job.output ? "complete" : "failed", error: job.output ? null : (job.error || "Render cancelled").slice(0, 500), updatedAt: new Date() })
     .where(and(eq(scoutRemixes.tenantId, tenantId), eq(scoutRemixes.packageId, packageId), inArray(scoutRemixes.status, ["queued", "rendering"])));
+  if (attached.length) await tx.update(customAgentRuns).set({ status: job.output ? "completed" : "failed", error: job.output ? null : "Media render failed or was cancelled.", updatedAt: new Date() }).where(and(eq(customAgentRuns.tenantId, tenantId), eq(customAgentRuns.packageId, packageId), eq(customAgentRuns.status, "queued")));
   });
 }
 

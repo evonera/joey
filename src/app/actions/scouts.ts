@@ -7,7 +7,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
 import { revalidatePath } from "next/cache";
 import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
-import { detachAgencyResource } from "@/lib/agency/service";
+import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/service";
 
 export interface CreateScoutInput {
   name: string;
@@ -87,7 +87,7 @@ export async function createScout(input: CreateScoutInput) {
 }
 
 export async function updateScout(scoutId: string, input: CreateScoutInput) {
-  const { tenantId, role } = await getActiveTenantMembership();
+  const { tenantId, role, userId } = await getActiveTenantMembership();
   const values = validateScoutInput(input);
   const existing = await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) });
   if (!existing) throw new Error("Scout not found.");
@@ -97,11 +97,16 @@ export async function updateScout(scoutId: string, input: CreateScoutInput) {
   // Do not let a member update a Scout that was activated after the read above.
   if (!canOperate) conditions.push(eq(scouts.isActive, false));
   const changedTarget = existing.targetUrl !== values.targetUrl || existing.goalCondition !== values.goalCondition || existing.platform !== values.platform;
-  const [updated] = await db.update(scouts).set({
+  const updated = await db.transaction(async tx => {
+  await guardAgencyScoutChange(tx, { tenantId, userId }, scoutId);
+  const [saved] = await tx.update(scouts).set({
     ...values,
     ...(changedTarget ? { latestAlert: null, lastPolledAt: null } : {}),
     updatedAt: new Date(),
   }).where(and(...conditions)).returning();
+  if (!saved) throw new Error("Scout changed before it could be saved. Refresh and try again.");
+  return saved;
+  });
   if (!updated) throw new Error("Scout changed before it could be saved. Refresh and try again.");
   revalidatePath("/scouts");
   return updated;
@@ -128,11 +133,15 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
   // an admin for both transitions prevents pausing an active Scout as a way to
   // bypass the active-Scout deletion restriction.
   const tenantId = await requireRole(["owner", "admin"]);
+  const { userId } = await getActiveTenantMembership();
   if (isActive) await resolveToken(tenantId);
-  await db
+  await db.transaction(async tx => {
+  await guardAgencyScoutChange(tx, { tenantId, userId }, scoutId, isActive);
+  await tx
     .update(scouts)
     .set({ isActive, updatedAt: new Date() })
     .where(and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)));
+  });
 
   revalidatePath("/scouts");
   return { success: true };
