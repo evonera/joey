@@ -250,7 +250,7 @@ export function AgentWizard({
                   </span>
                 </label>
                 <label className="block space-y-2 text-sm font-medium">
-                  Daily automation draft ceiling
+                  Daily attempt safety ceiling
                   <Input
                     type="number"
                     min={1}
@@ -270,11 +270,11 @@ export function AgentWizard({
                     <p className="text-xs capitalize text-muted-foreground">{config.specialty} · starts paused</p>
                   </div>
                 </div>
-                <dl className="grid grid-cols-2 gap-3 rounded-xl border p-4 text-sm">
+                <dl className="grid grid-cols-2 gap-3 rounded-xl border p-4 text-sm [&>dd]:min-w-0 [&>dd]:break-words">
                   <dt className="text-muted-foreground">Destination accounts</dt>
                   <dd>{config.accountIds.length}</dd>
                   <dt className="text-muted-foreground">Automation ceiling</dt>
-                  <dd>{config.dailyDraftLimit} drafts / UTC day</dd>
+                  <dd>{config.dailyDraftLimit} attempts / UTC day</dd>
                   <dt className="text-muted-foreground">Publishing</dt>
                   <dd>Human review only</dd>
                 </dl>

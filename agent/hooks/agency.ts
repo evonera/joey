@@ -1,10 +1,18 @@
 import { defineHook } from "eve/hooks";
+import { defineState } from "eve/context";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customAgentThreads, eveSessionOwners } from "@/lib/db/schema";
 import { registerAgencyThread, requireAgencyMember } from "@/lib/agency/service";
 import { agencySessionIdentity } from "../lib/agency-session";
 import { userPromptText } from "@/lib/chat-title";
+
+// Waiting means a turn is parked, not that its pending approvals disappeared.
+// Keep request identities durable across follow-up turns and reconnects.
+const lifecycle = defineState("joey.agency.lifecycle", () => ({
+  pendingRequestIds: [] as string[],
+  status: "ready",
+}));
 
 export default defineHook({
   events: {
@@ -56,8 +64,21 @@ export default defineHook({
         "session.failed": "failed",
         "turn.cancelled": "cancelled",
       };
-      const status = statuses[event.type];
-      if (!status) return;
+      if (event.type === "input.requested") {
+        lifecycle.update(state => ({ ...state, pendingRequestIds: [...new Set([
+          ...state.pendingRequestIds, ...event.data.requests.map(request => request.requestId),
+        ])], status: "needs_input" }));
+      } else if (event.type === "input.resolved") {
+        const resolved = new Set(event.data.resolutions.map(resolution => resolution.requestId));
+        lifecycle.update(state => ({ ...state, pendingRequestIds: state.pendingRequestIds.filter(id => !resolved.has(id)), status: ["failed", "cancelled"].includes(state.status) ? state.status : "working" }));
+      } else if (event.type === "session.waiting") {
+        lifecycle.update(state => ({ ...state, status: ["failed", "cancelled"].includes(state.status) ? state.status : state.pendingRequestIds.length ? "needs_input" : "ready" }));
+      } else {
+        const next = statuses[event.type];
+        if (!next) return;
+        lifecycle.update(state => ({ ...state, status: next }));
+      }
+      const status = lifecycle.get().status;
       await db
         .update(customAgentThreads)
         .set({ status, updatedAt: new Date() })

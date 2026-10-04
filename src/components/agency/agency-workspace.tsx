@@ -32,6 +32,7 @@ export function AgencyWorkspace({
   const [roster, setRoster] = useState(agents);
   const [selectedId, setSelectedId] = useState<string>();
   const [query, setQuery] = useState("");
+  const [mobileRosterOpen, setMobileRosterOpen] = useState(true);
   const [wizard, setWizard] = useState<"new" | AgencyAgent>();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -82,6 +83,7 @@ export function AgencyWorkspace({
   function save(agent: AgencyAgent) {
     setRoster((previous) => [agent, ...previous.filter((item) => item.id !== agent.id)]);
     setSelectedId(agent.id);
+    setMobileRosterOpen(false);
     setWizard(undefined);
     setThreadId(undefined);
     setConversationKey((previous) => previous + 1);
@@ -99,12 +101,17 @@ export function AgencyWorkspace({
         <header className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-base font-semibold">Your agents</h1>
+            {selected && (
+              <Button size="sm" variant="ghost" className="ml-auto lg:hidden" aria-expanded={mobileRosterOpen} aria-controls="agency-roster-list" onClick={() => setMobileRosterOpen(previous => !previous)}>
+                {mobileRosterOpen ? "Hide agents" : "Show agents"}
+              </Button>
+            )}
             <Button size="sm" onClick={() => setWizard("new")}>
               <PlusSignIcon className="size-4" />
               New
             </Button>
           </div>
-          <label className="relative block">
+          <label className={cn("relative lg:block", mobileRosterOpen ? "block" : "hidden")}>
             <span className="sr-only">Search agents</span>
             <Search01Icon
               aria-hidden="true"
@@ -118,7 +125,7 @@ export function AgencyWorkspace({
             />
           </label>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <div id="agency-roster-list" className={cn("min-h-0 flex-1 overflow-y-auto px-2 pb-2 lg:block", mobileRosterOpen ? "block" : "hidden")}>
           {visible.length ? (
             <ul className="space-y-1">
               {visible.map((agent) => (
@@ -128,6 +135,7 @@ export function AgencyWorkspace({
                     aria-pressed={agent.id === selectedId}
                     onClick={() => {
                       setSelectedId(agent.id);
+                      setMobileRosterOpen(false);
                       setThreadId(undefined);
                     }}
                     className={cn(
@@ -221,8 +229,8 @@ export function AgencyWorkspace({
                 <summary className="cursor-pointer rounded-md px-2 py-2 text-muted-foreground focus-visible:outline-ring">
                   Run history ({runs.length})
                 </summary>
-                <div className="absolute right-0 z-20 mt-1 max-h-64 w-64 overflow-auto rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg">
-                  {runs.length ? (
+                <div className="absolute right-0 z-20 mt-1 max-h-64 w-64 max-w-[calc(100vw-3rem)] overflow-auto rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg">
+                  {historyLoading ? <p role="status" className="text-muted-foreground">Loading runs…</p> : runs.length ? (
                     runs.map((run) => (
                       <div key={run.id} className="border-b py-2 last:border-0">
                         <p className="font-medium capitalize">{run.status}</p>
@@ -247,7 +255,7 @@ export function AgencyWorkspace({
               </details>
             </div>
             {historyError && (
-              <p role="alert" className="border-b px-5 py-2 text-xs text-destructive">
+              <p role="alert" className="break-words border-b px-5 py-2 text-xs text-destructive">
                 {historyError}{" "}
                 <Button variant="link" size="sm" onClick={refreshHistory}>
                   Refresh

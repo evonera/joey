@@ -25,6 +25,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Validate dependency pins and core compatibility
+        run: npm run check:dependencies
       - name: Validate migrations
         run: npm run check:migrations
       - name: Typecheck

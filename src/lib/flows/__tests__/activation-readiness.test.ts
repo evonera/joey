@@ -12,6 +12,11 @@ const graph: FlowGraphDoc = {
 };
 
 describe("flow activation readiness", () => {
+  it.each([["supadata", "ai.youtube_transcript"], ["typesafe", "ai.decision"]])("matches %s server fallback after workspace revocation", (provider, type) => {
+    const single: FlowGraphDoc = { nodes: [{ id: "step", type, config: {}, position: { x: 0, y: 0 } }], edges: [] };
+    expect(checkActivationReadiness(single, { keys: [{ provider, status: "revoked" }], accounts: [], env: { [provider]: true } })).toEqual([]);
+    expect(checkActivationReadiness(single, { keys: [{ provider, status: "revoked" }], accounts: [], env: {} }).map(issue => issue.nodeId)).toEqual(["step"]);
+  });
   it("blocks a scheduled draft flow before its research and AI keys exist", () => {
     const issues = checkActivationReadiness(graph, { keys: [], accounts: [], env: {} });
     expect(issues.map((issue) => issue.nodeId)).toEqual(["research", "write"]);

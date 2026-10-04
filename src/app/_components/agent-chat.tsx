@@ -67,6 +67,7 @@ import {
 } from "@/lib/chat-sessions";
 import { ChatLibraryView } from "@/components/chat/chat-library-view";
 import { messageWithChatContext } from "@/lib/chat-title";
+import { consumeChatSeed } from "@/lib/chat-seed";
 import { SocialPlatformSelector } from "@/components/chat/social-platform-selector";
 import {
   SourcesPillButton,
@@ -424,18 +425,14 @@ function AgentChatInner({
   // Consume seed prompt if placed by open-in-chat buttons
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const raw = sessionStorage.getItem("joey_seed_prompt");
-    if (raw) {
-      sessionStorage.removeItem("joey_seed_prompt");
-      try {
-        const { prompt, autoSend } = JSON.parse(raw);
-        if (prompt && autoSend) {
-          prepareTurn();
-          void agent.send(prompt);
-        }
-      } catch (err) {
-        console.warn("Failed to parse seed prompt:", err);
+    try {
+      const prompt = consumeChatSeed(sessionStorage, persona?.id);
+      if (prompt) {
+        prepareTurn();
+        void agent.send(prompt);
       }
+    } catch (err) {
+      console.warn("Failed to parse seed prompt:", err);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
