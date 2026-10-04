@@ -30,9 +30,7 @@ def run(cmd, root):
 def render_timeline(job, root, encoder="libx264"):
     from render import capture, download, prepare_fonts, probe_media, validate_trim
     spec = job["spec"]
-    if spec.get("music") or spec.get("video", {}).get("captions") or spec.get("video", {}).get("words"):
-        raise ValueError("Timeline sound design requires its coordinated renderer release")
-    if job["rendererVersion"] != "joey-media-2" or job["fontVersion"] != "joey-fonts-1":
+    if job["rendererVersion"] not in ("joey-media-2", "joey-media-3") or job["fontVersion"] != "joey-fonts-1":
         raise ValueError("Worker and timeline version mismatch")
     scenes = spec["timeline"]
     spans, total = boundaries(scenes)
@@ -50,6 +48,7 @@ def render_timeline(job, root, encoder="libx264"):
             item = next(item for item in job["inputs"] if item["id"] == asset_id)
             download(item["url"], files[asset_id])
     outputs = []
+    source_audio_present = False
     for index, scene in enumerate(scenes):
         segment = root / f"scene-{index}"
         segment.mkdir()
@@ -64,6 +63,7 @@ def render_timeline(job, root, encoder="libx264"):
             validate_trim({"start": start, "duration": duration}, source_duration)
             args += ["-ss", str(start), "-t", str(duration), "-i", str(source)]
             has_audio = source_audio and scene["sourceAudio"]
+            source_audio_present = source_audio_present or has_audio
         elif scene["kind"] == "image":
             # ffmpeg decodes the image; corrupt input fails closed before output.
             import json
@@ -112,4 +112,5 @@ def render_timeline(job, root, encoder="libx264"):
     output = root / "output.mp4"
     # CPU is the validated default. No implied NVENC speed or capability claim.
     run(args + ["-filter_complex_threads", "2", "-filter_complex", ";".join(filters), "-map", f"[{v}]", "-map", "[finala]", "-t", str(total / FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output)], root)
-    return output
+    from sound import finish_sound
+    return finish_sound({**job, "sourceAudioPresent": source_audio_present}, root, output)

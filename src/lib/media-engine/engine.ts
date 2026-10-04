@@ -9,6 +9,7 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") throw new Error("The new media renderer is not enabled.");
   const spec = renderSpecSchema.parse(input);
   if (spec.version === 2 && process.env.MEDIA_TIMELINE_ENABLED !== "true") throw new Error("Multi-scene rendering is not enabled.");
+  if (spec.version === 2 && spec.soundCues.length && process.env.MEDIA_SFX_ENABLED !== "true") throw new Error("Sound effects are not enabled.");
   const result = await db.transaction(async tx => {
     // Serialize quota checks and identical submissions within a workspace.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`media:${tenantId}`}))`);

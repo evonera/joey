@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { timelineSchema, timelineFrames, timelineAssetSchema } from "./timeline";
+import { soundCuesSchema } from "./sound";
 
 export const RENDERER_VERSION = "joey-media-1";
 export const FONT_VERSION = "joey-fonts-1";
@@ -41,10 +42,11 @@ const timelineRenderSchema = baseSchema.extend({
   version: z.literal(2), format: z.literal("mp4"),
   template: z.enum(["branded_clip", "minimal_meme"]), media: asset.optional(),
   timeline: timelineSchema,
+  soundCues: soundCuesSchema.default([]),
 }).strict().superRefine((spec, ctx) => {
   if (!spec.video || Math.abs(spec.video.duration * 30 - timelineFrames(spec.timeline)) > 0.000001 || spec.video.start !== 0 || spec.video.zoom !== 1) ctx.addIssue({ code: "custom", message: "Video timing must match the assembled frame timeline." });
   if (spec.media || spec.inset) ctx.addIssue({ code: "custom", message: "Timeline inputs belong to their scenes." });
-  if (spec.music || spec.video?.captions || spec.video?.words.length) ctx.addIssue({ code: "custom", message: "Timeline sound design is not enabled in this renderer release." });
+  if (spec.soundCues.some(cue => cue.frame >= timelineFrames(spec.timeline))) ctx.addIssue({ code: "custom", message: "Sound cues must occur inside the finished timeline." });
   if (spec.video?.captions && spec.video.words.length) ctx.addIssue({ code: "custom", message: "Choose automatic captions or supplied timing, not both." });
   let previous = 0;
   for (const word of spec.video?.words ?? []) {
@@ -54,7 +56,7 @@ const timelineRenderSchema = baseSchema.extend({
 });
 export const renderSpecSchema = z.union([legacySchema, timelineRenderSchema]);
 export type RenderSpec = z.infer<typeof renderSpecSchema>;
-export function rendererVersion(spec: RenderSpec) { return spec.version === 2 ? "joey-media-2" : RENDERER_VERSION; }
+export function rendererVersion(spec: RenderSpec) { return spec.version === 2 ? "joey-media-3" : RENDERER_VERSION; }
 export function renderHash(spec: RenderSpec) {
   return createHash("sha256").update(JSON.stringify({ renderer: rendererVersion(spec), fonts: FONT_VERSION, spec: renderSpecSchema.parse(spec) })).digest("hex");
 }

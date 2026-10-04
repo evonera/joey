@@ -1,12 +1,17 @@
 "use client";
 import { useState } from "react";
 import { timelineSchema, timelineFrames, type TimelineScene } from "@/lib/media-engine/timeline";
+import { soundCuesSchema } from "@/lib/media-engine/sound";
+import { TimelineSoundControls, type TimelineSound } from "./TimelineSoundControls";
 
 type Asset = { id: string; filename: string };
-export function TimelineEditor({ videos, images, busy, initialScenes, onExport }: { videos: Asset[]; images: Asset[]; busy: boolean; initialScenes?: TimelineScene[]; onExport: (scenes: TimelineScene[]) => void }) {
+export function TimelineEditor({ videos, images, music, sfxEnabled, initialSound, busy, initialScenes, onExport }: { videos: Asset[]; images: Asset[]; music: Asset[]; sfxEnabled: boolean; initialSound?: TimelineSound; busy: boolean; initialScenes?: TimelineScene[]; onExport: (scenes: TimelineScene[], sound: TimelineSound) => void }) {
   const [scenes, setScenes] = useState<TimelineScene[]>(initialScenes ?? [{ kind: "card", headline: "Your opening headline", durationFrames: 90, transition: "cut" }]);
+  const [sound, setSound] = useState<TimelineSound>(initialSound ?? { soundCues: [], captions: false });
   const update = (index: number, value: TimelineScene) => setScenes(previous => previous.map((scene, i) => i === index ? value : scene));
   const parsed = timelineSchema.safeParse(scenes);
+  const cues = soundCuesSchema.safeParse(sound.soundCues);
+  const soundValid = cues.success && sound.soundCues.every(cue => cue.frame < timelineFrames(scenes)) && (sfxEnabled || !sound.soundCues.length);
   function move(index: number, delta: number) {
     setScenes(previous => {
       const next = [...previous];
@@ -36,7 +41,9 @@ export function TimelineEditor({ videos, images, busy, initialScenes, onExport }
     </fieldset>)}
     <button type="button" className="rounded border px-3 py-2 disabled:opacity-50" disabled={busy || scenes.length >= 6} onClick={() => setScenes(previous => [...previous, newScene("card")])}>Add scene</button>
     <p className="text-sm" role="status">Finished duration: {(timelineFrames(scenes) / 30).toFixed(2)}s</p>
+    <TimelineSoundControls value={sound} onChange={setSound} enabled={sfxEnabled} frames={timelineFrames(scenes)} music={music} />
+    {!soundValid && <p role="alert" className="text-sm text-destructive">Keep cues inside the timeline, ordered and one second apart; remove disabled effects.</p>}
     {!parsed.success && <p role="alert" className="text-sm text-destructive">{parsed.error.issues[0]?.message}</p>}
-    <button type="button" disabled={busy || !parsed.success} className="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-50" onClick={() => { if (parsed.success) onExport(parsed.data); }}>{busy ? "Queuing…" : "Create timeline export"}</button>
+    <button type="button" disabled={busy || !parsed.success || !soundValid} className="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-50" onClick={() => { if (parsed.success && soundValid) onExport(parsed.data, sound); }}>{busy ? "Queuing…" : "Create timeline export"}</button>
   </section>;
 }

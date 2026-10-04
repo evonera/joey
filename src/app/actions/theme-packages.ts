@@ -10,6 +10,7 @@ import { assertThemeRenderCurrent, queueThemeRender } from "@/lib/media-engine/t
 import { publishContentPackage } from "@/lib/theme-studio/publishing/publisher";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 import { timelineSchema } from "@/lib/media-engine/timeline";
+import { soundCuesSchema } from "@/lib/media-engine/sound";
 
 export async function reviewThemePackage(
   packageId: string,
@@ -62,7 +63,7 @@ export async function renderThemePackage(packageId: string, input?: unknown) {
   const tenantId = await getActiveTenantId();
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") throw new Error("The media renderer is not enabled.");
   if (input !== undefined) {
-    const timelineInput = z.object({ timeline: timelineSchema, templateFamily: z.enum(["branded_clip", "minimal_meme"]) }).strict();
+    const timelineInput = z.object({ timeline: timelineSchema, templateFamily: z.enum(["branded_clip", "minimal_meme"]), soundCues: soundCuesSchema.default([]), captions: z.boolean().default(false), musicAssetId: z.uuid().optional() }).strict();
     if (typeof input === "object" && input !== null && "timeline" in input) {
       if (process.env.MEDIA_TIMELINE_ENABLED !== "true") throw new Error("Multi-scene rendering is not enabled.");
       return queueThemeRender(tenantId, packageId, timelineInput.parse(input));
@@ -96,5 +97,6 @@ export async function getThemeRenderSetup(packageId: string) {
   const { assets } = await import("@/lib/db/schema");
   const rows = await db.query.assets.findMany({ where: eq(assets.tenantId, tenantId), columns: { id: true, filename: true, mimeType: true, publicUrl: true }, limit: 100 });
   const savedTimeline = timelineSchema.safeParse(component.timeline);
-  return { enabled: process.env.MEDIA_ENGINE_ENABLED === "true" && format.mediaType !== "carousel", timelineEnabled: process.env.MEDIA_TIMELINE_ENABLED === "true" && format.mediaType === "video", savedTimeline: savedTimeline.success ? savedTimeline.data : undefined, video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
+  const cues = soundCuesSchema.safeParse(component.soundCues);
+  return { enabled: process.env.MEDIA_ENGINE_ENABLED === "true" && format.mediaType !== "carousel", timelineEnabled: process.env.MEDIA_TIMELINE_ENABLED === "true" && format.mediaType === "video", sfxEnabled: process.env.MEDIA_SFX_ENABLED === "true", savedSound: { soundCues: cues.success ? cues.data : [], captions: component.captions === true, musicAssetId: typeof component.musicAssetId === "string" ? component.musicAssetId : undefined }, savedTimeline: savedTimeline.success ? savedTimeline.data : undefined, video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
 }

@@ -16,7 +16,7 @@ describe("Frame timeline", () => {
   });
   it("uses v2 identity without changing the legacy renderer", () => {
     const spec = renderSpecSchema.parse(base);
-    expect(rendererVersion(spec)).toBe("joey-media-2");
+    expect(rendererVersion(spec)).toBe("joey-media-3");
     expect(referencedAssets(spec)).toEqual([]);
     expect(renderHash(spec)).not.toBe(renderHash(renderSpecSchema.parse({ ...base, timeline: [{ ...card, headline: "Changed" }] })));
     const { timeline: _timeline, ...legacyBase } = base;
