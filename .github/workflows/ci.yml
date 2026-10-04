@@ -91,6 +91,10 @@ jobs:
         run: npm run test:integration:scouts
         env:
           JOEY_INTEGRATION_TEST: "true"
+      - name: Agency governance acceptance
+        run: npm run test:integration:agency
+        env:
+          JOEY_INTEGRATION_TEST: "true"
       - name: Run Playwright tests
         run: npm run test:e2e
         env:

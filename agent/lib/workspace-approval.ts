@@ -6,6 +6,7 @@ import type {
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { member } from "@/lib/db/schema";
+import { agencySessionIdentity } from "./agency-session";
 
 const APPROVER_ROLES = ["owner", "admin"] as const;
 
@@ -22,6 +23,7 @@ async function isWorkspaceApprover(
   ctx: ApprovalResponseContext,
 ): Promise<boolean> {
   const tenantId = ctx.responder.attributes?.tenantId;
+  if (ctx.session.initiator?.attributes?.customAgentId || ctx.responder.attributes?.customAgentId) return false;
   const sessionTenantId = ctx.session.initiator?.attributes?.tenantId;
   const userId = responderUserId(ctx.responder.principalId);
   if (
@@ -75,7 +77,9 @@ export function workspaceApproval(options?: {
 }): ApprovalConfiguration {
   return {
     request: async (ctx) =>
-      options?.allowOwnerAutomationKind &&
+      agencySessionIdentity(ctx.session)
+        ? { type: "denied", reason: "This agent is draft-only; external actions and automation require the main workspace UI." }
+        : options?.allowOwnerAutomationKind &&
       (await isTrustedWorkspaceAutomation(ctx, options.allowOwnerAutomationKind))
         ? { type: "approved", reason: "Authorized workspace-owner automation." }
         : "user-approval",

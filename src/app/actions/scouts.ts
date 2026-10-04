@@ -7,6 +7,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
 import { revalidatePath } from "next/cache";
 import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
+import { detachAgencyResource } from "@/lib/agency/service";
 
 export interface CreateScoutInput {
   name: string;
@@ -138,7 +139,7 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
 }
 
 export async function deleteScout(scoutId: string) {
-  const { tenantId, role } = await getActiveTenantMembership();
+  const { tenantId, role, userId } = await getActiveTenantMembership();
   const existing = await db.query.scouts.findFirst({
     where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
     columns: { isActive: true },
@@ -149,10 +150,12 @@ export async function deleteScout(scoutId: string) {
   }
   const conditions = [eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)];
   if (role !== "owner" && role !== "admin") conditions.push(eq(scouts.isActive, false));
-  const [deleted] = await db
-    .delete(scouts)
-    .where(and(...conditions))
-    .returning({ id: scouts.id });
+  const deleted = await db.transaction(async tx => {
+    await detachAgencyResource(tx, { tenantId, userId }, { kind: "scout", id: scoutId });
+    const [removed] = await tx.delete(scouts).where(and(...conditions)).returning({ id: scouts.id });
+    if (!removed) throw new Error("Scout changed before it could be removed. Refresh and try again.");
+    return removed;
+  });
   if (!deleted) return { error: "Scout changed before it could be removed. Refresh and try again." };
 
   revalidatePath("/scouts");

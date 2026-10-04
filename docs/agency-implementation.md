@@ -39,6 +39,15 @@ format/template and account is checked against the current tenant on the
 server. Config changes invalidate old execution permissions. Automation is
 draft-only: no routine automatically reviews, schedules or publishes content.
 
+Migration 0052 adds application-owned Eve session ownership for all new browser
+chats, including specialist children. Only the server lifecycle hook can register
+the actual session ID. Browser continuations/streams reject unknown or foreign
+sessions even when the persona header is removed. A bounded, rate-limited startup
+wait accounts for Workflow's asynchronous 202 response. Old unindexed sessions
+remain readable from their local cache, but cannot safely continue: start a new
+conversation after this deployment. OIDC/operator access remains a deliberately
+privileged infrastructure path, not a browser-user authorization mechanism.
+
 Evidence is untrusted data. Source titles are not verified facts. Excerpts and
 exact quotations support source comparison; corroboration is not a guarantee
 of truth. Conflicts block generation and uncertain claims require human review.
