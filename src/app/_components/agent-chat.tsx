@@ -725,7 +725,7 @@ function AgentChatInner({
 
   return (
     <>
-      <main className="flex flex-1 flex-col min-w-0 h-full overflow-hidden bg-background text-foreground relative">
+      <main className="flex flex-1 flex-col min-h-0 min-w-0 h-full overflow-hidden bg-background text-foreground relative">
         {/* Top Minimal Navigation Bar */}
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-3 sm:px-6 bg-background/50 backdrop-blur-xs">
           {/* Left View Switcher Dropdown */}
@@ -884,7 +884,9 @@ function AgentChatInner({
           className={cn(
             "mx-auto w-full px-4 sm:px-6",
             isEmpty
-              ? "flex max-w-xl flex-1 flex-col items-center justify-center gap-6 pb-[6vh]"
+              ? persona
+                ? "flex min-h-0 max-w-xl flex-1 flex-col items-center justify-center-safe gap-4 overflow-y-auto py-4"
+                : "flex max-w-xl flex-1 flex-col items-center justify-center gap-6 pb-[6vh]"
               : "max-w-3xl shrink-0 pb-6"
           )}
         >

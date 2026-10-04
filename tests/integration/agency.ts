@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { requireDisposableDatabase } from "./require-disposable-database";
 await requireDisposableDatabase();
 const { db } = await import("../../src/lib/db");
-const { tenants, user, member, socialAccounts, themePages, scouts, customAgents, customAgentAccounts, customAgentVersions, customAgentRuns, themeContentFormats, contentPackages } = await import("../../src/lib/db/schema");
-const { saveAgencyAgent, changeAgencyAgentState, reserveAgencyRun, finishAgencyRun, registerAgencyThread, listAgencyThreads, listAgencyRuns, detachAgencyResource, assertAgencyRunCurrent, guardAgencyScoutChange } = await import("../../src/lib/agency/service");
+const { tenants, user, member, socialAccounts, themePages, scouts, customAgents, customAgentAccounts, customAgentVersions, customAgentRuns, themeContentFormats, contentPackages, storyClusters, assets, mediaRenderJobs } = await import("../../src/lib/db/schema");
+const { saveAgencyAgent, changeAgencyAgentState, reserveAgencyRun, finishAgencyRun, registerAgencyThread, listAgencyThreads, listAgencyRuns, detachAgencyResource, assertAgencyRunCurrent, guardAgencyScoutChange, attachAgencyDraft, recordAgencyDispatchExpiry } = await import("../../src/lib/agency/service");
 const { default: agencyHook } = await import("../../agent/hooks/agency");
 const { authorizeAgencyRoute } = await import("../../agent/lib/agency-route-auth");
 const { and, eq, inArray } = await import("drizzle-orm");
@@ -80,6 +80,57 @@ try {
   await assert.rejects(reserveAgencyRun(owner, agent.id, 1, "new-event"), /current agent configuration/);
   await assert.rejects(saveAgencyAgent(owner, config, { id: agent.id, version: 1 }), /changed before/);
   assert.equal((await db.query.customAgentVersions.findMany({ where: eq(customAgentVersions.agentId, agent.id) })).length, 2);
+  // Use the actual PostgreSQL commit/attachment path; fake only completed
+  // provider output, never the permission, lease or package fences.
+  const workerAgent = await saveAgencyAgent(owner, { ...config, name: "Async acceptance", dailyDraftLimit: 12 });
+  await changeAgencyAgentState(owner, workerAgent.id, 1, "active");
+  await assert.rejects(recordAgencyDispatchExpiry(drafter, workerAgent.id, 1, "2000-01-01"), /admins/);
+  const expiryReceipt = await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-01");
+  assert.equal(expiryReceipt.duplicate, false);
+  assert.deepEqual(await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-01"), { ...expiryReceipt, duplicate: true }, "expired dispatches deduplicate without replacing history");
+  const expiry = await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, expiryReceipt.id) });
+  assert.equal(expiry?.status, "cancelled"); assert.equal(expiry?.attempt, 0, "an expired dispatch does not consume quota");
+  const priorDayRun = await reserveAgencyRun(owner, workerAgent.id, 1, "daily:2000-01-02");
+  assert.equal(await finishAgencyRun(priorDayRun.run, "completed", { packageId: historicalPackage.id }), true);
+  assert.deepEqual(await recordAgencyDispatchExpiry(owner, workerAgent.id, 1, "2000-01-02"), { id: priorDayRun.run.id, status: "completed", packageId: historicalPackage.id, duplicate: true }, "a delayed child preserves the completed manual outcome and draft link");
+  assert.equal((await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, priorDayRun.run.id) }))?.attempt, 1, "expiry replay cannot replace a paid receipt");
+  const expiryOnly = await saveAgencyAgent(owner, { ...config, name: "Zero-credit expiry", dailyDraftLimit: 1 });
+  await changeAgencyAgentState(owner, expiryOnly.id, 1, "active");
+  await recordAgencyDispatchExpiry(owner, expiryOnly.id, 1, "2000-01-01");
+  assert.equal((await reserveAgencyRun(owner, expiryOnly.id, 1, "current-day-check")).claimed, true, "zero-attempt history leaves the single paid slot available");
+  await assert.rejects(reserveAgencyRun(owner, expiryOnly.id, 1, "second-paid-check"), /daily draft limit/);
+  const workerRun = await reserveAgencyRun(owner, workerAgent.id, 1, "queued-video");
+  const { claimScoutRemix, saveScoutRemixDraft } = await import("../../src/lib/scouts/remix-receipts");
+  const sourceClaim = await claimScoutRemix({ tenantId, scoutId: scout.id, themePageId: page.id, eventKey: "agency-queued-video" });
+  const [videoFormat] = await db.insert(themeContentFormats).values({ tenantId, slug: "acceptance-video", name: "Video acceptance", platform: "instagram", mediaType: "video", renderer: "ffmpeg" }).returning();
+  const saved = await saveScoutRemixDraft(sourceClaim.receipt,
+    { tenantId, themePageId: page.id, title: "Video evidence", facts: [], memberItemIds: [] },
+    { tenantId, themePageId: page.id, formatId: videoFormat.id, title: "Original video", status: "pending_review" },
+    tx => assertAgencyRunCurrent(workerRun.run, tx).then(() => undefined),
+    (tx, packageId) => attachAgencyDraft(tx, workerRun.run, packageId));
+  assert.equal((await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, workerRun.run.id) }))?.packageId, saved.pkg.id, "the run receives its draft in the same atomic commit");
+  assert.equal(await finishAgencyRun(workerRun.run, "queued", { packageId: saved.pkg.id }), true);
+  const { themeRenderInput, settleThemeRender } = await import("../../src/lib/media-engine/theme-adapter");
+  const { revision } = await themeRenderInput(tenantId, saved.pkg.id);
+  const [output] = await db.insert(assets).values({ tenantId, filename: "acceptance.mp4", key: `${tenantId}/acceptance.mp4`, mimeType: "video/mp4", size: 100, publicUrl: "https://assets.example.test/acceptance.mp4" }).returning();
+  const [job] = await db.insert(mediaRenderJobs).values({ tenantId, inputHash: crypto.randomUUID(), spec: { source: { kind: "theme_package", id: saved.pkg.id, revision } }, status: "succeeded", outputAssetId: output.id }).returning();
+  await db.update(contentPackages).set({ metrics: { renderJobId: job.id, renderRevision: revision }, caption: "Caption edits keep pixels." }).where(eq(contentPackages.id, saved.pkg.id));
+  await settleThemeRender(tenantId, saved.pkg.id);
+  assert.equal((await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, workerRun.run.id) }))?.status, "completed", "a real fenced MP4 attachment settles queued history");
+  const videoPackage = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, saved.pkg.id) });
+  assert.equal((videoPackage?.renderedAssetUrls as Array<{ type: string }>)[0]?.type, "video");
+  assert.equal(await finishAgencyRun(workerRun.run, "queued", { packageId: saved.pkg.id }), false, "a late dispatcher cannot revert terminal worker completion");
+  const blockedRun = await reserveAgencyRun(owner, workerAgent.id, 1, "pause-before-commit");
+  const blockedSource = await claimScoutRemix({ tenantId, scoutId: scout.id, themePageId: page.id, eventKey: "agency-paused-source" });
+  await changeAgencyAgentState(owner, workerAgent.id, 1, "paused");
+  await assert.rejects(saveScoutRemixDraft(blockedSource.receipt,
+    { tenantId, themePageId: page.id, title: "Must not commit", facts: [], memberItemIds: [] },
+    { tenantId, themePageId: page.id, formatId: videoFormat.id, title: "Must not commit", status: "pending_review" },
+    tx => assertAgencyRunCurrent(blockedRun.run, tx).then(() => undefined),
+    (tx, packageId) => attachAgencyDraft(tx, blockedRun.run, packageId)), /paused/);
+  assert.equal((await db.query.storyClusters.findMany({ where: and(eq(storyClusters.tenantId, tenantId), eq(storyClusters.title, "Must not commit")) })).length, 0, "pausing before atomic commit creates neither a cluster nor a draft");
+  const blocked = await db.query.customAgentRuns.findFirst({ where: eq(customAgentRuns.id, blockedRun.run.id) });
+  assert.equal(blocked?.status, "cancelled"); assert.equal(blocked?.packageId, null);
   const accountless = await saveAgencyAgent(owner, { name: "Unbound writer" });
   const { default: draftTool } = await import("../../agent/tools/draft_post");
   const unboundPrincipal = { attributes: { ...owner, customAgentId: accountless.id, customAgentVersion: "1" } };

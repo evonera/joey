@@ -119,6 +119,15 @@ There is no autonomous review, schedule or publish call in this workflow.
 
 ## Release acceptance
 
+PR 5 adds authenticated desktop/390px Playwright creation, saved edits, search
+and history checks without model calls or activation. Approval regressions
+cover spoofed responders, removed roles, stale versions and operator shutdown.
+Disposable PostgreSQL acceptance exercises atomic run-to-draft linkage,
+pause-before-commit rollback and queued MP4 attachment/late-dispatch fencing.
+Scheduled work carries its dispatch day and rejects cross-midnight delayed
+jobs before claiming a quota or calling providers. Activation preflight checks
+the first active Theme Page slot's Instagram format before resolving providers.
+
 Run migrations against a disposable database only. Use the integration guard
 to verify its immutable Neon branch ID. Never replace a user's production env
 file or run seed/test cleanup against production. UI approval buttons must

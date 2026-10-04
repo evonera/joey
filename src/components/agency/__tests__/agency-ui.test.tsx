@@ -109,5 +109,6 @@ describe("Original agency UI", () => {
     render(<AgencyWorkspace agents={[{ ...agent, themePageId: "new-page" }]} choices={choices} actor={{ tenantId: "tenant", userId: "user", role: "owner" }}/>);
     fireEvent.click(screen.getByRole("button", { name: /Studio editor.*Automation paused/ }));
     await waitFor(() => expect(screen.getByText("Review draft in Theme Studio")).toHaveAttribute("href", "/theme-studio/original-page"));
+    expect(screen.getByRole("combobox", { name: "Resume conversation" })).toBeDisabled();
   });
 });
