@@ -98,6 +98,12 @@ describe("toggleScout authorization", () => {
 });
 
 describe("Scout create and edit safety", () => {
+  it.each([0, -1, 14, 1441, 15.5, NaN, Infinity, "120", null])("rejects unsafe interval %s before create or update", async interval => {
+    await expect(createScout({ ...input, pollIntervalMinutes: interval as number })).rejects.toThrow("whole number");
+    await expect(updateScout("scout-1", { ...input, pollIntervalMinutes: interval as number })).rejects.toThrow("whole number");
+    expect(mocks.insert).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
   it("saves public IPv6 web sources using the shared collector rules", async () => {
     await createScout({ ...input, platform: "web", targetUrl: "https://[2606:4700:4700::1111]/page" });
     expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({ targetUrl: "https://[2606:4700:4700::1111]/page" }));

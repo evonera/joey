@@ -23,6 +23,7 @@ vi.mock("@/lib/flows/run-flow-server", () => ({
 
 describe("agent flow tools", () => {
   const fakeCtx = {
+    abortSignal: new AbortController().signal,
     session: {
       auth: {
         current: {
@@ -89,6 +90,7 @@ describe("agent flow tools", () => {
       flow: expect.objectContaining({ id: "f-10" }),
       trigger: "manual",
       triggerPayload: null,
+      signal: fakeCtx.abortSignal,
     });
   });
 });

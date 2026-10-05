@@ -1,5 +1,6 @@
 import { defineTool } from "eve/tools";
 import { assertGeneralWorkspaceTool } from "../lib/agency-session";
+import { requireWorkspaceRole } from "../lib/require-workspace-role";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { flows } from "@/lib/db/schema";
@@ -34,6 +35,7 @@ export default defineTool({
   }),
   execute: async ({ name, description, templateSlug, queryOrUrl, targetPlatform }, ctx) => {
     assertGeneralWorkspaceTool(ctx.session);
+    await requireWorkspaceRole(ctx.session.auth.current, ["owner", "admin", "editor", "member"]);
     const tenantId = ctx.session?.auth?.current?.attributes?.tenantId as string | undefined;
     if (!tenantId) {
       return { error: "No active tenant session found. Please sign in to create flows." };

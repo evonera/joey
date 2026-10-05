@@ -27,7 +27,7 @@ export async function listFlows(): Promise<{ flows: FlowRow[] }> {
 }
 
 export async function createFlow(name: string): Promise<{ flow?: FlowRow; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
   const trimmed = name.trim();
   if (!trimmed || trimmed.length > 120) return { error: "Name is required (max 120 chars)." };
 
@@ -64,12 +64,12 @@ function generateWebhookSecret(): string {
   return `wf_${randomBytes(32).toString("base64url")}`;
 }
 
-async function requireFlowOperator(): Promise<
+async function requireFlowOperator(allowedRoles = ["owner", "admin"]): Promise<
   | { authorized: true; tenantId: string }
   | { authorized: false; error: string }
 > {
   try {
-    return { authorized: true, tenantId: await requireRole(["owner", "admin"]) };
+    return { authorized: true, tenantId: await requireRole(allowedRoles) };
   } catch (error) {
     return {
       authorized: false,
@@ -169,7 +169,9 @@ export async function saveFlow(
   id: string,
   data: { name?: string; description?: string | null; graph?: unknown },
 ): Promise<{ ok?: boolean; issues?: ValidationIssue[]; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const writer = await requireFlowOperator(["owner", "admin", "editor", "member"]);
+  if (!writer.authorized) return { error: writer.error };
+  const { tenantId } = writer;
   const existing = await db.query.flows.findFirst({
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
@@ -215,7 +217,9 @@ export async function setFlowStatus(
   id: string,
   status: "draft" | "active" | "paused",
 ): Promise<{ ok?: boolean; issues?: ValidationIssue[]; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const writer = await requireFlowOperator(["owner", "admin", "editor", "member"]);
+  if (!writer.authorized) return { error: writer.error };
+  const { tenantId } = writer;
   const existing = await db.query.flows.findFirst({
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
   });
@@ -484,7 +488,7 @@ export async function listTemplates(): Promise<{ templates: TemplateCard[] }> {
 }
 
 export async function installTemplate(templateId: string): Promise<{ flowId?: string; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
   const template = await db.query.flowTemplates.findFirst({
     where: eq(flowTemplates.id, templateId),
   });
@@ -508,7 +512,7 @@ export async function installTemplate(templateId: string): Promise<{ flowId?: st
 }
 
 export async function deleteFlow(id: string): Promise<{ ok?: boolean; error?: string }> {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
   const existing = await db.query.flows.findFirst({
     where: and(eq(flows.id, id), eq(flows.tenantId, tenantId)),
     columns: { status: true },

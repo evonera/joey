@@ -7,6 +7,7 @@ vi.mock("eve/tools", () => ({ defineTool: (definition: unknown) => definition })
 vi.mock("@/lib/db", () => ({ db: { insert: mocks.insert, query: { scouts: { findFirst: mocks.scout } } } }));
 vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: mocks.evaluate }));
 vi.mock("../workspace-approval", () => ({ workspaceApproval: () => ({ request: mocks.request, response: mocks.response }) }));
+vi.mock("../require-workspace-role", () => ({ requireWorkspaceRole: vi.fn(async () => "tenant-1") }));
 
 import tool from "../../tools/manage_scouts";
 const approval = tool.approval as ApprovalConfiguration;

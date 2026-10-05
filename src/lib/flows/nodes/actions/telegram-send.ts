@@ -11,7 +11,7 @@ export const telegramSendNode = defineNode({
     if (text.length > 4096) {
       throw new Error(`Telegram message exceeds 4096 characters (${text.length} chars).`);
     }
-    const queued = await enqueueTelegramMessage({ tenantId: ctx.tenantId, idempotencyKey: telegramOutboxKey(ctx), chatId: config.chatId, text });
+    const queued = await enqueueTelegramMessage({ tenantId: ctx.tenantId, idempotencyKey: telegramOutboxKey(ctx), chatId: config.chatId, text, signal: ctx.signal });
     return { output: { outboxId: queued.id, status: queued.status, text } };
   },
 });

@@ -46,6 +46,7 @@ export const notifyNode = defineNode({
         const owner = membership
           ? await db.query.user.findFirst({ where: eq(user.id, membership.userId) })
           : null;
+        ctx.signal?.throwIfAborted();
         const [newPrefs] = await db
           .insert(notificationPreferences)
           .values({ tenantId: ctx.tenantId, emailAddress: owner?.email || null })
@@ -90,6 +91,7 @@ export const notifyNode = defineNode({
       }
 
       const shouldCreateInApp = prefs ? prefs.inAppDraftReady : true;
+      ctx.signal?.throwIfAborted();
       const [inserted] = await tx
         .insert(notifications)
         .values({
@@ -109,6 +111,7 @@ export const notifyNode = defineNode({
         })
         .returning({ id: notifications.id });
       const notificationId = inserted?.id;
+      ctx.signal?.throwIfAborted();
       return { alreadyDone: false, notificationId };
     });
 

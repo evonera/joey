@@ -215,7 +215,7 @@ export async function getUnifiedInbox(input: {
 
 export async function markConversationRead(conversationId: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
     const conversation = await db.query.engagementConversations.findFirst({
       where: and(
         eq(engagementConversations.id, conversationId),
@@ -267,7 +267,7 @@ export async function markConversationRead(conversationId: string) {
 
 export async function syncUnifiedInbox() {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
     const rateLimit = await checkRateLimit(`engagement-sync:${tenantId}`, 1, 60_000);
     if (!rateLimit.allowed) return { error: "Inbox sync is limited to one request per minute" };
     return { success: true, ...(await syncZernioInboxBackfill(tenantId)) };
@@ -531,7 +531,7 @@ export async function sendReply(replyDraftId: string) {
 
 export async function updateReplyDraft(replyDraftId: string, content: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
 
     const normalizedContent = content.trim();
     if (!normalizedContent) return { error: "Reply cannot be empty" };
@@ -556,7 +556,7 @@ export async function updateReplyDraft(replyDraftId: string, content: string) {
 
 export async function skipEngagementItem(itemId: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
 
     await db.update(engagementItems)
       .set({ status: "skipped" })

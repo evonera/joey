@@ -67,6 +67,7 @@ export default defineTool({
         flow,
         trigger: "manual",
         triggerPayload: parameters ?? null,
+        signal: ctx.abortSignal,
       });
 
       return {

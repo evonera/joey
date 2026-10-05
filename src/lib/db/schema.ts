@@ -944,6 +944,7 @@ export const scouts = pgTable("scouts", {
   tenantIdx: index("scouts_tenant_id_idx").on(table.tenantId),
   activeIdx: index("scouts_active_idx").on(table.isActive, table.lastPolledAt),
   tenantIdentity: uniqueIndex("scouts_tenant_identity").on(table.tenantId, table.id),
+  pollIntervalBounds: check("scouts_poll_interval_bounds", sql`${table.pollIntervalMinutes} BETWEEN 15 AND 1440`),
 }));
 
 export const scoutRuns = pgTable("scout_runs", {

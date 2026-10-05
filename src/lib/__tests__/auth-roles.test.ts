@@ -74,4 +74,14 @@ describe("Role-Based Access Control (RBAC)", () => {
 
     await expect(requireRole(["owner", "admin"])).rejects.toThrow("Unauthorized");
   });
+  it("does not default a revoked membership to member during tenant resolution", async () => {
+    const { auth, getActiveTenantMembership } = await import("@/lib/auth");
+    const { db } = await import("@/lib/db");
+    vi.spyOn(auth.api, "getSession").mockResolvedValue({
+      user: { id: "user-1", name: "Alice", email: "alice@example.com" },
+      session: { id: "sess-1", activeOrganizationId: "tenant-1" },
+    } as any);
+    (db.query.member.findFirst as any).mockResolvedValueOnce({ organizationId: "tenant-1", role: "member" }).mockResolvedValueOnce(null);
+    await expect(getActiveTenantMembership(["member"])).rejects.toThrow("Workspace membership required");
+  });
 });

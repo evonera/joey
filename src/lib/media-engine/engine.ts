@@ -5,7 +5,8 @@ import { assets, contentPackages, drafts, flows, mediaRenderJobs } from "@/lib/d
 import { renderHash, renderSpecSchema, referencedAssets, expectedAssetTypes } from "./spec";
 
 /** Server runtime only. The tenant is derived by the authenticated caller. */
-export async function submitRender(tenantId: string, input: unknown, options: { dispatch?: boolean } = {}) {
+export async function submitRender(tenantId: string, input: unknown, options: { dispatch?: boolean; signal?: AbortSignal } = {}) {
+  options.signal?.throwIfAborted();
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") throw new Error("The new media renderer is not enabled.");
   const spec = renderSpecSchema.parse(input);
   if (spec.version === 2 && process.env.MEDIA_TIMELINE_ENABLED !== "true") throw new Error("Multi-scene rendering is not enabled.");
@@ -13,6 +14,7 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
   const result = await db.transaction(async tx => {
     // Serialize quota checks and identical submissions within a workspace.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`media:${tenantId}`}))`);
+    options.signal?.throwIfAborted();
     const source = spec.source.kind === "theme_package"
       ? await tx.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, spec.source.id), eq(contentPackages.tenantId, tenantId)) })
       : spec.source.kind === "draft"
@@ -28,6 +30,7 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
     }
     const inputHash = renderHash(spec);
     const associateDraft = async (jobId: string, status: string) => {
+      options.signal?.throwIfAborted();
       if (spec.source.kind !== "draft") return;
       const [linked] = await tx.update(drafts).set({
         platformOptions: sql`coalesce(${drafts.platformOptions}, '{}'::jsonb) || jsonb_build_object('renderJobId', ${jobId}::text, 'renderStatus', ${status}::text)`,
@@ -36,6 +39,7 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
         sql`${drafts.platformOptions}->>'renderRevision' = ${spec.source.revision}`,
       )).returning({ id: drafts.id });
       if (!linked) throw new Error("This video draft changed or is unavailable.");
+      options.signal?.throwIfAborted();
     };
     const existing = await tx.query.mediaRenderJobs.findFirst({ where: and(eq(mediaRenderJobs.tenantId, tenantId), eq(mediaRenderJobs.inputHash, inputHash)) });
     if (existing) {
@@ -51,11 +55,20 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
       ));
     const limit = Number(process.env.MEDIA_MONTHLY_JOB_LIMIT || 1000);
     if (!Number.isSafeInteger(limit) || limit < 1 || Number(monthlyUsage?.value ?? 0) >= limit) throw new Error("Workspace monthly render limit reached.");
+    options.signal?.throwIfAborted();
     const [job] = await tx.insert(mediaRenderJobs).values({ tenantId, inputHash, spec }).returning();
     await associateDraft(job.id, job.status);
+    options.signal?.throwIfAborted();
     return { jobId: job.id, status: job.status };
   });
-  if (result.status === "queued" && options.dispatch !== false) await dispatchQueuedRender(result.jobId);
+  try {
+    options.signal?.throwIfAborted();
+    if (result.status === "queued" && options.dispatch !== false) await dispatchQueuedRender(result.jobId, options.signal);
+    options.signal?.throwIfAborted();
+  } catch (error) {
+    if (options.signal?.aborted) await cancelRender(tenantId, result.jobId);
+    throw error;
+  }
   return result;
 }
 

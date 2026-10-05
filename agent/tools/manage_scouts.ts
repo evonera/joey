@@ -7,6 +7,8 @@ import { eq, and, desc } from "drizzle-orm";
 import { evaluateScout } from "@/lib/scouts/evaluator";
 import { validateScoutSource } from "@/lib/scouts/source-validation";
 import { workspaceApproval } from "../lib/workspace-approval";
+import { requireWorkspaceRole } from "../lib/require-workspace-role";
+import { dailyScoutInterval } from "@/lib/scouts/validation";
 
 export default defineTool({
   description:
@@ -54,6 +56,8 @@ export default defineTool({
       }
 
       case "create": {
+        await requireWorkspaceRole(ctx.session.auth.current, ["owner", "admin", "editor", "member"]);
+        const interval = dailyScoutInterval(pollIntervalMinutes);
         if (!name || !targetUrl || !goalCondition) {
           throw new Error("name, targetUrl, and goalCondition are required to create a scout.");
         }
@@ -67,7 +71,7 @@ export default defineTool({
             targetUrl: sourceUrl,
             platform,
             goalCondition,
-            pollIntervalMinutes,
+            pollIntervalMinutes: interval,
             isActive: false,
           })
           .returning();

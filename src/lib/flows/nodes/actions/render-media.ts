@@ -9,9 +9,10 @@ export const renderMediaNode = defineNode({
     const { db } = await import("@/lib/db");
     const { assets } = await import("@/lib/db/schema");
     const { and, eq } = await import("drizzle-orm");
-    const { submitRender, getRender } = await import("@/lib/media-engine/engine");
+    const { submitRender, getRender, cancelRender } = await import("@/lib/media-engine/engine");
     async function ref(id: string) {
       const row = await db.query.assets.findFirst({ where: and(eq(assets.id, id), eq(assets.tenantId, ctx.tenantId)) });
+      ctx.signal?.throwIfAborted();
       if (!row) throw new Error("Source asset not found in this workspace.");
       return { id: row.id, version: row.key };
     }
@@ -27,7 +28,8 @@ export const renderMediaNode = defineNode({
       crop: { mode: video ? "contain" : "cover", x: .5, y: .5 },
       title: config.title.replaceAll("{{input}}", text), brand: { name: config.brandName, handle: config.handle },
       ...(video ? { video: { duration: config.durationSeconds, captions: config.captions } } : {}),
-    });
+    }, { signal: ctx.signal });
+    try {
     for (let i = 0; i < 100; i++) {
       ctx.signal?.throwIfAborted();
       await ctx.heartbeat?.();
@@ -37,5 +39,8 @@ export const renderMediaNode = defineNode({
       await new Promise(resolve => setTimeout(resolve, 3000));
     }
     throw new Error("Rendering is still queued. Retry this node to retrieve the same job without submitting a duplicate.");
+    } finally {
+      if (ctx.signal?.aborted) await cancelRender(ctx.tenantId, job.jobId);
+    }
   },
 });

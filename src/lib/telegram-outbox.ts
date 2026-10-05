@@ -10,11 +10,18 @@ export function telegramOutboxKey(parts: { runId: string; nodeId: string; itemKe
   return `flow:${parts.runId}:${parts.nodeId}:${parts.itemKey ?? "root"}`;
 }
 
-export async function enqueueTelegramMessage(input: { tenantId: string; idempotencyKey: string; chatId: string; text: string; replyMarkup?: InlineKeyboardMarkup }) {
+export async function enqueueTelegramMessage(input: { tenantId: string; idempotencyKey: string; chatId: string; text: string; replyMarkup?: InlineKeyboardMarkup; signal?: AbortSignal }) {
+  input.signal?.throwIfAborted();
   if (input.text.length > 4096) throw new Error(`Telegram message exceeds 4096 characters (${input.text.length} chars).`);
   const installation = await db.query.telegramBotInstallations.findFirst({ where: and(eq(telegramBotInstallations.tenantId, input.tenantId), eq(telegramBotInstallations.status, "active")) });
   if (!installation) throw new Error("No active Telegram bot is configured.");
-  const inserted = await db.insert(telegramOutbox).values({ tenantId: input.tenantId, installationId: installation.id, idempotencyKey: input.idempotencyKey, chatId: input.chatId, text: input.text, replyMarkup: input.replyMarkup }).onConflictDoNothing().returning({ id: telegramOutbox.id, status: telegramOutbox.status });
+  input.signal?.throwIfAborted();
+  const inserted = await db.transaction(async tx => {
+    input.signal?.throwIfAborted();
+    const rows = await tx.insert(telegramOutbox).values({ tenantId: input.tenantId, installationId: installation.id, idempotencyKey: input.idempotencyKey, chatId: input.chatId, text: input.text, replyMarkup: input.replyMarkup }).onConflictDoNothing().returning({ id: telegramOutbox.id, status: telegramOutbox.status });
+    input.signal?.throwIfAborted();
+    return rows;
+  });
   if (inserted[0]) return inserted[0];
   const existing = await db.query.telegramOutbox.findFirst({ where: and(eq(telegramOutbox.tenantId, input.tenantId), eq(telegramOutbox.idempotencyKey, input.idempotencyKey)) });
   if (!existing) throw new Error("Telegram outbox conflict could not be resolved.");
