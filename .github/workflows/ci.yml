@@ -94,7 +94,7 @@ jobs:
         env:
           JOEY_INTEGRATION_TEST: "true"
       - name: Verify Scout interval and flow cancellation boundaries
-        run: npx vitest run src/lib/scouts/__tests__/receipt-safety.integration.test.ts
+        run: npx vitest run tests/integration/scout-security.test.ts
         env:
           JOEY_INTEGRATION_TEST: "true"
       - name: Agency governance acceptance

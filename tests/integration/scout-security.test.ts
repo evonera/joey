@@ -4,12 +4,12 @@ import { readFile } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { tenants, scouts, scoutEvaluations, scoutRuns, notifications, flows, assets, mediaRenderJobs } from "@/lib/db/schema";
 import { submitRender } from "@/lib/media-engine/engine";
-import { requireDisposableDatabase } from "../../../../tests/integration/require-disposable-database";
+import { requireDisposableDatabase } from "./require-disposable-database";
 
 const state = vi.hoisted(() => ({ client: null as import("postgres").Sql | null }));
 vi.mock("@/lib/db", async () => {
   if (process.env.JOEY_INTEGRATION_TEST !== "true") return { db: {} };
-  await (await import("../../../../tests/integration/require-disposable-database")).requireDisposableDatabase();
+  await (await import("./require-disposable-database")).requireDisposableDatabase();
   const postgres = (await import("postgres")).default;
   const { drizzle } = await import("drizzle-orm/postgres-js");
   const schema = await import("@/lib/db/schema");
@@ -17,7 +17,7 @@ vi.mock("@/lib/db", async () => {
   return { db: drizzle(state.client, { schema }) };
 });
 import { db } from "@/lib/db";
-import { reserveScoutEvaluation, claimScoutEvaluation, markScoutEvaluationPhase, completeScoutEvaluation } from "../evaluation-receipts";
+import { reserveScoutEvaluation, claimScoutEvaluation, markScoutEvaluationPhase, completeScoutEvaluation } from "../../src/lib/scouts/evaluation-receipts";
 
 describe.skipIf(process.env.JOEY_INTEGRATION_TEST !== "true")("Real PostgreSQL Scout boundaries", () => {
   let tenantId: string;
@@ -63,7 +63,7 @@ describe.skipIf(process.env.JOEY_INTEGRATION_TEST !== "true")("Real PostgreSQL S
   });
 
   it("migration quarantines unsafe legacy rows and preserves valid historical cadence", async () => {
-    const migration = await readFile(new URL("../../db/migrations/0056_scout_interval_bounds.sql", import.meta.url), "utf8");
+    const migration = await readFile(new URL("../../src/lib/db/migrations/0056_scout_interval_bounds.sql", import.meta.url), "utf8");
     await state.client!.begin(async tx => {
       await tx.unsafe("CREATE TEMP TABLE scouts (id text, is_active boolean, poll_interval_minutes integer, updated_at timestamp) ON COMMIT DROP");
       await tx.unsafe("INSERT INTO scouts VALUES ('unsafe', true, -1, now()), ('valid', true, 120, now())");
