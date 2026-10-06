@@ -133,7 +133,7 @@ try {
   assert.equal(blocked?.status, "cancelled"); assert.equal(blocked?.packageId, null);
   const accountless = await saveAgencyAgent(owner, { name: "Unbound writer" });
   const { default: draftTool } = await import("../../agent/tools/draft_post");
-  const unboundPrincipal = { attributes: { ...owner, customAgentId: accountless.id, customAgentVersion: "1" } };
+  const unboundPrincipal = { principalType: "user", principalId: JSON.stringify([owner.userId, owner.tenantId]), attributes: { ...owner, customAgentId: accountless.id, customAgentVersion: "1" } };
   const unboundResult = await draftTool.execute!({ platform: "instagram", content: "A safe test draft", accountIds: undefined, variants: undefined, mediaUrls: undefined, scheduledFor: undefined }, { session: { auth: { current: unboundPrincipal, initiator: unboundPrincipal } } } as never);
   assert.match(JSON.stringify(unboundResult), /No active bound account/);
   await changeAgencyAgentState(owner, agent.id, 2, "active");

@@ -289,7 +289,7 @@ export async function updateDraft(draftId: string, content: string) {
             return { error: "Content exceeds maximum length of 50,000 characters" };
         }
 
-        const { tenantId, role } = await getActiveTenantMembership();
+        const { tenantId, role } = await getActiveTenantMembership(["owner", "admin", "editor", "member"]);
         
         const existingDraft = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
@@ -402,7 +402,7 @@ export async function rejectDraft(draftId: string, feedback: string): Promise<{ 
 
 export async function deleteDraft(draftId: string) {
     try {
-        const { tenantId, role } = await getActiveTenantMembership();
+        const { tenantId, role } = await getActiveTenantMembership(["owner", "admin", "editor", "member"]);
         
         const existingDraft = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),

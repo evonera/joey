@@ -29,7 +29,7 @@ export async function createManualPost(data: {
         data = parsed.data;
 
         const { tenantId, role, userId } = await getActiveTenantMembership(
-            data.scheduleType === "draft" ? undefined : ["owner", "admin"],
+            data.scheduleType === "draft" ? ["owner", "admin", "editor", "member"] : ["owner", "admin"],
         );
         
         // Fetch active account info to store platformOptions

@@ -63,7 +63,9 @@ export async function claimScoutEvaluation(receipt: ScoutEvaluationReceipt) {
 }
 
 function owned(receipt: ScoutEvaluationReceipt) {
-  return and(eq(scoutEvaluations.id, receipt.id), eq(scoutEvaluations.tenantId, receipt.tenantId), eq(scoutEvaluations.leaseToken, receipt.leaseToken!), eq(scoutEvaluations.status, "running"), sql`${scoutEvaluations.leaseExpiresAt} > now()`);
+  // Leases are UTC timestamps without a zone. Use the wall clock, not the
+  // transaction start time or the session's local timezone.
+  return and(eq(scoutEvaluations.id, receipt.id), eq(scoutEvaluations.tenantId, receipt.tenantId), eq(scoutEvaluations.leaseToken, receipt.leaseToken!), eq(scoutEvaluations.status, "running"), sql`${scoutEvaluations.leaseExpiresAt} > (clock_timestamp() AT TIME ZONE 'UTC')`);
 }
 export async function markScoutEvaluationPhase(receipt: ScoutEvaluationReceipt, phase: "collecting" | "collected" | "judging", items?: ScoutPostItem[]) {
   const [saved] = await db.update(scoutEvaluations).set({ phase, ...(items ? { items } : {}), updatedAt: new Date() }).where(owned(receipt)).returning();
@@ -97,6 +99,7 @@ export async function completeScoutEvaluation(receipt: ScoutEvaluationReceipt, s
       await tx.insert(notifications).values({ tenantId: scout.tenantId, type: "scout_alert", title: result.alert.title,
         body: `Competitor change detected for ${scout.name}: ${result.alert.changes.map((change) => change.label).join(", ")}`, link: "/scouts", metadata: { ...result.alert, evaluationId: receipt.id } });
     }
+    await beforeCommit?.();
     return { ...result, evaluationId: receipt.id };
   });
 }

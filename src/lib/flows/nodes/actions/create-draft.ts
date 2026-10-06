@@ -112,6 +112,7 @@ export const createDraftNode = defineNode({
       });
       if (config.accountId && accounts.length !== 1) throw new Error("Choose an active account in this workspace that matches the draft platform.");
       const accountId = accounts.length === 1 ? accounts[0].id : undefined;
+      ctx.signal?.throwIfAborted();
 
       const [inserted] = await tx
         .insert(drafts)
@@ -130,6 +131,7 @@ export const createDraftNode = defineNode({
           },
         })
         .returning();
+      ctx.signal?.throwIfAborted();
       return inserted;
     });
 

@@ -93,6 +93,10 @@ jobs:
         run: npm run test:integration:scouts
         env:
           JOEY_INTEGRATION_TEST: "true"
+      - name: Verify Scout interval and flow cancellation boundaries
+        run: npx vitest run tests/integration/scout-security.test.ts
+        env:
+          JOEY_INTEGRATION_TEST: "true"
       - name: Agency governance acceptance
         run: npm run test:integration:agency
         env:

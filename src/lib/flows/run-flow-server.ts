@@ -11,6 +11,7 @@ export type RunnableFlow = {
 };
 
 type RunExecutionOptions = {
+  signal?: AbortSignal;
   flow: RunnableFlow;
   runId: string;
   triggerPayload?: unknown;
@@ -158,6 +159,7 @@ export async function executeAdmittedFlowRun(
   };
 
   try {
+    opts.signal?.throwIfAborted();
     result = await executeFlow(
       opts.flow.graph as Parameters<typeof executeFlow>[0],
       {
@@ -168,6 +170,7 @@ export async function executeAdmittedFlowRun(
         cachedSteps: opts.cachedSteps,
         fanoutProgress: opts.fanoutProgress,
         approvedNodeIds: opts.approvedNodeIds,
+        signal: opts.signal,
       },
       {
         onStepUpdate: async (step, progress) => {
@@ -201,7 +204,9 @@ export async function executeAdmittedFlowRun(
   const finalized = await finalizeFlowRun(
     opts.runId,
     opts.flow.tenantId,
-    result
+    opts.signal?.aborted
+      ? new Error("Flow execution cancelled.")
+      : result
       ? { status: result.status, steps: result.steps, error: result.error ?? null }
       : executionError instanceof Error
         ? executionError
@@ -227,6 +232,7 @@ export async function executeAdmittedFlowRun(
 
 /** Atomically creates a run, then delegates all execution and fencing. */
 export async function startFlowRun(opts: {
+  signal?: AbortSignal;
   flow: RunnableFlow;
   trigger: "manual" | "schedule" | "webhook";
   triggerPayload?: unknown;
@@ -234,6 +240,7 @@ export async function startFlowRun(opts: {
   fanoutProgress?: Record<string, Record<string, unknown>>;
   approvedNodeIds?: string[];
 }): Promise<FlowRunExecutionResult> {
+  opts.signal?.throwIfAborted();
   const [run] = await db
     .insert(flowRuns)
     .values({

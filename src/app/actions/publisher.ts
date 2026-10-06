@@ -1,14 +1,13 @@
 'use server';
 
-import { getZernioClient } from "@/lib/zernio-session";
-import { executePublishDraft } from "@/lib/publisher-core";
+import { executePublishDraft, getZernioClientForTenant } from "@/lib/publisher-core";
 import { requireRole } from "@/lib/auth";
 
 // Server Action for UI
 export async function publishDraft(draftId: string, publishEarly = false): Promise<{ success?: boolean; error?: string; status?: string }> {
     try {
-        await requireRole(["owner", "admin"]);
-        const { zernio, tenantId } = await getZernioClient();
+        const tenantId = await requireRole(["owner", "admin"]);
+        const { zernio } = await getZernioClientForTenant(tenantId);
 
         // Check if draftId is a Theme Studio content package
         const { db } = await import("@/lib/db");

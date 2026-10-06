@@ -6,6 +6,7 @@ import { drafts, socialAccounts, customAgents, customAgentAccounts } from "@/lib
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { manualPostSchema } from "@/lib/compose-validation";
 import { agencyProfileForSession } from "../lib/agency-session";
+import { requireWorkspaceRole } from "../lib/require-workspace-role";
 
 export default defineTool({
   description: "Save a generated social media draft or scheduled post for the user to review. Use this when the user asks to create, draft, or schedule social media posts.",
@@ -43,6 +44,7 @@ export default defineTool({
         ];
 
     try {
+      await requireWorkspaceRole(ctx.session.auth.current, ["owner", "admin", "editor", "member"]);
       const profile = await agencyProfileForSession(ctx.session);
       if (profile && scheduledFor) return { error: "This agent saves unscheduled drafts only. Schedule after owner/admin review in the workspace." };
       if (scheduledFor && (!Number.isFinite(Date.parse(scheduledFor)) || Date.parse(scheduledFor) <= Date.now())) {

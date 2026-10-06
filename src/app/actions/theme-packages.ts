@@ -80,7 +80,7 @@ export async function publishThemePackage(packageId: string) {
 }
 
 export async function renderThemePackage(packageId: string, input?: unknown) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") throw new Error("The media renderer is not enabled.");
   if (input !== undefined) {
     const timelineInput = z.object({ timeline: timelineSchema, templateFamily: z.enum(["branded_clip", "minimal_meme"]), soundCues: soundCuesSchema.default([]), captions: z.boolean().default(false), musicAssetId: z.uuid().optional() }).strict();

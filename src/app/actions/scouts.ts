@@ -8,6 +8,7 @@ import { evaluateScout } from "@/lib/scouts/evaluator";
 import { revalidatePath } from "next/cache";
 import { getScoutDataProvider, getScoutProviderSetup } from "@/lib/scouts/data-provider";
 import { validateScoutSource } from "@/lib/scouts/source-validation";
+import { dailyScoutInterval } from "@/lib/scouts/validation";
 import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/service";
 
 export interface CreateScoutInput {
@@ -25,7 +26,7 @@ function validateScoutInput(input: CreateScoutInput) {
   if (input.name.length > 120 || input.goalCondition.length > 1000) throw new Error("Scout name or goal is too long.");
   const platform = input.platform || "instagram";
   const targetUrl = validateScoutSource(input.targetUrl.trim(), platform);
-  return { name: input.name.trim(), targetUrl, platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: 1440 };
+  return { name: input.name.trim(), targetUrl, platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: dailyScoutInterval(input.pollIntervalMinutes) };
 }
 
 export async function getScoutSetup() {
@@ -58,7 +59,7 @@ export async function getScoutRuns(scoutId: string) {
 }
 
 export async function createScout(input: CreateScoutInput) {
-  const tenantId = await getActiveTenantId();
+  const { tenantId } = await getActiveTenantMembership(["owner", "admin", "editor", "member"]);
   const values = validateScoutInput(input);
 
   const [created] = await db
@@ -77,7 +78,7 @@ export async function createScout(input: CreateScoutInput) {
 }
 
 export async function updateScout(scoutId: string, input: CreateScoutInput) {
-  const { tenantId, role, userId } = await getActiveTenantMembership();
+  const { tenantId, role, userId } = await getActiveTenantMembership(["owner", "admin", "editor", "member"]);
   const values = validateScoutInput(input);
   const existing = await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) });
   if (!existing) throw new Error("Scout not found.");
@@ -138,7 +139,7 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
 }
 
 export async function deleteScout(scoutId: string) {
-  const { tenantId, role, userId } = await getActiveTenantMembership();
+  const { tenantId, role, userId } = await getActiveTenantMembership(["owner", "admin", "editor", "member"]);
   const existing = await db.query.scouts.findFirst({
     where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
     columns: { isActive: true },
@@ -162,7 +163,7 @@ export async function deleteScout(scoutId: string) {
 }
 
 export async function remixScoutAlertAction(input: { scoutId: string; themePageId?: string }) {
-  const tenantId = await getActiveTenantId();
+  const { tenantId } = await getActiveTenantMembership(["owner", "admin", "editor", "member"]);
   const { remixScoutAlertToThemeStudio } = await import("@/lib/scouts/remix-pipeline");
   const result = await remixScoutAlertToThemeStudio({
     tenantId,

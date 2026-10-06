@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   updateSet: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ getActiveTenantId: vi.fn().mockResolvedValue('tenant-1') }));
+vi.mock('@/lib/auth', () => ({ getActiveTenantId: vi.fn().mockResolvedValue('tenant-1'), requireRole: vi.fn().mockResolvedValue('tenant-1') }));
 vi.mock('@/lib/storage', () => ({ isR2Configured: () => true }));
 vi.mock('@/lib/media-engine/engine', () => ({ submitRender: mocks.submitRender, cancelRender: vi.fn() }));
 vi.mock('@/lib/media-engine/dispatch', () => ({ dispatchQueuedRender: mocks.dispatchQueuedRender }));

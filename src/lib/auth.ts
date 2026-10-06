@@ -236,7 +236,8 @@ export async function getActiveTenantMembership(
         )
     });
 
-    const role = membership?.role || "member";
+    if (!membership) throw new Error("Forbidden: Workspace membership required");
+    const role = membership.role;
     if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(role)) {
         throw new Error(`Forbidden: Action requires role ${allowedRoles.join(" or ")}`);
     }

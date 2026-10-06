@@ -19,6 +19,7 @@ export type ExecutorPorts = {
 };
 
 export type ExecuteOptions = {
+  signal?: AbortSignal;
   tenantId: string;
   runId: string;
   flowId: string;
@@ -73,6 +74,9 @@ export async function executeFlow(
   const incoming = (id: string): FlowGraphEdge[] => doc.edges.filter((e) => e.to === id);
 
   const abortController = new AbortController();
+  const onCallerAbort = () => abortController.abort(opts.signal?.reason);
+  if (opts.signal?.aborted) onCallerAbort();
+  else opts.signal?.addEventListener("abort", onCallerAbort, { once: true });
   let fenceError: Error | undefined;
 
   const triggerHeartbeat = async () => {
@@ -355,6 +359,7 @@ export async function executeFlow(
       return "ok";
     } catch (error) {
       if (fenceError) throw fenceError;
+      if (abortController.signal.aborted) throw error;
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("Execution fenced") || message.includes("Aborted")) {
         throw error;
@@ -653,6 +658,7 @@ export async function executeFlow(
       error: error instanceof Error ? error.message : String(error),
     };
   } finally {
+    opts.signal?.removeEventListener("abort", onCallerAbort);
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
     }

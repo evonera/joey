@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { getActiveTenantId } from '@/lib/auth';
+import { getActiveTenantId, requireRole } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { apiKeys, assets, drafts, tenants } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -42,7 +42,7 @@ export async function getChatVideoCapability() {
 }
 
 export async function startChatVideoRender(raw: unknown) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
   const issue = capabilityIssue();
   if (issue) return { error: issue };
   const parsed = inputSchema.safeParse(raw);
