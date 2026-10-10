@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { getScoutProviderSetup } from "./data-provider";
 import { db } from "@/lib/db";
 import { scouts, scoutEvaluations, scoutEvaluationEvents } from "@/lib/db/schema";
 import { reserveScoutEvaluation, SCOUT_DISPATCH_ATTEMPTS, type ScoutEvaluationReceipt } from "./evaluation-receipts";
@@ -55,21 +56,34 @@ export async function dispatchScoutsTick(dispatch?: (receipts: ScoutDispatchJob[
       sql`NOT EXISTS (SELECT 1 FROM ${scoutEvaluations} WHERE ${scoutEvaluations.tenantId} = ${scouts.tenantId} AND ${scoutEvaluations.scoutId} = ${scouts.id} AND ${scoutEvaluations.status} IN ('pending', 'running'))`,
       sql`NOT EXISTS (SELECT 1 FROM ${scoutEvaluationEvents} WHERE ${scoutEvaluationEvents.tenantId} = ${scouts.tenantId} AND ${scoutEvaluationEvents.scoutId} = ${scouts.id} AND ${scoutEvaluationEvents.eventKey} = 'poll:' || floor(extract(epoch from ${now.toISOString()}::timestamptz) / (greatest(1, ${scouts.pollIntervalMinutes}) * 60))::text)`)
   ).orderBy(asc(scouts.lastPolledAt), asc(scouts.id)).limit(SCOUT_DISPATCH_LIMIT - recoverable.length) : [];
-  const candidates = [...recoverable.map(({ receipt }) => receipt)];
-  for (const scout of due) candidates.push(await reserveScoutEvaluation(scout));
+  const readyByTenant = new Map<string, boolean>();
+  let blockedCount = 0;
+  async function ready(tenantId: string) {
+    if (!readyByTenant.has(tenantId)) readyByTenant.set(tenantId, (await getScoutProviderSetup(tenantId)).ready);
+    return readyByTenant.get(tenantId)!;
+  }
+  const candidates: ScoutEvaluationReceipt[] = [];
+  for (const { receipt } of recoverable) {
+    if (await ready(receipt.tenantId)) candidates.push(receipt);
+    else blockedCount++;
+  }
+  for (const scout of due) {
+    if (await ready(scout.tenantId)) candidates.push(await reserveScoutEvaluation(scout));
+    else blockedCount++;
+  }
   const claimed: ScoutEvaluationReceipt[] = [];
   for (const receipt of new Map(candidates.map((receipt) => [receipt.id, receipt])).values()) {
     const lease = await claimScoutDispatch(receipt);
     if (lease) claimed.push(lease);
   }
-  if (!claimed.length) return { checkedCount: 0, dispatchedCount: 0, results: [] };
+  if (!claimed.length) return { blockedCount, checkedCount: 0, dispatchedCount: 0, results: [] };
   try {
     const handoff = dispatch ?? dispatchScoutBatchToEve;
     await handoff(claimed.map((receipt) => ({ scoutId: receipt.scoutId, tenantId: receipt.tenantId, evaluationId: receipt.id, dispatchAttempt: receipt.dispatchAttempts, dispatchLeaseUntil: receipt.dispatchLeaseUntil!.toISOString() })));
-    return { checkedCount: claimed.length, dispatchedCount: claimed.length, results: [] };
+    return { blockedCount, checkedCount: claimed.length, dispatchedCount: claimed.length, results: [] };
   } catch {
     for (const receipt of claimed) await releaseScoutDispatch(receipt);
-    return { checkedCount: claimed.length, dispatchedCount: 0, results: [], error: "Scout dispatch failed; bounded retry is scheduled." };
+    return { blockedCount, checkedCount: claimed.length, dispatchedCount: 0, results: [], error: "Scout dispatch failed; bounded retry is scheduled." };
   }
 }
 

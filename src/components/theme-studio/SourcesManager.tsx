@@ -38,6 +38,9 @@ interface SourceItem {
   freshnessWindowHours: number;
   rightsCategory: string;
   isActive: boolean;
+  lastAttemptAt?: Date | string | null;
+  lastSuccessAt?: Date | string | null;
+  lastPollError?: string | null;
   lastPolledAt?: Date | string | null;
 }
 
@@ -59,6 +62,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
   const [sourceToDelete, setSourceToDelete] = React.useState<SourceItem | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
 
+  React.useEffect(() => setSources(initialSources), [initialSources]);
   function startEdit(source: SourceItem) {
     setEditingSourceId(source.id);
     setName(source.name);
@@ -269,7 +273,7 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
                 <option value="unknown">Unknown — review before activation</option>
                 <option value="cc_by">Creative Commons Attribution (CC-BY)</option>
                 <option value="cc_by_sa">Creative Commons Attribution ShareAlike (CC-BY-SA)</option>
-                <option value="public_domain">Public Domain / Press Release</option>
+                <option value="public_domain">Public Domain</option>
                 <option value="owned">Owned / Original Material</option>
                 <option value="commercial_license">Commercial License</option>
                 <option value="fair_use_commentary">Fair-use commentary (moderate policy only)</option>
@@ -332,6 +336,8 @@ export function SourcesManager({ themePageId, initialSources }: SourcesManagerPr
                   <p className="text-xs text-muted-foreground font-mono truncate max-w-md mt-0.5">
                     {source.url}
                   </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Last attempt: {source.lastAttemptAt ? new Date(source.lastAttemptAt).toLocaleString() : "Never"} · Last success: {source.lastSuccessAt ? new Date(source.lastSuccessAt).toLocaleString() : "Not yet recorded"}</p>
+                  {source.lastPollError && <p className="mt-1 text-xs text-destructive">{source.lastPollError}</p>}
                 </div>
               </div>
 

@@ -1,3 +1,4 @@
+import { sourceMediaCandidates } from "../source-media";
 import { db } from "@/lib/db";
 import { contentPackages, sourceItems, storyClusters, themeSlots, themePages, themeSources } from "@/lib/db/schema";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
@@ -37,7 +38,7 @@ function parseEditorialCopy(value: unknown): EditorialCopy {
   };
 }
 
-async function generateEditorialCopy(input: {
+export async function generateEditorialCopy(input: {
   tenantId: string;
   page: { name: string; niche: string | null; audience: string | null; voice: string | null };
   slotLabel: string | null;
@@ -109,6 +110,7 @@ export async function synthesizeAndAllocatePackages(
   flowRunId: string,
   signal?: AbortSignal,
   heartbeat?: () => Promise<void> | void,
+  copyGenerator = generateEditorialCopy,
 ): Promise<PackageGenerationResult> {
   const page = await db.query.themePages.findFirst({
     where: and(eq(themePages.id, themePageId), eq(themePages.tenantId, tenantId)),
@@ -182,6 +184,7 @@ export async function synthesizeAndAllocatePackages(
         policy: (page.defaultRightsPolicy as "strict" | "moderate" | "permissive") || "strict",
         hasSourceUrl: Boolean(member.url),
         hasTimestamp: Boolean(member.publishedAt),
+        hasDiscoveryTimestamp: Boolean(member.createdAt),
         sourceName,
         sourceUrl: member.url || undefined,
       }),
@@ -216,7 +219,7 @@ export async function synthesizeAndAllocatePackages(
       continue;
     }
 
-    const copy = await generateEditorialCopy({
+    const copy = await copyGenerator({
       tenantId,
       page,
       slotLabel: slot.label,
@@ -260,11 +263,15 @@ export async function synthesizeAndAllocatePackages(
         provenance: {
           clusterId: cluster.id,
           sourcesCount: members.length,
+          mediaCandidates: members.flatMap(member => sourceMediaCandidates(member.metadata, member.url || "", member.rightsCategory)).slice(0, 8),
           sources: members.map((member) => ({
             sourceItemId: member.id,
             url: member.url,
             publishedAt: member.publishedAt?.toISOString() ?? null,
             rightsCategory: member.rightsCategory,
+            title: member.title, excerpt: member.body?.slice(0, 1000),
+            discoveredAt: member.createdAt.toISOString(),
+            mediaCandidates: sourceMediaCandidates(member.metadata, member.url || "", member.rightsCategory),
           })),
           factsCount: Array.isArray(cluster.facts) ? cluster.facts.length : 0,
           policy: page.defaultRightsPolicy,

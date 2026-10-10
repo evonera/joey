@@ -1,3 +1,4 @@
+import { sourceMediaCandidates } from "../source-media";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { sourceItems, themeSources } from "@/lib/db/schema";
@@ -75,6 +76,7 @@ export function parseRssXml(xml: string, defaultRights: string = "unknown"): Nor
         url,
         publishedAt,
         rightsCategory: defaultRights,
+        metadata: { mediaCandidates: sourceMediaCandidates({ imageLinks: [...itemXml.matchAll(/<(?:media:content|media:thumbnail|enclosure)\b[^>]*url=["']([^"']+)["']/gi), ...itemXml.matchAll(/<img\b[^>]*src=["']([^"']+)["']/gi)].filter(match => !/type=["'](?:audio|video)\//i.test(match[0])).map(match => match[1]) }, url, defaultRights) },
       });
     }
   }
@@ -98,11 +100,12 @@ export function parseHtmlMetadata(html: string, pageUrl: string, defaultRights =
                        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
   const heroImage = ogImageMatch?.[1] ? publicReferenceUrl(ogImageMatch[1]) : undefined;
 
+  const publishedMatch = html.match(/<meta[^>]+(?:property|name)=["'](?:article:published_time|datePublished|pubdate)["'][^>]+content=["']([^"']+)["']/i) || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:article:published_time|datePublished|pubdate)["']/i);
   return {
     title: title.slice(0, 500),
     body: body.slice(0, 20_000),
     url: pageUrl,
-    publishedAt: new Date(),
+    publishedAt: parsedDate(publishedMatch?.[1]),
     rightsCategory: defaultRights,
     metadata: heroImage ? { heroImage } : undefined,
   };
@@ -137,6 +140,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
     return { sourceId, ingestedCount: 0, duplicateCount: 0 };
   }
 
+  await db.update(themeSources).set({ lastAttemptAt: new Date(), lastPolledAt: new Date(), updatedAt: new Date() }).where(and(eq(themeSources.id, source.id), eq(themeSources.tenantId, tenantId)));
   const items: NormalizedFeedItem[] = [];
   const errors: string[] = [];
 
@@ -436,6 +440,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
   let ingestedCount = 0;
   let duplicateCount = 0;
 
+  try {
   for (const item of items) {
     signal?.throwIfAborted();
     const freshnessCutoff = Date.now() - source.freshnessWindowHours * 60 * 60 * 1000;
@@ -460,7 +465,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
       contentHash: bodyHash,
       publishedAt: item.publishedAt || null,
       rightsCategory: item.rightsCategory || source.rightsCategory || "unknown",
-      metadata: item.metadata || {},
+      metadata: { ...item.metadata, mediaCandidates: sourceMediaCandidates(item.metadata, item.url, item.rightsCategory || source.rightsCategory || "unknown"), discoveredAt: new Date().toISOString() },
       status: "raw",
     }).onConflictDoNothing().returning({ id: sourceItems.id });
 
@@ -468,8 +473,10 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
     else duplicateCount++;
   }
 
+  } catch (error) { signal?.throwIfAborted(); errors.push(error instanceof Error ? error.message : "Source item persistence failed"); }
+
   await db.update(themeSources)
-    .set({ lastPolledAt: new Date(), updatedAt: new Date() })
+    .set({ ...(errors.length === 0 ? { lastSuccessAt: new Date() } : {}), lastPollError: errors.length ? errors.join("; ").slice(0, 2000) : null, updatedAt: new Date() })
     .where(and(eq(themeSources.id, source.id), eq(themeSources.tenantId, tenantId)));
 
   return {

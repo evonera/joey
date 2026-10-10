@@ -31,6 +31,7 @@ afterEach(() => vi.restoreAllMocks());
 async function openWithDuration(duration: number) {
   render(<RenderControls packageId="package" />);
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Render media" })));
+  await act(async () => fireEvent.change(screen.getByLabelText("Source asset"), { target: { value: "a" } }));
   Object.defineProperty(metadataVideo, "duration", { value: duration, configurable: true });
   act(() => metadataVideo.dispatchEvent(new Event("loadedmetadata")));
 }

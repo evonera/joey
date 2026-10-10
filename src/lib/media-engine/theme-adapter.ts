@@ -3,8 +3,11 @@ import { db } from "@/lib/db";
 import { assets, contentPackages, customAgentRuns, mediaRenderJobs, scoutRemixes, themeContentFormats, themePages, themeVisualTemplates } from "@/lib/db/schema";
 import { getRender, retryRender, submitRender } from "./engine";
 import { dispatchQueuedRender } from "./dispatch";
-import { renderSpecSchema } from "./spec";
+import { renderSpecSchema, type RenderSpec } from "./spec";
 import { themePackageRenderRevision } from "./theme-revision";
+import { applyDesignCopy } from "@/lib/theme-studio/template-copy";
+import { normalizeThemeDesign } from "@/lib/theme-studio/design-spec";
+import { curatedAssetRef } from "./curated-assets";
 import { timelineSchema, timelineFrames } from "./timeline";
 import { soundCuesSchema } from "./sound";
 
@@ -18,9 +21,10 @@ export async function themeRenderInput(tenantId: string, packageId: string, sett
   ]);
   if (!page || !format) throw new Error("Theme format unavailable.");
   const settings = settingsOverride ?? (pkg.metrics as { renderSettings?: Record<string, unknown> } | null)?.renderSettings ?? {};
-  const component = { ...(template?.componentSpec as Record<string, unknown> ?? {}), ...settings };
+  const selectedMedia = (pkg.provenance as { selectedMedia?: { assetId?: string } })?.selectedMedia;
+  const component: Record<string, unknown> = { ...(selectedMedia?.assetId ? { mediaAssetId: selectedMedia.assetId } : {}), ...normalizeThemeDesign(template?.componentSpec), ...settings };
   const brand = (page.brandKit ?? {}) as Record<string, unknown>;
-  const revision = themePackageRenderRevision({ title: pkg.title, component, brand, name: page.name, format: format.mediaType });
+  const revision = themePackageRenderRevision({ title: pkg.title, component: { ...component, ...(format.mediaType === "image" && component.bodyTemplate ? { renderedCaption: pkg.caption } : {}) }, brand, name: page.name, format: `${format.mediaType}:${format.aspectRatio ?? ""}` });
   return { pkg, page, format, component, brand, revision };
 }
 
@@ -31,6 +35,9 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
   const video = format.mediaType === "video";
   if (format.mediaType === "carousel") throw new Error("Carousel migration is not enabled for this template.");
   async function assetRef(id: unknown, url: unknown) {
+    if (typeof id === "string" && id.length > 0 && component.memeClipId === id) {
+      return curatedAssetRef(id);
+    }
     const asset = typeof id === "string" ? await db.query.assets.findFirst({ where: and(eq(assets.id, id), eq(assets.tenantId, tenantId)) })
       : typeof url === "string" ? await db.query.assets.findFirst({ where: and(eq(assets.publicUrl, url), eq(assets.tenantId, tenantId)) }) : undefined;
     if (!asset) throw new Error("Choose an uploaded workspace asset in the template before rendering.");
@@ -38,14 +45,24 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
   }
   const timeline = component.timeline === undefined ? undefined : timelineSchema.parse(component.timeline);
   if (timeline && (!video || process.env.MEDIA_TIMELINE_ENABLED !== "true")) throw new Error("Multi-scene video rendering is not enabled.");
-  const media = timeline ? undefined : await assetRef(component.mediaAssetId, video ? component.videoUrl : component.imageUrl);
+  const media = timeline ? undefined : await assetRef(
+    video && typeof component.memeClipId === "string" ? component.memeClipId : component.mediaAssetId,
+    video ? component.videoUrl : component.bgImageUrl,
+  );
+  const source = ((pkg.provenance as any)?.sources ?? [])[0];
+  let sourceName = "Source in caption";
+  try { if (source?.url) sourceName = new URL(source.url).hostname; } catch {}
+  const tokens = { title: pkg.title, summary: pkg.caption ?? "", source_name: sourceName, author: "", tag: "UPDATE", date: source?.publishedAt?.slice(0, 10) ?? pkg.createdAt.toISOString().slice(0, 10) };
+  const design = Object.fromEntries(["backgroundColor", "backgroundGradient", "bgType", "textColor", "fontFamily", "titleSize", "bodySize", "showDivider", "showWatermark", "highlightWords"].filter(key => component[key] !== undefined).map(key => [key, component[key]]));
   const legacy: Record<string, unknown> = {
     version: 1, source: { kind: "theme_package", id: packageId, revision }, templateVersion: 1,
-    template: video ? component.templateFamily === "minimal_meme" ? "minimal_meme" : "branded_clip" : component.pipInsetUrl || component.insetAssetId ? "photo_inset" : "photo_headline",
-    format: video ? "mp4" : "png", title: pkg.title, media,
-    brand: { name: page.name, handle: typeof brand.watermark === "string" ? brand.watermark : "", accent: typeof brand.accentColor === "string" && /^#[0-9a-f]{6}$/i.test(brand.accentColor) ? brand.accentColor : "#ffe633" },
+    template: video ? component.templateFamily === "minimal_meme" ? "minimal_meme" : "branded_clip" : component.insetEnabled !== false && (component.pipInsetUrl || component.insetAssetId) ? "photo_inset" : "photo_headline",
+    format: video ? "mp4" : "png", title: applyDesignCopy(component.titleTemplate, pkg.title, tokens), media, design,
+    ...(!video && typeof component.bodyTemplate === "string" && component.bodyTemplate.trim() ? { body: applyDesignCopy(component.bodyTemplate, pkg.caption ?? "", tokens).slice(0, 350) } : {}),
+    aspectRatio: (format.aspectRatio || (video ? "9:16" : "4:5")) as RenderSpec["aspectRatio"],
+    brand: { name: page.name, handle: typeof component.watermarkText === "string" ? component.watermarkText : typeof brand.watermark === "string" ? brand.watermark : "", accent: typeof component.accentColor === "string" && /^#[0-9a-f]{6}$/i.test(component.accentColor) ? component.accentColor : typeof brand.accentColor === "string" && /^#[0-9a-f]{6}$/i.test(brand.accentColor) ? brand.accentColor : "#ffe633" },
     crop: { mode: component.cropMode === "contain" ? "contain" : component.cropMode === "cover" || !video ? "cover" : "contain", x: Number(component.cropX ?? .5), y: Number(component.cropY ?? .5) },
-    ...(video ? { video: { start: Number(component.trimStart ?? 0), duration: Number(component.durationSeconds ?? 15), zoom: Number(component.zoom ?? 1), sourceAudio: true, captions: component.captions === true, words: [] } } : {}),
+    ...(video ? { video: { start: Number(component.trimStart ?? 0), duration: Number(component.durationSeconds ?? 15), zoom: Number(component.zoom ?? 1), sourceAudio: component.sourceAudio !== false, captions: component.captions === true, words: [] } } : {}),
   };
   const input: Record<string, unknown> = timeline ? {
     ...legacy, version: 2, format: "mp4", media: undefined,
@@ -67,7 +84,7 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
   // the exact millisecond value read from PostgreSQL as an ISO timestamp so
   // this optimistic fence works with both the Neon and local test drivers.
   const readUpdatedAt = pkg.updatedAt.toISOString();
-  const updated = await db.update(contentPackages).set({ renderedAssetUrls: [], status: "pending_review", metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || ${JSON.stringify({ ...(settings ? { renderSettings: settings } : {}), renderJobId: job.jobId, renderRevision: revision, failurePhase: "render_pending" })}::jsonb`, error: null, updatedAt: new Date() })
+  const updated = await db.update(contentPackages).set({ renderedAssetUrls: [], status: "pending_review", metrics: sql`(coalesce(${contentPackages.metrics}, '{}'::jsonb) - 'legacyRenderRevision' - 'legacyRenderToken') || ${JSON.stringify({ ...(settings ? { renderSettings: settings } : {}), renderJobId: job.jobId, renderRevision: revision, failurePhase: "render_pending" })}::jsonb`, error: null, updatedAt: new Date() })
     // PostgreSQL stores microseconds while JavaScript Date carries milliseconds.
     // Keep the optimistic fence, but compare at the precision the caller read.
     .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), eq(contentPackages.title, pkg.title), sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${readUpdatedAt}::timestamp`, inArray(contentPackages.status, allowedStates), sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning();
@@ -110,6 +127,10 @@ export async function assertThemeRenderCurrent(tenantId: string, packageId: stri
   const { pkg, format, revision } = await themeRenderInput(tenantId, packageId);
   const metrics = pkg.metrics as Record<string, unknown>;
   if (!metrics?.renderJobId) {
+    if (metrics?.legacyRenderRevision) {
+      const { legacyThemeRenderInput } = await import("./legacy-theme-input");
+      if (metrics.legacyRenderRevision !== (await legacyThemeRenderInput(tenantId, packageId)).revision || metrics.failurePhase) throw new Error("The design or copy has changed. Render again before approval.");
+    }
     if (format.mediaType === "video" || (Array.isArray(pkg.renderedAssetUrls) && pkg.renderedAssetUrls.some(asset => asset.type === "video"))) throw new Error("Render a finished MP4 before approving or publishing this video.");
     return;
   }

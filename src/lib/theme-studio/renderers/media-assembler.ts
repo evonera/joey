@@ -1,8 +1,11 @@
+import { themeMediaStorageReady } from "../runtime-readiness";
 import { db } from "@/lib/db";
-import { assets, contentPackages, storyClusters, themePages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
+import { assets, contentPackages, themePages, themeContentFormats, storyClusters } from "@/lib/db/schema";
+import { randomUUID } from "node:crypto";
+import { legacyThemeRenderInput } from "@/lib/media-engine/legacy-theme-input";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { renderCardSvg, renderCarouselSlideSvgs } from "./static-card-renderer";
-import { renderTweetCardSvg } from "./tweet-card-renderer";
+import { designBrandKit, renderStaticThemeSvgs } from "./static-theme";
+import { applyDesignCopy } from "../template-copy";
 import { uploadAndRegisterFlowAsset } from "@/lib/flows/asset-registration";
 import { renderSvgPng } from "./rasterize-svg";
 import { scoutRenderableFacts } from "@/lib/scouts/fact-review";
@@ -26,20 +29,16 @@ function existingRenderedUrls(value: unknown): Array<{ url: string; type: string
   ));
 }
 
-function applyTemplate(value: unknown, fallback: string, tokens: Record<string, string>): string {
-  if (typeof value !== "string" || !value.trim()) return fallback;
-  return value.replace(/\{\{([a-z_]+)\}\}/gi, (match, key: string) => tokens[key] ?? match);
-}
-
 export async function renderPackageMedia(
   packageId: string,
   tenantId: string,
-  flowRunId: string,
+  flowRunId?: string,
   signal?: AbortSignal,
   heartbeat?: () => Promise<void> | void,
-  options: { preserveReviewDecision?: boolean } = {},
+  operations: { rasterize?: typeof renderSvgPng; upload?: typeof uploadAndRegisterFlowAsset; preserveReviewDecision?: boolean } = {},
 ): Promise<RenderPackageResult> {
-  const pkg = await db.query.contentPackages.findFirst({
+  const options = operations;
+  let pkg = await db.query.contentPackages.findFirst({
     where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)),
   });
   if (!pkg) throw new Error("Content package not found");
@@ -53,18 +52,31 @@ export async function renderPackageMedia(
     sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`,
   ) : undefined;
 
-  const page = await db.query.themePages.findFirst({
+  let page = await db.query.themePages.findFirst({
     where: and(eq(themePages.id, pkg.themePageId), eq(themePages.tenantId, tenantId)),
   });
 
-  const format = await db.query.themeContentFormats.findFirst({
+  let format = await db.query.themeContentFormats.findFirst({
     where: and(eq(themeContentFormats.id, pkg.formatId), eq(themeContentFormats.tenantId, tenantId)),
   });
 
   if (!page || !format) {
     return { packageId, mediaType: "unknown", renderedUrls: [], success: false, error: "Theme page or format not found" };
   }
-  if (process.env.MEDIA_ENGINE_ENABLED === "true" && (format.mediaType === "video" || process.env.MEDIA_STATIC_TEMPLATES_ENABLED === "true" && format.mediaType === "image")) {
+  if (!operations.upload && !themeMediaStorageReady()) return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, error: "Connect asset storage and its public delivery URL before creating an export." };
+  const { packageMediaCandidates, IMPORTABLE_MEDIA_RIGHTS } = await import("../source-media");
+  const candidate = packageMediaCandidates(pkg.provenance).find(item => IMPORTABLE_MEDIA_RIGHTS.has(item.rightsCategory));
+  if (candidate) {
+    const { themeRenderInput } = await import("@/lib/media-engine/theme-adapter");
+    const { component } = await themeRenderInput(tenantId, packageId);
+    if (!component.mediaAssetId && !component.bgImageUrl && component.bgType !== "solid" && component.bgType !== "gradient") {
+      const { importThemeSourceMedia } = await import("../import-source-media");
+      try { await importThemeSourceMedia(tenantId, packageId, candidate.url, signal); }
+      catch (error) { return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, error: error instanceof Error ? error.message : "Source media import failed" }; }
+      pkg = (await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) }))!;
+    }
+  }
+  if (process.env.MEDIA_ENGINE_ENABLED === "true" && format.mediaType === "video") {
     const { queueThemeRender } = await import("@/lib/media-engine/theme-adapter");
     try {
       signal?.throwIfAborted();
@@ -73,36 +85,39 @@ export async function renderPackageMedia(
     } catch (error) { return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, error: error instanceof Error ? error.message : "Render submission failed" }; }
   }
   if (format.mediaType === "video") return { packageId, mediaType: "video", renderedUrls: [], success: false, error: "Enable the media worker to render a finished MP4. Raw source clips are not publishable exports." };
+  const snapshot = await legacyThemeRenderInput(tenantId, packageId);
+  const { revision, cluster } = snapshot;
+  pkg = snapshot.pkg; page = snapshot.page; format = snapshot.format;
+  const insetAsset = typeof snapshot.component.insetAssetId === "string" ? await db.query.assets.findFirst({ where: and(eq(assets.id, snapshot.component.insetAssetId), eq(assets.tenantId, tenantId)) }) : undefined;
+  const templateSpec: Record<string, unknown> = { ...snapshot.component, ...(snapshot.component.insetEnabled === false ? { pipInsetUrl: undefined } : insetAsset ? { pipInsetUrl: insetAsset.publicUrl } : {}) };
+  const priorMetrics = pkg.metrics && typeof pkg.metrics === "object" && !Array.isArray(pkg.metrics)
+    ? pkg.metrics as Record<string, unknown> : {};
   const alreadyRendered = existingRenderedUrls(pkg.renderedAssetUrls);
-  if (alreadyRendered.length > 0) {
+  if (alreadyRendered.length > 0 && priorMetrics.legacyRenderRevision === revision) {
     return { packageId, mediaType: format.mediaType, renderedUrls: alreadyRendered, success: true };
   }
-
-  const template = pkg.templateId ? await db.query.themeVisualTemplates.findFirst({
-    where: and(
-      eq(themeVisualTemplates.id, pkg.templateId),
-      eq(themeVisualTemplates.tenantId, tenantId),
-    ),
-  }) : undefined;
-  const templateSpec = template?.componentSpec && typeof template.componentSpec === "object"
-    ? template.componentSpec as Record<string, unknown>
-    : {};
+  if (priorMetrics.failurePhase === "render_pending" && priorMetrics.legacyRenderRevision === revision && typeof priorMetrics.legacyRenderToken === "string" && pkg.updatedAt.getTime() > Date.now() - 600000) return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, queued: true };
+  const token = randomUUID();
+  const [claimed] = await db.update(contentPackages).set({
+    status: "pending_review", renderedAssetUrls: [], error: null, updatedAt: new Date(),
+    metrics: sql`(coalesce(${contentPackages.metrics}, '{}'::jsonb) - 'renderJobId' - 'renderRevision') || ${JSON.stringify({ legacyRenderRevision: revision, legacyRenderToken: token, failurePhase: "render_pending" })}::jsonb`,
+  }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId),
+    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${pkg.updatedAt.toISOString()}::timestamp`,
+    inArray(contentPackages.status, options.preserveReviewDecision ? ["pending_review", "failed"] : ["pending_review", "rejected", "failed"]),
+    draftFence,
+    sql`NOT (coalesce(${contentPackages.metrics}->>'failurePhase', '') = 'render_pending' AND coalesce(${contentPackages.metrics}->>'legacyRenderRevision', '') = ${revision} AND ${contentPackages.updatedAt} > now() - interval '10 minutes')`,
+    sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`,
+  )).returning({ id: contentPackages.id });
+  if (!claimed) return { packageId, mediaType: format.mediaType, renderedUrls: [], success: false, error: "Package changed before rendering started." };
+  const completionFence = and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId),
+    eq(contentPackages.status, "pending_review"), sql`${contentPackages.metrics}->>'legacyRenderRevision' = ${revision}`,
+    sql`${contentPackages.metrics}->>'legacyRenderToken' = ${token}`, eq(contentPackages.title, pkg.title),
+    sql`${contentPackages.caption} IS NOT DISTINCT FROM ${pkg.caption}`,
+    sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`);
   const pageBrandKit = page.brandKit && typeof page.brandKit === "object"
     ? page.brandKit as Record<string, unknown>
     : {};
-  const brandKit = {
-    ...pageBrandKit,
-    ...(typeof templateSpec.backgroundColor === "string" ? { primaryColor: templateSpec.backgroundColor } : {}),
-    ...(typeof templateSpec.accentColor === "string" ? { accentColor: templateSpec.accentColor } : {}),
-    ...(typeof templateSpec.textColor === "string" ? { textColor: templateSpec.textColor } : {}),
-    ...(typeof templateSpec.fontFamily === "string" ? { fontFamily: templateSpec.fontFamily } : {}),
-    ...(typeof templateSpec.titleSize === "number" ? { titleSize: templateSpec.titleSize } : {}),
-    ...(typeof templateSpec.bodySize === "number" ? { bodySize: templateSpec.bodySize } : {}),
-    ...(typeof templateSpec.showWatermark === "boolean" ? { showWatermark: templateSpec.showWatermark } : {}),
-    ...(templateSpec.showWatermark !== false && typeof templateSpec.watermarkText === "string"
-      ? { watermark: templateSpec.watermarkText }
-      : {}),
-  };
+  const brandKit = designBrandKit(pageBrandKit, templateSpec);
   const provenance = pkg.provenance && typeof pkg.provenance === "object"
     ? pkg.provenance as Record<string, unknown>
     : {};
@@ -120,15 +135,12 @@ export async function renderPackageMedia(
     source_name: sourceName,
     author: "",
     tag: "UPDATE",
-    date: new Date().toISOString().slice(0, 10),
+    date: typeof firstSource.publishedAt === "string" ? firstSource.publishedAt.slice(0, 10) : pkg.createdAt.toISOString().slice(0, 10),
   };
-  const renderedTitle = applyTemplate(templateSpec.titleTemplate, pkg.title, templateTokens);
-  const renderedBody = applyTemplate(templateSpec.bodyTemplate, pkg.caption || "", templateTokens);
+  const renderedTitle = applyDesignCopy(templateSpec.titleTemplate, pkg.title, templateTokens);
+  const renderedBody = applyDesignCopy(templateSpec.bodyTemplate, pkg.caption || "", templateTokens);
 
   const renderedUrls: Array<{ url: string; type: string; slideIndex?: number }> = [];
-  const priorMetrics = pkg.metrics && typeof pkg.metrics === "object" && !Array.isArray(pkg.metrics)
-    ? pkg.metrics as Record<string, unknown>
-    : {};
   const imageCache = new Map<string, Buffer>();
 
   async function storePng(svg: string, key: string, filename: string): Promise<string> {
@@ -139,10 +151,11 @@ export async function renderPackageMedia(
       columns: { publicUrl: true },
     });
     if (existing) return existing.publicUrl;
-    const body = await renderSvgPng(svg, signal, imageCache);
-    const registered = await uploadAndRegisterFlowAsset({
+    const body = await (operations.rasterize ?? renderSvgPng)(svg, signal, imageCache);
+    const registered = await (operations.upload ?? uploadAndRegisterFlowAsset)({
       tenantId,
       runId: flowRunId,
+      sourcePackageId: packageId,
       key,
       filename,
       mimeType: "image/png",
@@ -154,132 +167,37 @@ export async function renderPackageMedia(
     return registered.publicUrl;
   }
 
+  const selectedAsset = typeof templateSpec.mediaAssetId === "string" ? await db.query.assets.findFirst({ where: and(eq(assets.id, templateSpec.mediaAssetId), eq(assets.tenantId, tenantId)) }) : undefined;
   const heroImage = (
-    (typeof templateSpec.imageUrl === "string" && templateSpec.imageUrl) ||
-    (!provenance.scoutId && typeof firstSource.heroImage === "string" && firstSource.heroImage) ||
-    (!provenance.scoutId && typeof (provenance as any).heroImage === "string" && (provenance as any).heroImage) ||
-    (typeof (pkg as any).metadata?.heroImage === "string" && (pkg as any).metadata?.heroImage) ||
+    (templateSpec.bgType !== "solid" && templateSpec.bgType !== "gradient" ? selectedAsset?.publicUrl : undefined) ||
+    (typeof templateSpec.bgImageUrl === "string" && templateSpec.bgImageUrl) ||
+    (templateSpec.bgType !== "solid" && templateSpec.bgType !== "gradient" && !provenance.scoutId && IMPORTABLE_MEDIA_RIGHTS.has(String(firstSource.rightsCategory)) && typeof firstSource.heroImage === "string" && firstSource.heroImage) ||
+    (templateSpec.bgType !== "solid" && templateSpec.bgType !== "gradient" && !provenance.scoutId && IMPORTABLE_MEDIA_RIGHTS.has(String(provenance.rightsCategory)) && typeof (provenance as any).heroImage === "string" && (provenance as any).heroImage) ||
+    (!provenance.scoutId && IMPORTABLE_MEDIA_RIGHTS.has(String((pkg as any).metadata?.rightsCategory)) && typeof (pkg as any).metadata?.heroImage === "string" && (pkg as any).metadata?.heroImage) ||
     undefined
   );
 
-  const highlightWords = Array.isArray(templateSpec.highlightKeywords)
-    ? (templateSpec.highlightKeywords as string[])
-    : undefined;
-
   try {
-    if (format?.mediaType === "carousel") {
-      const cluster = pkg.clusterId ? await db.query.storyClusters.findFirst({
-        where: and(eq(storyClusters.id, pkg.clusterId), eq(storyClusters.tenantId, tenantId)),
-      }) : undefined;
-      const facts = scoutRenderableFacts(cluster?.facts, provenance);
-      const slides = [
-        { 
-          title: renderedTitle, 
-          body: renderedBody.slice(0, 200), 
-          tag: "COVER", 
-          imageUrl: heroImage,
-          highlightWords,
-        },
-        ...facts.map((fact, index) => ({
-          title: `Key takeaway #${index + 1}`,
-          body: fact.claim,
-          tag: `POINT ${index + 1}`,
-          imageUrl: heroImage,
-          pipInsetUrl: typeof templateSpec.pipInsetUrl === "string" ? templateSpec.pipInsetUrl : undefined,
-          highlightWords,
-        })),
-        {
-          title: `Follow for daily updates`,
-          body: `Turn on notifications for more content like this.`,
-          tag: "FOLLOW",
-          imageUrl: heroImage,
-          isOutroSlide: true,
-          outroWatermarkText: typeof brandKit.watermark === "string" ? brandKit.watermark : undefined,
-        }
-      ];
-
-      const svgSlides = renderCarouselSlideSvgs(slides, brandKit);
-
-      for (let i = 0; i < svgSlides.length; i++) {
-        const svg = svgSlides[i];
-        const publicUrl = await storePng(
-          svg,
-          `${pkg.tenantId}/theme-studio/${pkg.id}/slide_${i + 1}.png`,
-          `${pkg.title} slide ${i + 1}.png`,
-        );
-        renderedUrls.push({ url: publicUrl, type: "image", slideIndex: i + 1 });
-      }
-      if (templateSpec.templateFamily === "mixed_carousel") {
-        throw new Error("Mixed video carousels require finished video exports and are not enabled yet.");
-      }
-    } else if (templateSpec.templateFamily === "tweet_card" || format?.slug?.includes("tweet")) {
-      const pageWatermark = typeof (pageBrandKit as any)?.watermark === "string" 
-        ? (pageBrandKit as any).watermark 
-        : `@${page.name.toLowerCase().replace(/\s+/g, "")}`;
-      const tweetAuthor = (templateSpec.tweetAuthor && typeof templateSpec.tweetAuthor === "object")
-        ? templateSpec.tweetAuthor as any
-        : { name: page.name, handle: pageWatermark, avatarUrl: (pageBrandKit as any)?.logoMonogramUrl };
-      const mediaLayout = (templateSpec.mediaLayout as any) || (heroImage ? "single" : "none");
-      const mediaUrls = Array.isArray(templateSpec.mediaUrls) && templateSpec.mediaUrls.length > 0
-        ? (templateSpec.mediaUrls as string[])
-        : heroImage ? [heroImage] : [];
-      const quotedTweet = (templateSpec.quotedTweet && typeof templateSpec.quotedTweet === "object")
-        ? templateSpec.quotedTweet as any
-        : undefined;
-
-      const svg = renderTweetCardSvg({
-        author: tweetAuthor,
-        content: renderedTitle,
-        mediaUrls,
-        mediaLayout,
-        quotedTweet,
-        aspectRatio: (format?.aspectRatio as any) || "4:5",
-        brandKit,
-      });
-
-      const publicUrl = await storePng(
-        svg,
-        `${pkg.tenantId}/theme-studio/${pkg.id}/tweet_card.png`,
-        `${pkg.title} tweet.png`,
-      );
-      renderedUrls.push({ url: publicUrl, type: "image" });
-    } else if (templateSpec.templateFamily === "video_reel") {
-      throw new Error("Select a video format and render a finished MP4 before publishing.");
-    } else {
-      // Standard static image card
-      const svg = renderCardSvg({
-        title: renderedTitle,
-        body: renderedBody.slice(0, 240),
-        tag: "UPDATE",
-        sourceName,
-        brandKit,
-        imageUrl: heroImage,
-        topBadge: typeof templateSpec.topBadge === "string" ? (templateSpec.topBadge as any) : undefined,
-        showDividerMark: typeof templateSpec.showDividerMark === "boolean" ? templateSpec.showDividerMark : typeof templateSpec.showDivider === "boolean" ? templateSpec.showDivider : undefined,
-        pipInsetUrl: typeof templateSpec.pipInsetUrl === "string" ? templateSpec.pipInsetUrl : undefined,
-        highlightWords,
-        aspectRatio: (format?.aspectRatio as any) || "1:1",
-      });
-
-      const publicUrl = await storePng(
-        svg,
-        `${pkg.tenantId}/theme-studio/${pkg.id}/card.png`,
-        `${pkg.title}.png`,
-      );
-      renderedUrls.push({ url: publicUrl, type: "image" });
+    const facts = scoutRenderableFacts(cluster?.facts, provenance);
+    const svgSlides = renderStaticThemeSvgs({ component: templateSpec, brandKit, title: renderedTitle, body: renderedBody, sourceName, pageName: page.name, heroImage, mediaType: format.mediaType, slug: format.slug, aspectRatio: format.aspectRatio, facts });
+    for (let i = 0; i < svgSlides.length; i++) {
+      const url = await storePng(svgSlides[i], `${tenantId}/theme-studio/${pkg.id}/${revision}/${token}/card_${i + 1}.png`, `${pkg.title}${svgSlides.length > 1 ? ` slide ${i + 1}` : ""}.png`);
+      renderedUrls.push({ url, type: "image", ...(svgSlides.length > 1 ? { slideIndex: i + 1 } : {}) });
     }
 
-    const attached = await db
+    const current = await legacyThemeRenderInput(tenantId, packageId);
+    if (current.revision !== revision) throw new Error("Package design changed while rendering. Render the current version again.");
+    const [attached] = await db
       .update(contentPackages)
       .set({
         renderedAssetUrls: renderedUrls,
         status: "pending_review",
         error: null,
-        metrics: { ...priorMetrics, failurePhase: null },
+        metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || '{"failurePhase":null}'::jsonb`,
         updatedAt: new Date(),
       })
-      .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), draftFence)).returning({ id: contentPackages.id });
-    if (options.preserveReviewDecision && !attached.length) throw new Error("Package changed during rendering. Its review decision and media were preserved.");
+      .where(completionFence).returning({ id: contentPackages.id });
+    if (!attached) throw new Error("Package changed while rendering. Export was not attached.");
 
     return {
       packageId,
@@ -292,9 +210,9 @@ export async function renderPackageMedia(
     await db.update(contentPackages).set({
       status: "failed",
       error: message,
-      metrics: { ...priorMetrics, failurePhase: "render" },
+      metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || '{"failurePhase":"render"}'::jsonb`,
       updatedAt: new Date(),
-    }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), draftFence));
+    }).where(completionFence);
     signal?.throwIfAborted();
     return {
       packageId,

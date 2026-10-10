@@ -11,7 +11,7 @@ vi.mock("@/lib/db", () => ({ db: {
   },
   update: () => ({ set: () => ({ where: (...args: unknown[]) => { mocks.update(...args); return { returning: async () => [{ id: "pkg" }] }; } }) }),
 } }));
-vi.mock("@/lib/theme-studio/renderers/static-card-renderer", () => ({ renderCardSvg: mocks.card, renderCarouselSlideSvgs: mocks.carousel }));
+vi.mock("@/lib/theme-studio/renderers/static-theme", async (importOriginal) => ({ ...await importOriginal<object>(), renderStaticThemeSvgs: mocks.card }));
 vi.mock("@/lib/theme-studio/renderers/rasterize-svg", () => ({ renderSvgPng: async () => Buffer.from("png") }));
 vi.mock("@/lib/flows/asset-registration", () => ({ uploadAndRegisterFlowAsset: async () => ({ publicUrl: "https://assets.example.com/card.png" }) }));
 vi.mock("@/lib/publisher-core", () => ({ draftStatusFromZernio: vi.fn(), getZernioClientForTenant: vi.fn() }));
@@ -21,26 +21,29 @@ import { publishContentPackage } from "@/lib/theme-studio/publishing/publisher";
 describe("Scout evidence-to-render safety", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.card.mockReturnValue("<svg/>"); mocks.carousel.mockReturnValue(["<svg/>"]);
+    mocks.card.mockReturnValue(["<svg/>"]); mocks.carousel.mockReturnValue(["<svg/>"]);
     mocks.template.mockResolvedValue({ componentSpec: {} });
     mocks.format.mockResolvedValue({ mediaType: "image" });
-    mocks.pkg.mockResolvedValue({ id: "pkg", tenantId: "tenant", themePageId: "page", formatId: "format", templateId: "template", clusterId: "cluster", title: "Original", renderedAssetUrls: [], provenance: { scoutId: "scout", sources: [{ url: "https://news.example.com/story", heroImage: "https://unlicensed.example.com/image.jpg" }], heroImage: "https://unlicensed.example.com/image.jpg", requiresFactReview: true } });
+    mocks.pkg.mockResolvedValue({ id: "pkg", tenantId: "tenant", themePageId: "page", formatId: "format", templateId: "template", clusterId: "cluster", title: "Original", status: "pending_review", caption: "", createdAt: new Date(), updatedAt: new Date(), metrics: {}, renderedAssetUrls: [], provenance: { scoutId: "scout", sources: [{ url: "https://news.example.com/story", heroImage: "https://unlicensed.example.com/image.jpg" }], heroImage: "https://unlicensed.example.com/image.jpg", requiresFactReview: true } });
   });
   it("does not render Scout research images from legacy or new provenance", async () => {
-    await renderPackageMedia("pkg", "tenant", "stable-run");
-    expect(mocks.card.mock.calls[0][0].imageUrl).toBeUndefined();
+    const result = await renderPackageMedia("pkg", "tenant", "stable-run", undefined, undefined, { upload: async () => ({ publicUrl: "https://assets.example.com/card.png" }) } as any);
+    expect(result.success).toBe(true);
+    expect(mocks.card.mock.calls[0][0].heroImage).toBeUndefined();
   });
   it("keeps explicitly configured template media, not competitor imagery", async () => {
     mocks.template.mockResolvedValue({ componentSpec: { imageUrl: "https://assets.example.com/owned.jpg" } });
-    await renderPackageMedia("pkg", "tenant", "stable-run");
-    expect(mocks.card.mock.calls[0][0].imageUrl).toBe("https://assets.example.com/owned.jpg");
+    const result = await renderPackageMedia("pkg", "tenant", "stable-run", undefined, undefined, { upload: async () => ({ publicUrl: "https://assets.example.com/card.png" }) } as any);
+    expect(result.success).toBe(true);
+    expect(mocks.card.mock.calls[0][0].heroImage).toBe("https://assets.example.com/owned.jpg");
   });
   it("never turns an uncertain claim into a carousel takeaway", async () => {
     mocks.format.mockResolvedValue({ mediaType: "carousel" });
-    await renderPackageMedia("pkg", "tenant", "stable-run");
-    const slides = mocks.carousel.mock.calls[0][0];
-    expect(slides.some((slide: { body: string }) => slide.body === "Supported")).toBe(true);
-    expect(slides.some((slide: { body: string }) => slide.body === "Uncertain")).toBe(false);
+    const result = await renderPackageMedia("pkg", "tenant", "stable-run", undefined, undefined, { upload: async () => ({ publicUrl: "https://assets.example.com/card.png" }) } as any);
+    expect(result.success).toBe(true);
+    const slides = mocks.card.mock.calls[0][0].facts;
+    expect(slides.some((slide: { claim: string }) => slide.claim === "Supported")).toBe(true);
+    expect(slides.some((slide: { claim: string }) => slide.claim === "Uncertain")).toBe(false);
   });
   it("blocks direct publishing while fact review is outstanding", async () => {
     const result = await publishContentPackage("pkg", "tenant");

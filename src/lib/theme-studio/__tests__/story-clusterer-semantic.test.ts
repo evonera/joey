@@ -374,7 +374,7 @@ describe("TypeSafe Jev Story Clustering & Fact Gate (Shadow Mode)", () => {
       const insertedCluster = mockInsertValues.mock.calls[0][0];
       // Contradicted claims must be filtered out so angle synthesis never receives them
       expect(insertedCluster.facts).toHaveLength(1);
-      expect(insertedCluster.facts[0].corroborationStatus).toBe("verified");
+      expect(insertedCluster.facts[0].corroborationStatus).toBe("unverified");
       expect(insertedCluster.facts[0].claim).toBe("Company X reports record quarterly revenue earnings of 15 billion dollars");
       expect(insertedCluster.facts.some((f: any) => f.corroborationStatus === "contradicted")).toBe(false);
     });

@@ -5,6 +5,17 @@ vi.mock("@/lib/flows/outbound-request", () => ({ outboundRequest: request }));
 import { renderSvgPng } from "../renderers/rasterize-svg";
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><image href="https://example.com/hero.png" width="10" height="10"/></svg>';
 describe("rendered template images", () => {
+  it("exports the saved crop focus and contain mode using real image pixels", async () => {
+    const split = new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="4"><rect width="4" height="4" fill="red"/><rect x="4" width="4" height="4" fill="blue"/></svg>').render().asPng();
+    request.mockResolvedValue({ status: 200, buffer: split });
+    async function pixels(mode: string, x: number) {
+      const cropped = await renderSvgPng(svg.replace('width="10" height="10"', 'width="4" height="4"').replace("hero.png", `hero.png#joey-crop=${mode},${x},0.5,4,4`));
+      return new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><image href="data:image/png;base64,${cropped.toString("base64")}" width="4" height="4"/></svg>`).render().pixels;
+    }
+    expect([...(await pixels("cover", 0)).subarray(0, 4)]).toEqual([255, 0, 0, 255]);
+    expect([...(await pixels("cover", 1)).subarray(0, 4)]).toEqual([0, 0, 255, 255]);
+    expect([...(await pixels("contain", .5)).subarray(0, 4)]).toEqual([0, 0, 0, 255]);
+  });
   it("includes remote image pixels in the exported PNG", async () => {
     const red = new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>').render().asPng();
     request.mockResolvedValue({ status: 200, buffer: red });

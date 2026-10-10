@@ -247,8 +247,10 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
     }
   };
 
-  const activeCount = scoutsList.filter((s) => s.isActive).length;
-  const pausedCount = scoutsList.length - activeCount;
+  const configuredActiveCount = scoutsList.filter((s) => s.isActive).length;
+  const waitingCount = setup?.ready === false ? configuredActiveCount : 0;
+  const activeCount = configuredActiveCount - waitingCount;
+  const pausedCount = scoutsList.length - configuredActiveCount;
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6">
@@ -383,7 +385,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           <div className={cn("lg:col-span-5 space-y-3", mobileView === "details" && "hidden lg:block")}>
             <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
               <span>
-                {activeCount} active · {pausedCount} paused · {scoutsList.length} total
+                {activeCount} active · {waitingCount} waiting for configuration · {pausedCount} paused · {scoutsList.length} total
               </span>
               {/* Mobile List|Details segmented toggle */}
               <span className="lg:hidden inline-flex rounded-lg border border-border/40 p-0.5 text-[11px] font-medium">
@@ -431,7 +433,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                         <span
                           className={cn(
                             "size-2 rounded-full",
-                            scout.isActive ? "bg-emerald-500" : "bg-muted-foreground/40"
+                            scout.isActive ? setup?.ready === false ? "bg-amber-500" : "bg-emerald-500" : "bg-muted-foreground/40"
                           )}
                         />
                         <span className="text-xs font-semibold text-foreground truncate max-w-[200px]">
