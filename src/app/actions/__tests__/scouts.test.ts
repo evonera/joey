@@ -58,7 +58,7 @@ describe("toggleScout authorization", () => {
     expect(await getScoutSetup()).toEqual({ ready: true, provider: "custom", customEnabled: true });
     expect(mocks.setup).toHaveBeenCalledWith("tenant-1");
     await runScoutNow("scout-1");
-    expect(mocks.resolveToken).toHaveBeenCalledWith("tenant-1");
+    expect(mocks.resolveToken).toHaveBeenCalledWith("tenant-1", expect.objectContaining({ id: "scout-1" }));
     expect(mocks.evaluateScout).toHaveBeenCalledWith("scout-1", { tenantId: "tenant-1", force: true });
     expect(mocks.requireRole).toHaveBeenCalledWith(["owner", "admin"]);
   });
@@ -92,7 +92,7 @@ describe("toggleScout authorization", () => {
     mocks.resolveToken.mockRejectedValueOnce(new Error("Missing Apify token"));
     mocks.update.mockClear();
     await expect(toggleScout("scout-1", true)).rejects.toThrow("Missing Apify token");
-    expect(mocks.resolveToken).toHaveBeenCalledWith("tenant-1");
+    expect(mocks.resolveToken).toHaveBeenCalledWith("tenant-1", expect.objectContaining({ id: "scout-1" }));
     expect(mocks.update).not.toHaveBeenCalled();
   });
 });

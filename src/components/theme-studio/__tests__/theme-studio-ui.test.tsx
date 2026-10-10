@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import * as React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const webMcpHarness = vi.hoisted(() => ({ tools: [] as WebMCP.ModelContextTool[] }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/theme-studio/page_abc",
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
 vi.mock("@/app/actions/theme-pages", () => ({
@@ -33,6 +33,7 @@ vi.mock("@/hooks/use-webmcp-tools", () => ({
     return true;
   },
 }));
+import { activateThemePage } from "@/app/actions/theme-pages";
 import { ThemePageHeader } from "@/components/theme-studio/ThemePageHeader";
 import { DailyMixScheduler } from "@/components/theme-studio/DailyMixScheduler";
 import { SourcesManager } from "@/components/theme-studio/SourcesManager";
@@ -61,6 +62,22 @@ describe("Theme Studio UI Components", () => {
       "theme_studio_inspect_page",
       "theme_studio_check_readiness",
     ]);
+  });
+
+  it("enables draft-only generation before connecting a publishing account", async () => {
+    vi.mocked(activateThemePage).mockResolvedValueOnce({ page: { id: "page_abc" } } as Awaited<ReturnType<typeof activateThemePage>>);
+    render(<ThemePageHeader page={{ id: "page_abc", name: "Draft pilot", status: "draft", recipeRevision: 0 }} webMcpState={{
+      page: { id: "page_abc", name: "Draft pilot", niche: null, audience: null, status: "draft", rightsPolicy: "strict", connectedAccountCount: 0, connectedPlatforms: [] },
+      sources: [{ id: "source", name: "Own feed", sourceType: "rss", rightsCategory: "owned", isActive: true }],
+      slots: [{ id: "slot", label: "Card", cadence: "daily", isActive: true, platform: "instagram" }], packages: [],
+    }} />);
+    expect(screen.queryByText("Select an active instagram publishing account")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Generation mode"), { target: { value: "publishing" } });
+    expect(screen.getByText("Select an active instagram publishing account.")).toBeDefined();
+    fireEvent.change(screen.getByLabelText("Generation mode"), { target: { value: "draft_only" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enable Draft Generation" }));
+    await waitFor(() => expect(activateThemePage).toHaveBeenCalledWith("page_abc", "draft_only"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pause Automation" })).toBeDefined());
   });
 
   it("renders DailyMixScheduler with initial slots", () => {

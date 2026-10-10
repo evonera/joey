@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { FlowGraphDoc } from "../../src/lib/flows/types";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { Resvg } from "@resvg/resvg-js";
 import { requireDisposableDatabase } from "./require-disposable-database";
@@ -7,6 +8,8 @@ process.env.MEDIA_ENGINE_ENABLED = "false";
 const { db } = await import("../../src/lib/db");
 const schema = await import("../../src/lib/db/schema");
 const { and, eq } = await import("drizzle-orm");
+const { syncThemePageFlow } = await import("../../src/lib/flows/recipe-compiler");
+const { publishContentPackage } = await import("../../src/lib/theme-studio/publishing/publisher");
 const { parseThemeDesign } = await import("../../src/lib/theme-studio/design-spec");
 const { parseRssXml, parseHtmlMetadata } = await import("../../src/lib/theme-studio/pipeline/source-poller");
 const { clusterSourceItems } = await import("../../src/lib/theme-studio/pipeline/story-clusterer");
@@ -54,6 +57,12 @@ try {
     await db.insert(schema.sourceItems).values({ tenantId, themePageId: page.id, sourceId: source.id, title: item.title, body: item.body, url: item.url, publishedAt: item.publishedAt ?? null, rightsCategory: "owned", metadata: { ...item.metadata, mediaCandidates: sourceMediaCandidates(item.metadata, item.url, "owned") } });
     await db.insert(schema.themeSlots).values({ tenantId, themePageId: page.id, label: `Slot ${index}`, formatId: format.id, overrideTemplateId: template.id, priority: index });
   }
+  const compiled = await syncThemePageFlow(tenantId, page.id, "draft_only");
+  assert.equal(compiled.compiled.isValid, true, "draft-only compilation must work without social accounts");
+  assert.equal((compiled.flow!.graph as FlowGraphDoc).nodes.find(node => node.type === "action.theme_studio_run")!.config.mode, "draft_only");
+  const recompiled = await syncThemePageFlow(tenantId, page.id);
+  assert.equal(recompiled.compiled.isValid, true, "saved draft-only mode survives recompilation");
+  assert.equal((await syncThemePageFlow(tenantId, page.id, "publishing")).compiled.isValid, false, "publishing mode still requires matching accounts");
   const clustered = await clusterSourceItems(tenantId, page.id, undefined, { mode: "off" });
   assert.equal(clustered.clusteredCount, 3, "undated sources must not disappear");
   const result = await synthesizeAndAllocatePackages(tenantId, page.id, "release-1-fixture", undefined, undefined, async input => ({ title: `Story: ${input.cluster.title}`, caption: "Fresh editorial copy based on the report.", hashtags: ["#news"] }));
@@ -79,6 +88,11 @@ try {
     const retry = await renderPackageMedia(pkg.id, tenantId, undefined, undefined, undefined, { rasterize, upload });
     assert.deepEqual(retry.renderedUrls, rendered.renderedUrls, "unchanged render retry must reuse output");
   }
+  const approvalFixture = packages.find(pkg => pkg.id !== withImage.id)!;
+  await db.update(schema.contentPackages).set({ status: "approved" }).where(eq(schema.contentPackages.id, approvalFixture.id));
+  const unpublished = await publishContentPackage(approvalFixture.id, tenantId);
+  assert.equal(unpublished.success, false);
+  assert.equal(unpublished.error, "Select a connected social account before publishing", "draft-only activation must never bypass publish-time account checks");
   const old = await db.query.contentPackages.findFirst({ where: eq(schema.contentPackages.id, withImage.id) });
   await db.update(schema.contentPackages).set({ title: "Edited headline", renderedAssetUrls: [], updatedAt: new Date() }).where(eq(schema.contentPackages.id, withImage.id));
   await assert.rejects(assertThemeRenderCurrent(tenantId, withImage.id), /changed/);
@@ -97,7 +111,7 @@ try {
   const [source] = await db.query.themeSources.findMany({ where: eq(schema.themeSources.tenantId, tenantId), limit: 1 });
   await db.insert(schema.sourceItems).values({ tenantId, themePageId: page.id, sourceId: source.id, title: "Abandoned astronomy claim", body: "Recovery evidence", url: "https://example.test/recovery", status: "clustering", rightsCategory: "owned", metadata: { clusteringClaimedAt: new Date(Date.now() - 700000).toISOString(), clusteringClaimToken: "abandoned-worker" } });
   assert.equal((await clusterSourceItems(tenantId, page.id, undefined, { mode: "off" })).clusteredCount, 1, "abandoned source claims must recover");
-  console.log("PASS: three source fixtures → clustering → editorial copy → canonical saved design → image import/reload → exports, missing image, retry reuse and stale completion fencing");
+  console.log("PASS: account-free draft-only compile/recompile, publish-account fence, three source fixtures → clustering → editorial copy → canonical saved design → image import/reload → exports, missing image, retry reuse and stale completion fencing");
 } catch (error) { failed = true; console.error(error); } finally {
   await db.delete(schema.tenants).where(eq(schema.tenants.id, tenantId));
   process.exit(failed ? 1 : 0);

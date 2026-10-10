@@ -16,6 +16,7 @@ import {
   IconLayoutDashboard,
   IconLoader2
 } from "@tabler/icons-react";
+import type { ThemeRecipeMode } from "@/lib/flows/theme-recipe-mode";
 import { activateThemePage, pauseThemePage } from "@/app/actions/theme-pages";
 import { toast } from "sonner";
 import { useWebMcpTools } from "@/hooks/use-webmcp-tools";
@@ -35,17 +36,20 @@ interface ThemePageHeaderProps {
     lastCompiledAt?: Date | string | null;
   };
   webMcpState?: ThemeStudioWebMcpState;
+  executionMode?: ThemeRecipeMode;
 }
 
-export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
+export function ThemePageHeader({ page, webMcpState, executionMode = "draft_only" }: ThemePageHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [status, setStatus] = React.useState(page.status);
+  const [mode, setMode] = React.useState<ThemeRecipeMode>(executionMode);
+  React.useEffect(() => { setStatus(page.status); setMode(executionMode); }, [page.status, executionMode]);
   const [loading, setLoading] = React.useState(false);
   const [activationError, setActivationError] = React.useState<string | null>(null);
   const resolvedWebMcpState = React.useMemo<ThemeStudioWebMcpState>(() => {
     if (webMcpState) {
-      return { ...webMcpState, page: { ...webMcpState.page, status } };
+      return { ...webMcpState, page: { ...webMcpState.page, status, executionMode: mode } };
     }
     return {
       page: {
@@ -57,12 +61,13 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
         rightsPolicy: "strict",
         connectedAccountCount: 0,
         connectedPlatforms: [],
+        executionMode: mode,
       },
       sources: [],
       slots: [],
       packages: [],
     };
-  }, [page.id, page.name, page.niche, status, webMcpState]);
+  }, [page.id, page.name, page.niche, status, mode, webMcpState]);
   const webMcpTools = React.useMemo(
     () => createThemeStudioWebMcpTools(() => resolvedWebMcpState),
     [resolvedWebMcpState],
@@ -92,10 +97,11 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
         setStatus("paused");
         toast.success("Theme page paused");
       } else {
-        const res = await activateThemePage(page.id);
+        const res = await activateThemePage(page.id, mode);
         if (res.error) throw new Error(res.error);
         setStatus("active");
-        toast.success("Theme page automation activated");
+        toast.success(mode === "draft_only" ? "Draft generation enabled" : "Theme page automation activated");
+        router.refresh();
       }
     } catch (err: any) {
       const message = err.message || "Failed to update status";
@@ -139,7 +145,13 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {status !== "active" && <label className="text-xs font-medium">Generation mode
+              <select aria-label="Generation mode" value={mode} disabled={loading} onChange={(event) => setMode(event.target.value as ThemeRecipeMode)} className="ml-2 rounded-lg border bg-background px-3 py-2 text-sm">
+                <option value="draft_only">Drafts only</option>
+                <option value="publishing">With publishing accounts</option>
+              </select>
+            </label>}
             <button
               type="button"
               onClick={handleToggleStatus}
@@ -158,12 +170,14 @@ export function ThemePageHeader({ page, webMcpState }: ThemePageHeaderProps) {
                 </>
               ) : (
                 <>
-                  <IconPlayerPlay className="w-4 h-4" /> Activate Automation
+                  <IconPlayerPlay className="w-4 h-4" /> {mode === "draft_only" ? "Enable Draft Generation" : "Activate Automation"}
                 </>
               )}
             </button>
           </div>
         </div>
+
+        <p className="mb-4 text-xs text-muted-foreground">{mode === "draft_only" ? "Drafts only: generate and review content before connecting a publishing account." : "Connected-account mode: matching publishing accounts are required."} Recipes run once per day. Approval and publication remain separate actions.</p>
 
         {status !== "active" && readinessIssues.length > 0 && (
           <div role="status" className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm">

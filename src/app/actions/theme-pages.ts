@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { themePages, themeSources, themeSlots, themeVisualTemplates, themeContentFormats, contentPackages, flows, socialAccounts } from "@/lib/db/schema";
 import { eq, and, desc, like, inArray, sql } from "drizzle-orm";
 import { syncThemePageFlow } from "@/lib/flows/recipe-compiler";
+import { themeRecipeMode, themeRecipeModeSchema, type ThemeRecipeMode } from "@/lib/flows/theme-recipe-mode";
+import type { FlowGraphDoc } from "@/lib/flows/types";
 import { assertThemePageQuota } from "@/lib/billing";
 import { createThemeSource, type CreateThemeSourceInput } from "./theme-sources";
 import { createThemeSlot, type CreateThemeSlotInput } from "./theme-slots";
@@ -110,7 +112,7 @@ export async function getThemePageById(id: string) {
     const selectedAccountIds = Array.isArray(page.connectedAccounts)
       ? page.connectedAccounts.filter((accountId): accountId is string => typeof accountId === "string")
       : [];
-    const [sources, slots, templates, formats, recentPackages, publishingAccounts] = await Promise.all([
+    const [sources, slots, templates, formats, recentPackages, publishingAccounts, recipeFlow] = await Promise.all([
       db.query.themeSources.findMany({
         where: and(eq(themeSources.themePageId, id), eq(themeSources.tenantId, tenantId)),
       }),
@@ -131,6 +133,10 @@ export async function getThemePageById(id: string) {
         where: and(eq(socialAccounts.tenantId, tenantId), eq(socialAccounts.isActive, true), inArray(socialAccounts.id, selectedAccountIds)),
         columns: { id: true, platform: true },
       }) : Promise.resolve([]),
+      db.query.flows.findFirst({
+        where: and(eq(flows.tenantId, tenantId), like(flows.description, `[Theme Studio:${id}]%`)),
+        columns: { graph: true },
+      }),
     ]);
     const formatMap = new Map(formats.map(f => [f.id, f]));
     const populatedSlots = slots.map(slot => ({ ...slot, format: formatMap.get(slot.formatId) || null }));
@@ -143,6 +149,7 @@ export async function getThemePageById(id: string) {
       formats,
       recentPackages,
       publishingAccounts,
+      executionMode: recipeFlow ? themeRecipeMode(recipeFlow.graph as FlowGraphDoc) : "draft_only" as ThemeRecipeMode,
     };
   } catch (error: any) {
     console.error("Failed to fetch theme page details:", error);
@@ -298,10 +305,12 @@ export async function deleteThemePage(id: string) {
   }
 }
 
-export async function activateThemePage(id: string) {
+export async function activateThemePage(id: string, mode: ThemeRecipeMode = "publishing") {
   try {
     const tenantId = await requireRole(["owner", "admin"]);
-    const compilation = await syncThemePageFlow(tenantId, id);
+    const parsedMode = themeRecipeModeSchema.safeParse(mode);
+    if (!parsedMode.success) return { error: "Choose draft-only or publishing mode." };
+    const compilation = await syncThemePageFlow(tenantId, id, parsedMode.data);
     if (!compilation.compiled.isValid) {
       return { error: `Theme recipe is invalid: ${compilation.compiled.validationIssues.join("; ")}` };
     }

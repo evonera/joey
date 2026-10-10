@@ -7,6 +7,7 @@ const hosts: Record<string, string[]> = {
   twitter: ["x.com", "twitter.com"],
   youtube: ["youtube.com", "youtu.be"],
   web: [],
+  rss: [],
 };
 
 /** Shared static rules for saved sources, collection inputs, and evidence URLs. */
