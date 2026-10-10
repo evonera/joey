@@ -6,7 +6,8 @@ import { assets, drafts, mediaRenderJobs } from "@/lib/db/schema";
 import { buildPublicUrl, headObject, mediaWorkerUrls } from "@/lib/storage";
 import { enqueueR2Cleanup, cancelR2Cleanup } from "@/lib/storage-cleanup";
 import { renderTemplateHtml } from "./templates";
-import { referencedAssets, renderSpecSchema, rendererVersion, FONT_VERSION } from "./spec";
+import { isCuratedAssetRef } from "./curated-assets";
+import { referencedAssets, renderSpecSchema, renderDimensions, rendererVersion, FONT_VERSION } from "./spec";
 
 export async function claimNextRender() {
   if (process.env.MEDIA_ENGINE_ENABLED !== "true") return null;
@@ -34,8 +35,10 @@ export async function claimRenderJob() {
   try {
     const spec = renderSpecSchema.parse(job.spec);
     const refs = referencedAssets(spec);
-    const records = await db.query.assets.findMany({ where: and(eq(assets.tenantId, job.tenantId), inArray(assets.id, refs.map(ref => ref.id))) });
+    const ownedRefs = refs.filter(ref => !isCuratedAssetRef(ref));
+    const records = await db.query.assets.findMany({ where: and(eq(assets.tenantId, job.tenantId), inArray(assets.id, ownedRefs.map(ref => ref.id))) });
     const keys = refs.map(ref => {
+      if (isCuratedAssetRef(ref)) return ref.version;
       const record = records.find(item => item.id === ref.id);
       if (!record || record.key !== ref.version) throw new Error("Source asset no longer available.");
       return record.key;
@@ -86,7 +89,7 @@ export async function completeRenderJob(input: z.infer<typeof completionSchema>,
     if (!job || job.status !== "rendering" || job.attemptToken !== input.attemptToken || job.updatedAt.getTime() < Date.now() - 600_000) return { accepted: false };
     let assetId: string | undefined;
     if (input.success) {
-      const [asset] = await tx.insert(assets).values({ tenantId: job.tenantId, filename: `${spec.template}.${spec.format}`, key, mimeType, size: metadata!.ContentLength!, publicUrl: buildPublicUrl(key), width: 1080, height: spec.format === "mp4" ? 1920 : 1350 }).returning();
+      const [asset] = await tx.insert(assets).values({ tenantId: job.tenantId, filename: `${spec.template}.${spec.format}`, key, mimeType, size: metadata!.ContentLength!, publicUrl: buildPublicUrl(key), ...renderDimensions(spec) }).returning();
       assetId = asset.id;
     }
     await tx.update(mediaRenderJobs).set({ status: input.success ? "succeeded" : "failed", outputAssetId: assetId, usage: { attempts: [...((job.usage as { attempts?: unknown[] } | null)?.attempts ?? []), { ...input.usage, attempt: job.attempt, succeeded: input.success, cpuCores: 2, memoryMiB: 4096 }] }, error: input.success ? null : input.error || "Rendering failed", updatedAt: new Date() }).where(eq(mediaRenderJobs.id, job.id));

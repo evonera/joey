@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assets, flowRuns, r2CleanupTasks } from "@/lib/db/schema";
+import { assets, contentPackages, flowRuns, r2CleanupTasks } from "@/lib/db/schema";
 import { cancelR2Cleanup, enqueueR2Cleanup, rearmR2Cleanup } from "@/lib/storage-cleanup";
 import { deleteObjectWithRetry, uploadBufferToR2 } from "@/lib/storage";
 
@@ -26,7 +26,7 @@ export async function runReservedUpload<T>(steps: {
 }
 
 export async function uploadAndRegisterFlowAsset(options: {
-  tenantId: string; runId: string; key: string; filename: string; mimeType: string;
+  tenantId: string; runId?: string; sourcePackageId?: string; key: string; filename: string; mimeType: string;
   body: Buffer; signal?: AbortSignal; reason: string;
 }): Promise<AssetRegistration> {
   const { tenantId, runId, key, body, signal } = options;
@@ -39,8 +39,13 @@ export async function uploadAndRegisterFlowAsset(options: {
       const [asset] = await db.transaction(async (tx) => {
       const [reservation] = await tx.select({ id: r2CleanupTasks.id }).from(r2CleanupTasks).where(and(eq(r2CleanupTasks.key, key), eq(r2CleanupTasks.tenantId, tenantId))).for("update");
       if (!reservation) throw new Error("Asset cleanup reservation was lost before registration.");
-      const [run] = await tx.select({ id: flowRuns.id }).from(flowRuns).where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running"))).for("update");
-      if (!run) throw new Error("Execution fenced: flow run is no longer running.");
+      if (runId) {
+        const [run] = await tx.select({ id: flowRuns.id }).from(flowRuns).where(and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running"))).for("update");
+        if (!run) throw new Error("Execution fenced: flow run is no longer running.");
+      } else {
+        const pkg = options.sourcePackageId ? await tx.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, options.sourcePackageId), eq(contentPackages.tenantId, tenantId)) }) : undefined;
+        if (!pkg) throw new Error("Asset registration requires an owned source package.");
+      }
       const inserted = await tx.insert(assets).values({ tenantId, filename: options.filename, key, mimeType: options.mimeType, size: body.length, publicUrl: object.publicUrl }).returning({ id: assets.id, key: assets.key, publicUrl: assets.publicUrl });
       await tx.delete(r2CleanupTasks).where(and(eq(r2CleanupTasks.id, reservation.id), eq(r2CleanupTasks.tenantId, tenantId)));
       return inserted;

@@ -19,6 +19,7 @@ vi.mock("@/lib/crypto", () => ({ decrypt: mocks.decrypt }));
 
 import {
   ApifyScoutProvider,
+  RssScoutProvider,
   CustomScoutProvider,
   MockScoutProvider,
   getScoutDataProvider,
@@ -267,5 +268,57 @@ describe("Apify adapter", () => {
   it("enforces streamed size bounds", async () => {
     mocks.fetch.mockResolvedValue(new Response('"' + "x".repeat(2 * 1024 * 1024) + '"'));
     await expect(new ApifyScoutProvider("key").fetchRecentPosts(request, context())).rejects.toThrow("oversized");
+  });
+});
+
+
+describe("RSS source acquisition", () => {
+  const request = { targetUrl: "https://news.example.com/feed", platform: "rss" };
+  it("is ready without Apify or a custom-provider key", async () => {
+    mocks.apify.mockRejectedValue(new Error("Missing"));
+    mocks.key.mockResolvedValue(undefined);
+    expect((await getScoutDataProvider("tenant", request)).kind).toBe("rss");
+    expect(await getScoutProviderSetup("tenant", request)).toMatchObject({ ready: true, provider: "rss" });
+    expect(mocks.apify).not.toHaveBeenCalled();
+    expect(mocks.key).not.toHaveBeenCalled();
+  });
+  it("uses bounded public acquisition and preserves undated article evidence", async () => {
+    mocks.outbound.mockResolvedValue({ ...response(null), buffer: Buffer.from('<rss><channel><item><title>Article</title><link>https://news.example.com/article?utm_source=rss</link><description>Actual facts</description></item></channel></rss>') });
+    const provider = new RssScoutProvider();
+    const [post] = await provider.fetchRecentPosts(request, context());
+    expect(post).toEqual({ id: expect.stringMatching(/^url:[a-f0-9]{64}$/), url: "https://news.example.com/article", text: "Article\nActual facts" });
+    expect(mocks.outbound).toHaveBeenCalledWith(request.targetUrl, expect.objectContaining({ maxBytes: 2 * 1024 * 1024, maxRedirects: 3 }));
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+  it("rejects HTML errors instead of reporting an empty feed", async () => {
+    mocks.outbound.mockResolvedValue({ ...response(null), buffer: Buffer.from("<html>Access blocked</html>") });
+    await expect(new RssScoutProvider().fetchRecentPosts(request, context())).rejects.toThrow("RSS or Atom");
+  });
+  it("blocks private article references and private target DNS", async () => {
+    mocks.outbound.mockResolvedValue({ ...response(null), buffer: Buffer.from('<rss><item><title>Article</title><link>https://127.0.0.1/private</link></item></rss>') });
+    await expect(new RssScoutProvider().fetchRecentPosts(request, context())).rejects.toThrow("invalid article");
+    mocks.resolve.mockRejectedValue(new Error("Private DNS"));
+    await expect(new RssScoutProvider().fetchRecentPosts(request, context())).rejects.toThrow("public HTTPS");
+  });
+});
+
+describe("Apify truthful observations", () => {
+  it("does not turn absent metrics or dates into zero or now", async () => {
+    mocks.fetch.mockResolvedValue(new Response(JSON.stringify([{ url: item.url, caption: "Undated" }])));
+    const [post] = await new ApifyScoutProvider("key").fetchRecentPosts(request, context());
+    expect(post).toEqual({ id: expect.stringMatching(/^url:[a-f0-9]{64}$/), url: item.url, text: "Undated" });
+  });
+  it("keeps identities stable across reordering and rejects profile substitutes", async () => {
+    const rows = [{ url: item.url, views: null, timestamp: "yesterday" }, { id: 0, url: "https://instagram.com/p/other", views: "invalid" }];
+    mocks.fetch.mockResolvedValueOnce(new Response(JSON.stringify(rows))).mockResolvedValueOnce(new Response(JSON.stringify([...rows].reverse())));
+    const provider = new ApifyScoutProvider("key");
+    const first = await provider.fetchRecentPosts(request, context());
+    const second = await provider.fetchRecentPosts(request, context());
+    expect(first.map(post => post.id)).toEqual(second.map(post => post.id).reverse());
+    expect(first[0]).not.toHaveProperty("views");
+    expect(first[0]).not.toHaveProperty("timestamp");
+    expect(first[1].id).toBe("0");
+    mocks.fetch.mockResolvedValueOnce(new Response(JSON.stringify([{ id: "id", url: request.targetUrl }])));
+    await expect(provider.fetchRecentPosts(request, context())).rejects.toThrow("stable post link");
   });
 });

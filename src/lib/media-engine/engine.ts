@@ -1,6 +1,7 @@
 import { dispatchQueuedRender } from "./dispatch";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { isCuratedAssetRef } from "./curated-assets";
 import { assets, contentPackages, drafts, flows, mediaRenderJobs } from "@/lib/db/schema";
 import { renderHash, renderSpecSchema, referencedAssets, expectedAssetTypes } from "./spec";
 
@@ -22,8 +23,13 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
         : await tx.query.flows.findFirst({ where: and(eq(flows.id, spec.source.id), eq(flows.tenantId, tenantId)) });
     if (!source) throw new Error("Render source does not belong to this workspace.");
     const refs = referencedAssets(spec);
-    const owned = await tx.query.assets.findMany({ where: and(eq(assets.tenantId, tenantId), inArray(assets.id, refs.map(ref => ref.id))) });
+    const ownedRefs = refs.filter(ref => !isCuratedAssetRef(ref));
+    const owned = await tx.query.assets.findMany({ where: and(eq(assets.tenantId, tenantId), inArray(assets.id, ownedRefs.map(ref => ref.id))) });
     for (const ref of refs) {
+      if (isCuratedAssetRef(ref)) {
+        continue;
+      }
+      if (ref.id.startsWith("curated:")) throw new Error("Curated source asset is invalid.");
       const row = owned.find(item => item.id === ref.id);
       if (!row || row.key !== ref.version) throw new Error("A source asset is missing or its version changed.");
       if (!expectedAssetTypes(spec, ref.id).every(expected => row.mimeType.startsWith(expected))) throw new Error("Source asset type does not match the template.");

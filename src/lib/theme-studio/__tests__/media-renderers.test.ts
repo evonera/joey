@@ -61,7 +61,7 @@ describe("Theme Studio Media Renderers (Phase 4)", () => {
       expect(svg).toContain('height="1920"');
     });
 
-    it("clamps exceptionally long titles to prevent canvas overflow and footer collision", () => {
+    it("fits long titles using bundled font metrics without dropping their last words", () => {
       const extremelyLongTitle = "A Very Long Comprehensive Analytical Headline Exploring Emerging AI Architectures and Infrastructure Shifts in Modern Production Environments";
       const svg = renderCardSvg({
         title: extremelyLongTitle,
@@ -69,7 +69,8 @@ describe("Theme Studio Media Renderers (Phase 4)", () => {
       });
 
       expect(svg).toContain("<svg");
-      expect(svg).toContain("...");
+      expect(svg).toContain("Production Environments");
+      expect(svg).not.toContain("...");
     });
 
     it("splits long unbroken tokens like URLs without exceeding max characters per line", () => {

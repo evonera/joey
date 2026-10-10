@@ -14,7 +14,7 @@ import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/servi
 export interface CreateScoutInput {
   name: string;
   targetUrl: string;
-  platform?: "instagram" | "tiktok" | "twitter" | "youtube" | "web";
+  platform?: "instagram" | "tiktok" | "twitter" | "youtube" | "web" | "rss";
   goalCondition: string;
   pollIntervalMinutes?: number;
 }
@@ -112,7 +112,7 @@ export async function runScoutNow(scoutId: string) {
 
   // A missing token is a setup problem, not a failed scan. Avoid creating a
   // misleading failed run that the user could never have completed.
-  await getScoutDataProvider(tenantId);
+  await getScoutDataProvider(tenantId, scout);
 
   const result = await evaluateScout(scoutId, { tenantId, force: true });
   revalidatePath("/scouts");
@@ -125,7 +125,11 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
   // bypass the active-Scout deletion restriction.
   const tenantId = await requireRole(["owner", "admin"]);
   const { userId } = await getActiveTenantMembership();
-  if (isActive) await getScoutDataProvider(tenantId);
+  if (isActive) {
+    const scout = await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) });
+    if (!scout) throw new Error("Scout not found.");
+    await getScoutDataProvider(tenantId, scout);
+  }
   await db.transaction(async tx => {
   await guardAgencyScoutChange(tx, { tenantId, userId }, scoutId, isActive);
   await tx

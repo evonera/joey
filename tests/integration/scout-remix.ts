@@ -66,7 +66,7 @@ try {
   await assert.rejects(markScoutEvaluationPhase(stored, "judging"), /lease expired/);
   await failScoutEvaluation(resumed.receipt, "Acceptance cleanup");
 
-  const capacitySources = await db.insert(scouts).values(Array.from({ length: 3 }, (_, i) => ({ tenantId, name: `Capacity ${i}`, targetUrl: `https://instagram.com/capacity${i}`, platform: "instagram", goalCondition: "New source", isActive: false }))).returning();
+  const capacitySources = await db.insert(scouts).values(Array.from({ length: 3 }, (_, i) => ({ tenantId, name: `Capacity ${i}`, targetUrl: `https://example.com/capacity${i}/feed`, platform: "rss", goalCondition: "New source", isActive: false }))).returning();
   const capacityReceipts = await Promise.all(capacitySources.map((source) => reserveScoutEvaluation(source, "capacity")));
   const slots = await Promise.all(capacityReceipts.map((receipt) => claimScoutEvaluation(receipt)));
   assert.equal(slots.filter((claim) => claim.claimed).length, 2, "the global DB limit is two across independent dispatchers");
@@ -117,7 +117,7 @@ try {
   await dispatchScoutsTick(async () => { throw new Error("fake handoff only; no provider calls"); });
   assert.equal((await db.query.scoutEvaluations.findFirst({ where: eq(scoutEvaluations.id, dispatchReceipt.id) }))?.status, "failed", "exhausted pending handoffs are surfaced instead of silently blocking future intervals");
   await db.update(scouts).set({ isActive: false }).where(eq(scouts.id, dispatchSource.id));
-  const dispatchSources = await db.insert(scouts).values(Array.from({ length: 26 }, (_, i) => ({ tenantId, name: `Dispatch page ${i}`, targetUrl: `https://instagram.com/dispatch${i}`, platform: "instagram", goalCondition: "New source", isActive: true }))).returning();
+  const dispatchSources = await db.insert(scouts).values(Array.from({ length: 26 }, (_, i) => ({ tenantId, name: `Dispatch page ${i}`, targetUrl: `https://example.com/dispatch${i}/feed`, platform: "rss", goalCondition: "New source", isActive: true }))).returning();
   const handedOff: string[][] = [];
   const firstPage = await dispatchScoutsTick(async (jobs) => { handedOff.push(jobs.map((job) => job.scoutId)); });
   assert.equal(firstPage.dispatchedCount, 25, "cron dispatch is bounded at25");

@@ -14,14 +14,14 @@ describe("Frame timeline", () => {
     for (const scenes of [[], Array(7).fill(card), [{ ...card, transition: "fade" }], [{ ...card, durationFrames: 1801 }], [{ ...card, durationFrames: 29 }], [{ ...card, html: "<script/>" }], [{ ...card, transition: "wipeleft" }]]) expect(timelineSchema.safeParse(scenes).success).toBe(false);
     expect(renderSpecSchema.safeParse({ ...base, video: { duration: 4 } }).success).toBe(false);
   });
-  it("uses v2 identity without changing the legacy renderer", () => {
+  it("keeps timeline and redesigned single-scene renderer identities distinct", () => {
     const spec = renderSpecSchema.parse(base);
     expect(rendererVersion(spec)).toBe("joey-media-3");
     expect(referencedAssets(spec)).toEqual([]);
     expect(renderHash(spec)).not.toBe(renderHash(renderSpecSchema.parse({ ...base, timeline: [{ ...card, headline: "Changed" }] })));
     const { timeline: _timeline, ...legacyBase } = base;
     const legacy = renderSpecSchema.parse({ ...legacyBase, version: 1, media: ref });
-    expect(rendererVersion(legacy)).toBe("joey-media-1");
+    expect(rendererVersion(legacy)).toBe("joey-media-2");
   });
   it("enumerates all owned assets and rejects conflicting MIME expectations", () => {
     const scene = { headline: "", durationFrames: 45, transition: "cut", crop: { mode: "contain", x: .5, y: .5 } };

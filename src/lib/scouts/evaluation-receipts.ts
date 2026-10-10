@@ -11,8 +11,12 @@ export const SCOUT_EVALUATION_TIMEOUT_MS = 110_000;
 const LEASE_MS = 150_000;
 export const SCOUT_DISPATCH_ATTEMPTS = 3;
 
-export function scoutConfigurationKey(scout: Pick<typeof scouts.$inferSelect, "targetUrl" | "platform" | "goalCondition">) {
-  return createHash("sha256").update(JSON.stringify([scout.targetUrl, scout.platform, scout.goalCondition])).digest("hex");
+export function scoutConfigurationKey(
+  scout: Pick<typeof scouts.$inferSelect, "targetUrl" | "platform" | "goalCondition">
+) {
+  return createHash("sha256")
+    .update(JSON.stringify([scout.targetUrl, scout.platform, scout.goalCondition]))
+    .digest("hex");
 }
 export function scoutPollEventKey(scout: Pick<typeof scouts.$inferSelect, "pollIntervalMinutes">, now = new Date()) {
   return `poll:${Math.floor(now.getTime() / (Math.max(1, scout.pollIntervalMinutes) * 60_000))}`;
@@ -22,19 +26,47 @@ export async function reserveScoutEvaluation(scout: typeof scouts.$inferSelect, 
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`scout-evaluation:${scout.tenantId}:${scout.id}`}))`);
     const configKey = scoutConfigurationKey(scout);
-    const alias = await tx.query.scoutEvaluationEvents.findFirst({ where: and(eq(scoutEvaluationEvents.tenantId, scout.tenantId), eq(scoutEvaluationEvents.scoutId, scout.id), eq(scoutEvaluationEvents.configKey, configKey), eq(scoutEvaluationEvents.eventKey, eventKey)) });
+    const alias = await tx.query.scoutEvaluationEvents.findFirst({
+      where: and(
+        eq(scoutEvaluationEvents.tenantId, scout.tenantId),
+        eq(scoutEvaluationEvents.scoutId, scout.id),
+        eq(scoutEvaluationEvents.configKey, configKey),
+        eq(scoutEvaluationEvents.eventKey, eventKey)
+      ),
+    });
     if (alias) {
-      const bound = await tx.query.scoutEvaluations.findFirst({ where: and(eq(scoutEvaluations.id, alias.evaluationId), eq(scoutEvaluations.tenantId, scout.tenantId)) });
+      const bound = await tx.query.scoutEvaluations.findFirst({
+        where: and(eq(scoutEvaluations.id, alias.evaluationId), eq(scoutEvaluations.tenantId, scout.tenantId)),
+      });
       if (bound) return bound;
     }
     const existing = await tx.query.scoutEvaluations.findFirst({
-      where: and(eq(scoutEvaluations.tenantId, scout.tenantId), eq(scoutEvaluations.scoutId, scout.id), eq(scoutEvaluations.configKey, configKey),
-        or(eq(scoutEvaluations.eventKey, eventKey), inArray(scoutEvaluations.status, ["pending", "running"]),
-          and(eq(scoutEvaluations.status, "completed"), gt(scoutEvaluations.createdAt, new Date(Date.now() - scout.pollIntervalMinutes * 60_000))))),
+      where: and(
+        eq(scoutEvaluations.tenantId, scout.tenantId),
+        eq(scoutEvaluations.scoutId, scout.id),
+        eq(scoutEvaluations.configKey, configKey),
+        or(
+          eq(scoutEvaluations.eventKey, eventKey),
+          inArray(scoutEvaluations.status, ["pending", "running"]),
+          and(
+            eq(scoutEvaluations.status, "completed"),
+            gt(scoutEvaluations.createdAt, new Date(Date.now() - scout.pollIntervalMinutes * 60_000))
+          )
+        )
+      ),
       orderBy: [desc(scoutEvaluations.createdAt)],
     });
-    const receipt = existing ?? (await tx.insert(scoutEvaluations).values({ tenantId: scout.tenantId, scoutId: scout.id, configKey, eventKey }).returning())[0];
-    await tx.insert(scoutEvaluationEvents).values({ tenantId: scout.tenantId, scoutId: scout.id, configKey, eventKey, evaluationId: receipt.id });
+    const receipt =
+      existing ??
+      (
+        await tx
+          .insert(scoutEvaluations)
+          .values({ tenantId: scout.tenantId, scoutId: scout.id, configKey, eventKey })
+          .returning()
+      )[0];
+    await tx
+      .insert(scoutEvaluationEvents)
+      .values({ tenantId: scout.tenantId, scoutId: scout.id, configKey, eventKey, evaluationId: receipt.id });
     return receipt;
   });
 }
@@ -45,19 +77,66 @@ export async function claimScoutEvaluation(receipt: ScoutEvaluationReceipt) {
     // dispatchers, manual checks, and agency agents. No lock spans network work.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('scout-evaluation-capacity'))`);
     const now = new Date();
-    const [ambiguous] = await tx.update(scoutEvaluations).set({ status: "uncertain", error: "Evaluation was interrupted after a paid phase started. Automatic replay is disabled.", updatedAt: now })
-      .where(and(eq(scoutEvaluations.id, receipt.id), eq(scoutEvaluations.tenantId, receipt.tenantId), eq(scoutEvaluations.status, "running"),
-        inArray(scoutEvaluations.phase, ["collecting", "judging"]), lte(scoutEvaluations.leaseExpiresAt, now))).returning();
+    const [ambiguous] = await tx
+      .update(scoutEvaluations)
+      .set({
+        status: "uncertain",
+        error: "Evaluation was interrupted after a paid phase started. Automatic replay is disabled.",
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(scoutEvaluations.id, receipt.id),
+          eq(scoutEvaluations.tenantId, receipt.tenantId),
+          eq(scoutEvaluations.status, "running"),
+          inArray(scoutEvaluations.phase, ["collecting", "judging"]),
+          lte(scoutEvaluations.leaseExpiresAt, now)
+        )
+      )
+      .returning();
     if (ambiguous) return { claimed: false, receipt: ambiguous };
-    const [{ count }] = await tx.select({ count: sql<number>`count(*)::int` }).from(scoutEvaluations)
+    const [{ count }] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(scoutEvaluations)
       .where(and(eq(scoutEvaluations.status, "running"), gt(scoutEvaluations.leaseExpiresAt, now)));
     if (count >= SCOUT_EVALUATION_CONCURRENCY) return { claimed: false, receipt };
-    const sameScout = await tx.query.scoutEvaluations.findFirst({ where: and(eq(scoutEvaluations.tenantId, receipt.tenantId), eq(scoutEvaluations.scoutId, receipt.scoutId), eq(scoutEvaluations.status, "running"), gt(scoutEvaluations.leaseExpiresAt, now)) });
+    const sameScout = await tx.query.scoutEvaluations.findFirst({
+      where: and(
+        eq(scoutEvaluations.tenantId, receipt.tenantId),
+        eq(scoutEvaluations.scoutId, receipt.scoutId),
+        eq(scoutEvaluations.status, "running"),
+        gt(scoutEvaluations.leaseExpiresAt, now)
+      ),
+    });
     if (sameScout) return { claimed: false, receipt };
-    const [claimed] = await tx.update(scoutEvaluations).set({ status: "running", leaseToken: randomUUID(), leaseExpiresAt: new Date(now.getTime() + LEASE_MS), updatedAt: now })
-      .where(and(eq(scoutEvaluations.id, receipt.id), eq(scoutEvaluations.tenantId, receipt.tenantId),
-        or(eq(scoutEvaluations.status, "pending"), and(eq(scoutEvaluations.status, "running"), inArray(scoutEvaluations.phase, ["preparing", "collected"]), lte(scoutEvaluations.leaseExpiresAt, now))))).returning();
-    const current = claimed ?? await tx.query.scoutEvaluations.findFirst({ where: and(eq(scoutEvaluations.id, receipt.id), eq(scoutEvaluations.tenantId, receipt.tenantId)) });
+    const [claimed] = await tx
+      .update(scoutEvaluations)
+      .set({
+        status: "running",
+        leaseToken: randomUUID(),
+        leaseExpiresAt: new Date(now.getTime() + LEASE_MS),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(scoutEvaluations.id, receipt.id),
+          eq(scoutEvaluations.tenantId, receipt.tenantId),
+          or(
+            eq(scoutEvaluations.status, "pending"),
+            and(
+              eq(scoutEvaluations.status, "running"),
+              inArray(scoutEvaluations.phase, ["preparing", "collected"]),
+              lte(scoutEvaluations.leaseExpiresAt, now)
+            )
+          )
+        )
+      )
+      .returning();
+    const current =
+      claimed ??
+      (await tx.query.scoutEvaluations.findFirst({
+        where: and(eq(scoutEvaluations.id, receipt.id), eq(scoutEvaluations.tenantId, receipt.tenantId)),
+      }));
     return { claimed: Boolean(claimed), receipt: current ?? receipt };
   });
 }
@@ -65,52 +144,174 @@ export async function claimScoutEvaluation(receipt: ScoutEvaluationReceipt) {
 function owned(receipt: ScoutEvaluationReceipt) {
   // Leases are UTC timestamps without a zone. Use the wall clock, not the
   // transaction start time or the session's local timezone.
-  return and(eq(scoutEvaluations.id, receipt.id), eq(scoutEvaluations.tenantId, receipt.tenantId), eq(scoutEvaluations.leaseToken, receipt.leaseToken!), eq(scoutEvaluations.status, "running"), sql`${scoutEvaluations.leaseExpiresAt} > (clock_timestamp() AT TIME ZONE 'UTC')`);
+  return and(
+    eq(scoutEvaluations.id, receipt.id),
+    eq(scoutEvaluations.tenantId, receipt.tenantId),
+    eq(scoutEvaluations.leaseToken, receipt.leaseToken!),
+    eq(scoutEvaluations.status, "running"),
+    sql`${scoutEvaluations.leaseExpiresAt} > (clock_timestamp() AT TIME ZONE 'UTC')`
+  );
 }
-export async function markScoutEvaluationPhase(receipt: ScoutEvaluationReceipt, phase: "collecting" | "collected" | "judging", items?: ScoutPostItem[]) {
-  const [saved] = await db.update(scoutEvaluations).set({ phase, ...(items ? { items } : {}), updatedAt: new Date() }).where(owned(receipt)).returning();
+export async function markScoutEvaluationPhase(
+  receipt: ScoutEvaluationReceipt,
+  phase: "collecting" | "collected" | "judging",
+  items?: ScoutPostItem[]
+) {
+  const [saved] = await db
+    .update(scoutEvaluations)
+    .set({ phase, ...(items ? { items } : {}), updatedAt: new Date() })
+    .where(owned(receipt))
+    .returning();
   if (!saved) throw new Error("Scout evaluation lease expired or was replaced.");
   return saved;
 }
 
 export function resultFromScoutEvaluation(receipt: ScoutEvaluationReceipt): EvaluateScoutResult {
-  if (receipt.status === "completed" && receipt.result) return { ...(receipt.result as EvaluateScoutResult), evaluationId: receipt.id, reused: true };
-  return { triggered: false, itemsFound: 0, evaluationId: receipt.id, pending: ["pending", "running"].includes(receipt.status),
-    error: receipt.error ?? (["pending", "running"].includes(receipt.status) ? "Scout evaluation is already queued or running." : "Scout evaluation failed. Review the receipt before starting another paid collection.") };
+  if (receipt.status === "completed" && receipt.result)
+    return { ...(receipt.result as EvaluateScoutResult), evaluationId: receipt.id, reused: true };
+  return {
+    triggered: false,
+    itemsFound: 0,
+    evaluationId: receipt.id,
+    pending: ["pending", "running"].includes(receipt.status),
+    error:
+      receipt.error ??
+      (["pending", "running"].includes(receipt.status)
+        ? "Scout evaluation is already queued or running."
+        : "Scout evaluation failed. Review the receipt before starting another paid collection."),
+  };
 }
 
-export async function completeScoutEvaluation(receipt: ScoutEvaluationReceipt, scout: typeof scouts.$inferSelect, result: EvaluateScoutResult, beforeCommit?: () => Promise<void>) {
+export async function completeScoutEvaluation(
+  receipt: ScoutEvaluationReceipt,
+  scout: typeof scouts.$inferSelect,
+  result: EvaluateScoutResult,
+  beforeCommit?: () => Promise<void>
+) {
   return db.transaction(async (tx) => {
     await beforeCommit?.();
-    const [saved] = await tx.update(scoutEvaluations).set({ status: "completed", result, updatedAt: new Date(), leaseExpiresAt: null })
-      .where(owned(receipt)).returning();
+    const [saved] = await tx
+      .update(scoutEvaluations)
+      .set({ status: "completed", result, updatedAt: new Date(), leaseExpiresAt: null })
+      .where(owned(receipt))
+      .returning();
     if (!saved) throw new Error("Scout evaluation lease expired or was replaced.");
     // Updating a paused or edited Scout is disallowed even for a late worker.
-    const [current] = await tx.update(scouts).set({ lastPolledAt: new Date(), ...(result.alert ? { latestAlert: result.alert } : {}), updatedAt: new Date() })
-      .where(and(eq(scouts.id, scout.id), eq(scouts.tenantId, scout.tenantId),
-        // PostgreSQL defaults retain microseconds; JS Date retains milliseconds.
-        // Compare at the precision returned by the driver, and compare the
-        // governed fields directly to fence edits within that same millisecond.
-        sql`date_trunc('milliseconds', ${scouts.updatedAt}) = ${scout.updatedAt.toISOString()}::timestamp`,
-        eq(scouts.targetUrl, scout.targetUrl), eq(scouts.goalCondition, scout.goalCondition), eq(scouts.platform, scout.platform), eq(scouts.isActive, scout.isActive), eq(scouts.pollIntervalMinutes, scout.pollIntervalMinutes))).returning();
+    const [current] = await tx
+      .update(scouts)
+      .set({ lastPolledAt: new Date(), ...(result.alert ? { latestAlert: result.alert } : {}), updatedAt: new Date() })
+      .where(
+        and(
+          eq(scouts.id, scout.id),
+          eq(scouts.tenantId, scout.tenantId),
+          // PostgreSQL defaults retain microseconds; JS Date retains milliseconds.
+          // Compare at the precision returned by the driver, and compare the
+          // governed fields directly to fence edits within that same millisecond.
+          sql`date_trunc('milliseconds', ${scouts.updatedAt}) = ${scout.updatedAt.toISOString()}::timestamp`,
+          eq(scouts.targetUrl, scout.targetUrl),
+          eq(scouts.goalCondition, scout.goalCondition),
+          eq(scouts.platform, scout.platform),
+          eq(scouts.isActive, scout.isActive),
+          eq(scouts.pollIntervalMinutes, scout.pollIntervalMinutes)
+        )
+      )
+      .returning();
     if (!current) throw new Error("Scout was edited, paused, or removed before completion.");
-    await tx.insert(scoutRuns).values({ scoutId: scout.id, tenantId: scout.tenantId, status: result.triggered ? "alert_triggered" : "no_change", itemsFound: result.itemsFound, alertData: result.alert ?? null });
-    if (result.alert && !sameAlert(scout.latestAlert as ScoutAlert | null, result.alert)) {
-      await tx.insert(notifications).values({ tenantId: scout.tenantId, type: "scout_alert", title: result.alert.title,
-        body: `Competitor change detected for ${scout.name}: ${result.alert.changes.map((change) => change.label).join(", ")}`, link: "/scouts", metadata: { ...result.alert, evaluationId: receipt.id } });
+    await tx
+      .insert(scoutRuns)
+      .values({
+        scoutId: scout.id,
+        tenantId: scout.tenantId,
+        status: result.triggered ? "alert_triggered" : "no_change",
+        itemsFound: result.itemsFound,
+        alertData: result.alert ?? null,
+      });
+    const fingerprint = result.alert ? scoutAlertFingerprint(result.alert) : undefined;
+    const alreadyNotified = fingerprint
+      ? await tx.query.notifications.findFirst({
+          where: and(
+            eq(notifications.tenantId, scout.tenantId),
+            eq(notifications.type, "scout_alert"),
+            sql`${notifications.metadata}->>'scoutId' = ${scout.id}`,
+            sql`${notifications.metadata}->>'fingerprint' = ${fingerprint}`
+          ),
+          columns: { id: true },
+        })
+      : undefined;
+    if (result.alert && !alreadyNotified && !sameAlert(scout.latestAlert as ScoutAlert | null, result.alert)) {
+      await tx
+        .insert(notifications)
+        .values({
+          tenantId: scout.tenantId,
+          type: "scout_alert",
+          title: result.alert.title,
+          body: `Competitor change detected for ${scout.name}: ${result.alert.changes.map((change) => change.label).join(", ")}`,
+          link: "/scouts",
+          metadata: { ...result.alert, evaluationId: receipt.id, scoutId: scout.id, fingerprint },
+        });
     }
     await beforeCommit?.();
     return { ...result, evaluationId: receipt.id };
   });
 }
+export function scoutAlertFingerprint(alert: ScoutAlert) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        alert.targetUrl,
+        alert.platform,
+        alert.goal,
+        alert.samplePost?.url,
+        alert.samplePost?.content,
+        alert.samplePost?.views ?? null,
+        alert.samplePost?.likes ?? null,
+      ])
+    )
+    .digest("hex");
+}
 function sameAlert(previous: ScoutAlert | null, next: ScoutAlert) {
-  return Boolean(previous?.samplePost?.url && previous.samplePost.url === next.samplePost?.url && JSON.stringify(previous.changes) === JSON.stringify(next.changes));
+  return Boolean(previous?.samplePost?.url && scoutAlertFingerprint(previous) === scoutAlertFingerprint(next));
 }
 
 export async function failScoutEvaluation(receipt: ScoutEvaluationReceipt, error: string) {
   return db.transaction(async (tx) => {
-    const [failed] = await tx.update(scoutEvaluations).set({ status: ["collecting", "judging"].includes(receipt.phase) ? "uncertain" : "failed", error: error.slice(0, 300), updatedAt: new Date() }).where(owned(receipt)).returning();
-    if (failed) await tx.insert(scoutRuns).values({ scoutId: receipt.scoutId, tenantId: receipt.tenantId, status: "failed", itemsFound: Array.isArray(receipt.items) ? receipt.items.length : 0, error: error.slice(0, 300) });
+    const [failed] = await tx
+      .update(scoutEvaluations)
+      .set({
+        status: ["collecting", "judging"].includes(receipt.phase) ? "uncertain" : "failed",
+        error: error.slice(0, 300),
+        updatedAt: new Date(),
+      })
+      .where(owned(receipt))
+      .returning();
+    if (failed) {
+      const scout = await tx.query.scouts.findFirst({
+        where: and(eq(scouts.id, receipt.scoutId), eq(scouts.tenantId, receipt.tenantId)),
+      });
+      if (scout && scoutConfigurationKey(scout) === receipt.configKey) {
+        await tx
+          .update(scouts)
+          .set({ lastPolledAt: new Date() })
+          .where(
+            and(
+              eq(scouts.id, scout.id),
+              eq(scouts.tenantId, scout.tenantId),
+              eq(scouts.targetUrl, scout.targetUrl),
+              eq(scouts.platform, scout.platform),
+              eq(scouts.goalCondition, scout.goalCondition)
+            )
+          );
+      }
+      await tx
+        .insert(scoutRuns)
+        .values({
+          scoutId: receipt.scoutId,
+          tenantId: receipt.tenantId,
+          status: "failed",
+          itemsFound: Array.isArray(receipt.items) ? receipt.items.length : 0,
+          error: error.slice(0, 300),
+        });
+    }
     return failed;
   });
 }

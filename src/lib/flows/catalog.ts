@@ -209,7 +209,7 @@ export const imageGenConfig = z.object({
 export const saveAssetConfig = z.object({ urlField: z.string().optional(), filename: z.string().optional() });
 export const youtubeTranscriptConfig = z.object({ videoUrlField: z.string().optional() });
 export const telegramSendConfig = z.object({ chatId: z.string().min(1), messageTemplate: z.string().min(1).max(4096) });
-export const themeStudioRunConfig = z.object({ themePageId: z.string().min(1) });
+export const themeStudioRunConfig = z.object({ themePageId: z.string().min(1), mode: z.enum(["draft_only", "publishing"]).default("publishing") });
 
 
 export const renderMediaConfig = z.object({

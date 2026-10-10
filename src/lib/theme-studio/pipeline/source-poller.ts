@@ -1,34 +1,13 @@
+import { parseRssXml, publicReferenceUrl, parsedDate, type NormalizedFeedItem } from "../feed-parser";
+export { parseRssXml } from "../feed-parser";
+export type { NormalizedFeedItem } from "../feed-parser";
+import { sourceMediaCandidates } from "../source-media";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { sourceItems, themeSources } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { hashCanonicalUrl, hashContentBody, checkItemDuplicate } from "./deduplicator";
 import { outboundRequest } from "@/lib/flows/outbound-request";
-
-export interface NormalizedFeedItem {
-  title: string;
-  body: string;
-  url: string;
-  publishedAt?: Date;
-  rightsCategory: string;
-  metadata?: Record<string, unknown>;
-}
-
-function publicReferenceUrl(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length > 4_096) return undefined;
-  try {
-    const parsed = new URL(value.trim());
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function parsedDate(value: unknown): Date | undefined {
-  if (typeof value !== "string" && typeof value !== "number") return undefined;
-  const result = new Date(value);
-  return Number.isNaN(result.getTime()) ? undefined : result;
-}
 
 export function fallbackItemUrl(sourceUrl: string, row: Record<string, unknown>, title: string, body: string): string | undefined {
   const identityKey = row.id !== undefined && row.id !== null
@@ -42,44 +21,6 @@ export function fallbackItemUrl(sourceUrl: string, row: Record<string, unknown>,
   } catch {
     return undefined;
   }
-}
-
-/**
- * Parses simple RSS / Atom XML into normalized feed items.
- */
-export function parseRssXml(xml: string, defaultRights: string = "unknown"): NormalizedFeedItem[] {
-  const items: NormalizedFeedItem[] = [];
-
-  const itemMatches = (xml.match(/<item[\s\S]*?<\/item>/gi) || xml.match(/<entry[\s\S]*?<\/entry>/gi) || []).slice(0, 100);
-
-  for (const itemXml of itemMatches) {
-    const titleMatch = itemXml.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
-    const linkMatch = itemXml.match(/<link[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i) ||
-                      itemXml.match(/<link[^>]*href=["']([^"']+)["']/i);
-    const descMatch = itemXml.match(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i) ||
-                      itemXml.match(/<content[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/content>/i) ||
-                      itemXml.match(/<summary[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/summary>/i);
-    const dateMatch = itemXml.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i) ||
-                      itemXml.match(/<published[^>]*>([\s\S]*?)<\/published>/i) ||
-                      itemXml.match(/<updated[^>]*>([\s\S]*?)<\/updated>/i);
-
-    const title = titleMatch ? titleMatch[1].trim() : "Untitled";
-    const url = publicReferenceUrl(linkMatch ? (linkMatch[1] || "").trim() : "");
-    const body = descMatch ? descMatch[1].replace(/<[^>]*>/g, " ").trim() : title;
-    const publishedAt = parsedDate(dateMatch?.[1]?.trim());
-
-    if (title && url) {
-      items.push({
-        title: title.slice(0, 500),
-        body: body.slice(0, 20_000),
-        url,
-        publishedAt,
-        rightsCategory: defaultRights,
-      });
-    }
-  }
-
-  return items;
 }
 
 export function parseHtmlMetadata(html: string, pageUrl: string, defaultRights = "unknown"): NormalizedFeedItem | null {
@@ -98,11 +39,12 @@ export function parseHtmlMetadata(html: string, pageUrl: string, defaultRights =
                        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
   const heroImage = ogImageMatch?.[1] ? publicReferenceUrl(ogImageMatch[1]) : undefined;
 
+  const publishedMatch = html.match(/<meta[^>]+(?:property|name)=["'](?:article:published_time|datePublished|pubdate)["'][^>]+content=["']([^"']+)["']/i) || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:article:published_time|datePublished|pubdate)["']/i);
   return {
     title: title.slice(0, 500),
     body: body.slice(0, 20_000),
     url: pageUrl,
-    publishedAt: new Date(),
+    publishedAt: parsedDate(publishedMatch?.[1]),
     rightsCategory: defaultRights,
     metadata: heroImage ? { heroImage } : undefined,
   };
@@ -137,6 +79,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
     return { sourceId, ingestedCount: 0, duplicateCount: 0 };
   }
 
+  await db.update(themeSources).set({ lastAttemptAt: new Date(), lastPolledAt: new Date(), updatedAt: new Date() }).where(and(eq(themeSources.id, source.id), eq(themeSources.tenantId, tenantId)));
   const items: NormalizedFeedItem[] = [];
   const errors: string[] = [];
 
@@ -436,6 +379,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
   let ingestedCount = 0;
   let duplicateCount = 0;
 
+  try {
   for (const item of items) {
     signal?.throwIfAborted();
     const freshnessCutoff = Date.now() - source.freshnessWindowHours * 60 * 60 * 1000;
@@ -460,7 +404,7 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
       contentHash: bodyHash,
       publishedAt: item.publishedAt || null,
       rightsCategory: item.rightsCategory || source.rightsCategory || "unknown",
-      metadata: item.metadata || {},
+      metadata: { ...item.metadata, mediaCandidates: sourceMediaCandidates(item.metadata, item.url, item.rightsCategory || source.rightsCategory || "unknown"), discoveredAt: new Date().toISOString() },
       status: "raw",
     }).onConflictDoNothing().returning({ id: sourceItems.id });
 
@@ -468,8 +412,10 @@ export async function pollAndIngestSource(tenantId: string, sourceId: string, si
     else duplicateCount++;
   }
 
+  } catch (error) { signal?.throwIfAborted(); errors.push(error instanceof Error ? error.message : "Source item persistence failed"); }
+
   await db.update(themeSources)
-    .set({ lastPolledAt: new Date(), updatedAt: new Date() })
+    .set({ ...(errors.length === 0 ? { lastSuccessAt: new Date() } : {}), lastPollError: errors.length ? errors.join("; ").slice(0, 2000) : null, updatedAt: new Date() })
     .where(and(eq(themeSources.id, source.id), eq(themeSources.tenantId, tenantId)));
 
   return {

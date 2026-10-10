@@ -11,6 +11,20 @@ image = (modal.Image.debian_slim(python_version="3.12")
          .add_local_dir(str(root), "/worker", copy=True, ignore=["__pycache__", ".venv", "output", "*.mp4"]))
 secret = modal.Secret.from_name("joey-media-secrets")
 sentry_secret = modal.Secret.from_name("joey-media-sentry")
+scheduler_secret = modal.Secret.from_name("joey-scheduler-secrets")
+
+
+@app.function(image=image, cpu=0.125, memory=256, timeout=90, max_containers=1,
+              schedule=modal.Period(minutes=1), secrets=[scheduler_secret, sentry_secret])
+def maintenance_tick():
+    import os
+    import sys
+    import sentry_sdk
+    sys.path.insert(0, "/worker")
+    sentry_sdk.init(dsn=os.environ.get("SENTRY_DSN"), environment=os.environ.get("SENTRY_ENVIRONMENT", "production"), send_default_pii=False, include_local_variables=False)
+    sentry_sdk.set_tag("service", "joey-scheduler")
+    from scheduler import run_tick
+    return run_tick()
 
 @app.function(image=image, cpu=2, memory=4096, timeout=600, min_containers=0, max_containers=2, scaledown_window=2, secrets=[secret, sentry_secret])
 def render_cpu():

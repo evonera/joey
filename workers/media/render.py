@@ -102,7 +102,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def capture(job, root):
     spec = job["spec"]
-    height = 1920 if spec["format"] == "mp4" else 1350
+    height = 1920 if spec["format"] == "mp4" else {"1:1": 1080, "4:5": 1350, "16:9": 608, "9:16": 1920}.get(spec.get("aspectRatio"), 1350)
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
@@ -129,6 +129,8 @@ def capture(job, root):
               let size = parseFloat(getComputedStyle(title).fontSize);
               while ((title.scrollHeight > box.clientHeight || title.scrollWidth > box.clientWidth) && size > 38) title.style.fontSize = --size + 'px';
               if (title.scrollHeight > box.clientHeight || title.scrollWidth > box.clientWidth) throw Error('Headline is too long for this template');
+              const body = document.getElementById('body-copy');
+              if (body && (body.scrollHeight > body.clientHeight || body.scrollWidth > body.clientWidth)) throw Error('Body copy is too long for this template');
               for (const id of ['brand-header', 'brand-strip', 'brand-footer']) {
                 const element = document.getElementById(id);
                 if (element && (element.scrollWidth > element.clientWidth || (id === 'brand-header' && element.scrollHeight > 150))) throw Error('Account branding is too long for this template');
@@ -190,13 +192,17 @@ def validate_trim(timing, source_duration):
 
 def render(job, root, encoder="libx264"):
     spec = job["spec"]
+    if encoder == "h264_nvenc":
+        encoders = subprocess.check_output(["ffmpeg", "-hide_banner", "-encoders"], text=True, timeout=20)
+        if " h264_nvenc " not in encoders:
+            raise ValueError("NVENC encoder is unavailable in the deployed FFmpeg image")
     if spec.get("version") == 2:
         from timeline import render_timeline
         output = render_timeline(job, root, encoder)
         if output.stat().st_size > MAX_BYTES:
             raise ValueError("Output exceeds size limit")
         return output
-    if job["rendererVersion"] != "joey-media-1" or job["fontVersion"] != "joey-fonts-1":
+    if job["rendererVersion"] not in ("joey-media-1", "joey-media-2") or job["fontVersion"] != "joey-fonts-1":
         raise ValueError("Worker and template version mismatch")
     prepare_fonts(root)
     for name in ("media", "inset", "music"):

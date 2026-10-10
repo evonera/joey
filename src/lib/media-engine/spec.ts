@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { timelineSchema, timelineFrames, timelineAssetSchema } from "./timeline";
+import { themeDesignSchema } from "@/lib/theme-studio/design-spec";
+import { timelineSchema, timelineFrames } from "./timeline";
 import { soundCuesSchema } from "./sound";
 
-export const RENDERER_VERSION = "joey-media-1";
+export const RENDERER_VERSION = "joey-media-2";
 export const FONT_VERSION = "joey-fonts-1";
-const asset = timelineAssetSchema;
+const asset = z.object({ id: z.union([z.uuid(), z.string().regex(/^curated:[a-z0-9_]+$/)]), version: z.string().min(1).max(512) }).strict();
 const baseSchema = z.object({
   version: z.literal(1),
   source: z.object({ kind: z.enum(["theme_package", "flow", "draft"]), id: z.string().min(1).max(128), revision: z.string().min(1).max(128) }).strict(),
@@ -16,6 +17,9 @@ const baseSchema = z.object({
   inset: asset.optional(),
   music: asset.optional(),
   title: z.string().trim().min(1).max(500),
+  body: z.string().max(1000).optional(),
+  aspectRatio: z.enum(["1:1", "4:5", "16:9", "9:16"]).optional(),
+  design: themeDesignSchema.pick({ backgroundColor: true, backgroundGradient: true, bgType: true, textColor: true, fontFamily: true, titleSize: true, bodySize: true, showDivider: true, showWatermark: true, highlightWords: true }).optional(),
   brand: z.object({ name: z.string().max(100), handle: z.string().max(100), accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#ffe633") }).strict(),
   crop: z.object({ mode: z.enum(["contain", "cover"]), x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).strict().default({ mode: "contain", x: 0.5, y: 0.5 }),
   video: z.object({
@@ -31,6 +35,7 @@ const legacySchema = baseSchema.superRefine((spec, ctx) => {
   if (spec.template === "photo_inset" && !spec.inset) ctx.addIssue({ code: "custom", message: "Photo inset requires an inset asset." });
   if (spec.video?.captions && spec.video.words.length) ctx.addIssue({ code: "custom", message: "Choose automatic captions or supplied timing, not both." });
   if (spec.format === "png" && spec.music) ctx.addIssue({ code: "custom", message: "Music requires a video output." });
+  if (spec.format === "mp4" && spec.aspectRatio && spec.aspectRatio !== "9:16") ctx.addIssue({ code: "custom", message: "Video exports currently require a 9:16 format." });
   if (spec.template !== "photo_inset" && spec.inset) ctx.addIssue({ code: "custom", message: "Inset images require the photo inset template." });
   let previous = 0;
   for (const word of spec.video?.words ?? []) {
@@ -56,6 +61,9 @@ const timelineRenderSchema = baseSchema.extend({
 });
 export const renderSpecSchema = z.union([legacySchema, timelineRenderSchema]);
 export type RenderSpec = z.infer<typeof renderSpecSchema>;
+export function renderDimensions(spec: Pick<RenderSpec, "format" | "aspectRatio">) {
+  return { width: 1080, height: spec.format === "mp4" ? 1920 : { "1:1": 1080, "4:5": 1350, "16:9": 608, "9:16": 1920 }[spec.aspectRatio ?? "4:5"] };
+}
 export function rendererVersion(spec: RenderSpec) { return spec.version === 2 ? "joey-media-3" : RENDERER_VERSION; }
 export function renderHash(spec: RenderSpec) {
   return createHash("sha256").update(JSON.stringify({ renderer: rendererVersion(spec), fonts: FONT_VERSION, spec: renderSpecSchema.parse(spec) })).digest("hex");

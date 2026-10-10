@@ -21,10 +21,15 @@ import {
   IconVolumeOff,
   IconLayoutGrid,
 } from "@tabler/icons-react";
-import { createThemeTemplate, updateThemeTemplate, deleteThemeTemplate } from "@/app/actions/theme-templates";
+import { createThemeTemplate, updateThemeTemplate, previewThemeTemplate, deleteThemeTemplate } from "@/app/actions/theme-templates";
+import { checkR2Status } from "@/app/actions/assets";
 import { CURATED_MEME_CLIPS, MemeClip, searchMemeClips } from "@/lib/theme-studio/assets/meme-clips";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+
+import { normalizeThemeDesign, type ThemeDesignSpec } from "@/lib/theme-studio/design-spec";
+
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface TemplateData {
   id?: string;
@@ -32,51 +37,7 @@ interface TemplateData {
   name: string;
   formatId: string;
   renderer: "puppeteer" | "remotion";
-  componentSpec: {
-    templateFamily?: "pubity_hero" | "morning_brew_cyan" | "pubity_carousel" | "tweet_card" | "tweet_grid4" | "video_reel" | "mixed_carousel";
-    backgroundColor?: string;
-    backgroundGradient?: string;
-    bgImageUrl?: string;
-    bgType?: "photo" | "solid" | "gradient";
-    textColor?: string;
-    accentColor?: string;
-    fontFamily?: string;
-    titleSize?: number;
-    bodySize?: number;
-    showWatermark?: boolean;
-    watermarkText?: string;
-    showSlideIndicator?: boolean;
-    padding?: number;
-    borderRadius?: number;
-    titleTemplate?: string;
-    bodyTemplate?: string;
-    topBadge?: "yellow_logo" | "swipe_pill" | "tag_pill" | "circular_seal" | "none";
-    brandInitial?: string;
-    showDivider?: boolean;
-    pipInsetUrl?: string;
-    highlightWords?: string[];
-    watermarkBackdropText?: string;
-    videoUrl?: string;
-    memeClipId?: string;
-    mediaUrls?: string[];
-    mediaLayout?: "single" | "2-column" | "4-grid" | "none";
-    tweetAuthor?: {
-      name: string;
-      handle: string;
-      avatarUrl?: string;
-      isVerified?: boolean;
-    };
-    quotedTweet?: {
-      author: {
-        name: string;
-        handle: string;
-        avatarUrl?: string;
-        isVerified?: boolean;
-      };
-      content: string;
-      mediaUrl?: string;
-    };
-  };
+  componentSpec: ThemeDesignSpec;
   propsSchema?: Record<string, unknown> | null;
   format?: {
     slug: string;
@@ -177,18 +138,21 @@ export function TemplateCanvasEditor({
   availableFormats,
 }: TemplateCanvasEditorProps) {
   const router = useRouter();
+  const [exportPreviews, setExportPreviews] = React.useState<string[]>([]);
+  const [r2Configured, setR2Configured] = React.useState<boolean | null>(null);
+  const [previewBusy, setPreviewBusy] = React.useState(false);
   const [name, setName] = React.useState(initialTemplate.name || "Pubity Breaking News Template");
   const [formatId, setFormatId] = React.useState(
     initialTemplate.formatId || availableFormats[0]?.id || ""
   );
 
-  const [spec, setSpec] = React.useState(initialTemplate.componentSpec || {
+  const [spec, setSpec] = React.useState<ThemeDesignSpec>((normalizeThemeDesign(initialTemplate.componentSpec) as ThemeDesignSpec) || {
     backgroundColor: "#0a0908",
     bgType: "photo",
     bgImageUrl: PHOTO_PRESETS[0].url,
     textColor: "#ffffff",
     accentColor: "#ffe633",
-    fontFamily: "Inter, sans-serif",
+    fontFamily: "Inter",
     titleSize: 28,
     bodySize: 15,
     showWatermark: true,
@@ -230,6 +194,12 @@ export function TemplateCanvasEditor({
   const [clipSearch, setClipSearch] = React.useState("");
   const [clipCategory, setClipCategory] = React.useState<"all" | "reaction" | "gaming_loop" | "streamer" | "cinema" | "b_roll">("all");
   const [videoMuted, setVideoMuted] = React.useState(true);
+
+  React.useEffect(() => {
+    checkR2Status()
+      .then((res) => setR2Configured(res.isConfigured && res.publicDeliveryReady))
+      .catch(() => setR2Configured(false));
+  }, []);
 
   const selectedFormat = availableFormats.find((f) => f.id === formatId) || availableFormats[0];
   const isPortrait = selectedFormat?.aspectRatio === "4:5";
@@ -625,6 +595,18 @@ export function TemplateCanvasEditor({
               aria-label="Template name"
               className="min-w-0 max-w-full text-xl font-bold bg-transparent border-b border-dashed border-muted-foreground/30 hover:border-primary focus:border-primary focus:outline-none pb-0.5"
             />
+            {r2Configured === true ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Cloudflare R2 Connected
+              </span>
+            ) : (
+              <span
+                title="Connect asset storage to import source images and save finished exports."
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> {r2Configured === null ? "Checking asset storage…" : "Asset storage not connected"}
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
             Format: <span className="font-semibold text-foreground">{selectedFormat?.name}</span> ({selectedFormat?.aspectRatio || "1:1"})
@@ -632,6 +614,11 @@ export function TemplateCanvasEditor({
         </div>
 
         <div className="flex flex-wrap gap-2">
+        {selectedFormat?.mediaType !== "video" && <button type="button" disabled={previewBusy} className="rounded-xl border px-4 py-2 text-xs font-semibold disabled:opacity-50" onClick={async () => {
+          setPreviewBusy(true);
+          try { const result = await previewThemeTemplate({ formatId, ...((themePageId || initialTemplate.themePageId) ? { themePageId: themePageId || initialTemplate.themePageId } : {}), componentSpec: { ...spec, bgType: bgMode, bgImageUrl: bgMode === "photo" ? spec.bgImageUrl : undefined, backgroundGradient: bgMode === "gradient" ? spec.backgroundGradient : undefined, highlightWords: activeHighlights }, sample: previewSample }); setExportPreviews(result.images); }
+          catch (error) { toast.error(error instanceof Error ? error.message : "Could not generate export preview"); } finally { setPreviewBusy(false); }
+        }}>{previewBusy ? "Rendering preview…" : "Export preview"}</button>}
         {initialTemplate.id && <button type="button" onClick={() => void handleDelete()} disabled={saving} className="rounded-xl border border-destructive/40 px-4 py-2.5 text-xs font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50">Delete</button>}
         <button
           onClick={handleSave}
@@ -644,6 +631,9 @@ export function TemplateCanvasEditor({
         </div>
       </div>
 
+      <Dialog open={exportPreviews.length > 0} onOpenChange={open => { if (!open) setExportPreviews([]); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>PNG export preview</DialogTitle><DialogDescription>Rendered with the same design and font layout as package PNG exports.</DialogDescription></DialogHeader>{exportPreviews.map((src, index) => <img key={index} src={src} alt={`Export preview ${index + 1}`} className="max-h-[70vh] w-full object-contain" />)}</DialogContent>
+      </Dialog>
       {/* Preset Selector Bar */}
       <div className="p-4 border rounded-2xl bg-card space-y-2.5">
         <div className="flex items-center justify-between">
@@ -706,6 +696,46 @@ export function TemplateCanvasEditor({
             <p className="text-[10px] text-muted-foreground mt-0.5">Media & quote-tweet reply</p>
           </button>
 
+          <button
+            type="button"
+            onClick={() => applyPreset("tweet_grid4")}
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "tweet_grid4" ? "bg-sky-500/10 border-sky-500" : "bg-muted/20 hover:bg-muted/40"
+            }`}
+          >
+            <div className="text-xs font-bold flex items-center gap-1 text-sky-400">
+              <IconLayoutGrid className="w-3.5 h-3.5" /> 4-Grid Collage
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">2x2 comparison meme</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => applyPreset("video_reel")}
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "video_reel" ? "bg-purple-500/10 border-purple-500" : "bg-muted/20 hover:bg-muted/40"
+            }`}
+          >
+            <div className="text-xs font-bold flex items-center gap-1 text-purple-400">
+              <IconVideo className="w-3.5 h-3.5" /> 9:16 Meme Reel
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Hook text & center video</p>
+          </button>
+
+          <button
+            type="button"
+            disabled
+            title="Mixed video carousels are planned for a later release"
+            onClick={() => applyPreset("mixed_carousel")}
+            className={`p-2.5 border rounded-xl text-left transition-colors ${
+              spec.templateFamily === "mixed_carousel" ? "bg-emerald-500/10 border-emerald-500" : "bg-muted/20 hover:bg-muted/40"
+            }`}
+          >
+            <div className="text-xs font-bold flex items-center gap-1 text-emerald-400">
+              Mixed Media
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Card cover + video clip</p>
+          </button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">Have an MP4? <Link href="/dashboard?create=video" className="underline">Brand a clip in Chat</Link>.</p>
         {(spec.templateFamily === "video_reel" || spec.templateFamily === "mixed_carousel") && <p role="alert" className="mt-2 rounded-lg border border-amber-500/30 p-2 text-xs">This older style cannot be rendered from Theme Studio. Choose a supported post style above, or create a video in Chat.</p>}
@@ -985,6 +1015,10 @@ export function TemplateCanvasEditor({
                 </div>
               </div>
 
+              <div className="flex flex-wrap gap-2">
+                {[{ name: "Lime", color: "#b6ff3b" }, { name: "Orange", color: "#ff7a32" }, { name: "Teal", color: "#20cfbb" }].map(palette => <button key={palette.name} type="button" className="rounded border px-3 py-1 text-xs" onClick={() => setSpec(previous => ({ ...previous, accentColor: palette.color }))}><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: palette.color }} />{palette.name}</button>)}
+              </div>
+              <label className="block text-xs">Headline font<select value={spec.fontFamily ?? "Anton"} onChange={event => setSpec(previous => ({ ...previous, fontFamily: event.target.value as "Inter" | "Anton" }))} className="mt-1 w-full rounded border bg-background px-2 py-1.5"><option value="Anton">Anton</option><option value="Inter">Inter</option></select></label>
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
