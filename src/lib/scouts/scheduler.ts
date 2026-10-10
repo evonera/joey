@@ -5,6 +5,8 @@ import { scouts, scoutEvaluations, scoutEvaluationEvents } from "@/lib/db/schema
 import { reserveScoutEvaluation, SCOUT_DISPATCH_ATTEMPTS, type ScoutEvaluationReceipt } from "./evaluation-receipts";
 
 export const SCOUT_DISPATCH_LIMIT = 25;
+// Read past unavailable sources while keeping each cron scan bounded.
+export const SCOUT_SOURCE_SCAN_LIMIT = 100;
 export interface ScoutDispatchJob {
   scoutId: string;
   tenantId: string;
@@ -111,7 +113,7 @@ export async function dispatchScoutsTick(dispatch?: (receipts: ScoutDispatchJob[
         )
       );
   const recoverable = await db
-    .select({ receipt: scoutEvaluations, platform: scouts.platform, targetUrl: scouts.targetUrl })
+    .select({ receipt: scoutEvaluations, platform: scouts.platform, targetUrl: scouts.targetUrl, pollIntervalMinutes: scouts.pollIntervalMinutes })
     .from(scoutEvaluations)
     .innerJoin(scouts, and(eq(scouts.id, scoutEvaluations.scoutId), eq(scouts.tenantId, scoutEvaluations.tenantId)))
     .where(
@@ -125,10 +127,8 @@ export async function dispatchScoutsTick(dispatch?: (receipts: ScoutDispatchJob[
       )
     )
     .orderBy(asc(scoutEvaluations.createdAt))
-    .limit(SCOUT_DISPATCH_LIMIT);
-  const due =
-    recoverable.length < SCOUT_DISPATCH_LIMIT
-      ? await db
+    .limit(SCOUT_SOURCE_SCAN_LIMIT);
+  const due = await db
           .select()
           .from(scouts)
           .where(
@@ -142,8 +142,7 @@ export async function dispatchScoutsTick(dispatch?: (receipts: ScoutDispatchJob[
             )
           )
           .orderBy(asc(scouts.lastPolledAt), asc(scouts.id))
-          .limit(SCOUT_DISPATCH_LIMIT - recoverable.length)
-      : [];
+          .limit(SCOUT_SOURCE_SCAN_LIMIT);
   const readyByTenant = new Map<string, boolean>();
   let blockedCount = 0;
   async function ready(tenantId: string, source?: { platform: string; targetUrl: string }) {
@@ -152,13 +151,31 @@ export async function dispatchScoutsTick(dispatch?: (receipts: ScoutDispatchJob[
     return readyByTenant.get(key)!;
   }
   const candidates: ScoutEvaluationReceipt[] = [];
-  for (const { receipt, platform, targetUrl } of recoverable) {
+  for (const { receipt, platform, targetUrl, pollIntervalMinutes } of recoverable) {
+    if (candidates.length >= SCOUT_DISPATCH_LIMIT) break;
     if (await ready(receipt.tenantId, { platform, targetUrl })) candidates.push(receipt);
-    else blockedCount++;
+    else {
+      blockedCount++;
+      await db.update(scoutEvaluations)
+        .set({ nextDispatchAt: new Date(now.getTime() + pollIntervalMinutes * 60_000) })
+        .where(and(eq(scoutEvaluations.id, receipt.id), eq(scoutEvaluations.tenantId, receipt.tenantId), eq(scoutEvaluations.status, receipt.status), eq(scoutEvaluations.dispatchAttempts, receipt.dispatchAttempts), eq(scoutEvaluations.nextDispatchAt, receipt.nextDispatchAt)));
+    }
   }
   for (const scout of due) {
+    if (candidates.length >= SCOUT_DISPATCH_LIMIT) break;
     if (await ready(scout.tenantId, scout)) candidates.push(await reserveScoutEvaluation(scout));
-    else blockedCount++;
+    else {
+      blockedCount++;
+      // Missing credentials consume no paid receipt. Back off the unavailable
+      // source so more than one scan's worth cannot starve later ready sources.
+      await db.update(scouts).set({ lastPolledAt: now }).where(and(
+        eq(scouts.id, scout.id), eq(scouts.tenantId, scout.tenantId),
+        eq(scouts.isActive, true), eq(scouts.targetUrl, scout.targetUrl),
+        eq(scouts.platform, scout.platform), eq(scouts.goalCondition, scout.goalCondition),
+        eq(scouts.pollIntervalMinutes, scout.pollIntervalMinutes),
+        sql`date_trunc('milliseconds', ${scouts.updatedAt}) = ${scout.updatedAt.toISOString()}::timestamp`
+      ));
+    }
   }
   const claimed: ScoutEvaluationReceipt[] = [];
   for (const receipt of new Map(candidates.map((receipt) => [receipt.id, receipt])).values()) {
