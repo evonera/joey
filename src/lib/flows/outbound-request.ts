@@ -37,7 +37,7 @@ function privateIpv4(address: string): boolean {
     (a === 100 && b >= 64 && b <= 127) ||
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 0) ||
+    (a === 192 && b === 0 && (octets[2] === 0 || octets[2] === 2)) ||
     (a === 192 && b === 168) ||
     (a === 198 && (b === 18 || b === 19)) ||
     (a === 198 && b === 51 && octets[2] === 100) ||
@@ -130,7 +130,13 @@ async function requestHop(urlText: string, options: OutboundRequestOptions, sign
     const req = requester({
       protocol: url.protocol, hostname: url.hostname, port: url.port || undefined,
       path: `${url.pathname}${url.search}`, method: options.method ?? "GET", headers: options.headers,
-      lookup: (_hostname, _options, callback) => callback(null, address, address.includes(":") ? 6 : 4),
+      // Pin the validated address. Node 24 requests an array when auto-family
+      // selection sets all=true; scalar-only callbacks fail before connecting.
+      lookup: (_hostname, options, callback) => {
+        const family = address.includes(":") ? 6 : 4;
+        if (typeof options === "object" && options.all) callback(null, [{ address, family }]);
+        else callback(null, address, family);
+      },
     }, (response) => {
       const declared = Number(response.headers["content-length"] ?? 0);
       if (declared > maxBytes) { req.destroy(); finish(new Error(`Outbound response exceeds ${maxBytes} bytes.`)); return; }
