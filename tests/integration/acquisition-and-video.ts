@@ -12,6 +12,7 @@ const { evaluateScout } = await import("../../src/lib/scouts/evaluator");
 const { saveThemePackageCandidates } = await import("../../src/lib/theme-studio/direct-link");
 const { sourceMediaCandidates } = await import("../../src/lib/theme-studio/source-media");
 const { queueThemeRender } = await import("../../src/lib/media-engine/theme-adapter");
+const { cancelRender, retryRender, getRender } = await import("../../src/lib/media-engine/engine");
 const tenantId = crypto.randomUUID();
 try {
   await db.insert(tenants).values({ id: tenantId, name: "Disposable acquisition/video acceptance", slug: tenantId, subscriptionPlan: "pro", subscriptionStatus: "active" });
@@ -49,6 +50,11 @@ try {
   const saved = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, pkg.id) });
   assert.deepEqual((saved?.metrics as { renderSettings: unknown }).renderSettings, settings, "full-frame settings survive a database reload");
   assert.equal(saved?.status, "pending_review");
+  await cancelRender(tenantId, job.jobId);
+  await db.update(tenants).set({ subscriptionStatus: "cancelled" }).where(eq(tenants.id, tenantId));
+  await assert.rejects(queueThemeRender(tenantId, pkg.id, { ...settings, cropX: .3 }), /active paid subscription/, "cancellation blocks new video submissions");
+  await assert.rejects(retryRender(tenantId, job.jobId), /active paid subscription/, "cancellation blocks worker retries");
+  assert.equal((await getRender(tenantId, job.jobId)).status, "cancelled", "previous jobs remain viewable after cancellation");
   console.log("PASS: scoped connector ingestion → saved evidence → deterministic alert, replay/retarget fencing, direct-link media candidates and persisted full-frame video settings. No acquisition or publication provider called.");
 } finally { await db.delete(tenants).where(eq(tenants.id, tenantId)); }
 process.exit(0);

@@ -40,6 +40,8 @@ try {
   const [video] = await db.insert(assets).values({ tenantId, filename: "clip.mp4", key: `${tenantId}/clip.mp4`, mimeType: "video/mp4", size: 100, publicUrl: "https://example.test/clip.mp4" }).returning();
   const media = { id: video.id, version: video.key };
   const [videoDraft] = await db.insert(drafts).values({ tenantId, content: "Clip", status: "draft", platformOptions: { renderRevision: "video-draft-1", renderStatus: "preparing", mediaUrls: [] } }).returning();
+  await assert.rejects(submitRender(tenantId, { ...spec, source: { kind: "draft", id: videoDraft.id, revision: "video-draft-1" }, media, template: "branded_clip", format: "mp4", video: { duration: 10, captions: false } }, { dispatch: false }), /active paid subscription/, "free workspaces cannot bypass billing through a render caller");
+  await db.update(tenants).set({ subscriptionPlan: "pro", subscriptionStatus: "active" }).where(eq(tenants.id, tenantId));
   const draftRender = await submitRender(tenantId, { ...spec, source: { kind: "draft", id: videoDraft.id, revision: "video-draft-1" }, media, template: "branded_clip", format: "mp4", video: { duration: 10, captions: false } }, { dispatch: false });
   const linkedDraft = await db.query.drafts.findFirst({ where: eq(drafts.id, videoDraft.id) });
   assert.equal((linkedDraft?.platformOptions as { renderJobId?: string }).renderJobId, draftRender.jobId, "a queued render must already be linked to its draft");
