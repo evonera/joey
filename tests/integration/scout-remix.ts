@@ -119,6 +119,12 @@ try {
   await db.update(scouts).set({ isActive: false }).where(eq(scouts.id, dispatchSource.id));
   const dispatchSources = await db.insert(scouts).values(Array.from({ length: 26 }, (_, i) => ({ tenantId, name: `Dispatch page ${i}`, targetUrl: `https://example.com/dispatch${i}/feed`, platform: "rss", goalCondition: "New source", isActive: true }))).returning();
   const handedOff: string[][] = [];
+  const freePage = await dispatchScoutsTick(async (jobs) => { handedOff.push(jobs.map((job) => job.scoutId)); });
+  assert.equal(freePage.dispatchedCount, 0, "Free workspaces cannot start autonomous Scout polling");
+  assert.equal(handedOff.length, 0, "Free polling cannot hand work to the provider");
+  await db.update(tenants).set({ subscriptionPlan: "creator", subscriptionStatus: "active" }).where(eq(tenants.id, tenantId));
+  // The rejected Free scan advanced backoff; make the next interval due.
+  await db.update(scouts).set({ lastPolledAt: null }).where(eq(scouts.tenantId, tenantId));
   const firstPage = await dispatchScoutsTick(async (jobs) => { handedOff.push(jobs.map((job) => job.scoutId)); });
   assert.equal(firstPage.dispatchedCount, 25, "cron dispatch is bounded at25");
   const secondPage = await dispatchScoutsTick(async (jobs) => { handedOff.push(jobs.map((job) => job.scoutId)); });
