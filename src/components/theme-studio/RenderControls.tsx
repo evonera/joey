@@ -103,14 +103,14 @@ export function RenderControls({ packageId, renderJobId, hasFinishedMedia = fals
       try {
         const value = await getThemeRenderSetup(packageId);
         const saved = value.settings;
-        setSetup(value); setInsetOverride(false);
+        setSetup(value); setInsetOverride(false); setTimelineMode(Boolean(value.timelineEnabled && value.savedTimeline));
         setAssetId(typeof saved.mediaAssetId === "string" ? saved.mediaAssetId : value.assets.find(asset => typeof (value.video ? saved.videoUrl : saved.bgImageUrl) === "string" && asset.publicUrl === (value.video ? saved.videoUrl : saved.bgImageUrl))?.id ?? "");
         setInsetId(saved.insetEnabled === false ? "" : typeof saved.insetAssetId === "string" ? saved.insetAssetId : value.images.find(asset => typeof saved.pipInsetUrl === "string" && asset.publicUrl === saved.pipInsetUrl)?.id ?? "");
         setMusicId(typeof saved.musicAssetId === "string" ? saved.musicAssetId : "");
         setCrop(saved.cropMode === "cover" ? "cover" : saved.cropMode === "contain" ? "contain" : value.video ? "contain" : "cover");
         setCropX(Number(saved.cropX ?? .5)); setCropY(Number(saved.cropY ?? .5));
         setDuration(Number(saved.durationSeconds ?? 15)); setStart(Number(saved.trimStart ?? 0));
-        setCaptions(saved.captions === true); setVideoLayout(saved.templateFamily === "full_frame" ? "full_frame" : saved.templateFamily === "minimal_meme" ? "minimal_meme" : "branded_clip");
+        setCaptions(saved.captions === true); setVideoLayout(["full_frame", "video_reel"].includes(String(saved.templateFamily)) ? "full_frame" : saved.templateFamily === "minimal_meme" ? "minimal_meme" : "branded_clip");
         setZoom(Number(saved.zoom ?? 1)); setSourceAudio(saved.sourceAudio !== false);
       }
       catch { toast.error("Could not load render settings"); } finally { setBusy(false); }
@@ -131,6 +131,7 @@ export function RenderControls({ packageId, renderJobId, hasFinishedMedia = fals
         {!setup?.enabled ? <div className="space-y-2"><p className="text-sm">{setup?.video ? "Video exports are not enabled for this workspace." : "Export the saved template and selected source image."}</p><button type="button" disabled={busy || setup?.video || setup?.storageReady === false} className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground" onClick={async () => {
           setBusy(true); try { await renderThemePackage(packageId); toast.success("Export ready"); setSetup(undefined); router.refresh(); } catch (error) { toast.error(error instanceof Error ? error.message : "Export failed"); } finally { setBusy(false); }
         }}>{busy ? "Rendering…" : "Create export"}</button></div> : <>
+          {setup.video && <label className="text-sm">Video layout<select aria-label="Video layout" value={videoLayout} onChange={e => setVideoLayout(e.target.value as typeof videoLayout)} className="mt-1 w-full rounded border bg-background p-2"><option value="full_frame">Full-frame video</option><option value="branded_clip">Branded inset clip</option><option value="minimal_meme">Minimal meme</option></select></label>}
           {setup.timelineEnabled && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={timelineMode} onChange={e => setTimelineMode(e.target.checked)} />Use multiple scenes</label>}
           {timelineMode && setup.timelineEnabled ? <TimelineEditor videos={setup.assets} images={setup.images} music={setup.music} sfxEnabled={setup.sfxEnabled} initialSound={setup.savedSound} initialScenes={setup.savedTimeline} busy={busy} onExport={async (timeline, sound) => {
             setBusy(true);
@@ -160,7 +161,7 @@ export function RenderControls({ packageId, renderJobId, hasFinishedMedia = fals
             <label className="text-sm flex items-center gap-2"><input type="checkbox" checked={sourceAudio} onChange={e => setSourceAudio(e.target.checked)} />Keep source audio</label>
             <label className="text-sm">Zoom<input type="range" min={1} max={1.15} step={.01} value={zoom} onChange={e => setZoom(Number(e.target.value))} className="w-full" /></label>
             {rangeError && <p role="alert" className="text-sm text-destructive">{rangeError}</p>}
-            <label className="text-sm">Video layout<select aria-label="Video layout" value={videoLayout} onChange={e => setVideoLayout(e.target.value as typeof videoLayout)} className="mt-1 w-full rounded border bg-background p-2"><option value="full_frame">Full-frame video</option><option value="branded_clip">Branded inset clip</option><option value="minimal_meme">Minimal meme</option></select></label>
+
           </> : <label className="text-sm">Optional inset image<select className="mt-1 w-full rounded border bg-background p-2" value={insetId} onChange={e => { setInsetOverride(true); setInsetId(e.target.value); }}><option value="">No inset</option>{setup.images.map(asset => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
           <button disabled={busy || setup.storageReady === false || (setup.video && !assetId) || Boolean(rangeError)} className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50" onClick={async () => {
             if (setup.video && trimError(start, duration, sourceDuration)) return;

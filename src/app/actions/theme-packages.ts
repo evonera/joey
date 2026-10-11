@@ -130,12 +130,12 @@ export async function getThemeRenderSetup(packageId: string) {
   const { format, component, pkg } = await themeRenderInput(tenantId, packageId);
   const { assets } = await import("@/lib/db/schema");
   const rows = await db.query.assets.findMany({ where: eq(assets.tenantId, tenantId), columns: { id: true, filename: true, mimeType: true, publicUrl: true }, limit: 100, orderBy: [desc(assets.createdAt)] });
-  const savedIds = [component.mediaAssetId, component.insetAssetId, component.musicAssetId].filter((value): value is string => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value));
+  const savedTimeline = timelineSchema.safeParse(component.timeline);
+  const savedIds = [component.mediaAssetId, component.insetAssetId, component.musicAssetId, ...(savedTimeline.success ? savedTimeline.data.flatMap(scene => scene.kind === "card" ? [] : [scene.asset.id]) : [])].filter((value): value is string => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value));
   if (savedIds.length) {
     const selectedRows = await db.query.assets.findMany({ where: and(eq(assets.tenantId, tenantId), inArray(assets.id, savedIds)), columns: { id: true, filename: true, mimeType: true, publicUrl: true } });
     for (const row of selectedRows) if (!rows.some(item => item.id === row.id)) rows.push(row);
   }
-  const savedTimeline = timelineSchema.safeParse(component.timeline);
   const cues = soundCuesSchema.safeParse(component.soundCues);
   return { timelineEnabled: process.env.MEDIA_TIMELINE_ENABLED === "true" && format.mediaType === "video", sfxEnabled: process.env.MEDIA_SFX_ENABLED === "true", savedSound: { soundCues: cues.success ? cues.data : [], captions: component.captions === true, musicAssetId: typeof component.musicAssetId === "string" ? component.musicAssetId : undefined }, savedTimeline: savedTimeline.success ? savedTimeline.data : undefined, storageReady: themeMediaStorageReady(), aspectRatio: format.aspectRatio, candidates: packageMediaCandidates(pkg.provenance).filter(item => item.kind === (format.mediaType === "video" ? "video" : "image")), settings: component, enabled: format.mediaType !== "carousel" && (format.mediaType !== "video" || process.env.MEDIA_ENGINE_ENABLED === "true"), video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
 }
