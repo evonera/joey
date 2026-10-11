@@ -34,4 +34,15 @@ describe("saved package render controls", () => {
     expect(await screen.findByLabelText("Source asset")).toHaveValue("");
     expect(screen.getByRole("button", { name: "Create export" })).toBeDisabled();
   });
+  it("explains unavailable paid video access and prevents an export request", async () => {
+    mocks.setup.mockResolvedValue({ enabled: false, video: true, issue: "Video exports require an active paid plan.", storageReady: true, candidates: [], settings: {}, assets: [], images: [], music: [] });
+    render(<RenderControls packageId="package" />);
+    fireEvent.click(screen.getByRole("button", { name: "Render media" }));
+    expect(await screen.findByText("Video exports require an active paid plan.")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Billing" })).toHaveAttribute("href", "/settings?tab=billing");
+    const create = screen.getByRole("button", { name: "Create export" });
+    expect(create).toBeDisabled();
+    fireEvent.click(create);
+    expect(mocks.render).not.toHaveBeenCalled();
+  });
 });

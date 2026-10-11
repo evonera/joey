@@ -1,6 +1,7 @@
 'use server';
 
 import { z } from "zod";
+import { checkUsageLimits } from "@/lib/billing";
 import { themeMediaStorageReady } from "@/lib/theme-studio/runtime-readiness";
 import { packageMediaCandidates } from "@/lib/theme-studio/source-media";
 import { themeRenderSettingsSchema } from "@/lib/theme-studio/design-spec";
@@ -137,7 +138,8 @@ export async function getThemeRenderSetup(packageId: string) {
     for (const row of selectedRows) if (!rows.some(item => item.id === row.id)) rows.push(row);
   }
   const cues = soundCuesSchema.safeParse(component.soundCues);
-  return { timelineEnabled: process.env.MEDIA_TIMELINE_ENABLED === "true" && format.mediaType === "video", sfxEnabled: process.env.MEDIA_SFX_ENABLED === "true", savedSound: { soundCues: cues.success ? cues.data : [], captions: component.captions === true, musicAssetId: typeof component.musicAssetId === "string" ? component.musicAssetId : undefined }, savedTimeline: savedTimeline.success ? savedTimeline.data : undefined, storageReady: themeMediaStorageReady(), aspectRatio: format.aspectRatio, candidates: packageMediaCandidates(pkg.provenance).filter(item => item.kind === (format.mediaType === "video" ? "video" : "image")), settings: component, enabled: format.mediaType !== "carousel" && (format.mediaType !== "video" || process.env.MEDIA_ENGINE_ENABLED === "true"), video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
+  const videoBillingAllowed = format.mediaType !== "video" || (await checkUsageLimits(tenantId)).allowsVideoRendering;
+  return { issue: videoBillingAllowed ? undefined : "Video exports require an active paid plan.", timelineEnabled: process.env.MEDIA_TIMELINE_ENABLED === "true" && format.mediaType === "video", sfxEnabled: process.env.MEDIA_SFX_ENABLED === "true", savedSound: { soundCues: cues.success ? cues.data : [], captions: component.captions === true, musicAssetId: typeof component.musicAssetId === "string" ? component.musicAssetId : undefined }, savedTimeline: savedTimeline.success ? savedTimeline.data : undefined, storageReady: themeMediaStorageReady(), aspectRatio: format.aspectRatio, candidates: packageMediaCandidates(pkg.provenance).filter(item => item.kind === (format.mediaType === "video" ? "video" : "image")), settings: component, enabled: videoBillingAllowed && format.mediaType !== "carousel" && (format.mediaType !== "video" || process.env.MEDIA_ENGINE_ENABLED === "true"), video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
 }
 
 export async function discoverThemeSourceLink(packageId: string, input: unknown) {

@@ -88,7 +88,9 @@ export async function getRender(tenantId: string, jobId: string) {
   if (!job) throw new Error("Render not found.");
   const output = job.status === "succeeded" && job.outputAssetId
     ? await db.query.assets.findFirst({ where: and(eq(assets.id, job.outputAssetId), eq(assets.tenantId, tenantId)), columns: { id: true, publicUrl: true, mimeType: true, size: true } }) : undefined;
-  return { jobId: job.id, status: job.status, error: job.error, output, usage: job.usage, canRetry: ["failed", "cancelled"].includes(job.status) && job.attempt < 3 };
+  let canRetry = ["failed", "cancelled"].includes(job.status) && job.attempt < 3;
+  if (canRetry && (job.spec as { format?: string }).format === "mp4") canRetry = (await checkUsageLimits(tenantId)).allowsVideoRendering;
+  return { jobId: job.id, status: job.status, error: job.error, output, usage: job.usage, canRetry };
 }
 
 export async function cancelRender(tenantId: string, jobId: string) {

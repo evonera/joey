@@ -55,6 +55,7 @@ try {
   await assert.rejects(queueThemeRender(tenantId, pkg.id, { ...settings, cropX: .3 }), /active paid subscription/, "cancellation blocks new video submissions");
   await assert.rejects(retryRender(tenantId, job.jobId), /active paid subscription/, "cancellation blocks worker retries");
   assert.equal((await getRender(tenantId, job.jobId)).status, "cancelled", "previous jobs remain viewable after cancellation");
+  assert.equal((await getRender(tenantId, job.jobId)).canRetry, false, "cancelled billing does not offer a paid retry in the UI");
   console.log("PASS: scoped connector ingestion → saved evidence → deterministic alert, replay/retarget fencing, direct-link media candidates and persisted full-frame video settings. No acquisition or publication provider called.");
 } finally { await db.delete(tenants).where(eq(tenants.id, tenantId)); }
 process.exit(0);
