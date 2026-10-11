@@ -5,7 +5,10 @@ import { flows, socialAccounts, themePages, themeSources, themeSlots, themeConte
 import { eq, and, inArray, like } from "drizzle-orm";
 import { isRightsCategoryAllowed } from "@/lib/theme-studio/pipeline/fact-rights-verifier";
 
+import { themeRecipeMode, themeRecipeModeSchema, type ThemeRecipeMode } from "./theme-recipe-mode";
+
 export interface CompileThemeRecipeInput {
+  mode?: ThemeRecipeMode;
   page: {
     id: string;
     name: string;
@@ -44,25 +47,39 @@ export function compileThemeRecipe(input: CompileThemeRecipeInput): {
   validationIssues: string[];
 } {
   const { page, sources, slots } = input;
+  const mode = themeRecipeModeSchema.parse(input.mode ?? "publishing");
   const flowName = `[Theme] ${page.name}`;
   const activeSources = sources.filter((s) => s.isActive);
-  const rightsPolicy = page.defaultRightsPolicy === "moderate" || page.defaultRightsPolicy === "permissive"
-    ? page.defaultRightsPolicy : "strict";
-  const usableSources = activeSources.filter((source) => isRightsCategoryAllowed(source.rightsCategory || "unknown", rightsPolicy));
+  const rightsPolicy =
+    page.defaultRightsPolicy === "moderate" || page.defaultRightsPolicy === "permissive"
+      ? page.defaultRightsPolicy
+      : "strict";
+  const usableSources = activeSources.filter((source) =>
+    isRightsCategoryAllowed(source.rightsCategory || "unknown", rightsPolicy)
+  );
   const activeSlots = slots.filter((s) => s.isActive !== false && s.format);
-  const connectedPlatforms = new Set(page.connectedPlatforms.map((platform) => platform === "twitter" ? "x" : platform));
-  const missingPlatforms = Array.from(new Set(
-    activeSlots
-      .map((slot) => slot.format?.platform)
-      .filter((platform): platform is string => Boolean(platform))
-      .filter((platform) => !connectedPlatforms.has(platform === "twitter" ? "x" : platform)),
-  ));
+  const connectedPlatforms = new Set(
+    page.connectedPlatforms.map((platform) => (platform === "twitter" ? "x" : platform))
+  );
+  const missingPlatforms = Array.from(
+    new Set(
+      activeSlots
+        .map((slot) => slot.format?.platform)
+        .filter((platform): platform is string => Boolean(platform))
+        .filter((platform) => !connectedPlatforms.has(platform === "twitter" ? "x" : platform))
+    )
+  );
   const validationIssues = [
     ...(activeSources.length === 0 ? ["Add at least one active Theme Studio source."] : []),
     ...(activeSources.length > 0 && usableSources.length === 0
-      ? ["Review source rights: no active source is allowed by this page's rights policy. Edit a source's declared rights before activation."] : []),
+      ? [
+          "Review source rights: no active source is allowed by this page's rights policy. Edit a source's declared rights before activation.",
+        ]
+      : []),
     ...(activeSlots.length === 0 ? ["Add at least one active Theme Studio content slot."] : []),
-    ...missingPlatforms.map((platform) => `Select an active ${platform} publishing account.`),
+    ...(mode === "publishing"
+      ? missingPlatforms.map((platform) => `Select an active ${platform} publishing account.`)
+      : []),
   ];
   const graph: FlowGraphDoc = {
     nodes: [
@@ -75,7 +92,7 @@ export function compileThemeRecipe(input: CompileThemeRecipeInput): {
       {
         id: "action_theme_studio_run",
         type: "action.theme_studio_run",
-        config: { themePageId: page.id },
+        config: { themePageId: page.id, mode },
         position: { x: 450, y: 200 },
       },
     ],
@@ -93,7 +110,7 @@ export function compileThemeRecipe(input: CompileThemeRecipeInput): {
   };
 }
 
-export async function syncThemePageFlow(tenantId: string, themePageId: string) {
+export async function syncThemePageFlow(tenantId: string, themePageId: string, requestedMode?: ThemeRecipeMode) {
   const page = await db.query.themePages.findFirst({
     where: and(eq(themePages.id, themePageId), eq(themePages.tenantId, tenantId)),
   });
@@ -118,23 +135,30 @@ export async function syncThemePageFlow(tenantId: string, themePageId: string) {
   const selectedAccountIds = Array.isArray(page.connectedAccounts)
     ? page.connectedAccounts.filter((id): id is string => typeof id === "string")
     : [];
-  const selectedAccounts = selectedAccountIds.length > 0
-    ? await db.query.socialAccounts.findMany({
-        where: and(
-          eq(socialAccounts.tenantId, tenantId),
-          eq(socialAccounts.isActive, true),
-          inArray(socialAccounts.id, selectedAccountIds),
-        ),
-        columns: { platform: true },
-      })
-    : [];
+  const selectedAccounts =
+    selectedAccountIds.length > 0
+      ? await db.query.socialAccounts.findMany({
+          where: and(
+            eq(socialAccounts.tenantId, tenantId),
+            eq(socialAccounts.isActive, true),
+            inArray(socialAccounts.id, selectedAccountIds)
+          ),
+          columns: { platform: true },
+        })
+      : [];
 
   const slotsWithFormats = slots.map((s) => ({
     ...s,
     format: formatMap.get(s.formatId) || null,
   }));
 
+  const descriptionPrefix = `[Theme Studio:${themePageId}]`;
+  const existingFlow = await db.query.flows.findFirst({
+    where: and(eq(flows.tenantId, tenantId), like(flows.description, `${descriptionPrefix}%`)),
+  });
+
   const compiled = compileThemeRecipe({
+    mode: requestedMode ?? themeRecipeMode(existingFlow?.graph as FlowGraphDoc | undefined),
     page: { ...page, connectedPlatforms: selectedAccounts.map((account) => account.platform) },
     sources,
     slots: slotsWithFormats,
@@ -143,14 +167,6 @@ export async function syncThemePageFlow(tenantId: string, themePageId: string) {
   if (!compiled.isValid) {
     return { flow: null, compiled };
   }
-
-  const descriptionPrefix = `[Theme Studio:${themePageId}]`;
-  const existingFlow = await db.query.flows.findFirst({
-    where: and(
-      eq(flows.tenantId, tenantId),
-      like(flows.description, `${descriptionPrefix}%`),
-    ),
-  });
 
   let flowRecord;
   if (existingFlow) {

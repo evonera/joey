@@ -38,4 +38,11 @@ describe("verified billing event reconciliation", () => {
     mocks.retrieve.mockResolvedValueOnce(subscription).mockResolvedValueOnce({ ...subscription, created_at: "2026-09-02T00:00:00Z" });
     await reconcileBillingWebhook(event); expect(mocks.set).not.toHaveBeenCalled();
   });
+  it.each(["active", "on_hold", "pending", "paused", "past_due"])("does not replace an ongoing %s subscription with a second one", async status => {
+    mocks.find.mockResolvedValue({ dodoCustomerId: "customer", dodoSubscriptionId: "current" });
+    mocks.retrieve.mockResolvedValueOnce({ ...subscription, created_at: "2026-09-02T00:00:00Z" })
+      .mockResolvedValueOnce({ ...subscription, status });
+    await expect(reconcileBillingWebhook(event)).rejects.toThrow("ongoing subscription");
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
 });

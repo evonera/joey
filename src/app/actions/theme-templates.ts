@@ -6,68 +6,12 @@ import { db } from "@/lib/db";
 import { themeVisualTemplates, themeContentFormats, themeSlots, themePages } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
-const COLOR = /^(?:#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([\d\s.,%+-]+\)|[a-z]{3,20})$/i;
-const GRADIENT = /^linear-gradient\([\d\s.,%#a-z()+-]{1,300}\)$/i;
+import { normalizeThemeDesign, parseThemeDesign, themeDesignSchema } from "@/lib/theme-studio/design-spec";
+import { z } from "zod";
 
 function sanitizeComponentSpec(input: Record<string, unknown>): Record<string, unknown> | null {
-  const output: Record<string, unknown> = {};
-  const colorFields = ["backgroundColor", "textColor", "accentColor"] as const;
-  for (const field of colorFields) {
-    const value = input[field];
-    if (value !== undefined) {
-      if (typeof value !== "string" || !COLOR.test(value.trim())) return null;
-      output[field] = value.trim();
-    }
-  }
-  if (input.backgroundGradient !== undefined && input.backgroundGradient !== null && input.backgroundGradient !== "") {
-    if (typeof input.backgroundGradient !== "string" || !GRADIENT.test(input.backgroundGradient.trim())) return null;
-    output.backgroundGradient = input.backgroundGradient.trim();
-  }
-
-  if (input.fontFamily !== undefined) {
-    if (typeof input.fontFamily !== "string" || !/^[\w\s,'-]{1,100}$/.test(input.fontFamily)) return null;
-    output.fontFamily = input.fontFamily;
-  }
-  for (const [field, min, max] of [
-    ["titleSize", 18, 72], ["bodySize", 12, 40], ["padding", 0, 160], ["borderRadius", 0, 100],
-  ] as const) {
-    const value = input[field];
-    if (value !== undefined) {
-      if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return null;
-      output[field] = value;
-    }
-  }
-  for (const field of ["showWatermark", "showSlideIndicator"] as const) {
-    if (input[field] !== undefined) {
-      if (typeof input[field] !== "boolean") return null;
-      output[field] = input[field];
-    }
-  }
-  if (input.templateFamily !== undefined) {
-    if (typeof input.templateFamily !== "string" || !["pubity_hero", "morning_brew_cyan", "pubity_carousel", "tweet_card", "tweet_grid4"].includes(input.templateFamily)) return null;
-    output.templateFamily = input.templateFamily;
-  }
-  if (input.topBadge !== undefined) {
-    if (typeof input.topBadge !== "string" || !["yellow_logo", "swipe_pill", "tag_pill", "circular_seal", "none"].includes(input.topBadge)) return null;
-    output.topBadge = input.topBadge;
-  }
-  if (input.brandInitial !== undefined) {
-    if (typeof input.brandInitial !== "string" || input.brandInitial.length > 16) return null;
-    output.brandInitial = input.brandInitial;
-  }
-  for (const field of ["showDivider", "showDividerMark"] as const) {
-    if (input[field] !== undefined) {
-      if (typeof input[field] !== "boolean") return null;
-      output[field] = input[field];
-    }
-  }
-  for (const field of ["watermarkText", "titleTemplate", "bodyTemplate"] as const) {
-    if (input[field] !== undefined) {
-      if (typeof input[field] !== "string" || input[field].length > 500) return null;
-      output[field] = input[field];
-    }
-  }
-  return output;
+  const parsed = themeDesignSchema.safeParse(normalizeThemeDesign(input));
+  return parsed.success ? parsed.data : null;
 }
 
 export interface CreateThemeTemplateInput {
@@ -113,6 +57,7 @@ export async function getThemeTemplates(themePageId?: string) {
 
     const enriched = templates.map(t => ({
       ...t,
+      componentSpec: normalizeThemeDesign(t.componentSpec),
       format: formatMap.get(t.formatId) || null,
     }));
 
@@ -138,7 +83,7 @@ export async function getThemeTemplateById(id: string) {
       where: and(eq(themeContentFormats.id, template.formatId), eq(themeContentFormats.tenantId, tenantId)),
     });
 
-    return { template: { ...template, format } };
+    return { template: { ...template, componentSpec: normalizeThemeDesign(template.componentSpec), format } };
   } catch (error: any) {
     console.error("Failed to fetch theme template:", error);
     return { error: "Failed to fetch theme template" };
@@ -184,7 +129,7 @@ export async function createThemeTemplate(data: CreateThemeTemplateInput) {
       version: 1,
     }).returning();
 
-    return { template: { ...template, format } };
+    return { template: { ...template, componentSpec: normalizeThemeDesign(template.componentSpec), format } };
   } catch (error: any) {
     console.error("Failed to create theme template:", error);
     return { error: "Failed to create theme template" };
@@ -260,4 +205,27 @@ export async function deleteThemeTemplate(id: string) {
     console.error("Failed to delete theme template:", error);
     return { error: "Failed to delete theme template" };
   }
+}
+
+export async function previewThemeTemplate(input: unknown) {
+  const tenantId = await getActiveTenantId();
+  const request = z.object({ formatId: z.string().max(128), themePageId: z.string().max(128).optional(), componentSpec: z.record(z.string(), z.unknown()), sample: z.object({ title: z.string().max(500), summary: z.string().max(1000), source_name: z.string().max(200), author: z.string().max(120), tag: z.string().max(80), date: z.string().max(80) }).strict() }).strict().parse(input);
+  const component = parseThemeDesign(request.componentSpec);
+  const format = await db.query.themeContentFormats.findFirst({ where: and(eq(themeContentFormats.id, request.formatId), eq(themeContentFormats.tenantId, tenantId)) });
+  if (!format) throw new Error("Content format not found.");
+  const page = request.themePageId ? await db.query.themePages.findFirst({ where: and(eq(themePages.id, request.themePageId), eq(themePages.tenantId, tenantId)) }) : undefined;
+  if (request.themePageId && !page) throw new Error("Theme page not found.");
+  const { designBrandKit, renderStaticThemeSvgs } = await import("@/lib/theme-studio/renderers/static-theme");
+  const { applyDesignCopy } = await import("@/lib/theme-studio/template-copy");
+  const { renderSvgPng } = await import("@/lib/theme-studio/renderers/rasterize-svg");
+  const svgs = renderStaticThemeSvgs({ component, brandKit: designBrandKit((page?.brandKit ?? {}) as Record<string, unknown>, component),
+    title: applyDesignCopy(component.titleTemplate, request.sample.title, request.sample), body: applyDesignCopy(component.bodyTemplate, request.sample.summary, request.sample),
+    sourceName: request.sample.source_name, pageName: page?.name ?? "Theme Page", heroImage: component.bgImageUrl,
+    mediaType: format.mediaType, slug: format.slug, aspectRatio: format.aspectRatio,
+    facts: [{ claim: request.sample.summary }],
+  });
+  const images: string[] = [];
+  const cache = new Map<string, Buffer>();
+  for (const svg of svgs) images.push(`data:image/png;base64,${(await renderSvgPng(svg, undefined, cache)).toString("base64")}`);
+  return { images };
 }

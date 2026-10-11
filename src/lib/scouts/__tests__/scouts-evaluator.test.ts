@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-const mocks = vi.hoisted(() => ({ scout: vi.fn(), receipt: vi.fn(), reserve: vi.fn(), claim: vi.fn(), phase: vi.fn(), complete: vi.fn(), fail: vi.fn(), provider: vi.fn(), fetch: vi.fn(), gate: vi.fn(), llm: vi.fn(), delay: vi.fn() }));
+const mocks = vi.hoisted(() => ({ scout: vi.fn(), receipt: vi.fn(), history: vi.fn(), reserve: vi.fn(), claim: vi.fn(), phase: vi.fn(), complete: vi.fn(), fail: vi.fn(), provider: vi.fn(), fetch: vi.fn(), gate: vi.fn(), llm: vi.fn(), delay: vi.fn() }));
 vi.mock("node:timers/promises", async (original) => ({ ...await original<typeof import("node:timers/promises")>(), setTimeout: mocks.delay, default: { setTimeout: mocks.delay } }));
-vi.mock("@/lib/db", () => ({ db: { query: { scouts: { findFirst: mocks.scout }, scoutEvaluations: { findFirst: mocks.receipt } } } }));
+vi.mock("@/lib/db", () => ({ db: { query: { scouts: { findFirst: mocks.scout }, scoutEvaluations: { findFirst: mocks.receipt, findMany: mocks.history } } } }));
 vi.mock("@/lib/scouts/data-provider", () => ({ getScoutDataProvider: mocks.provider }));
 vi.mock("@/lib/typesafe", () => ({ evaluateScoutTriggerSemantically: mocks.gate }));
 vi.mock("@/lib/llm", () => ({ runLlm: mocks.llm }));
@@ -11,15 +11,16 @@ vi.mock("../evaluation-receipts", async (original) => ({
 }));
 import { evaluateScout, isRepeatedScoutAlert, type ScoutAlert } from "../evaluator";
 import { scoutConfigurationKey } from "../evaluation-receipts";
-const scout = { id: "scout", tenantId: "tenant", name: "Competitor", targetUrl: "https://instagram.com/source", platform: "instagram", goalCondition: "Views > 50k", pollIntervalMinutes: 120, isActive: true, updatedAt: new Date("2026-10-03"), latestAlert: null };
+const scout = { id: "scout", tenantId: "tenant", name: "Competitor", targetUrl: "https://instagram.com/source", platform: "instagram", goalCondition: "Distinct original hook", pollIntervalMinutes: 120, isActive: true, updatedAt: new Date("2026-10-03"), latestAlert: null };
 const receipt = { id: "receipt", tenantId: scout.tenantId, scoutId: scout.id, configKey: scoutConfigurationKey(scout), status: "pending", phase: "preparing", operationId: "00876663-41bd-40c5-b4dc-adf0010297bb", items: null };
 const post = { id: "post", url: "https://instagram.com/p/post", text: "Verified source evidence", views: 125000 };
-const judgement = { triggered: true, title: "Source spike", topPostIndex: 0, changes: [{ type: "SPIKE" as const, label: "Views", after: "125k", rationale: "Goal met" }] };
+const judgement = { triggered: true, title: "Source spike", topPostIndex: 0, changes: [{ type: "ADDED" as const, label: "Views", after: "125k", rationale: "Goal met" }] };
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.scout.mockResolvedValue(scout);
   mocks.reserve.mockResolvedValue(receipt);
   mocks.receipt.mockResolvedValue(receipt);
+  mocks.history.mockResolvedValue([]);
   mocks.claim.mockResolvedValue({ claimed: true, receipt: { ...receipt, status: "running", leaseToken: "lease" } });
   mocks.phase.mockImplementation(async (current, phase, items) => ({ ...current, phase, ...(items ? { items } : {}) }));
   mocks.complete.mockImplementation(async (current, _scout, result, guard) => { await guard(); return { ...result, evaluationId: current.id }; });
@@ -44,7 +45,7 @@ describe("Durable Scout evaluator", () => {
     expect(await evaluateScout(scout.id)).toMatchObject({ triggered: true, evaluationId: receipt.id, itemsFound: 1, alert: { title: judgement.title } });
     expect(mocks.fetch).toHaveBeenCalledWith({ targetUrl: scout.targetUrl, platform: scout.platform }, expect.objectContaining({ operationId: receipt.operationId }));
     expect(mocks.phase.mock.calls.map((call) => call[1])).toEqual(["collecting", "collected", "judging"]);
-    expect(mocks.phase).toHaveBeenCalledWith(expect.anything(), "collected", [post]);
+    expect(mocks.phase).toHaveBeenCalledWith(expect.anything(), "collected", [expect.objectContaining({ ...post, observedAt: expect.any(String) })]);
   });
   it("reuses completed immutable evidence for another agent with no paid work", async () => {
     const result = { triggered: true, alert: { title: "Saved evidence" }, itemsFound: 1 };
@@ -158,4 +159,25 @@ describe("Durable Scout evaluator", () => {
     expect(isRepeatedScoutAlert(alert, { ...alert, detectedAt: "2026-10-04" })).toBe(true);
     expect(isRepeatedScoutAlert(alert, { ...alert, samplePost: { url: "https://instagram.com/p/other", content: post.text } })).toBe(false);
   });
+  it("evaluates explicit thresholds from saved observations without model judgment", async () => {
+    const numericScout = { ...scout, goalCondition: "views > 50k" };
+    const numericReceipt = { ...receipt, configKey: scoutConfigurationKey(numericScout) };
+    mocks.scout.mockResolvedValue(numericScout);
+    mocks.reserve.mockResolvedValue(numericReceipt);
+    mocks.claim.mockResolvedValue({ claimed: true, receipt: { ...numericReceipt, status: "running" } });
+    expect(await evaluateScout(scout.id)).toMatchObject({ triggered: true, alert: { changes: [{ type: "ADDED", after: "125000 views" }] } });
+    expect(mocks.llm).not.toHaveBeenCalled();
+    expect(mocks.gate).not.toHaveBeenCalled();
+  });
+
+  it("drops model spike claims without historical counter evidence", async () => {
+    mocks.llm.mockResolvedValue({ text: JSON.stringify({ ...judgement, changes: [{ ...judgement.changes[0], type: "SPIKE", before: "Average 15k" }] }) });
+    expect(await evaluateScout(scout.id)).toMatchObject({ triggered: false });
+  });
+  it("uses actual saved counters instead of an invented model baseline", async () => {
+    mocks.history.mockResolvedValue([{ items: [{ ...post, views: 100000, observedAt: "2026-10-01T00:00:00Z" }] }]);
+    mocks.llm.mockResolvedValue({ text: JSON.stringify({ ...judgement, changes: [{ ...judgement.changes[0], type: "SPIKE", before: "Average 15k" }] }) });
+    expect(await evaluateScout(scout.id)).toMatchObject({ triggered: true, alert: { changes: [{ before: expect.stringContaining("100000 views"), after: expect.stringContaining("125000 views") }] } });
+  });
+
 });

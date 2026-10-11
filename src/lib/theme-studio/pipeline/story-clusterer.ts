@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { sourceItems, storyClusters, themePages } from "@/lib/db/schema";
-import { eq, and, desc, gte, inArray } from "drizzle-orm";
+import { eq, and, desc, gte, inArray, or, isNull, sql } from "drizzle-orm";
 import {
   evaluateStoryAffinitySemantically,
   getTypesafeClient,
@@ -117,12 +117,15 @@ export async function clusterSourceItems(
 
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000); // 48h freshness window
 
+  // Recover abandoned claims without holding a transaction during model calls.
+  await db.update(sourceItems).set({ status: "raw" }).where(and(eq(sourceItems.tenantId, tenantId), eq(sourceItems.themePageId, themePageId), eq(sourceItems.status, "clustering"), sql`(${sourceItems.metadata}->>'clusteringClaimedAt')::timestamptz < now() - interval '10 minutes'`));
+  const claimToken = crypto.randomUUID();
   const rawItems = await db.query.sourceItems.findMany({
     where: and(
       eq(sourceItems.themePageId, themePageId),
       eq(sourceItems.tenantId, tenantId),
       eq(sourceItems.status, "raw"),
-      gte(sourceItems.publishedAt, cutoff)
+      or(gte(sourceItems.publishedAt, cutoff), and(isNull(sourceItems.publishedAt), gte(sourceItems.createdAt, cutoff)))
     ),
     orderBy: [desc(sourceItems.publishedAt)],
     limit: 50,
@@ -135,7 +138,7 @@ export async function clusterSourceItems(
   // Atomically claim raw items in a fast transaction
   const claimedItems = await db.transaction(async (tx) => {
     const updated = await tx.update(sourceItems)
-      .set({ status: "clustered" })
+      .set({ status: "clustering", metadata: sql`coalesce(${sourceItems.metadata}, '{}'::jsonb) || ${JSON.stringify({ clusteringClaimedAt: new Date().toISOString(), clusteringClaimToken: claimToken })}::jsonb` })
       .where(and(
         eq(sourceItems.tenantId, tenantId),
         eq(sourceItems.themePageId, themePageId),
@@ -281,9 +284,10 @@ export async function clusterSourceItems(
       }
 
       const primary = clusterMembers[0];
-      const newestTimestamp = Math.max(...clusterMembers.map((member) => member.publishedAt?.getTime() ?? 0));
+      const newestTimestamp = Math.max(...clusterMembers.map((member) => member.publishedAt?.getTime() ?? member.createdAt?.getTime() ?? 0));
       const ageHours = Math.max(0, (Date.now() - newestTimestamp) / (60 * 60 * 1000));
 
+      const primaryEvidence = clusterMembers.slice(1).map(member => itemCorroborationMap.get(member.id)).find(item => item?.status === "verified");
       const facts: SourcedFact[] = clusterMembers
         .map((member, idx) => {
           if (idx === 0) {
@@ -291,8 +295,8 @@ export async function clusterSourceItems(
               claim: member.title || "Key finding",
               sourceUrl: member.url || undefined,
               entity: primary.title?.split(" ")[0] || undefined,
-              corroborationStatus: "verified" as const,
-              semanticConfidence: 1.0,
+              corroborationStatus: primaryEvidence ? "verified" as const : "unverified" as const,
+              semanticConfidence: primaryEvidence?.confidence,
             };
           }
           const corroboration = itemCorroborationMap.get(member.id);
@@ -317,6 +321,8 @@ export async function clusterSourceItems(
 
     // Insert clusters in a single write operation
     await db.transaction(async (tx) => {
+      const finalized = await tx.update(sourceItems).set({ status: "clustered", metadata: sql`coalesce(${sourceItems.metadata}, '{}'::jsonb) - 'clusteringClaimToken' - 'clusteringClaimedAt'` }).where(and(eq(sourceItems.tenantId, tenantId), eq(sourceItems.themePageId, themePageId), eq(sourceItems.status, "clustering"), inArray(sourceItems.id, claimedItems.map(item => item.id)), sql`${sourceItems.metadata}->>'clusteringClaimToken' = ${claimToken}`)).returning({ id: sourceItems.id });
+      if (finalized.length !== claimedItems.length) throw new Error("Story clustering claim expired. Retry the current sources.");
       for (const cluster of clusters) {
         signal?.throwIfAborted();
         await tx.insert(storyClusters).values({
@@ -346,7 +352,8 @@ export async function clusterSourceItems(
         .where(and(
           eq(sourceItems.tenantId, tenantId),
           eq(sourceItems.themePageId, themePageId),
-          eq(sourceItems.status, "clustered"),
+          eq(sourceItems.status, "clustering"),
+          sql`${sourceItems.metadata}->>'clusteringClaimToken' = ${claimToken}`,
           inArray(sourceItems.id, claimedItems.map((item) => item.id)),
         ));
     } catch (rollbackErr) {

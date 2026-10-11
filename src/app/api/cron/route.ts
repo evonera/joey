@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
 import { withTimeout } from "@/lib/dispatch-claim";
+import { cronAuthorized } from "@/lib/cron-auth";
+import { db } from "@/lib/db";
+import { rateLimitCounters } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,18 +12,18 @@ export const maxDuration = 60;
 // the underlying work is not cancelled (see withTimeout).
 const CRON_TASK_TIMEOUT_MS = 55_000;
 
-function cronAuthorized(authHeader: string | null): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || !authHeader) return false;
-  const actual = Buffer.from(authHeader);
-  const expected = Buffer.from(`Bearer ${secret}`);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
 export async function GET(request: Request) {
   if (!cronAuthorized(request.headers.get("authorization"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Vercel's daily fallback and Modal's minute scheduler share one admission.
+  const admitted = await db.insert(rateLimitCounters).values({
+    tokenId: "internal:cron",
+    windowStart: new Date(Math.floor(Date.now() / 60_000) * 60_000),
+    count: 1,
+  }).onConflictDoNothing().returning({ tokenId: rateLimitCounters.tokenId });
+  if (!admitted.length) return NextResponse.json({ ok: true, skipped: "already_admitted" });
 
   const { publishDueDrafts } = await import("@/lib/publisher-core");
   const { runFlowsTick } = await import("../../../../agent/schedules/flows-tick");

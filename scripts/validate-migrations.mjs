@@ -21,12 +21,22 @@ if (!Array.isArray(journal.entries)) {
 }
 
 const expectedTags = files.map((file) => basename(file, ".sql"));
+// These already-applied historical entries predate their predecessors. Never
+// rewrite shipped history; require every subsequent migration to advance time.
+const historicalTimestamps = new Map([
+  ["0004_add_webhook_events_index", 1743199200000],
+  ["0031_workable_daredevil", 1788263314825],
+]);
 const journalTags = journal.entries.map((entry, position) => {
   if (entry.idx !== position) {
     throw new Error(`Migration journal index ${entry.idx} must equal its position ${position}`);
   }
   if (entry.version !== journal.version) {
     throw new Error(`Migration ${entry.tag} uses journal version ${entry.version}, expected ${journal.version}`);
+  }
+  if (!Number.isSafeInteger(entry.when) || entry.when <= 0) throw new Error(`Invalid timestamp for ${entry.tag}`);
+  if (position > 0 && entry.when <= journal.entries[position - 1].when && historicalTimestamps.get(entry.tag) !== entry.when) {
+    throw new Error(`Migration ${entry.tag} must have a timestamp newer than its predecessor; Drizzle would otherwise skip it on existing databases`);
   }
   return entry.tag;
 });

@@ -1,3 +1,4 @@
+import { fitText } from "./font-layout";
 export interface TweetAuthor {
   name: string;
   handle: string;
@@ -24,6 +25,9 @@ export interface TweetCardRenderOptions {
     textColor?: string;
     accentColor?: string;
     watermark?: string;
+    fontFamily?: string;
+    titleSize?: number;
+    bodySize?: number;
   };
 }
 
@@ -42,23 +46,6 @@ function safeColor(value: string | undefined, fallback: string): string {
   return /^(?:#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([\d\s.,%+-]+\)|[a-z]{3,20})$/i.test(trimmed)
     ? trimmed
     : fallback;
-}
-
-function wrapText(text: string, maxCharsPerLine: number): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let currentLine = "";
-
-  for (const word of words) {
-    if ((currentLine + " " + word).trim().length <= maxCharsPerLine) {
-      currentLine = (currentLine + " " + word).trim();
-    } else {
-      if (currentLine) lines.push(currentLine);
-      currentLine = word;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-  return lines.length > 0 ? lines : [""];
 }
 
 const VERIFIED_BADGE_SVG = `
@@ -117,10 +104,10 @@ export function renderTweetCardSvg(options: TweetCardRenderOptions): string {
       ${
         author.avatarUrl
           ? `<image href="${escapeXml(author.avatarUrl)}" width="${avatarSize}" height="${avatarSize}" clip-path="url(#authorAvatarClip)" preserveAspectRatio="xMidYMid slice" />`
-          : `<text x="${avatarSize / 2}" y="${avatarSize / 2 + 7}" text-anchor="middle" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="700">${escapeXml(authorName.charAt(0))}</text>`
+          : `<text x="${avatarSize / 2}" y="${avatarSize / 2 + 7}" text-anchor="middle" fill="#ffffff" font-family="Inter" font-size="22" font-weight="700">${escapeXml(authorName.charAt(0))}</text>`
       }
       <!-- Author Names -->
-      <text x="${avatarSize + 18}" y="24" fill="${textColor}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="700">${authorName}</text>
+      <text x="${avatarSize + 18}" y="24" fill="${textColor}" font-family="Inter" font-size="22" font-weight="700">${authorName}</text>
       ${
         isVerified
           ? `<g transform="translate(${avatarSize + 22 + authorName.length * 13}, 6)">
@@ -129,7 +116,7 @@ export function renderTweetCardSvg(options: TweetCardRenderOptions): string {
             </g>`
           : ""
       }
-      <text x="${avatarSize + 18}" y="48" fill="${secondaryTextColor}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="400">${authorHandle} · ${escapeXml(createdAt)}</text>
+      <text x="${avatarSize + 18}" y="48" fill="${secondaryTextColor}" font-family="Inter" font-size="18" font-weight="400">${authorHandle} · ${escapeXml(createdAt)}</text>
       <!-- X Logo -->
       <g transform="translate(${cardWidth - 28}, 8)">
         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" fill="${secondaryTextColor}" transform="scale(0.85)"/>
@@ -140,15 +127,21 @@ export function renderTweetCardSvg(options: TweetCardRenderOptions): string {
   currentY += avatarSize + 28;
 
   // Main Tweet Content
-  const contentLines = wrapText(content, 42).slice(0, 5);
-  const contentLineHeight = 36;
+  const contentFont = brandKit.fontFamily === "Anton" ? "Anton" : "Inter";
+  const quoteLayout = quotedTweet ? fitText(quotedTweet.content, { font: "Inter", size: brandKit.bodySize ?? 18, minSize: 14, width: cardWidth - 50, height: height * .2, lineHeight: 1.5, weight: 400 }) : undefined;
+  const reservedQuote = quoteLayout ? 110 + quoteLayout.lines.length * quoteLayout.size * 1.5 + (quotedTweet?.mediaUrl ? 180 : 0) : 0;
+  const hasMedia = mediaLayout !== "none" && mediaUrls.length > 0;
+  const maxMediaHeight = hasMedia ? Math.min(quotedTweet ? 440 : aspectRatio === "4:5" ? 640 : 480, Math.max(120, height - currentY - reservedQuote - 230)) : 0;
+  const contentLayout = fitText(content, { font: contentFont, size: brandKit.titleSize ?? 24, minSize: 18, width: cardWidth - 16, height: height - currentY - reservedQuote - (hasMedia ? maxMediaHeight + 28 : 0) - 100, lineHeight: 1.5, weight: 400 });
+  const contentLines = contentLayout.lines;
+  const contentLineHeight = contentLayout.size * 1.5;
   const contentSvg = `
     <!-- Main Tweet Text -->
     <g transform="translate(${paddingX}, ${currentY})">
       ${contentLines
         .map(
           (line, i) =>
-            `<text x="0" y="${i * contentLineHeight}" fill="${textColor}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="400" letter-spacing="-0.2">${escapeXml(line)}</text>`
+            `<text x="0" y="${i * contentLineHeight}" fill="${textColor}" font-family="${contentFont}" font-size="${contentLayout.size}" font-weight="400" letter-spacing="-0.2">${escapeXml(line)}</text>`
         )
         .join("\n      ")}
     </g>
@@ -159,7 +152,6 @@ export function renderTweetCardSvg(options: TweetCardRenderOptions): string {
   // Media Container (Single, 2-column, or 4-grid)
   let mediaSvg = "";
   const mediaContainerWidth = cardWidth;
-  const maxMediaHeight = quotedTweet ? 440 : (aspectRatio === "4:5" ? 640 : 480);
 
   if (mediaLayout === "4-grid" && mediaUrls.length >= 4) {
     const halfWidth = (mediaContainerWidth - 8) / 2;
@@ -213,8 +205,9 @@ export function renderTweetCardSvg(options: TweetCardRenderOptions): string {
   if (quotedTweet) {
     const quoteAuthorName = escapeXml(quotedTweet.author.name);
     const quoteAuthorHandle = escapeXml(quotedTweet.author.handle.startsWith("@") ? quotedTweet.author.handle : `@${quotedTweet.author.handle}`);
-    const quoteContentLines = wrapText(quotedTweet.content, 44).slice(0, 4);
-    const quoteBoxHeight = 80 + quoteContentLines.length * 30 + (quotedTweet.mediaUrl ? 180 : 0);
+    const quoteContentLines = quoteLayout!.lines;
+    const quoteLineHeight = quoteLayout!.size * 1.5;
+    const quoteBoxHeight = 80 + quoteContentLines.length * quoteLineHeight + (quotedTweet.mediaUrl ? 180 : 0);
 
     quoteSvg = `
       <!-- Quoted Tweet Box -->
@@ -226,23 +219,23 @@ export function renderTweetCardSvg(options: TweetCardRenderOptions): string {
           ${
             quotedTweet.author.avatarUrl
               ? `<image href="${escapeXml(quotedTweet.author.avatarUrl)}" width="32" height="32" clip-path="url(#quoteAvatarClip)" preserveAspectRatio="xMidYMid slice" />`
-              : `<text x="16" y="21" text-anchor="middle" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700">${escapeXml(quoteAuthorName.charAt(0))}</text>`
+              : `<text x="16" y="21" text-anchor="middle" fill="#ffffff" font-family="Inter" font-size="14" font-weight="700">${escapeXml(quoteAuthorName.charAt(0))}</text>`
           }
-          <text x="42" y="16" fill="${textColor}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="700">${quoteAuthorName}</text>
-          <text x="${48 + quoteAuthorName.length * 10}" y="16" fill="${secondaryTextColor}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16">${quoteAuthorHandle}</text>
+          <text x="42" y="16" fill="${textColor}" font-family="Inter" font-size="18" font-weight="700">${quoteAuthorName}</text>
+          <text x="${48 + quoteAuthorName.length * 10}" y="16" fill="${secondaryTextColor}" font-family="Inter" font-size="16">${quoteAuthorHandle}</text>
         </g>
         <!-- Quoted Content -->
         <g transform="translate(18, 64)">
           ${quoteContentLines
             .map(
               (line, i) =>
-                `<text x="0" y="${i * 28}" fill="${textColor}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="400">${escapeXml(line)}</text>`
+                `<text x="0" y="${i * quoteLineHeight}" fill="${textColor}" font-family="Inter" font-size="${quoteLayout!.size}" font-weight="400">${escapeXml(line)}</text>`
             )
             .join("\n          ")}
         </g>
         ${
           quotedTweet.mediaUrl
-            ? `<g transform="translate(18, ${64 + quoteContentLines.length * 28 + 12})">
+            ? `<g transform="translate(18, ${64 + quoteContentLines.length * quoteLineHeight + 12})">
                 <rect x="0" y="0" width="${cardWidth - 36}" height="140" rx="10" fill="#222" />
                 <image href="${escapeXml(quotedTweet.mediaUrl)}" width="${cardWidth - 36}" height="140" preserveAspectRatio="xMidYMid slice" />
               </g>`
@@ -259,8 +252,8 @@ export function renderTweetCardSvg(options: TweetCardRenderOptions): string {
     <!-- Tweet Footer -->
     <g transform="translate(${paddingX}, ${height - 48})">
       <line x1="0" y1="-16" x2="${cardWidth}" y2="-16" stroke="${borderColor}" stroke-width="1" />
-      <text x="0" y="12" fill="${secondaryTextColor}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="500">${escapeXml(watermark)}</text>
-      <text x="${cardWidth}" y="12" text-anchor="end" fill="#1d9bf0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="600">Post via Joey</text>
+      <text x="0" y="12" fill="${secondaryTextColor}" font-family="Inter" font-size="16" font-weight="500">${escapeXml(watermark)}</text>
+      <text x="${cardWidth}" y="12" text-anchor="end" fill="#1d9bf0" font-family="Inter" font-size="16" font-weight="600">Post via Joey</text>
     </g>
   `;
 

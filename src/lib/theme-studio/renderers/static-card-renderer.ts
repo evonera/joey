@@ -1,3 +1,4 @@
+import { fitText } from "./font-layout";
 export interface CardRenderOptions {
   title: string;
   body?: string;
@@ -5,6 +6,10 @@ export interface CardRenderOptions {
   sourceName?: string;
   brandKit?: {
     primaryColor?: string;
+    backgroundGradient?: string;
+    bgType?: unknown;
+    padding?: number;
+    borderRadius?: number;
     accentColor?: string;
     textColor?: string;
     watermark?: string;
@@ -15,6 +20,7 @@ export interface CardRenderOptions {
     logoMonogram?: string;
     scrimIntensity?: number;
     templatePreset?: string;
+    showSlideIndicator?: boolean;
   };
   aspectRatio?: "1:1" | "4:5" | "16:9" | "9:16";
   width?: number;
@@ -22,6 +28,7 @@ export interface CardRenderOptions {
   slideNumber?: number;
   totalSlides?: number;
   imageUrl?: string;
+  crop?: { mode: "contain" | "cover"; x: number; y: number };
   topBadge?: "yellow_logo" | "swipe_pill" | "tag_pill" | "circular_seal" | "none";
   showDividerMark?: boolean;
   pipInsetUrl?: string;
@@ -96,48 +103,6 @@ function clampVisualWidth(text: string, maxWidth: number): string {
 }
 
 /**
- * Wraps text by approximate visual width without splitting grapheme clusters.
- */
-function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let currentLine = "";
-
-  for (const rawWord of words) {
-    if (!rawWord) continue;
-    let graphemes = splitGraphemes(rawWord);
-    while (visualWidth(graphemes.join("")) > maxCharsPerLine) {
-      if (currentLine) {
-        lines.push(currentLine);
-        currentLine = "";
-      }
-      const { head, tail } = takeVisualWidth(graphemes, maxCharsPerLine);
-      lines.push(head.join(""));
-      graphemes = tail;
-    }
-    const word = graphemes.join("");
-    if (!word) continue;
-    const candidate = currentLine ? `${currentLine} ${word}` : word;
-    if (visualWidth(candidate) <= maxCharsPerLine) {
-      currentLine = candidate;
-    } else {
-      if (currentLine) lines.push(currentLine);
-      currentLine = word;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-  return lines;
-}
-
-function boundedLines(text: string, maxCharsPerLine: number, maxLines: number): string[] {
-  const lines = wrapText(text, maxCharsPerLine);
-  if (lines.length <= maxLines) return lines;
-  const bounded = lines.slice(0, maxLines);
-  bounded[maxLines - 1] = clampVisualWidth(bounded[maxLines - 1].replace(/[.…]+$/, ""), maxCharsPerLine - 3) + "...";
-  return bounded;
-}
-
-/**
  * Renders text with highlighted keywords wrapped in <tspan fill="..." font-weight="bold">
  */
 function formatLineWithHighlights(
@@ -166,20 +131,12 @@ function formatLineWithHighlights(
       refinedParts.push(part);
       continue;
     }
-    let subText = part.text;
-    let found = false;
-    for (const hw of highlightWords) {
-      if (!hw.trim()) continue;
-      const pos = subText.toLowerCase().indexOf(hw.toLowerCase());
-      if (pos !== -1) {
-        if (pos > 0) refinedParts.push({ text: subText.slice(0, pos), isHighlight: false });
-        refinedParts.push({ text: subText.slice(pos, pos + hw.length), isHighlight: true });
-        subText = subText.slice(pos + hw.length);
-        found = true;
-        break;
-      }
+    const escapedWords = highlightWords.filter(word => word.trim()).map(word => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    if (!escapedWords.length) { refinedParts.push(part); continue; }
+    const expression = new RegExp(`(${escapedWords.join("|")})`, "gi");
+    for (const text of part.text.split(expression)) {
+      refinedParts.push({ text, isHighlight: highlightWords.some(word => word.toLowerCase() === text.toLowerCase()) });
     }
-    if (!found) refinedParts.push({ text: subText, isHighlight: false });
   }
 
   return refinedParts
@@ -232,13 +189,19 @@ export function renderCardSvg(options: CardRenderOptions): string {
     watermark.replace(/^@/, "").charAt(0) ||
     "P"
   ).toUpperCase();
-  const fontFamily = brandKit.fontFamily || "system-ui, -apple-system, sans-serif";
-  const displayFont = "'Impact', 'Anton', 'Bebas Neue', " + fontFamily;
+  const fontFamily = brandKit.fontFamily === "Anton" ? "Anton" : "Inter";
+  const displayFont = brandKit.fontFamily === "Inter" ? "Inter" : "Anton";
 
-  const titleFontSize = Math.min(84, Math.max(32, brandKit.titleSize ? brandKit.titleSize * 1.6 : 56));
-  const bodyFontSize = Math.min(44, Math.max(20, brandKit.bodySize ? brandKit.bodySize * 1.4 : 26));
+  let titleFontSize = Math.min(84, Math.max(32, brandKit.titleSize ? brandKit.titleSize * 1.6 : 56));
+  let bodyFontSize = Math.min(44, Math.max(20, brandKit.bodySize ? brandKit.bodySize * 1.4 : 26));
 
-  const hasImage = Boolean(imageUrl && imageUrl.trim().length > 0);
+  const hasImage = brandKit.bgType !== "solid" && brandKit.bgType !== "gradient" && Boolean(imageUrl && imageUrl.trim().length > 0);
+  let heroUrl = imageUrl;
+  if (heroUrl && options.crop) {
+    const reference = new URL(heroUrl);
+    reference.hash = `joey-crop=${options.crop.mode},${options.crop.x},${options.crop.y},${width},${height}`;
+    heroUrl = reference.toString();
+  }
   const isCarousel = slideNumber !== undefined && totalSlides !== undefined;
 
   // Resolve top badge style
@@ -252,36 +215,35 @@ export function renderCardSvg(options: CardRenderOptions): string {
 
   const showDivider = options.showDividerMark ?? (hasImage && !isOutroSlide);
 
-  const titleLines = boundedLines(title, hasImage ? 22 : 24, aspectRatio === "16:9" ? 3 : 5);
-  const bodyLines = wrapText(body, 38).slice(0, 4);
-
   const clampedTag = clampVisualWidth(tag.toUpperCase(), 20);
   const tagBadgeWidth = Math.min(visualWidth(clampedTag) * 14 + 32, 320);
   const clampedSourceName = sourceName ? clampVisualWidth(sourceName, 30) : undefined;
   const clampedWatermark = clampVisualWidth(watermark, 32);
-
+  const inset = Math.min(width / 3, Math.max(24, (brandKit.padding ?? 32) * 2.5));
+  const bodyLayout = fitText(body, { font: "Inter", size: bodyFontSize, minSize: 18, width: width - inset * 2 - 20, height: height * .2, lineHeight: 1.45, weight: 400 });
+  bodyFontSize = bodyLayout.size;
+  const bodyLines = bodyLayout.lines;
+  const bodyHeight = bodyLines.length * bodyFontSize * 1.45;
+  const titleStartY = height * (hasImage ? .5 : .32);
+  const titleLayout = fitText(title, { font: hasImage ? displayFont : fontFamily, size: titleFontSize, minSize: 28, width: width - inset * 2 - 20, height: height - titleStartY - bodyHeight - 145, lineHeight: 1.18 });
+  titleFontSize = titleLayout.size;
+  const titleLines = titleLayout.lines;
   const titleLineHeight = titleFontSize * 1.18;
   const bodyLineHeight = bodyFontSize * 1.45;
-
-  // Vertical layout calculations
-  let titleStartY = height * 0.44;
-  if (isOutroSlide) {
-    titleStartY = height * 0.40;
-  } else if (!body) {
-    titleStartY = height * 0.52;
-  } else if (hasImage) {
-    titleStartY = height * 0.56;
-  }
   const bodyStartY = titleStartY + titleLines.length * titleLineHeight + 24;
   const dividerY = titleStartY - 36;
 
   const scrimOpacity = brandKit.scrimIntensity ?? 0.88;
 
+  const gradient = brandKit.backgroundGradient?.match(/^linear-gradient\(([\d.-]+)deg,\s*(#[0-9a-f]{3,8})(?:\s+([\d.]+)%)?,\s*(#[0-9a-f]{3,8})(?:\s+([\d.]+)%)?\)$/i);
+  if (brandKit.bgType === "gradient" && !gradient) throw new Error("Use a gradient with an angle and two hex color stops.");
+  const angle = gradient ? (Number(gradient[1]) - 90) * Math.PI / 180 : 0;
+  const gradientStops = gradient ? `<stop offset="${Math.max(0, Math.min(100, Number(gradient[3] ?? 0)))}%" stop-color="${gradient[2]}"/><stop offset="${Math.max(0, Math.min(100, Number(gradient[5] ?? 100)))}%" stop-color="${gradient[4]}"/>` : `<stop offset="0%" stop-color="${escapeXml(primaryColor)}"/><stop offset="100%" stop-color="${brandKit.bgType === "solid" ? escapeXml(primaryColor) : "#020617"}"/>`;
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${escapeXml(primaryColor)}" />
-      <stop offset="100%" stop-color="#020617" />
+    <clipPath id="canvas-corners"><rect width="${width}" height="${height}" rx="${Math.max(0, Math.min(300, (brandKit.borderRadius ?? 0) * 3))}"/></clipPath>
+    <linearGradient id="bgGrad" x1="${50 - Math.cos(angle) * 50}%" y1="${50 - Math.sin(angle) * 50}%" x2="${50 + Math.cos(angle) * 50}%" y2="${50 + Math.sin(angle) * 50}%">
+      ${gradientStops}
     </linearGradient>
     <linearGradient id="bottomScrim" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#000000" stop-opacity="0" />
@@ -297,13 +259,14 @@ export function renderCardSvg(options: CardRenderOptions): string {
     </filter>
   </defs>
 
+  <g clip-path="url(#canvas-corners)">
   <!-- Base Solid/Gradient Layer -->
   <rect width="${width}" height="${height}" fill="url(#bgGrad)" />
 
   ${
     hasImage
       ? `<!-- Hero Photo -->
-  <image href="${escapeXml(imageUrl || "")}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" />
+  <image href="${escapeXml(heroUrl || "")}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" />
   <!-- Contrast Scrim -->
   <rect width="${width}" height="${height}" fill="url(#bottomScrim)" opacity="${scrimOpacity}" />`
       : ""
@@ -363,12 +326,12 @@ export function renderCardSvg(options: CardRenderOptions): string {
 
   ${
     clampedSourceName
-      ? `<text x="${width - 80}" y="108" text-anchor="end" fill="${escapeXml(textColor)}" fill-opacity="0.65" font-family="${escapeXml(fontFamily)}" font-size="20" font-weight="600">${escapeXml(clampedSourceName)}</text>`
+      ? `<text x="${hasImage ? inset : width - inset}" y="${pipInsetUrl ? 255 : 108}" text-anchor="${hasImage ? "start" : "end"}" fill="${escapeXml(textColor)}" fill-opacity="0.65" font-family="${escapeXml(fontFamily)}" font-size="20" font-weight="600">${escapeXml(clampedSourceName)}</text>`
       : ""
   }
 
   ${
-    isCarousel
+    isCarousel && brandKit.showSlideIndicator !== false
       ? `<!-- Slide Indicator -->
   <g transform="translate(${width - 160}, 72)">
     <rect x="0" y="0" width="80" height="42" rx="21" fill="#ffffff" fill-opacity="0.12" />
@@ -406,7 +369,7 @@ export function renderCardSvg(options: CardRenderOptions): string {
   }
 
   <!-- Main Headline -->
-  <g transform="translate(${isOutroSlide ? width / 2 : 80}, ${titleStartY})" ${hasImage ? 'filter="url(#textGlow)"' : ""}>
+  <g transform="translate(${isOutroSlide ? width / 2 : inset}, ${titleStartY})" ${hasImage ? 'filter="url(#textGlow)"' : ""}>
     ${titleLines
       .map(
         (line, idx) =>
@@ -418,7 +381,7 @@ export function renderCardSvg(options: CardRenderOptions): string {
   <!-- Subtitle / Body Content -->
   ${
     bodyLines.length > 0
-      ? `<g transform="translate(${isOutroSlide ? width / 2 : 80}, ${bodyStartY})" ${hasImage ? 'filter="url(#textGlow)"' : ""}>
+      ? `<g transform="translate(${isOutroSlide ? width / 2 : inset}, ${bodyStartY})" ${hasImage ? 'filter="url(#textGlow)"' : ""}>
     ${bodyLines
       .map(
         (line, idx) =>
@@ -431,7 +394,7 @@ export function renderCardSvg(options: CardRenderOptions): string {
 
   <!-- Footer Area -->
   ${
-    isCarousel
+    isCarousel && brandKit.showSlideIndicator !== false
       ? `<!-- Bottom Carousel Pagination Dots -->
   <g transform="translate(${width / 2}, ${height - 40})">
     ${Array.from({ length: totalSlides }, (_, i) => {
@@ -447,12 +410,13 @@ export function renderCardSvg(options: CardRenderOptions): string {
     brandKit.showWatermark === false
       ? ""
       : `<!-- Footer Watermark -->
-  <g transform="translate(80, ${height - 75})">
+  <g transform="translate(${inset}, ${height - 75})">
     ${!hasImage ? `<line x1="0" y1="0" x2="${width - 160}" y2="0" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1.5" />` : ""}
     <text x="0" y="32" fill="${escapeXml(textColor)}" fill-opacity="0.75" font-family="${escapeXml(fontFamily)}" font-size="20" font-weight="700">${escapeXml(clampedWatermark)}</text>
     <text x="${width - 160}" y="32" text-anchor="end" fill="${escapeXml(accentColor)}" font-family="${escapeXml(fontFamily)}" font-size="16" font-weight="600">Joey Theme Studio</text>
   </g>`
   }
+</g>
 </svg>`;
 }
 
@@ -468,9 +432,12 @@ export function renderCarouselSlideSvgs(
     pipInsetUrl?: string;
     highlightWords?: string[];
     isOutroSlide?: boolean;
+    outroWatermarkText?: string;
+    sourceName?: string;
   }>,
   brandKit?: CardRenderOptions["brandKit"],
-  aspectRatio: "1:1" | "4:5" = "1:1"
+  aspectRatio: "1:1" | "4:5" = "1:1",
+  design?: { topBadge?: CardRenderOptions["topBadge"]; showDivider?: boolean },
 ): string[] {
   return slides.map((slide, index) =>
     renderCardSvg({
@@ -478,11 +445,13 @@ export function renderCarouselSlideSvgs(
       body: slide.body,
       tag: slide.tag || (index === 0 ? "COVER" : index === slides.length - 1 ? "TAKEAWAY" : `POINT #${index}`),
       imageUrl: slide.imageUrl,
+      sourceName: slide.sourceName,
       pipInsetUrl: slide.pipInsetUrl,
       highlightWords: slide.highlightWords,
       isOutroSlide: slide.isOutroSlide ?? (index === slides.length - 1 && slides.length > 2),
-      topBadge: index === 0 ? "swipe_pill" : "yellow_logo",
-      showDividerMark: true,
+      outroWatermarkText: slide.outroWatermarkText,
+      topBadge: design?.topBadge ?? (index === 0 ? "swipe_pill" : "yellow_logo"),
+      showDividerMark: design?.showDivider ?? true,
       brandKit,
       aspectRatio,
       slideNumber: index + 1,

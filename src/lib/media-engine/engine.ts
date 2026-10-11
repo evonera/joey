@@ -1,7 +1,9 @@
 import { dispatchQueuedRender } from "./dispatch";
+import { checkUsageLimits } from "@/lib/billing";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assets, contentPackages, drafts, flows, mediaRenderJobs } from "@/lib/db/schema";
+import { isCuratedAssetRef } from "./curated-assets";
+import { assets, contentPackages, drafts, flows, mediaRenderJobs, tenants } from "@/lib/db/schema";
 import { renderHash, renderSpecSchema, referencedAssets, expectedAssetTypes } from "./spec";
 
 /** Server runtime only. The tenant is derived by the authenticated caller. */
@@ -21,9 +23,18 @@ export async function submitRender(tenantId: string, input: unknown, options: { 
         ? await tx.query.drafts.findFirst({ where: and(eq(drafts.id, spec.source.id), eq(drafts.tenantId, tenantId)) })
         : await tx.query.flows.findFirst({ where: and(eq(flows.id, spec.source.id), eq(flows.tenantId, tenantId)) });
     if (!source) throw new Error("Render source does not belong to this workspace.");
+    if (spec.format === "mp4") {
+      await tx.execute(sql`SELECT id FROM ${tenants} WHERE id = ${tenantId} FOR SHARE`);
+      if (!(await checkUsageLimits(tenantId, tx as typeof db)).allowsVideoRendering) throw new Error("Video rendering requires an active paid subscription.");
+    }
     const refs = referencedAssets(spec);
-    const owned = await tx.query.assets.findMany({ where: and(eq(assets.tenantId, tenantId), inArray(assets.id, refs.map(ref => ref.id))) });
+    const ownedRefs = refs.filter(ref => !isCuratedAssetRef(ref));
+    const owned = await tx.query.assets.findMany({ where: and(eq(assets.tenantId, tenantId), inArray(assets.id, ownedRefs.map(ref => ref.id))) });
     for (const ref of refs) {
+      if (isCuratedAssetRef(ref)) {
+        continue;
+      }
+      if (ref.id.startsWith("curated:")) throw new Error("Curated source asset is invalid.");
       const row = owned.find(item => item.id === ref.id);
       if (!row || row.key !== ref.version) throw new Error("A source asset is missing or its version changed.");
       if (!expectedAssetTypes(spec, ref.id).every(expected => row.mimeType.startsWith(expected))) throw new Error("Source asset type does not match the template.");
@@ -77,7 +88,9 @@ export async function getRender(tenantId: string, jobId: string) {
   if (!job) throw new Error("Render not found.");
   const output = job.status === "succeeded" && job.outputAssetId
     ? await db.query.assets.findFirst({ where: and(eq(assets.id, job.outputAssetId), eq(assets.tenantId, tenantId)), columns: { id: true, publicUrl: true, mimeType: true, size: true } }) : undefined;
-  return { jobId: job.id, status: job.status, error: job.error, output, usage: job.usage, canRetry: ["failed", "cancelled"].includes(job.status) && job.attempt < 3 };
+  let canRetry = ["failed", "cancelled"].includes(job.status) && job.attempt < 3;
+  if (canRetry && (job.spec as { format?: string }).format === "mp4") canRetry = (await checkUsageLimits(tenantId)).allowsVideoRendering;
+  return { jobId: job.id, status: job.status, error: job.error, output, usage: job.usage, canRetry };
 }
 
 export async function cancelRender(tenantId: string, jobId: string) {
@@ -93,6 +106,10 @@ export async function retryRender(tenantId: string, jobId: string, options: { pr
     const [job] = await tx.select().from(mediaRenderJobs).where(and(eq(mediaRenderJobs.id, jobId), eq(mediaRenderJobs.tenantId, tenantId))).for("update");
     if (!job || !["failed", "cancelled"].includes(job.status) || job.attempt >= 3) throw new Error("This render cannot be retried. The maximum is three worker attempts.");
     const spec = renderSpecSchema.parse(job.spec);
+    if (spec.format === "mp4") {
+      await tx.execute(sql`SELECT id FROM ${tenants} WHERE id = ${tenantId} FOR SHARE`);
+      if (!(await checkUsageLimits(tenantId, tx as typeof db)).allowsVideoRendering) throw new Error("Video rendering requires an active paid subscription.");
+    }
     if (spec.source.kind === "theme_package") {
       const [pkg] = await tx.update(contentPackages).set({ status: "pending_review", error: null, updatedAt: new Date(), metrics: sql`coalesce(${contentPackages.metrics}, '{}'::jsonb) || '{"failurePhase":"render_pending"}'::jsonb` })
         .where(and(eq(contentPackages.id, spec.source.id), eq(contentPackages.tenantId, tenantId), inArray(contentPackages.status, options.preserveReviewDecision ? ["pending_review", "failed"] : ["pending_review", "failed", "rejected"]), sql`${contentPackages.metrics}->>'renderJobId' = ${jobId}`, sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`)).returning({ id: contentPackages.id });

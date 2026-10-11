@@ -25,6 +25,9 @@ function Code({ children }: { children: string }) {
 }
 
 const ENDPOINTS = [
+  { method: "GET", path: "/api/v1/scouts", scope: "read", desc: "List saved Scout sources; optional ?scoutId=… selects one source." },
+  { method: "POST", path: "/api/v1/scouts/observations", scope: "write", desc: "Supply at most 15 real post observations. Joey evaluates them; this grants no publishing approval." },
+  { method: "POST", path: "/api/v1/theme-packages/{id}/source-media", scope: "write", desc: "Offer media discovered on an individual post with declared reuse rights; import it in Render media." },
   { method: "GET", path: "/api/v1/accounts", scope: "read", desc: "List connected social accounts." },
   { method: "GET", path: "/api/v1/drafts", scope: "read", desc: "List drafts. Optional ?status=pending_review filter." },
   { method: "POST", path: "/api/v1/drafts", scope: "write", desc: "Create a draft (status pending_review)." },
@@ -199,6 +202,19 @@ export default function DocsPage() {
               </div>
             ))}
           </div>
+        </section>
+
+        <section id="local-connector" className="space-y-4">
+          <h2 className="text-2xl font-bold">Local source connector</h2>
+          <p className="text-sm text-muted-foreground">RSS, YouTube and public website sources collect directly. Instagram and X profiles can use the installed local UGC collectors or a custom provider. Apify remains optional. Some sources require platform access configured on your own computer; unavailable sources report an access error rather than invented posts.</p>
+          <p className="text-sm">Create a workspace API token with read and write scopes, then <a href="/connectors/ugc-scout-connector.py" download className="underline">download the connector</a>. Use your UGC environment’s Python so gallery-dl and yt-dlp are installed. Login cookies stay local.</p>
+          <Code>{`export JOEY_API_TOKEN="your-workspace-token"
+export JOEY_URL="https://your-joey-site.example"
+/path/to/ugc/.venv/bin/python ugc-scout-connector.py --ugc-root /path/to/ugc --scout-id YOUR_SCOUT_ID --watch
+
+# Offer an individual post's media to an existing draft package:
+/path/to/ugc/.venv/bin/python ugc-scout-connector.py --ugc-root /path/to/ugc --post https://www.instagram.com/p/POST_ID/ --package-id PACKAGE_ID --rights owned`}</Code>
+          <p className="text-sm text-muted-foreground">Use --dry-run to collect without submitting. The connector must remain running for fresh profile monitoring. The service accepts source evidence, not approvals; review a finished export in Joey before publishing. Missing dates and engagement counts remain unknown.</p>
         </section>
 
         <aside className="p-8 rounded-2xl bg-card border border-border text-center shadow-xs">

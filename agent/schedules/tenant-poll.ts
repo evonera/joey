@@ -15,6 +15,7 @@ import { recordAutomationRun } from "@/lib/automation-runs";
 import { executePublishDraft, getZernioClientForTenant, publishDueDrafts } from "@/lib/publisher-core";
 import { syncTenantMemories } from "@/lib/ingest-memories";
 import { assertBudget } from "@/lib/usage";
+import { checkUsageLimits } from "@/lib/billing";
 import { recoverStaleEngagementSends } from "@/lib/engagement-delivery";
 // NOTE: Theme Studio DM retries are owned by flows-tick (every minute).
 // Do not call processThemeStudioDmRetries here to avoid a duplicate pump.
@@ -232,6 +233,7 @@ export default defineSchedule({
 
     for (const config of dueConfigs) {
       try {
+      if (!(await checkUsageLimits(config.tenantId)).allowsAutonomousCadence) continue;
       const ownerMember = await db.query.member.findFirst({
         where: and(eq(member.organizationId, config.tenantId), eq(member.role, "owner"))
       });

@@ -1,0 +1,14 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+export const metadata: Metadata = { title: "Cancellation and Plan Changes — Joey", description: "Joey billing policies and customer support.", robots: { index: false } };
+export default function PolicyPage() {
+  return <div><h1 className="text-3xl font-semibold tracking-tight mb-8">Cancellation and Plan Changes</h1>
+    <div className="space-y-6 text-white/70 leading-relaxed text-sm">
+      <p><strong>Last updated:</strong> October 11, 2026</p>
+        <section><h2 className="text-lg font-medium text-white mb-2">How to cancel</h2><p>A workspace owner or admin can open Settings → Billing → Manage billing, select the subscription and choose Cancel Subscription. Choose cancellation at the next billing date to stop renewal while keeping paid access through the current period. Choose immediate cancellation to end paid access immediately. Review and confirm the choice in Dodo’s portal. The portal shows confirmation and the applicable end date. If you cannot access it, email joey@evonera.net using your purchase email and include your workspace and receipt ID.</p></section>
+        <section><h2 className="text-lg font-medium text-white mb-2">Changing plans</h2><p>Use Manage billing to change plans. Review the new plan, effective date, taxes and any charge before confirming. Paid upgrades take effect after successful payment. A downgrade scheduled for the next billing date keeps the current plan until then. The confirmation in the portal controls the effective date; do not start a second checkout to change an existing subscription.</p></section>
+        <section><h2 className="text-lg font-medium text-white mb-2">After paid access ends</h2><p>Your workspace returns to Free limits. You can review existing content, but new video renders and autonomous scheduled runs require paid access. If existing resources exceed Free limits, remove resources or upgrade before adding more. Already approved publication jobs may still finish; review and cancel unwanted scheduled posts separately. Cancelling billing does not delete your account or remove posts already published on social platforms.</p></section>
+        <section><h2 className="text-lg font-medium text-white mb-2">Refunds and help</h2><p>Cancellation does not automatically refund a payment. The first subscription payment has a 7-day refund request window; renewals are reviewed case by case. Read the refund policy or contact joey@evonera.net for help. Mandatory consumer rights are unaffected.</p></section>
+      <p><Link href="/refunds" className="underline">Refund policy</Link> · <Link href="/cancellation" className="underline">Cancellation</Link> · <Link href="/terms" className="underline">Terms</Link> · <a href="mailto:joey@evonera.net" className="underline">Contact support</a></p>
+    </div></div>;
+}

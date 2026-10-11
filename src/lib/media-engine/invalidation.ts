@@ -11,6 +11,6 @@ export async function invalidateThemeMedia(tx: Transaction, tenantId: string, so
   const column = source.kind === "page" ? contentPackages.themePageId : source.kind === "template" ? contentPackages.templateId : contentPackages.formatId;
   await tx.update(contentPackages).set({
     status: "pending_review", error: null, updatedAt: new Date(),
-    ...(pixels ? { renderedAssetUrls: [], metrics: sql`(coalesce(${contentPackages.metrics}, '{}'::jsonb) - 'renderJobId' - 'renderRevision') || '{"failurePhase":"render_required"}'::jsonb` } : {}),
+    ...(pixels ? { renderedAssetUrls: [], metrics: sql`(coalesce(${contentPackages.metrics}, '{}'::jsonb) - 'renderJobId' - 'renderRevision' - 'legacyRenderRevision' - 'legacyRenderToken') || '{"failurePhase":"render_required"}'::jsonb` } : {}),
   }).where(and(eq(contentPackages.tenantId, tenantId), eq(column, source.id), inArray(contentPackages.status, ["pending_review", "approved", "rejected", "failed"]), sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`));
 }

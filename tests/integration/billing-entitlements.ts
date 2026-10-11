@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { requireDisposableDatabase } from "./require-disposable-database";
+await requireDisposableDatabase();
+const { db } = await import("../../src/lib/db");
+const { tenants, themePages, themeSlots, themeContentFormats, flows, flowRuns } = await import("../../src/lib/db/schema");
+const { eq, and } = await import("drizzle-orm");
+const { insertThemeSlot } = await import("../../src/lib/theme-studio/slots");
+const { admitPaidScheduledFlow } = await import("../../src/lib/flows/scheduled-admission");
+const id = crypto.randomUUID(), other = crypto.randomUUID();
+try {
+  await db.insert(tenants).values([id, other].map(id => ({ id, name: "Disposable billing acceptance", slug: id })));
+  const [page] = await db.insert(themePages).values({ tenantId: id, name: "Slot limit fixture" }).returning();
+  const [format] = await db.insert(themeContentFormats).values({ tenantId: id, name: "Image", slug: `fixture-${id}`, platform: "instagram", mediaType: "image", renderer: "static_card" }).returning();
+  const input = { themePageId: page.id, formatId: format.id };
+  const race = await Promise.allSettled(Array.from({ length: 6 }, () => insertThemeSlot(id, input)));
+  assert.equal(race.filter(r => r.status === "fulfilled" && "slot" in r.value).length, 3, "concurrent Free creation must never exceed three slots");
+  assert.equal((await db.select().from(themeSlots).where(eq(themeSlots.themePageId, page.id))).length, 3);
+  assert.equal((await insertThemeSlot(other, input)).error, "Theme page not found", "foreign workspace cannot add a slot");
+  const [flow] = await db.insert(flows).values({ tenantId: id, name: "Paid schedule fixture", status: "active", graph: { nodes: [], edges: [] } }).returning();
+  const admit = () => admitPaidScheduledFlow(id, flow.id, { fixture: true });
+  assert.equal(await admit(), undefined, "Free schedules cannot start work");
+  await db.update(tenants).set({ subscriptionPlan: "creator", subscriptionStatus: "active" }).where(eq(tenants.id, id));
+  const added = await insertThemeSlot(id, input); assert(added.slot, "upgrade increases the slot quota");
+  const runs = await Promise.all([admit(), admit()]);
+  assert.equal(runs.filter(Boolean).length, 1, "overlapping paid scheduler admissions must deduplicate");
+  await db.update(flowRuns).set({ status: "succeeded" }).where(eq(flowRuns.flowId, flow.id));
+  await db.update(tenants).set({ subscriptionStatus: "past_due" }).where(eq(tenants.id, id));
+  assert(await admit(), "provider grace period keeps access");
+  await db.update(flowRuns).set({ status: "succeeded" }).where(eq(flowRuns.flowId, flow.id));
+  await db.update(tenants).set({ subscriptionStatus: "cancelled" }).where(eq(tenants.id, id));
+  assert.equal(await admit(), undefined, "cancellation prevents further autonomous work");
+  await assert.rejects(insertThemeSlot(id, input), /3 content slots/);
+  assert.equal((await db.select().from(themeSlots).where(and(eq(themeSlots.tenantId, id), eq(themeSlots.themePageId, page.id)))).length, 4, "downgrade preserves existing content");
+  assert.equal(await admitPaidScheduledFlow(other, flow.id, {}), undefined, "foreign tenant cannot admit work");
+  console.log("PASS: concurrent slot quotas, ownership, upgrade, provider grace, cancellation, scheduled dedupe and retained content.");
+} finally {
+  await db.delete(tenants).where(eq(tenants.id, id));
+  await db.delete(tenants).where(eq(tenants.id, other));
+}
+process.exit(0);

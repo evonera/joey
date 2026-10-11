@@ -13,6 +13,7 @@ import {
   CpuIcon,
   Calendar03Icon,
 } from "hugeicons-react";
+import { PLAN_CATALOG, PUBLIC_PLAN_IDS, planFeatures } from "@/lib/plans";
 import { LandingHeader } from "@/components/landing-header";
 import { JoeyLogo } from "@/components/joey-logo";
 
@@ -497,99 +498,24 @@ export default function LandingPage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Plan 1: Open Source BYOK */}
-            <div className="rounded-2xl bg-[#121110] border border-white/[0.08] p-8 space-y-6 flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-white/[0.06] text-xs font-semibold text-white/80">
-                  Open Source &amp; Self-Hosted
+          <p className="mb-6 text-sm text-white/60">Hosted plans are billed monthly per workspace in USD. Taxes and any local currency conversion are shown at checkout. Model API usage with your own keys is billed by your model provider.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+            {PUBLIC_PLAN_IDS.map((id) => {
+              const plan = PLAN_CATALOG[id];
+              return <div key={id} className="rounded-2xl bg-[#121110] border border-white/[0.08] p-6 space-y-6 flex flex-col justify-between">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">{plan.name}</h3>
+                  <p><span className="text-4xl font-bold">${plan.monthlyPrice}</span><span className="text-xs text-white/40"> / month</span></p>
+                  <ul className="space-y-3 text-xs text-white/80">
+                    {planFeatures(id).map((feature) => <li key={feature} className="flex items-start gap-2"><CheckCircle className="size-4 text-emerald-400 shrink-0" /><span>{feature}</span></li>)}
+                  </ul>
                 </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl sm:text-5xl font-bold tracking-tight text-white">$0</span>
-                  <span className="text-xs text-white/40 uppercase font-mono">/ Forever</span>
-                </div>
-                <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                  Everything you need to automate your social channels. Bring your own keys and run locally or on your
-                  cloud.
-                </p>
-
-                <div className="space-y-2.5 pt-2 text-xs text-white/80">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
-                    <span>Bring your own keys (Google, OpenAI, Claude)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
-                    <span>Visual Flows Studio &amp; Exa AI integration</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
-                    <span>Theme Studio &amp; dynamic SVG carousels</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
-                    <span>Telegram Bot mobile alerts &amp; 1-tap approvals</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-emerald-400 shrink-0" />
-                    <span>Full REST API &amp; WebMCP access</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4">
-                <Link href="/signup" className="btn-accent w-full text-center py-2.5 rounded-lg text-xs font-semibold">
-                  Start Free Now
-                </Link>
-              </div>
-            </div>
-
-            {/* Plan 2: Hosted Cloud */}
-            <div className="rounded-2xl bg-[#121110] border border-amber-500/30 p-8 space-y-6 flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 px-3 py-1 bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wider rounded-bl-lg">
-                Zero Ops
-              </div>
-
-              <div className="space-y-4">
-                <div className="inline-flex items-center px-2.5 py-0.5 rounded bg-amber-500/15 text-xs font-semibold text-amber-300">
-                  Joey Cloud Managed
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl sm:text-5xl font-bold tracking-tight text-white">$19</span>
-                  <span className="text-xs text-white/40 uppercase font-mono">/ Month</span>
-                </div>
-                <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-                  For creators and teams who want hands-off automated background schedules without managing
-                  infrastructure.
-                </p>
-
-                <div className="space-y-2.5 pt-2 text-xs text-white/80">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-amber-400 shrink-0" />
-                    <span>All Open Source features included</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-amber-400 shrink-0" />
-                    <span>Always-on background workers on Neon Lakebase</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-amber-400 shrink-0" />
-                    <span>Managed media asset storage &amp; CDN</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="size-4 text-amber-400 shrink-0" />
-                    <span>Priority webhook dispatching</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4">
-                <Link href="/signup" className="btn-ghost w-full text-center py-2.5 rounded-lg text-xs font-semibold">
-                  Get Started with Cloud
-                </Link>
-              </div>
-            </div>
+                <Link href="/signup" className="btn-accent w-full text-center py-2.5 rounded-lg text-xs font-semibold">{id === "free" ? "Start Free" : `Choose ${plan.name}`}</Link>
+              </div>;
+            })}
           </div>
+          <p className="mt-6 text-sm text-white/60">Paid plans renew automatically until cancelled. Manage your plan and invoices in Settings → Billing. <Link href="/cancellation" className="underline">Cancellation details</Link> · <Link href="/refunds" className="underline">7-day first-payment refunds</Link> · <Link href="/terms" className="underline">Terms</Link></p>
+          <p className="mt-3 text-xs text-white/40">Prefer to self-host? Joey’s source code is MIT licensed; your infrastructure and third-party services have their own costs.</p>
         </section>
 
         {/* ========================================================================= */}
@@ -635,6 +561,9 @@ export default function LandingPage() {
             <Link href="/terms" className="hover:text-white transition-colors">
               Terms
             </Link>
+            <Link href="/refunds" className="hover:text-white transition-colors">Refunds</Link>
+            <Link href="/cancellation" className="hover:text-white transition-colors">Cancellation</Link>
+            <a href="mailto:joey@evonera.net" className="hover:text-white transition-colors">Contact</a>
             <Link href="/docs" className="hover:text-white transition-colors">
               Docs
             </Link>

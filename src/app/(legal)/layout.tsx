@@ -29,6 +29,7 @@ export default function LegalLayout({
         {children}
       </main>
       <footer className="border-t border-white/[0.06] py-8 text-center text-xs text-white/40">
+        <nav aria-label="Policies" className="flex flex-wrap justify-center gap-4 mb-4"><Link href="/terms">Terms</Link><Link href="/privacy">Privacy</Link><Link href="/refunds">Refunds</Link><Link href="/cancellation">Cancellation</Link><a href="mailto:joey@evonera.net">Contact</a></nav>
         &copy; {new Date().getFullYear()} Evonera. MIT Licensed.
       </footer>
     </div>

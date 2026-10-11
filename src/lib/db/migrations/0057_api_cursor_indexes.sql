@@ -1,0 +1,3 @@
+CREATE INDEX "drafts_tenant_created_idx" ON "drafts" USING btree ("tenant_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "posts_tenant_published_idx" ON "posts" USING btree ("tenant_id","published_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "social_accounts_tenant_created_idx" ON "social_accounts" USING btree ("tenant_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);

@@ -2,8 +2,11 @@
 
 import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { themeSlots, themePages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
+import { themeSlots, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
+
+import { SlotQuotaError } from "@/lib/billing";
+import { insertThemeSlot } from "@/lib/theme-studio/slots";
 
 export interface CreateThemeSlotInput {
   themePageId: string;
@@ -55,51 +58,9 @@ export async function createThemeSlot(data: CreateThemeSlotInput) {
   try {
     const tenantId = await requireRole(["owner", "admin"]);
 
-    const page = await db.query.themePages.findFirst({
-      where: and(eq(themePages.id, data.themePageId), eq(themePages.tenantId, tenantId)),
-    });
-    if (!page) {
-      return { error: "Theme page not found" };
-    }
-
-    const format = await db.query.themeContentFormats.findFirst({
-      where: and(eq(themeContentFormats.id, data.formatId), eq(themeContentFormats.tenantId, tenantId)),
-    });
-    if (!format) {
-      return { error: "Content format not found" };
-    }
-    if (data.overrideTemplateId) {
-      const template = await db.query.themeVisualTemplates.findFirst({
-        where: and(
-          eq(themeVisualTemplates.id, data.overrideTemplateId),
-          eq(themeVisualTemplates.tenantId, tenantId),
-          eq(themeVisualTemplates.formatId, data.formatId),
-        ),
-        columns: { id: true },
-      });
-      if (!template) return { error: "Template is not available for this content format" };
-    }
-
-    const existingSlots = await db.query.themeSlots.findMany({
-      where: and(eq(themeSlots.themePageId, data.themePageId), eq(themeSlots.tenantId, tenantId)),
-    });
-
-    const priority = data.priority ?? existingSlots.length;
-
-    const [slot] = await db.insert(themeSlots).values({
-      tenantId,
-      themePageId: data.themePageId,
-      formatId: data.formatId,
-      label: data.label?.trim() || format.name,
-      cadence: data.cadence || 'daily',
-      daysOfWeek: data.daysOfWeek || [0, 1, 2, 3, 4, 5, 6],
-      priority,
-      overrideTemplateId: data.overrideTemplateId || null,
-      isActive: true,
-    }).returning();
-
-    return { slot: { ...slot, format } };
+    return await insertThemeSlot(tenantId, data);
   } catch (error: any) {
+    if (error instanceof SlotQuotaError) return { error: error.message };
     console.error("Failed to create theme slot:", error);
     return { error: "Failed to create theme slot" };
   }

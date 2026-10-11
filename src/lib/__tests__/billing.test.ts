@@ -156,6 +156,20 @@ describe("Billing & Usage Limits", () => {
   });
 });
 
+describe("Subscription entitlement transitions", () => {
+  it.each(["creator", "pro", "agency"])("keeps %s access in a provider grace period and removes it after cancellation", async (plan) => {
+    const { db } = await import("@/lib/db");
+    for (const status of ["active", "past_due", "on_hold", "paused", "cancelled", "expired", "failed", "pending"]) {
+      (db.query.tenants.findFirst as any).mockResolvedValue({ subscriptionPlan: plan, subscriptionStatus: status });
+      const limits = await checkUsageLimits("tenant");
+      const allowed = ["active", "past_due"].includes(status);
+      expect(limits.allowsVideoRendering).toBe(allowed);
+      expect(limits.allowsAutonomousCadence).toBe(allowed);
+      expect(limits.slotLimitPerPage).toBe(allowed ? {creator:12,pro:24,agency:48}[plan] : 3);
+    }
+  });
+});
+
 describe("Dodo hosted checkout reuse", () => {
   const now = Date.parse("2026-09-08T00:00:00Z");
 

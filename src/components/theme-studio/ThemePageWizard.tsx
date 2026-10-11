@@ -324,7 +324,7 @@ export function ThemePageWizard({ availableFormats, initialAccounts = [] }: Them
               <div>
                 <p className="text-sm font-semibold">No Connected Social Accounts</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-                  You can finish setting up this page now. Connect a matching publishing account before activating its daily content automation.
+                  You can finish setting up this page now. Enable draft-only generation without an account. Connect a matching account when you are ready to publish.
                 </p>
               </div>
               <Link

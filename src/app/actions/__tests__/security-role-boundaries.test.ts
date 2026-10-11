@@ -22,6 +22,7 @@ vi.mock("@/lib/theme-studio/publishing/publisher", () => ({ publishContentPackag
 vi.mock("@/lib/flows/run-flow-server", () => ({ startFlowRun: mocks.provider, executeAdmittedFlowRun: mocks.provider }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+import { activateThemePage } from "../theme-pages";
 import { approveDraft, updateDraft, deleteDraft } from "../drafts";
 import { publishDraft } from "../publisher";
 import { createManualPost } from "../compose";
@@ -35,6 +36,7 @@ import { cancelMediaRender, retryMediaRender } from "../media";
 const input = { content: "hello", mediaUrls: [], accountIds: ["account-1"], scheduleType: "draft" as const };
 const scoutInput = { name: "Scout", targetUrl: "https://instagram.com/example", goalCondition: "spike" };
 const privilegedCalls = [
+  () => activateThemePage("page", "draft_only"),
   () => approveDraft("draft"), () => publishDraft("draft"), () => approveReply("reply"), () => sendReply("reply"),
   () => saveFlow("flow", { graph: {} }), () => setFlowStatus("flow", "active"), () => runFlow("flow"),
   () => provisionFlowWebhookSecret("flow"), () => publishThemePackage("pkg"),

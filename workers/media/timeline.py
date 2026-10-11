@@ -32,7 +32,7 @@ def render_timeline(job, root, encoder="libx264"):
     if encoder != "libx264":
         raise ValueError("Timeline exports support CPU libx264 only; NVENC is not validated")
     spec = job["spec"]
-    if job["rendererVersion"] not in ("joey-media-2", "joey-media-3") or job["fontVersion"] != "joey-fonts-1":
+    if job["rendererVersion"] not in ("joey-media-2", "joey-media-3", "joey-media-4") or job["fontVersion"] != "joey-fonts-1":
         raise ValueError("Worker and timeline version mismatch")
     scenes = spec["timeline"]
     spans, total = boundaries(scenes)

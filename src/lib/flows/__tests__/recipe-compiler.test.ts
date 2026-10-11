@@ -170,4 +170,14 @@ describe("Theme Studio Recipe-to-Flow Compiler", () => {
     expect(result.isValid).toBe(false);
     expect(result.validationIssues).toContain("Select an active instagram publishing account.");
   });
+  it("compiles draft-only generation without relaxing source-rights requirements", () => {
+    const input = { mode: "draft_only" as const, page: { ...mockPage, connectedPlatforms: [] }, sources: mockSources, slots: mockSlots };
+    const result = compileThemeRecipe(input);
+    expect(result.isValid).toBe(true);
+    expect(result.graph.nodes.find(node => node.type === "action.theme_studio_run")?.config.mode).toBe("draft_only");
+    expect(result.graph.nodes.some(node => node.type.includes("publish"))).toBe(false);
+    expect(compileThemeRecipe({ ...input, sources: mockSources.map(source => ({ ...source, rightsCategory: "unknown" })) }).isValid).toBe(false);
+    expect(compileThemeRecipe({ ...input, mode: "publishing" }).isValid).toBe(false);
+  });
+
 });
