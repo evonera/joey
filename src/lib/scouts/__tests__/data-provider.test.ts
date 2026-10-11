@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   key: vi.fn(),
   decrypt: vi.fn(),
   fetch: vi.fn(),
+  connector: vi.fn(),
 }));
 vi.mock("@/lib/flows/nodes/data/apify-actor", () => ({ resolveToken: mocks.apify }));
 vi.mock("@/lib/flows/outbound-request", async (importOriginal) => ({
@@ -16,10 +17,12 @@ vi.mock("@/lib/flows/outbound-request", async (importOriginal) => ({
 }));
 vi.mock("@/lib/db", () => ({ db: { query: { apiKeys: { findFirst: mocks.key } } } }));
 vi.mock("@/lib/crypto", () => ({ decrypt: mocks.decrypt }));
+vi.mock("../connector", () => ({ findConnectorEvidence: mocks.connector }));
 
 import {
   ApifyScoutProvider,
   RssScoutProvider,
+  YoutubeScoutProvider,
   CustomScoutProvider,
   MockScoutProvider,
   getScoutDataProvider,
@@ -65,6 +68,26 @@ afterEach(() => {
 });
 
 describe("Scout provider selection and isolation", () => {
+  it("uses saved connector evidence only for the requested source without an Apify credential", async () => {
+    mocks.apify.mockRejectedValue(new Error("missing"));
+    mocks.connector.mockResolvedValue({ items: [item] });
+    const provider = await getScoutDataProvider("tenant-a", request);
+    expect(provider.kind).toBe("connector");
+    expect(await provider.fetchRecentPosts(request, context())).toEqual([item]);
+    expect(mocks.connector).toHaveBeenCalledWith("tenant-a", request);
+    expect(mocks.apify).not.toHaveBeenCalled();
+  });
+  it("uses public YouTube feed evidence with stable IDs and no guessed engagement", async () => {
+    mocks.outbound.mockResolvedValue({ status: 200, headers: {}, finalUrl: "https://www.youtube.com/feeds/videos.xml", buffer: Buffer.from('<feed><entry><title>Actual video</title><link href="https://www.youtube.com/watch?v=abcdefghijk"/><published>2026-10-01T12:00:00Z</published></entry></feed>') });
+    const source = { platform: "youtube", targetUrl: "https://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa" };
+    expect((await getScoutDataProvider("tenant", source)).kind).toBe("youtube");
+    const items = await new YoutubeScoutProvider().fetchRecentPosts(source, context());
+    expect(items).toHaveLength(1);
+    expect(items[0]).not.toHaveProperty("views");
+    expect(items[0]).not.toHaveProperty("likes");
+    expect(items[0].timestamp).toBe("2026-10-01T12:00:00.000Z");
+    expect(mocks.apify).not.toHaveBeenCalled();
+  });
   it("keeps Apify as the independent default and resolves each workspace", async () => {
     expect((await getScoutDataProvider("tenant-a")).kind).toBe("apify");
     expect((await getScoutDataProvider("tenant-b")).kind).toBe("apify");

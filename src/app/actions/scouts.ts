@@ -29,9 +29,11 @@ function validateScoutInput(input: CreateScoutInput) {
   return { name: input.name.trim(), targetUrl, platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: dailyScoutInterval(input.pollIntervalMinutes) };
 }
 
-export async function getScoutSetup() {
+export async function getScoutSetup(scoutId?: string) {
   const tenantId = await getActiveTenantId();
-  return getScoutProviderSetup(tenantId);
+  const source = scoutId ? await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) }) : undefined;
+  if (scoutId && !source) throw new Error("Scout not found.");
+  return getScoutProviderSetup(tenantId, source);
 }
 
 export async function getScouts() {

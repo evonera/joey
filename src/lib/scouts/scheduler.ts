@@ -113,7 +113,7 @@ export async function dispatchScoutsTick(dispatch?: (receipts: ScoutDispatchJob[
         )
       );
   const recoverable = await db
-    .select({ receipt: scoutEvaluations, platform: scouts.platform, targetUrl: scouts.targetUrl, pollIntervalMinutes: scouts.pollIntervalMinutes })
+    .select({ receipt: scoutEvaluations, platform: scouts.platform, targetUrl: scouts.targetUrl, goalCondition: scouts.goalCondition, pollIntervalMinutes: scouts.pollIntervalMinutes })
     .from(scoutEvaluations)
     .innerJoin(scouts, and(eq(scouts.id, scoutEvaluations.scoutId), eq(scouts.tenantId, scoutEvaluations.tenantId)))
     .where(
@@ -145,15 +145,15 @@ export async function dispatchScoutsTick(dispatch?: (receipts: ScoutDispatchJob[
           .limit(SCOUT_SOURCE_SCAN_LIMIT);
   const readyByTenant = new Map<string, boolean>();
   let blockedCount = 0;
-  async function ready(tenantId: string, source?: { platform: string; targetUrl: string }) {
-    const key = `${tenantId}:${source?.platform === "rss" ? "rss" : "default"}`;
+  async function ready(tenantId: string, source?: { id?: string; platform: string; targetUrl: string; goalCondition?: string }) {
+    const key = `${tenantId}:${source?.id ?? ""}:${source?.platform ?? "default"}:${source?.targetUrl ?? ""}:${source?.goalCondition ?? ""}`;
     if (!readyByTenant.has(key)) readyByTenant.set(key, (await getScoutProviderSetup(tenantId, source)).ready);
     return readyByTenant.get(key)!;
   }
   const candidates: ScoutEvaluationReceipt[] = [];
-  for (const { receipt, platform, targetUrl, pollIntervalMinutes } of recoverable) {
+  for (const { receipt, platform, targetUrl, goalCondition, pollIntervalMinutes } of recoverable) {
     if (candidates.length >= SCOUT_DISPATCH_LIMIT) break;
-    if (await ready(receipt.tenantId, { platform, targetUrl })) candidates.push(receipt);
+    if (await ready(receipt.tenantId, { id: receipt.scoutId, platform, targetUrl, goalCondition })) candidates.push(receipt);
     else {
       blockedCount++;
       await db.update(scoutEvaluations)

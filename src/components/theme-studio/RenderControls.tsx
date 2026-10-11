@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
 import { cancelMediaRender, getMediaRender, retryMediaRender } from "@/app/actions/media";
-import { getThemeRenderSetup, renderThemePackage, selectThemeSourceMedia } from "@/app/actions/theme-packages";
+import { getThemeRenderSetup, renderThemePackage, selectThemeSourceMedia, discoverThemeSourceLink } from "@/app/actions/theme-packages";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { maximumTrimDuration, trimError } from "@/lib/media-engine/trim";
 import { TimelineEditor } from "./TimelineEditor";
@@ -25,8 +25,10 @@ export function RenderControls({ packageId, renderJobId, hasFinishedMedia = fals
   const [captions, setCaptions] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [sourceAudio, setSourceAudio] = useState(true);
-  const [minimal, setMinimal] = useState(false);
+  const [videoLayout, setVideoLayout] = useState<"branded_clip" | "minimal_meme" | "full_frame">("branded_clip");
   const [timelineMode, setTimelineMode] = useState(false);
+  const [sourceLink, setSourceLink] = useState("");
+  const [sourceRights, setSourceRights] = useState("owned");
   const router = useRouter();
   const [activeJob, setActiveJob] = useState(renderJobId);
   const [canRetry, setCanRetry] = useState(false);
@@ -108,7 +110,7 @@ export function RenderControls({ packageId, renderJobId, hasFinishedMedia = fals
         setCrop(saved.cropMode === "cover" ? "cover" : saved.cropMode === "contain" ? "contain" : value.video ? "contain" : "cover");
         setCropX(Number(saved.cropX ?? .5)); setCropY(Number(saved.cropY ?? .5));
         setDuration(Number(saved.durationSeconds ?? 15)); setStart(Number(saved.trimStart ?? 0));
-        setCaptions(saved.captions === true); setMinimal(saved.templateFamily === "minimal_meme");
+        setCaptions(saved.captions === true); setVideoLayout(saved.templateFamily === "full_frame" ? "full_frame" : saved.templateFamily === "minimal_meme" ? "minimal_meme" : "branded_clip");
         setZoom(Number(saved.zoom ?? 1)); setSourceAudio(saved.sourceAudio !== false);
       }
       catch { toast.error("Could not load render settings"); } finally { setBusy(false); }
@@ -116,22 +118,27 @@ export function RenderControls({ packageId, renderJobId, hasFinishedMedia = fals
     <Dialog open={Boolean(setup)} onOpenChange={open => { if (!open) setSetup(undefined); }}>
       <DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>Render finished media</DialogTitle><DialogDescription>Choose an uploaded source, then review the exported file before approving this post.</DialogDescription></DialogHeader>
         {setup?.storageReady === false && <p className="text-sm">Asset storage is not connected. Connect it before importing images or creating exports.</p>}
+        <div className="space-y-2 rounded border p-3">
+          <label className="text-sm">Import from a post or media link<input aria-label="Source link" type="url" value={sourceLink} onChange={e => setSourceLink(e.target.value)} placeholder="https://…" className="mt-1 w-full rounded border bg-background p-2" /></label>
+          <label className="text-sm">Media rights<select aria-label="Media rights" value={sourceRights} onChange={e => setSourceRights(e.target.value)} className="mt-1 w-full rounded border bg-background p-2"><option value="owned">I own this media</option><option value="public_domain">Public domain</option><option value="cc_by">Creative Commons attribution</option><option value="cc_by_sa">Creative Commons share-alike</option><option value="commercial_license">Licensed for reuse</option></select></label>
+          <button type="button" disabled={busy || !sourceLink.trim() || setup?.storageReady === false} className="rounded border px-3 py-2 text-sm" onClick={async () => { setBusy(true); try { await discoverThemeSourceLink(packageId, { url: sourceLink, rightsCategory: sourceRights }); setSetup(await getThemeRenderSetup(packageId)); toast.success("Source media found. Choose it below to import."); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not inspect source link"); } finally { setBusy(false); } }}>Find source media</button>
+        </div>
         {setup?.candidates?.length ? <div className="grid grid-cols-2 gap-2">{setup.candidates.map(candidate => <button key={candidate.url} type="button" disabled={busy || setup.storageReady === false} className="rounded border p-2 text-left text-xs" onClick={async () => {
           setBusy(true);
           try { const selected = await selectThemeSourceMedia(packageId, candidate.url); const next = await getThemeRenderSetup(packageId); setSetup(next); setAssetId(selected.assetId); router.refresh(); }
           catch (error) { toast.error(error instanceof Error ? error.message : "Could not import source image"); } finally { setBusy(false); }
-        }}><img src={candidate.url} alt={`Source image from ${candidate.credit}`} className="mb-1 h-24 w-full object-contain" />{candidate.credit} · {candidate.rightsCategory.replaceAll("_", " ")}</button>)}</div> : null}
+        }}>{candidate.kind === "video" ? <video src={candidate.url} muted preload="metadata" className="mb-1 h-24 w-full object-contain" /> : <img src={candidate.url} alt={`Source image from ${candidate.credit}`} className="mb-1 h-24 w-full object-contain" />}{candidate.kind} · {candidate.credit} · {candidate.rightsCategory.replaceAll("_", " ")}</button>)}</div> : null}
         {!setup?.enabled ? <div className="space-y-2"><p className="text-sm">{setup?.video ? "Video exports are not enabled for this workspace." : "Export the saved template and selected source image."}</p><button type="button" disabled={busy || setup?.video || setup?.storageReady === false} className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground" onClick={async () => {
           setBusy(true); try { await renderThemePackage(packageId); toast.success("Export ready"); setSetup(undefined); router.refresh(); } catch (error) { toast.error(error instanceof Error ? error.message : "Export failed"); } finally { setBusy(false); }
         }}>{busy ? "Rendering…" : "Create export"}</button></div> : <>
           {setup.timelineEnabled && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={timelineMode} onChange={e => setTimelineMode(e.target.checked)} />Use multiple scenes</label>}
           {timelineMode && setup.timelineEnabled ? <TimelineEditor videos={setup.assets} images={setup.images} music={setup.music} sfxEnabled={setup.sfxEnabled} initialSound={setup.savedSound} initialScenes={setup.savedTimeline} busy={busy} onExport={async (timeline, sound) => {
             setBusy(true);
-            try { const job = await renderThemePackage(packageId, { timeline, ...sound, templateFamily: "branded_clip" }); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); toast.success("Timeline render queued"); router.refresh(); }
+            try { const job = await renderThemePackage(packageId, { timeline, ...sound, templateFamily: videoLayout }); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); toast.success("Timeline render queued"); router.refresh(); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue timeline"); } finally { setBusy(false); }
           }} /> : <>
           <label className="text-sm">Source asset<select className="mt-1 w-full rounded border bg-background p-2" value={assetId} onChange={e => setAssetId(e.target.value)}><option value="">Choose an asset</option>{setup.assets.map(asset => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>
-          {assetId && <div className="max-h-64 overflow-hidden rounded border bg-black" style={{ aspectRatio: setup.video ? minimal ? "1000/900" : "960/1000" : (setup.aspectRatio ?? "4:5").replace(":", "/") }}>
+          {assetId && <div className="max-h-64 overflow-hidden rounded border bg-black" style={{ aspectRatio: setup.video ? videoLayout === "full_frame" ? "9/16" : videoLayout === "minimal_meme" ? "1000/900" : "960/1000" : (setup.aspectRatio ?? "4:5").replace(":", "/") }}>
             {setup.video ? <video key={assetId} src={setup.assets.find(asset => asset.id === assetId)?.publicUrl} controls preload="metadata" className="h-full w-full" style={{ objectFit: crop, objectPosition: `${cropX * 100}% ${cropY * 100}%` }} /> : <img src={setup.assets.find(asset => asset.id === assetId)?.publicUrl} alt="Selected source and crop" className="h-full w-full" style={{ objectFit: crop, objectPosition: `${cropX * 100}% ${cropY * 100}%` }} />}
           </div>}
           {!setup.assets.length && <Link href="/assets" className="text-sm underline">Upload source media in Assets</Link>}
@@ -153,12 +160,12 @@ export function RenderControls({ packageId, renderJobId, hasFinishedMedia = fals
             <label className="text-sm flex items-center gap-2"><input type="checkbox" checked={sourceAudio} onChange={e => setSourceAudio(e.target.checked)} />Keep source audio</label>
             <label className="text-sm">Zoom<input type="range" min={1} max={1.15} step={.01} value={zoom} onChange={e => setZoom(Number(e.target.value))} className="w-full" /></label>
             {rangeError && <p role="alert" className="text-sm text-destructive">{rangeError}</p>}
-            <label className="text-sm flex items-center gap-2"><input type="checkbox" checked={minimal} onChange={e => setMinimal(e.target.checked)} />Minimal layout without account header</label>
+            <label className="text-sm">Video layout<select aria-label="Video layout" value={videoLayout} onChange={e => setVideoLayout(e.target.value as typeof videoLayout)} className="mt-1 w-full rounded border bg-background p-2"><option value="full_frame">Full-frame video</option><option value="branded_clip">Branded inset clip</option><option value="minimal_meme">Minimal meme</option></select></label>
           </> : <label className="text-sm">Optional inset image<select className="mt-1 w-full rounded border bg-background p-2" value={insetId} onChange={e => { setInsetOverride(true); setInsetId(e.target.value); }}><option value="">No inset</option>{setup.images.map(asset => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
           <button disabled={busy || setup.storageReady === false || (setup.video && !assetId) || Boolean(rangeError)} className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50" onClick={async () => {
             if (setup.video && trimError(start, duration, sourceDuration)) return;
             setBusy(true);
-            try { const job = await renderThemePackage(packageId, assetId ? { mediaAssetId: assetId, ...(!setup.video && insetOverride ? { insetEnabled: Boolean(insetId) } : {}), ...(!setup.video && insetId ? { insetAssetId: insetId } : {}), templateFamily: setup.video ? minimal ? "minimal_meme" : "branded_clip" : insetId ? "photo_inset" : "photo_headline", ...(setup.video && musicId ? { musicAssetId: musicId } : {}), captions: setup.video && captions, cropX, cropY, cropMode: crop, durationSeconds: duration, trimStart: start, zoom, sourceAudio } : undefined); toast.success(job.status === "succeeded" ? "Render ready" : "Render queued"); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); router.refresh(); }
+            try { const job = await renderThemePackage(packageId, assetId ? { mediaAssetId: assetId, ...(!setup.video && insetOverride ? { insetEnabled: Boolean(insetId) } : {}), ...(!setup.video && insetId ? { insetAssetId: insetId } : {}), templateFamily: setup.video ? videoLayout : insetId ? "photo_inset" : "photo_headline", ...(setup.video && musicId ? { musicAssetId: musicId } : {}), captions: setup.video && captions, cropX, cropY, cropMode: crop, durationSeconds: duration, trimStart: start, zoom, sourceAudio } : undefined); toast.success(job.status === "succeeded" ? "Render ready" : "Render queued"); setActiveJob(job.jobId); setRenderStatus(job.status); setSetup(undefined); router.refresh(); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue render"); } finally { setBusy(false); }
           }}>{busy ? "Queuing…" : "Create export"}</button>
           </>}

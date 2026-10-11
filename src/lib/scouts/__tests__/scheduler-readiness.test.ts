@@ -19,7 +19,7 @@ describe("Scout scheduler readiness", () => {
     mocks.setup.mockResolvedValue({ ready: false });
     const dispatch = vi.fn();
     expect(await dispatchScoutsTick(dispatch)).toMatchObject({ checkedCount: 0, dispatchedCount: 0, blockedCount: 2 });
-    expect(mocks.setup).toHaveBeenCalledTimes(1);
+    expect(mocks.setup).toHaveBeenCalledTimes(2);
     expect(mocks.reserve).not.toHaveBeenCalled();
     expect(mocks.update).toHaveBeenCalledTimes(2);
     expect(dispatch).not.toHaveBeenCalled();
@@ -46,7 +46,7 @@ describe("Scout scheduler readiness", () => {
     expect(mocks.limit).toHaveBeenNthCalledWith(1, SCOUT_SOURCE_SCAN_LIMIT);
     expect(mocks.limit).toHaveBeenNthCalledWith(2, SCOUT_SOURCE_SCAN_LIMIT);
     expect(mocks.reserve).toHaveBeenCalledTimes(25);
-    expect(mocks.setup).toHaveBeenCalledTimes(2);
+    expect(mocks.setup).toHaveBeenCalledTimes(50);
     expect(dispatch.mock.calls[0][0]).toHaveLength(25);
     expect(dispatch.mock.calls[0][0].every((job: { scoutId: string }) => job.scoutId.startsWith("rss-"))).toBe(true);
     expect(writes.filter(value => value.lastPolledAt instanceof Date)).toHaveLength(25);

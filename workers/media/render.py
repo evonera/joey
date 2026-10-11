@@ -202,7 +202,7 @@ def render(job, root, encoder="libx264"):
         if output.stat().st_size > MAX_BYTES:
             raise ValueError("Output exceeds size limit")
         return output
-    if job["rendererVersion"] not in ("joey-media-1", "joey-media-2") or job["fontVersion"] != "joey-fonts-1":
+    if job["rendererVersion"] not in ("joey-media-1", "joey-media-2", "joey-media-4") or job["fontVersion"] != "joey-fonts-1":
         raise ValueError("Worker and template version mismatch")
     prepare_fonts(root)
     for name in ("media", "inset", "music"):

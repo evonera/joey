@@ -10,7 +10,7 @@ const asset = z.object({ id: z.union([z.uuid(), z.string().regex(/^curated:[a-z0
 const baseSchema = z.object({
   version: z.literal(1),
   source: z.object({ kind: z.enum(["theme_package", "flow", "draft"]), id: z.string().min(1).max(128), revision: z.string().min(1).max(128) }).strict(),
-  template: z.enum(["photo_headline", "photo_inset", "branded_clip", "minimal_meme"]),
+  template: z.enum(["photo_headline", "photo_inset", "branded_clip", "minimal_meme", "full_frame"]),
   templateVersion: z.literal(1),
   format: z.enum(["png", "mp4"]),
   media: asset,
@@ -31,7 +31,7 @@ const baseSchema = z.object({
 }).strict();
 const legacySchema = baseSchema.superRefine((spec, ctx) => {
   if ((spec.format === "mp4") !== Boolean(spec.video)) ctx.addIssue({ code: "custom", message: "MP4 output requires video timing; PNG output cannot include video timing." });
-  if ((spec.format === "mp4") !== ["branded_clip", "minimal_meme"].includes(spec.template)) ctx.addIssue({ code: "custom", message: "Template and output format do not match." });
+  if ((spec.format === "mp4") !== ["branded_clip", "minimal_meme", "full_frame"].includes(spec.template)) ctx.addIssue({ code: "custom", message: "Template and output format do not match." });
   if (spec.template === "photo_inset" && !spec.inset) ctx.addIssue({ code: "custom", message: "Photo inset requires an inset asset." });
   if (spec.video?.captions && spec.video.words.length) ctx.addIssue({ code: "custom", message: "Choose automatic captions or supplied timing, not both." });
   if (spec.format === "png" && spec.music) ctx.addIssue({ code: "custom", message: "Music requires a video output." });
@@ -45,7 +45,7 @@ const legacySchema = baseSchema.superRefine((spec, ctx) => {
 });
 const timelineRenderSchema = baseSchema.extend({
   version: z.literal(2), format: z.literal("mp4"),
-  template: z.enum(["branded_clip", "minimal_meme"]), media: asset.optional(),
+  template: z.enum(["branded_clip", "minimal_meme", "full_frame"]), media: asset.optional(),
   timeline: timelineSchema,
   soundCues: soundCuesSchema.default([]),
 }).strict().superRefine((spec, ctx) => {
@@ -64,7 +64,7 @@ export type RenderSpec = z.infer<typeof renderSpecSchema>;
 export function renderDimensions(spec: Pick<RenderSpec, "format" | "aspectRatio">) {
   return { width: 1080, height: spec.format === "mp4" ? 1920 : { "1:1": 1080, "4:5": 1350, "16:9": 608, "9:16": 1920 }[spec.aspectRatio ?? "4:5"] };
 }
-export function rendererVersion(spec: RenderSpec) { return spec.version === 2 ? "joey-media-3" : RENDERER_VERSION; }
+export function rendererVersion(spec: RenderSpec) { return spec.template === "full_frame" ? "joey-media-4" : spec.version === 2 ? "joey-media-3" : RENDERER_VERSION; }
 export function renderHash(spec: RenderSpec) {
   return createHash("sha256").update(JSON.stringify({ renderer: rendererVersion(spec), fonts: FONT_VERSION, spec: renderSpecSchema.parse(spec) })).digest("hex");
 }

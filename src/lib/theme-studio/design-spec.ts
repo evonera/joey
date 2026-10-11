@@ -6,7 +6,7 @@ const author = z.object({ name: z.string().max(120), handle: z.string().max(120)
 
 /** Canonical editor + saved-template contract. Legacy aliases are read once. */
 export const themeDesignSchema = z.object({
-  templateFamily: z.enum(["pubity_hero", "morning_brew_cyan", "pubity_carousel", "tweet_card", "tweet_grid4", "video_reel", "mixed_carousel", "branded_clip", "minimal_meme", "photo_headline", "photo_inset"]).optional(),
+  templateFamily: z.enum(["pubity_hero", "morning_brew_cyan", "pubity_carousel", "tweet_card", "tweet_grid4", "video_reel", "mixed_carousel", "branded_clip", "minimal_meme", "full_frame", "photo_headline", "photo_inset"]).optional(),
   backgroundColor: color.optional(), textColor: color.optional(), accentColor: color.optional(),
   backgroundGradient: z.string().trim().regex(/^linear-gradient\([\d\s.,%#a-z()+-]{1,300}\)$/i).optional(),
   bgImageUrl: url.optional(), bgType: z.enum(["photo", "solid", "gradient"]).optional(),
@@ -46,7 +46,7 @@ export function parseThemeDesign(input: unknown): ThemeDesignSpec {
 
 export const themeRenderSettingsSchema = z.object({
   mediaAssetId: z.uuid(), insetEnabled: z.boolean().optional(), insetAssetId: z.uuid().optional(), musicAssetId: z.uuid().optional(),
-  templateFamily: z.enum(["branded_clip", "minimal_meme", "photo_headline", "photo_inset"]),
+  templateFamily: z.enum(["branded_clip", "minimal_meme", "full_frame", "photo_headline", "photo_inset"]),
   cropMode: z.enum(["contain", "cover"]), cropX: z.number().min(0).max(1).default(.5), cropY: z.number().min(0).max(1).default(.5),
   durationSeconds: z.number().min(1).max(60), trimStart: z.number().min(0).max(86400),
   captions: z.boolean().default(false), zoom: z.number().min(1).max(1.15), sourceAudio: z.boolean().default(true),

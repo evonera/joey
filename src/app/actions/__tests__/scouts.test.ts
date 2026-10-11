@@ -56,7 +56,7 @@ beforeEach(() => {
 describe("toggleScout authorization", () => {
   it("uses the same provider resolver for setup and manual scans", async () => {
     expect(await getScoutSetup()).toEqual({ ready: true, provider: "custom", customEnabled: true });
-    expect(mocks.setup).toHaveBeenCalledWith("tenant-1");
+    expect(mocks.setup).toHaveBeenCalledWith("tenant-1", undefined);
     await runScoutNow("scout-1");
     expect(mocks.resolveToken).toHaveBeenCalledWith("tenant-1", expect.objectContaining({ id: "scout-1" }));
     expect(mocks.evaluateScout).toHaveBeenCalledWith("scout-1", { tenantId: "tenant-1", force: true });

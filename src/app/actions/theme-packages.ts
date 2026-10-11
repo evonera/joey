@@ -95,14 +95,14 @@ export async function renderThemePackage(packageId: string, input?: unknown) {
   if (!themeMediaStorageReady()) throw new Error("Connect asset storage and its public delivery URL before creating an export.");
   if (video && process.env.MEDIA_ENGINE_ENABLED !== "true") throw new Error("The video worker is not enabled.");
   if (input !== undefined) {
-    const timelineInput = z.object({ timeline: timelineSchema, templateFamily: z.enum(["branded_clip", "minimal_meme"]), soundCues: soundCuesSchema.default([]), captions: z.boolean().default(false), musicAssetId: z.uuid().optional() }).strict();
+    const timelineInput = z.object({ timeline: timelineSchema, templateFamily: z.enum(["branded_clip", "minimal_meme", "full_frame"]), soundCues: soundCuesSchema.default([]), captions: z.boolean().default(false), musicAssetId: z.uuid().optional() }).strict();
     if (typeof input === "object" && input !== null && "timeline" in input) {
       if (process.env.MEDIA_TIMELINE_ENABLED !== "true") throw new Error("Multi-scene rendering is not enabled.");
       return queueThemeRender(tenantId, packageId, timelineInput.parse(input));
     }
     const settings = themeRenderSettingsSchema.parse(input);
     if (format.mediaType === "carousel") throw new Error("Carousel migration is not enabled yet.");
-    if (video !== ["branded_clip", "minimal_meme"].includes(settings.templateFamily)) throw new Error("Template does not match the package format.");
+    if (video !== ["branded_clip", "minimal_meme", "full_frame"].includes(settings.templateFamily)) throw new Error("Template does not match the package format.");
     if (settings.templateFamily === "photo_inset" && !settings.insetAssetId) throw new Error("Choose an inset image.");
     for (const id of [settings.mediaAssetId, settings.insetAssetId, settings.musicAssetId].filter(Boolean)) {
       const asset = await db.query.assets.findFirst({ where: and(eq(assets.id, id!), eq(assets.tenantId, tenantId)) });
@@ -137,7 +137,14 @@ export async function getThemeRenderSetup(packageId: string) {
   }
   const savedTimeline = timelineSchema.safeParse(component.timeline);
   const cues = soundCuesSchema.safeParse(component.soundCues);
-  return { timelineEnabled: process.env.MEDIA_TIMELINE_ENABLED === "true" && format.mediaType === "video", sfxEnabled: process.env.MEDIA_SFX_ENABLED === "true", savedSound: { soundCues: cues.success ? cues.data : [], captions: component.captions === true, musicAssetId: typeof component.musicAssetId === "string" ? component.musicAssetId : undefined }, savedTimeline: savedTimeline.success ? savedTimeline.data : undefined, storageReady: themeMediaStorageReady(), aspectRatio: format.aspectRatio, candidates: packageMediaCandidates(pkg.provenance), settings: component, enabled: format.mediaType !== "carousel" && (format.mediaType !== "video" || process.env.MEDIA_ENGINE_ENABLED === "true"), video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
+  return { timelineEnabled: process.env.MEDIA_TIMELINE_ENABLED === "true" && format.mediaType === "video", sfxEnabled: process.env.MEDIA_SFX_ENABLED === "true", savedSound: { soundCues: cues.success ? cues.data : [], captions: component.captions === true, musicAssetId: typeof component.musicAssetId === "string" ? component.musicAssetId : undefined }, savedTimeline: savedTimeline.success ? savedTimeline.data : undefined, storageReady: themeMediaStorageReady(), aspectRatio: format.aspectRatio, candidates: packageMediaCandidates(pkg.provenance).filter(item => item.kind === (format.mediaType === "video" ? "video" : "image")), settings: component, enabled: format.mediaType !== "carousel" && (format.mediaType !== "video" || process.env.MEDIA_ENGINE_ENABLED === "true"), video: format.mediaType === "video", assets: rows.filter(row => row.mimeType.startsWith(format.mediaType === "video" ? "video/" : "image/")), images: rows.filter(row => row.mimeType.startsWith("image/")), music: rows.filter(row => row.mimeType.startsWith("audio/")) };
+}
+
+export async function discoverThemeSourceLink(packageId: string, input: unknown) {
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
+  const value = z.object({ url: z.string().trim().min(1).max(2048), rightsCategory: z.enum(["owned", "public_domain", "cc_by", "cc_by_sa", "commercial_license"]) }).strict().parse(input);
+  const { discoverThemePackageLink } = await import("@/lib/theme-studio/direct-link");
+  return discoverThemePackageLink(tenantId, packageId, value);
 }
 
 export async function selectThemeSourceMedia(packageId: string, candidateUrl: string) {

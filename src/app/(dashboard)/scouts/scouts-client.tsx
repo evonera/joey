@@ -66,6 +66,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [editingScout, setEditingScout] = useState<ScoutItem | null>(null);
   const [setup, setSetup] = useState<Awaited<ReturnType<typeof getScoutSetup>> | null>(null);
+  const [sourceSetups, setSourceSetups] = useState<Record<string, { ready: boolean; provider: string; issue?: string }>>({});
   const [isRunning, setIsRunning] = useState(false);
 
   function createFromScout(scout: ScoutItem) {
@@ -90,6 +91,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const lastRun = runs[0] || null;
 
   useEffect(() => { void getScoutSetup().then(setSetup).catch(() => {}); }, []);
+  useEffect(() => { let stopped = false; void Promise.all(scoutsList.map(async scout => [scout.id, await getScoutSetup(scout.id)] as const)).then(rows => { if (!stopped) setSourceSetups(Object.fromEntries(rows)); }).catch(() => {}); return () => { stopped = true; }; }, [scoutsList]);
 
   // Synchronize state when server props update
   useEffect(() => {
@@ -248,7 +250,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   };
 
   const configuredActiveCount = scoutsList.filter((s) => s.isActive).length;
-  const sourceReady = (scout: ScoutItem) => scout.platform === "rss" || setup?.ready !== false;
+  const sourceReady = (scout: ScoutItem) => ["rss", "youtube", "web"].includes(scout.platform) || sourceSetups[scout.id]?.ready === true || setup?.ready === true;
   const selectedReady = selectedScout ? sourceReady(selectedScout) : false;
   const waitingCount = scoutsList.filter(scout => scout.isActive && !sourceReady(scout)).length;
   const activeCount = configuredActiveCount - waitingCount;
@@ -365,7 +367,8 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
         </div>
       </div>
 
-      {setup && !setup.ready && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources: {setup.issue} RSS/Atom sources remain available.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
+      <p className="text-xs text-muted-foreground">RSS, YouTube and websites collect directly. <Link href="/docs#local-connector" className="underline">Connect a local collector for social profiles</Link>.</p>
+      {setup && !setup.ready && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources: {setup.issue} RSS/Atom, YouTube and website sources remain available.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
 
       {scoutsList.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-border/60 p-12 text-center bg-card/30">
@@ -374,7 +377,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           </div>
           <h3 className="text-base font-semibold text-foreground">No Scouts Active Yet</h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1 mb-5">
-            Save a source and a clear goal. RSS/Atom articles run without a scraping provider. Social-profile checks require a configured provider.
+            Save a source and a clear goal. RSS/Atom articles run without a scraping provider. Social profiles can use the local UGC connector or a custom provider. Apify is optional.
           </p>
           <Button size="sm" onClick={beginCreate} className="gap-1.5 text-xs">
             <Plus className="size-3.5" />
@@ -513,6 +516,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       </span>
                       <span className="shrink-0">·</span>
                       <span className="capitalize shrink-0">{selectedScout.platform}</span>
+                      <span>{sourceSetups[selectedScout.id]?.provider ?? (["rss", "youtube", "web"].includes(selectedScout.platform) ? "direct" : "waiting for source")}</span>
                     </div>
                   </div>
 
@@ -601,6 +605,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                 </div>
 
                 {/* Section: Changes / Before & After */}
+                <details className="rounded border p-3 text-xs"><summary className="cursor-pointer">Local connector setup</summary><p className="mt-2 break-all">Scout ID: {selectedScout.id}</p><Link href="/docs#local-connector" className="mt-2 block underline">Download and run the local source connector</Link>{sourceSetups[selectedScout.id]?.issue && <p className="mt-2">{sourceSetups[selectedScout.id].issue}</p>}</details>
                 {selectedScout.latestAlert?.samplePost?.url && <div className="rounded-lg border border-border/40 p-3 text-xs"><p className="font-semibold">Source evidence</p><a href={selectedScout.latestAlert.samplePost.url} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all underline">{selectedScout.latestAlert.samplePost.url}</a>{selectedScout.latestAlert.samplePost.content && <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-muted-foreground">{selectedScout.latestAlert.samplePost.content}</p>}<p className="mt-1 text-muted-foreground">Detected {new Date(selectedScout.latestAlert.detectedAt).toLocaleString()}</p></div>}
                 {selectedScout.latestAlert?.changes?.length > 0 ? (
                   <div className="space-y-3">

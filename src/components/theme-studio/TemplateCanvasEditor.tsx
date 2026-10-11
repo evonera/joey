@@ -203,7 +203,7 @@ export function TemplateCanvasEditor({
 
   const selectedFormat = availableFormats.find((f) => f.id === formatId) || availableFormats[0];
   const isPortrait = selectedFormat?.aspectRatio === "4:5";
-  const isVertical = selectedFormat?.aspectRatio === "9:16" || spec.templateFamily === "video_reel";
+  const isVertical = selectedFormat?.aspectRatio === "9:16" || ["video_reel", "full_frame"].includes(spec.templateFamily ?? "");
   const isCarousel = selectedFormat?.slug?.includes("carousel") || name.toLowerCase().includes("carousel") || spec.templateFamily === "pubity_carousel" || spec.templateFamily === "mixed_carousel";
 
   function applyPreset(presetType: "pubity_hero" | "morning_brew_cyan" | "pubity_carousel" | "tweet_card" | "tweet_grid4" | "video_reel" | "mixed_carousel" | "sports_spotlight" | "dark_minimal") {
@@ -387,7 +387,7 @@ export function TemplateCanvasEditor({
       setBgMode("solid");
       setSpec((prev) => ({
         ...prev,
-        templateFamily: "video_reel",
+        templateFamily: "full_frame",
         bgType: "solid",
         backgroundColor: "#000000",
         accentColor: "#ffe633",
@@ -713,7 +713,7 @@ export function TemplateCanvasEditor({
             type="button"
             onClick={() => applyPreset("video_reel")}
             className={`p-2.5 border rounded-xl text-left transition-colors ${
-              spec.templateFamily === "video_reel" ? "bg-purple-500/10 border-purple-500" : "bg-muted/20 hover:bg-muted/40"
+              ["video_reel", "full_frame"].includes(spec.templateFamily ?? "") ? "bg-purple-500/10 border-purple-500" : "bg-muted/20 hover:bg-muted/40"
             }`}
           >
             <div className="text-xs font-bold flex items-center gap-1 text-purple-400">
@@ -738,7 +738,7 @@ export function TemplateCanvasEditor({
           </button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">Have an MP4? <Link href="/dashboard?create=video" className="underline">Brand a clip in Chat</Link>.</p>
-        {(spec.templateFamily === "video_reel" || spec.templateFamily === "mixed_carousel") && <p role="alert" className="mt-2 rounded-lg border border-amber-500/30 p-2 text-xs">This older style cannot be rendered from Theme Studio. Choose a supported post style above, or create a video in Chat.</p>}
+        {spec.templateFamily === "mixed_carousel" && <p role="alert" className="mt-2 rounded-lg border border-amber-500/30 p-2 text-xs">This mixed-media carousel style is not supported. Use separate image and video posts.</p>}
         {spec.templateFamily === "tweet_grid4" && <p role="alert" className="mt-2 rounded-lg border border-amber-500/30 p-2 text-xs">This older four-post style exports as a single post. Choose Single Post above for a reliable preview and export.</p>}
       </div>
 
@@ -795,7 +795,7 @@ export function TemplateCanvasEditor({
                 <IconTypography className="w-3.5 h-3.5" /> Copy & Tokens
               </span>
             </button>
-            {(spec.templateFamily === "video_reel" || spec.templateFamily === "mixed_carousel") && <button
+            {(["video_reel", "full_frame"].includes(spec.templateFamily ?? "") || spec.templateFamily === "mixed_carousel") && <button
               onClick={() => setActiveTab("clips")}
               className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
                 activeTab === "clips"
@@ -1275,7 +1275,7 @@ export function TemplateCanvasEditor({
                                   ...prev,
                                   videoUrl: clip.videoUrl,
                                   memeClipId: clip.id,
-                                  templateFamily: prev.templateFamily === "mixed_carousel" ? "mixed_carousel" : "video_reel",
+                                  templateFamily: prev.templateFamily === "mixed_carousel" ? "mixed_carousel" : "full_frame",
                                 }));
                                 if (clip.quote) {
                                   setPreviewSample((prev) => ({
@@ -1357,83 +1357,22 @@ export function TemplateCanvasEditor({
               </div>
             ) : (
               <span className="px-3 py-1 rounded-full text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20">
-                {spec.templateFamily === "video_reel" ? "9:16 Video Reel" : spec.templateFamily?.includes("tweet") ? "X Screenshot" : "Branded Post"}
+                {["video_reel", "full_frame"].includes(spec.templateFamily ?? "") ? "9:16 Video Reel" : spec.templateFamily?.includes("tweet") ? "X Screenshot" : "Branded Post"}
               </span>
             )}
           </div>
 
           {/* Canvas Card Mockup */}
-          {spec.templateFamily === "video_reel" ? (
-            /* Vertical 9:16 Video Meme Reel Canvas */
-            <div
-              style={{
-                backgroundColor: "#000000",
-                borderRadius: `${spec.borderRadius || 20}px`,
-                aspectRatio: "9/16",
-                maxWidth: "340px",
-                width: "100%",
-              }}
-              className="shadow-2xl flex flex-col justify-between p-6 relative overflow-hidden select-none border border-white/15"
-            >
-              {/* Top Reel Hook */}
-              <div className="space-y-3 text-center pt-4">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-white text-[11px] font-bold">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> LIVE REEL HOOK
-                </div>
-                <h2
-                  style={{
-                    fontSize: `${spec.titleSize || 26}px`,
-                    color: spec.textColor || "#ffffff",
-                    lineHeight: 1.25,
-                  }}
-                  className="font-extrabold tracking-tight drop-shadow-md text-center"
-                >
-                  {renderHighlightedText(
-                    interpolateTemplate(spec.titleTemplate || "{{title}}", previewSample),
-                    activeHighlights,
-                    spec.accentColor || "#ffe633"
-                  )}
+          {["video_reel", "full_frame"].includes(spec.templateFamily ?? "") ? (
+            <div style={{ backgroundColor: "#000", borderRadius: `${spec.borderRadius ?? 16}px`, aspectRatio: "9/16", maxWidth: "340px", width: "100%" }} className="shadow-2xl relative overflow-hidden select-none border border-white/15">
+              {spec.videoUrl ? <video src={spec.videoUrl} autoPlay loop muted={videoMuted} playsInline className="absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/50 text-xs"><IconVideo className="w-8 h-8" /><span>Choose an uploaded video or a curated clip</span></div>}
+              <div className="absolute left-[6%] right-[6%] top-[5%] rounded-lg bg-black/60 p-2 text-white text-xs">{spec.watermarkText || "Your account branding"}</div>
+              <div className="absolute left-[5%] right-[5%] bottom-[12.5%] rounded-lg bg-black/65 p-3 text-center">
+                <h2 style={{ fontSize: `${Math.min(spec.titleSize ?? 26, 36)}px`, color: spec.textColor || "#fff", lineHeight: 1.18, fontFamily: spec.fontFamily || "Inter" }} className="break-words">
+                  {renderHighlightedText(interpolateTemplate(spec.titleTemplate || "{{title}}", previewSample), activeHighlights, spec.accentColor || "#ffe633")}
                 </h2>
               </div>
-
-              {/* Center Embedded Video Player */}
-              <div className="w-full relative aspect-video bg-black/90 rounded-xl overflow-hidden border border-white/20 shadow-2xl my-auto flex items-center justify-center">
-                {spec.videoUrl ? (
-                  <video
-                    src={spec.videoUrl}
-                    autoPlay
-                    loop
-                    muted={videoMuted}
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-2 text-white/50 text-xs">
-                    <IconVideo className="w-8 h-8 text-white/40" />
-                    <span>Select clip from Meme Library</span>
-                  </div>
-                )}
-
-                {/* Audio Toggle Cue */}
-                <button
-                  type="button"
-                  onClick={() => setVideoMuted(!videoMuted)}
-                  className="absolute bottom-2 right-2 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold flex items-center gap-1 hover:bg-black/90 transition-colors"
-                >
-                  {videoMuted ? <IconVolumeOff className="w-3 h-3 text-red-400" /> : <IconVolume className="w-3 h-3 text-emerald-400" />}
-                  {videoMuted ? "MUTED" : "SOUND ON"}
-                </button>
-              </div>
-
-              {/* Bottom Reel Footer */}
-              <div className="text-center space-y-1.5 pb-2">
-                <span className="text-xs font-semibold text-white/70 font-mono">
-                  {spec.watermarkText || "@JoeyReels"}
-                </span>
-                <p className="text-[10px] font-bold tracking-widest text-[#ffe633] uppercase">
-                  TAP FOR NEXT REEL
-                </p>
-              </div>
+              <button type="button" onClick={() => setVideoMuted(!videoMuted)} className="absolute bottom-2 right-2 rounded-full bg-black/70 px-2.5 py-1 text-white text-[10px] flex items-center gap-1">{videoMuted ? <IconVolumeOff className="w-3 h-3" /> : <IconVolume className="w-3 h-3" />}{videoMuted ? "MUTED" : "SOUND ON"}</button>
             </div>
           ) : spec.templateFamily === "tweet_card" || spec.templateFamily === "tweet_grid4" ? (
             /* Twitter / X Post Canvas */

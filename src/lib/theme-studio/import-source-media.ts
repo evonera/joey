@@ -17,6 +17,13 @@ export function imageMime(bytes: Buffer): { mime: string; extension: string } {
   throw new Error("Source media must be a PNG, JPEG, GIF or WebP image.");
 }
 
+export function sourceMediaMime(bytes: Buffer, kind: "image" | "video") {
+  if (kind === "image") return imageMime(bytes);
+  if (bytes.length >= 24 && bytes.subarray(4, 8).toString() === "ftyp" && /(?:isom|iso[2-9]|mp4[12]|avc1|M4V )/.test(bytes.subarray(8, Math.min(64, bytes.length)).toString("ascii"))) return { mime: "video/mp4", extension: "mp4" };
+  if (bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) && bytes.subarray(0, Math.min(4096, bytes.length)).includes(Buffer.from("webm"))) return { mime: "video/webm", extension: "webm" };
+  throw new Error("Source video must be an MP4 or WebM file. The renderer checks playable media and trim bounds before export.");
+}
+
 /** Only URLs already discovered on this tenant's package can be imported. */
 export async function importThemeSourceMedia(tenantId: string, packageId: string, candidateUrl: string, signal?: AbortSignal, operations: { request?: typeof outboundRequest; upload?: typeof uploadBufferToR2; remove?: typeof deleteObjectWithRetry } = {}) {
   const pkg = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
@@ -34,9 +41,9 @@ export async function importThemeSourceMedia(tenantId: string, packageId: string
     }
   }
   if (!operations.upload && !themeMediaStorageReady()) throw new Error("Connect asset storage and its public delivery URL before importing source media.");
-  const response = await (operations.request ?? outboundRequest)(candidate.url, { signal, timeoutMs: 15000, maxBytes: 5 * 1024 * 1024, maxRedirects: 3 });
-  if (response.status < 200 || response.status >= 300) throw new Error(`Source image returned HTTP ${response.status}.`);
-  const { mime, extension } = imageMime(response.buffer);
+  const response = await (operations.request ?? outboundRequest)(candidate.url, { signal, timeoutMs: candidate.kind === "video" ? 45000 : 15000, maxBytes: (candidate.kind === "video" ? 64 : 5) * 1024 * 1024, maxRedirects: 3 });
+  if (response.status < 200 || response.status >= 300) throw new Error(`Source media returned HTTP ${response.status}.`);
+  const { mime, extension } = sourceMediaMime(response.buffer, candidate.kind);
   const digest = createHash("sha256").update(response.buffer).digest("hex");
   // A distinct reservation prevents concurrent import compensation from deleting
   // another import's object. Persisted selections make retries reuse the asset.

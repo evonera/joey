@@ -56,7 +56,7 @@ export async function queueThemeRender(tenantId: string, packageId: string, sett
   const design = Object.fromEntries(["backgroundColor", "backgroundGradient", "bgType", "textColor", "fontFamily", "titleSize", "bodySize", "showDivider", "showWatermark", "highlightWords"].filter(key => component[key] !== undefined).map(key => [key, component[key]]));
   const legacy: Record<string, unknown> = {
     version: 1, source: { kind: "theme_package", id: packageId, revision }, templateVersion: 1,
-    template: video ? component.templateFamily === "minimal_meme" ? "minimal_meme" : "branded_clip" : component.insetEnabled !== false && (component.pipInsetUrl || component.insetAssetId) ? "photo_inset" : "photo_headline",
+    template: video ? ["full_frame", "video_reel"].includes(String(component.templateFamily)) ? "full_frame" : component.templateFamily === "minimal_meme" ? "minimal_meme" : "branded_clip" : component.insetEnabled !== false && (component.pipInsetUrl || component.insetAssetId) ? "photo_inset" : "photo_headline",
     format: video ? "mp4" : "png", title: applyDesignCopy(component.titleTemplate, pkg.title, tokens), media, design,
     ...(!video && typeof component.bodyTemplate === "string" && component.bodyTemplate.trim() ? { body: applyDesignCopy(component.bodyTemplate, pkg.caption ?? "", tokens).slice(0, 350) } : {}),
     aspectRatio: (format.aspectRatio || (video ? "9:16" : "4:5")) as RenderSpec["aspectRatio"],

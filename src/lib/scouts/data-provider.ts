@@ -19,6 +19,8 @@ export interface ScoutPostItem {
   observedAt?: string;
 }
 export interface ScoutCollectionRequest {
+  id?: string;
+  goalCondition?: string;
   targetUrl: string;
   platform: string;
 }
@@ -28,7 +30,7 @@ export interface ScoutCollectionContext {
   beforePaidPhase?: () => Promise<void>;
 }
 export interface ScoutDataProvider {
-  readonly kind: "apify" | "custom" | "mock" | "rss";
+  readonly kind: "apify" | "custom" | "mock" | "rss" | "youtube" | "connector" | "web";
   fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext): Promise<ScoutPostItem[]>;
 }
 
@@ -91,6 +93,58 @@ export class RssScoutProvider implements ScoutDataProvider {
         };
       });
     return [...new Map(items.map((item) => [item.id, item])).values()];
+  }
+}
+
+export class YoutubeScoutProvider implements ScoutDataProvider {
+  readonly kind = "youtube" as const;
+  async fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext) {
+    validateScoutSource(request.targetUrl, "youtube");
+    const source = new URL(request.targetUrl);
+    const videoId = source.hostname === "youtu.be" ? source.pathname.slice(1) : source.searchParams.get("v") ?? source.pathname.match(/^\/(?:shorts|live|embed)\/([\w-]{11})\/?$/)?.[1];
+    if (videoId && /^[\w-]{11}$/.test(videoId)) {
+      await context.beforePaidPhase?.();
+      const url = `https://www.youtube.com/watch?v=${videoId}`;
+      const response = await outboundRequest(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, { signal: context.signal, timeoutMs: 20000, maxBytes: 64 * 1024, maxRedirects: 0 });
+      if (response.status !== 200) throw new Error(`YouTube video metadata returned HTTP ${response.status}.`);
+      const data = z.object({ title: z.string().max(6000) }).parse(JSON.parse(response.buffer.toString("utf8")));
+      return [{ id: videoId, url, text: data.title }];
+    }
+    let channelId = source.pathname.match(/^\/channel\/(UC[\w-]{22})(?:\/|$)/)?.[1] ?? source.searchParams.get("channel_id") ?? undefined;
+    if (!channelId) {
+      if (!/^\/(?:@[\w.-]+|(?:c|user)\/[\w.-]+)(?:\/(?:videos|shorts|streams))?\/?$/.test(source.pathname)) throw new Error("Use a YouTube channel or individual video URL.");
+      await context.beforePaidPhase?.();
+      const response = await outboundRequest(source.toString(), { signal: context.signal, timeoutMs: 20000, maxBytes: 2 * 1024 * 1024, maxRedirects: 3 });
+      if (response.status !== 200) throw new Error(`YouTube channel returned HTTP ${response.status}.`);
+      const html = response.buffer.toString("utf8");
+      channelId = html.match(/"externalId"\s*:\s*"(UC[\w-]{22})"/)?.[1] ?? html.match(/channel_id=(UC[\w-]{22})/)?.[1];
+    }
+    if (!channelId || !/^UC[\w-]{22}$/.test(channelId)) throw new Error("Channel ID could not be resolved. Use its /channel/UC… URL or send observations with the local connector.");
+    return new RssScoutProvider().fetchRecentPosts({ platform: "rss", targetUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}` }, context);
+  }
+}
+
+export class WebScoutProvider implements ScoutDataProvider {
+  readonly kind = "web" as const;
+  async fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext) {
+    await validateTarget(request, context.signal);
+    await context.beforePaidPhase?.();
+    const response = await outboundRequest(request.targetUrl, { signal: context.signal, timeoutMs: 20000, maxBytes: 2 * 1024 * 1024, maxRedirects: 3 });
+    if (response.status !== 200) throw new Error(`Website returned HTTP ${response.status}.`);
+    const { parseHtmlMetadata } = await import("@/lib/theme-studio/pipeline/source-poller");
+    const item = parseHtmlMetadata(response.buffer.toString("utf8"), response.finalUrl);
+    if (!item) throw new Error("Website exposes no supported public metadata. Choose its RSS feed or use the connector.");
+    const url = canonicalScoutPostUrl(response.finalUrl)!;
+    return [{ id: scoutPostIdentity(url), url, text: `${item.title}\n${item.body}`.slice(0, 6000), ...(item.publishedAt ? { timestamp: item.publishedAt.toISOString() } : {}) }];
+  }
+}
+
+class ConnectorScoutProvider implements ScoutDataProvider {
+  readonly kind = "connector" as const;
+  constructor(private readonly items: ScoutPostItem[]) {}
+  async fetchRecentPosts(_request: ScoutCollectionRequest, context: ScoutCollectionContext) {
+    context.signal.throwIfAborted();
+    return this.items;
   }
 }
 
@@ -273,6 +327,13 @@ export async function getScoutDataProvider(
   if (!tenantId) throw new Error("Scout collection requires a workspace.");
   if (source) validateScoutSource(source.targetUrl, source.platform);
   if (source?.platform === "rss") return new RssScoutProvider();
+  if (source?.platform === "youtube") return new YoutubeScoutProvider();
+  if (source?.platform === "web") return new WebScoutProvider();
+  if (source) {
+    const { findConnectorEvidence } = await import("./connector");
+    const saved = await findConnectorEvidence(tenantId, source);
+    if (saved && Array.isArray(saved.items)) return new ConnectorScoutProvider(saved.items as ScoutPostItem[]);
+  }
   const kind = scoutProviderKind();
   if (kind === "mock") {
     if (!mockAllowed()) throw new Error("Mock Scout collection is disabled in production.");
@@ -293,7 +354,7 @@ export async function getScoutDataProvider(
   } catch {
     if (mockAllowed()) return new MockScoutProvider();
     throw new Error(
-      "Apify integration not configured. Please add an active Apify API token in Integrations to enable live scout monitoring."
+      "No social acquisition source is connected. Send observations with the local UGC connector, configure a Custom Scout provider, or optionally connect Apify."
     );
   }
 }
