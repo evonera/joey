@@ -253,6 +253,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const sourceReady = (scout: ScoutItem) => ["rss", "youtube", "web"].includes(scout.platform) || sourceSetups[scout.id]?.ready === true || setup?.ready === true;
   const selectedReady = selectedScout ? sourceReady(selectedScout) : false;
   const waitingCount = scoutsList.filter(scout => scout.isActive && !sourceReady(scout)).length;
+  const hasUnconfiguredSocialSource = scoutsList.some(scout => !["rss", "youtube", "web"].includes(scout.platform) && !sourceReady(scout));
   const activeCount = configuredActiveCount - waitingCount;
   const pausedCount = scoutsList.length - configuredActiveCount;
 
@@ -368,7 +369,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
       </div>
 
       <p className="text-xs text-muted-foreground">RSS, YouTube and websites collect directly. <Link href="/docs#local-connector" className="underline">Connect a local collector for social profiles</Link>.</p>
-      {setup && !setup.ready && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources: {setup.issue} RSS/Atom, YouTube and website sources remain available.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
+      {setup && !setup.ready && (scoutsList.length === 0 || hasUnconfiguredSocialSource) && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources needing acquisition: {setup.issue} RSS/Atom, YouTube and website sources remain available.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
 
       {scoutsList.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-border/60 p-12 text-center bg-card/30">
