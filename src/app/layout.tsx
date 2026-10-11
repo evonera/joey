@@ -60,7 +60,7 @@ const schemaData = {
       contactPoint: {
         "@type": "ContactPoint",
         contactType: "customer support",
-        email: "support@joey.ai",
+        email: "joey@evonera.net",
       },
     },
     {

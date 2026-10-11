@@ -38,7 +38,7 @@ export async function reconcileBillingWebhook(payload: { type: string; data: unk
     if (tenant.dodoSubscriptionId && tenant.dodoSubscriptionId !== subscriptionId) {
       const current = await getDodoClient().subscriptions.retrieve(tenant.dodoSubscriptionId);
       if (new Date(current.created_at).getTime() >= new Date(subscription.created_at).getTime()) return;
-      if (current.status === "active" || current.status === "on_hold") {
+      if (!["cancelled", "failed", "expired"].includes(current.status)) {
         throw new Error("Workspace already has an ongoing subscription; reconciliation required.");
       }
     }

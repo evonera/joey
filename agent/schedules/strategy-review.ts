@@ -3,6 +3,7 @@ import eveChannel from "../channels/eve";
 import { db } from "@/lib/db";
 import { agentConfigs, tenants, posts, member } from "@/lib/db/schema";
 import { eq, and, gte } from "drizzle-orm";
+import { checkUsageLimits } from "@/lib/billing";
 
 export default defineSchedule({
   cron: "0 8 * * 0",
@@ -18,6 +19,7 @@ export default defineSchedule({
 
     for (const t of activeTenants) {
       try {
+        if (!(await checkUsageLimits(t.tenantId)).allowsAutonomousCadence) continue;
         const ownerMember = await db.query.member.findFirst({
           where: and(eq(member.organizationId, t.tenantId), eq(member.role, "owner"))
         });

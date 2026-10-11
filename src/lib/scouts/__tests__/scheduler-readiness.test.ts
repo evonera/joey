@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ limit: vi.fn(), setup: vi.fn(), reserve: vi.fn(), claim: vi.fn(), update: vi.fn() }));
+const mocks = vi.hoisted(() => ({ limit: vi.fn(), setup: vi.fn(), reserve: vi.fn(), claim: vi.fn(), update: vi.fn(), billing: vi.fn() }));
 vi.mock("@/lib/db", () => ({ db: {
   query: { scoutEvaluations: { findMany: async () => [] } },
   select: () => ({ from: () => ({ innerJoin: () => ({ where: () => ({ orderBy: () => ({ limit: mocks.limit }) }) }), where: () => ({ orderBy: () => ({ limit: mocks.limit }) }) }) }),
   update: mocks.update,
 } }));
+vi.mock("@/lib/billing", () => ({ checkUsageLimits: mocks.billing }));
 vi.mock("../data-provider", () => ({ getScoutProviderSetup: mocks.setup }));
 vi.mock("../evaluation-receipts", () => ({ reserveScoutEvaluation: mocks.reserve, SCOUT_DISPATCH_ATTEMPTS: 3 }));
 import { dispatchScoutsTick, SCOUT_SOURCE_SCAN_LIMIT } from "../scheduler";
@@ -12,6 +13,7 @@ const source = (id: string, platform = "instagram") => ({ id, tenantId: "tenant"
 describe("Scout scheduler readiness", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.billing.mockResolvedValue({ allowsAutonomousCadence: true });
     mocks.update.mockImplementation(() => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }));
   });
   it("leaves unconfigured Scouts waiting without creating failed scans or dispatching paid work", async () => {
@@ -22,6 +24,15 @@ describe("Scout scheduler readiness", () => {
     expect(mocks.setup).toHaveBeenCalledTimes(2);
     expect(mocks.reserve).not.toHaveBeenCalled();
     expect(mocks.update).toHaveBeenCalledTimes(2);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+  it("does not reserve or dispatch autonomous work without paid access", async () => {
+    mocks.limit.mockResolvedValueOnce([]).mockResolvedValueOnce([source("free")]);
+    mocks.billing.mockResolvedValue({ allowsAutonomousCadence: false });
+    const dispatch = vi.fn();
+    expect(await dispatchScoutsTick(dispatch)).toMatchObject({ dispatchedCount: 0, blockedCount: 1 });
+    expect(mocks.reserve).not.toHaveBeenCalled();
+    expect(mocks.setup).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
   });
   it("fills a bounded batch with RSS sources past a full page of unavailable social sources", async () => {

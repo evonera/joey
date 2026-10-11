@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { getScoutProviderSetup } from "./data-provider";
 import { db } from "@/lib/db";
+import { checkUsageLimits } from "@/lib/billing";
 import { scouts, scoutEvaluations, scoutEvaluationEvents } from "@/lib/db/schema";
 import { reserveScoutEvaluation, SCOUT_DISPATCH_ATTEMPTS, type ScoutEvaluationReceipt } from "./evaluation-receipts";
 
@@ -147,7 +148,8 @@ export async function dispatchScoutsTick(dispatch?: (receipts: ScoutDispatchJob[
   let blockedCount = 0;
   async function ready(tenantId: string, source?: { id?: string; platform: string; targetUrl: string; goalCondition?: string }) {
     const key = `${tenantId}:${source?.id ?? ""}:${source?.platform ?? "default"}:${source?.targetUrl ?? ""}:${source?.goalCondition ?? ""}`;
-    if (!readyByTenant.has(key)) readyByTenant.set(key, (await getScoutProviderSetup(tenantId, source)).ready);
+    if (!readyByTenant.has(key)) readyByTenant.set(key,
+      (await checkUsageLimits(tenantId)).allowsAutonomousCadence && (await getScoutProviderSetup(tenantId, source)).ready);
     return readyByTenant.get(key)!;
   }
   const candidates: ScoutEvaluationReceipt[] = [];

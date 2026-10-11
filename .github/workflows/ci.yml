@@ -113,6 +113,10 @@ jobs:
         run: npm run test:integration:agency
         env:
           JOEY_INTEGRATION_TEST: "true"
+      - name: Billing quota and cancellation acceptance
+        run: node --import tsx tests/integration/billing-entitlements.ts
+        env:
+          JOEY_INTEGRATION_TEST: "true"
       - name: Editorial account-lock and permission acceptance
         run: npm run test:integration:editorial
         env:

@@ -14,7 +14,9 @@ const mocks = vi.hoisted(() => ({
   slot: vi.fn(),
   format: vi.fn(),
   expiry: vi.fn(),
+  billing: vi.fn().mockResolvedValue({ allowsAutonomousCadence: true }),
 }));
+vi.mock("@/lib/billing", () => ({ checkUsageLimits: mocks.billing }));
 vi.mock("@/lib/db", () => ({
   db: {
     query: { themeSlots: { findFirst: mocks.slot }, themeContentFormats: { findFirst: mocks.format } },
@@ -48,6 +50,7 @@ const config = { scoutId: "source", themePageId: "page", accountIds: ["allowed"]
 const alert = { title: "A new source", targetUrl: "https://instagram.com/source", changes: [] };
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.billing.mockResolvedValue({ allowsAutonomousCadence: true });
   vi.stubEnv("AGENCY_AUTOMATION_ENABLED", "true");
   mocks.reserve.mockResolvedValue({ claimed: true, run });
   mocks.current.mockResolvedValue({ actor, config });
@@ -139,6 +142,12 @@ describe("Governed draft automation (no provider calls)", () => {
   it("uses the pinned current schedule day as its shared manual receipt", async () => {
     await executeAgencyDraft(actor, "agent", 1, undefined, agencyDailyEventKey().slice(6));
     expect(mocks.reserve).toHaveBeenCalledWith(actor, "agent", 1, agencyDailyEventKey());
+  });
+  it("does not reserve scheduled work after billing access ends", async () => {
+    mocks.billing.mockResolvedValue({ allowsAutonomousCadence: false });
+    await expect(executeAgencyDraft(actor, "agent", 1, undefined, agencyDailyEventKey().slice(6))).rejects.toThrow("require paid access");
+    expect(mocks.reserve).not.toHaveBeenCalled();
+    expect(mocks.evaluate).not.toHaveBeenCalled();
   });
   it.each([undefined, { platform: "linkedin" }])("rejects missing/non-Instagram formats before resolving paid providers", async (format) => {
     mocks.format.mockResolvedValue(format);

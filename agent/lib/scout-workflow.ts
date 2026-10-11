@@ -3,6 +3,7 @@ import { start } from "workflow/api";
 import { evaluateScout } from "@/lib/scouts/evaluator";
 import { deferScoutEvaluationDispatch } from "@/lib/scouts/scheduler";
 import type { ScoutDispatchJob } from "@/lib/scouts/scheduler";
+import { checkUsageLimits } from "@/lib/billing";
 
 export type ScoutWorkflowJob = ScoutDispatchJob;
 export async function startScoutBatch(jobs: ScoutWorkflowJob[]) {
@@ -20,7 +21,11 @@ export async function scoutBatchWorkflow(jobs: ScoutWorkflowJob[]) {
 export async function scoutEvaluationStep(job: ScoutWorkflowJob) {
   "use step";
   try {
-    const result = await evaluateScout(job.scoutId, { tenantId: job.tenantId, evaluationId: job.evaluationId, requireActive: true });
+    const result = await evaluateScout(job.scoutId, { tenantId: job.tenantId, evaluationId: job.evaluationId, requireActive: true,
+      beforePaidPhase: async () => {
+        if (!(await checkUsageLimits(job.tenantId)).allowsAutonomousCadence) throw new Error("Scheduled Scouts require paid access.");
+      },
+    });
     if (result.pending) await deferScoutEvaluationDispatch(job);
     return result;
   } catch {
