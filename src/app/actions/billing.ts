@@ -29,7 +29,8 @@ export async function getBillingSummary() {
   return {
     ...limits,
     workspaceName: tenant?.name || "Workspace",
-    configured: getBillingConfig().configured,
+    configured: getBillingConfig().configured && process.env.BILLING_MAINTENANCE !== "true",
+    maintenance: process.env.BILLING_MAINTENANCE === "true",
     testMode: getBillingConfig().environment === "test_mode",
     canManage: ["owner", "admin"].includes(membership.role),
     hasCustomer: Boolean(tenant?.dodoCustomerId),
@@ -44,6 +45,7 @@ function billingReturnUrl() {
 
 export async function startCheckout(plan: BillingPlan, attemptId: string) {
   const { tenantId } = await getActiveTenantMembership(["owner", "admin"]);
+  assertBillingAvailable();
   if (!BILLING_PLANS.includes(plan)) throw new Error("Unknown billing plan.");
   if (!/^[\da-f-]{36}$/i.test(attemptId)) throw new Error("Invalid checkout attempt. Please reload and try again.");
   const session = await auth.api.getSession({ headers: await headers() });
@@ -101,6 +103,7 @@ export async function startProCheckout(attemptId: string) {
 
 export async function openBillingPortal() {
   const { tenantId } = await getActiveTenantMembership(["owner", "admin"]);
+  assertBillingAvailable();
   const tenant = await db.query.tenants.findFirst({
     where: eq(tenants.id, tenantId), columns: { dodoCustomerId: true },
   });
@@ -109,4 +112,8 @@ export async function openBillingPortal() {
     return_url: billingReturnUrl(),
   });
   return { url: portal.link };
+}
+
+function assertBillingAvailable() {
+  if (process.env.BILLING_MAINTENANCE === "true") throw new Error("Billing is being updated. Please try again shortly or contact joey@evonera.net.");
 }

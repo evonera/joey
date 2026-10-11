@@ -77,7 +77,8 @@ export function BillingPanel() {
           size="small"
           className="py-2 md:py-4"
         />
-        {!summary.configured ? <p className="text-sm text-muted-foreground">Billing is not available on this instance yet. Contact the administrator to enable paid plans.</p>
+        {summary.maintenance ? <p role="status" className="text-sm text-muted-foreground">Billing is being updated. Please try again shortly or contact joey@evonera.net.</p>
+          : !summary.configured ? <p className="text-sm text-muted-foreground">Billing is not available on this instance yet. Contact the administrator to enable paid plans.</p>
           : !summary.canManage ? <p className="text-sm text-muted-foreground">Ask a workspace owner or admin to manage your plan.</p>
           : <div className="flex flex-wrap gap-3">
               {summary.hasCustomer && <Button variant="outline" disabled={busy} onClick={() => open("portal")}>Manage billing</Button>}
