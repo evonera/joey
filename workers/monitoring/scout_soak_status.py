@@ -40,4 +40,5 @@ if args.finalize:
     if active.get("appName") == APP_NAME:
         control.put("active", {**active, "enabled": False})
     subprocess.run([sys.executable, "-m", "modal", "app", "stop", APP_NAME], check=True)
+    subprocess.run([sys.executable, "-m", "modal", "secret", "delete", APP_NAME, "--allow-missing", "--yes"], check=True)
 print(json.dumps({"phase": summary.get("phase", "starting"), "passed": summary.get("passed"), "endsAt": run["endsAt"], "checkedAt": summary.get("checkedAt"), "staleMinutes": summary["staleMinutes"], "issues": summary.get("issues", []), "completed": [s["completed"] for s in summary.get("scouts", [])], "report": str(output / "status.html")}))
