@@ -4,6 +4,8 @@ import type { SQL } from "drizzle-orm";
 
 const mockFindFlow = vi.fn();
 const mockUpdateFlow = vi.fn();
+const mockStartFlowRun = vi.fn();
+vi.mock("@/lib/flows/run-flow-server", () => ({ startFlowRun: mockStartFlowRun, executeAdmittedFlowRun: vi.fn() }));
 const mockRequireRole = vi.fn(async () => "tenant_1");
 
 vi.mock("@/lib/db", () => ({
@@ -36,6 +38,21 @@ describe("saveFlow concurrency handling", () => {
     });
   });
 
+  it("returns the persisted failed run ID and execution error instead of dropping the failure", async () => {
+    mockStartFlowRun.mockResolvedValueOnce({ runId: "failed-run", status: "failed", persisted: true, error: "Source request was rejected" });
+    const { runFlow } = await import("@/app/actions/flows");
+    await expect(runFlow("flow_1")).resolves.toEqual({ runId: "failed-run", status: "failed", error: "Source request was rejected" });
+  });
+  it("returns waiting approval without an execution error", async () => {
+    mockStartFlowRun.mockResolvedValueOnce({ runId: "waiting-run", status: "waiting_approval", persisted: true });
+    const { runFlow } = await import("@/app/actions/flows");
+    await expect(runFlow("flow_1")).resolves.toEqual({ runId: "waiting-run", status: "waiting_approval" });
+  });
+  it("returns a fallback error for a failed run without provider error details", async () => {
+    mockStartFlowRun.mockResolvedValueOnce({ runId: "failed-run", status: "failed", persisted: true });
+    const { runFlow } = await import("@/app/actions/flows");
+    expect(await runFlow("flow_1")).toMatchObject({ runId: "failed-run", status: "failed", error: expect.any(String) });
+  });
   it("returns a conflict when the draft-only update loses a race", async () => {
     const returning = vi.fn().mockResolvedValue([]);
     const where = vi.fn(() => ({ returning }));

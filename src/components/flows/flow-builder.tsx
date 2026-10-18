@@ -512,12 +512,16 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
       setAgentChangeCount(0);
       setLastAgentChange(null);
       const res = await runFlow(flow.id);
-      if (res.runId) {
+      if (res.runId) setRunsOpen(true);
+      if (res.error || res.status === "failed") {
+        toast.error(res.error ?? "Run failed. Open the runs panel for details.");
+      } else if (res.status === "waiting_approval") {
+        toast.info("Run is waiting for approval — opening runs panel");
+      } else if (res.status === "succeeded") {
         toast.success("Run finished — opening runs panel");
-        setRunsOpen(true);
-      } else {
-        toast.error(res.error ?? "Run failed");
-      }
+      } else if (res.runId) {
+        toast.info("Run started — opening runs panel");
+      } else toast.error("Run could not be started");
     } catch { toast.error("Could not save or test this flow. Please retry."); } finally { setBusy(false); }
   }
 

@@ -7,7 +7,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }
 vi.mock("next-themes", () => ({ useTheme: () => ({ resolvedTheme: "light" }) }));
 vi.mock("sonner", () => ({ toast: { success: mocks.success, info: mocks.info, error: mocks.error, warning: vi.fn() } }));
 vi.mock("@/hooks/use-webmcp-tools", () => ({ useWebMcpTools: () => true }));
-vi.mock("../runs-panel", () => ({ RunsPanel: () => null }));
+vi.mock("../runs-panel", () => ({ RunsPanel: ({ open }: { open: boolean }) => open ? <div>Run details opened</div> : null }));
 vi.mock("../zod-form", () => ({ ZodForm: () => null }));
 vi.mock("@/app/actions/flows", () => ({ saveFlow: mocks.save, runFlow: mocks.run, validateFlowGraph: vi.fn(), validateFlowActivation: vi.fn(), setFlowStatus: vi.fn(), publishTemplate: vi.fn(), provisionFlowWebhookSecret: vi.fn(), rotateFlowWebhookSecret: vi.fn() }));
 vi.mock("@xyflow/react", async importOriginal => {
@@ -70,6 +70,25 @@ describe("FlowBuilder edit protection", () => {
     await act(async () => resolve({ ok: true }));
     expect(mocks.run).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Save *" })).toBeEnabled();
+  });
+
+  it("shows a persisted failed run as an error and still opens its details", async () => {
+    mocks.run.mockResolvedValueOnce({ runId: "failed-run", status: "failed", error: "Source request was rejected" });
+    render(<FlowBuilder flow={flow} />);
+    fireEvent.click(screen.getByRole("button", { name: "Test run" }));
+    await waitFor(() => expect(mocks.error).toHaveBeenCalledWith("Source request was rejected"));
+    expect(mocks.success).not.toHaveBeenCalled();
+    expect(screen.getByText("Run details opened")).toBeInTheDocument();
+  });
+
+  it("reports waiting approval neutrally and opens the runs panel", async () => {
+    mocks.run.mockResolvedValueOnce({ runId: "waiting-run", status: "waiting_approval" });
+    render(<FlowBuilder flow={flow} />);
+    fireEvent.click(screen.getByRole("button", { name: "Test run" }));
+    await waitFor(() => expect(mocks.info).toHaveBeenCalledWith("Run is waiting for approval — opening runs panel"));
+    expect(mocks.success).not.toHaveBeenCalled();
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(screen.getByText("Run details opened")).toBeInTheDocument();
   });
 
   it("offers recovery after navigation and removes recovery after confirmed save", async () => {
