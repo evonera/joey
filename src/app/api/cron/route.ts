@@ -49,7 +49,10 @@ export async function GET(request: Request) {
     task: ["publishDrafts", "flowsTick", "scoutsTick", "telegramOutbox", "pruneRateLimits"][i],
     status: r.status,
     ...(r.status === "rejected" ? { error: "Task failed or timed out" } : {}),
-    ...(r.status === "fulfilled" && r.value && typeof r.value === "object" && "failed" in r.value && typeof r.value.failed === "number" && r.value.failed > 0 ? { error: "Task reported failed operations" } : {}),
+    ...(r.status === "fulfilled" && r.value && typeof r.value === "object" && (
+      ("failed" in r.value && typeof r.value.failed === "number" && r.value.failed > 0) ||
+      ("error" in r.value && Boolean(r.value.error))
+    ) ? { error: "Task reported failed operations" } : {}),
   }));
 
   const ok = summary.every(task => !("error" in task));

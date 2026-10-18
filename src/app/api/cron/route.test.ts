@@ -38,4 +38,19 @@ describe("scheduler admission", () => {
     expect(mocks.publish).toHaveBeenCalledOnce();
     expect(mocks.scouts).toHaveBeenCalledOnce();
   });
+  it("reports a rejected Scout workflow handoff even when dispatch returns a structured result", async () => {
+    mocks.scouts.mockResolvedValueOnce({ dispatchedCount: 0, error: "Scout dispatch failed; bounded retry is scheduled." });
+    const result = await GET(request());
+    expect(result.status).toBe(503);
+    const body = await result.json();
+    expect(body.ok).toBe(false);
+    expect(body.summary.find((task: { task: string }) => task.task === "scoutsTick")).toEqual({ task: "scoutsTick", status: "fulfilled", error: "Task reported failed operations" });
+    expect(mocks.publish).toHaveBeenCalledOnce();
+  });
+  it("keeps normal unconfigured sources and empty error values distinct from dispatch failure", async () => {
+    mocks.scouts.mockResolvedValueOnce({ dispatchedCount: 0, blockedCount: 2, error: undefined });
+    const result = await GET(request());
+    expect(result.status).toBe(200);
+    expect((await result.json()).ok).toBe(true);
+  });
 });
