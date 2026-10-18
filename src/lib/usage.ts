@@ -203,7 +203,12 @@ export async function reserveUsageBudget(input: {
   modelId?: string;
   estimatedCostUsd: number;
   metadata?: Record<string, unknown>;
+  /** Enforced under the same workspace lock as budget admission, before calling a platform provider. */
+  trialGenerationLimit?: number;
 }) {
+  if (input.trialGenerationLimit !== undefined && (!Number.isSafeInteger(input.trialGenerationLimit) || input.trialGenerationLimit < 1)) {
+    throw new Error("Invalid free trial generation limit.");
+  }
   const id = input.id ?? crypto.randomUUID();
   const amount = validateMoney(input.estimatedCostUsd, "usage reservation");
   const periodStart = currentPeriodStart();
@@ -243,6 +248,13 @@ export async function reserveUsageBudget(input: {
       return existing;
     }
 
+    if (input.trialGenerationLimit !== undefined) {
+      const used = await countTrialGenerations(tx, input.tenantId);
+      if (used >= input.trialGenerationLimit) {
+        throw new FreeTrialLimitReachedError(used, input.trialGenerationLimit);
+      }
+    }
+
     const spent = Number(usage.estimatedCostUsd ?? 0);
     const reserved = Number(usage.reservedCostUsd ?? 0);
     const budget = usage.budgetLimitUsd === null ? Infinity : Number(usage.budgetLimitUsd);
@@ -280,14 +292,18 @@ async function finalizeUsageReservation(input: {
   const nowPeriod = currentPeriodStart();
 
   return db.transaction(async (tx) => {
+    // Discover the workspace without locking a reservation. Every accounting
+    // transaction locks usage first, then reservations, including month rollover.
+    const [identity] = await tx.select({ tenantId: usageReservations.tenantId }).from(usageReservations)
+      .where(eq(usageReservations.id, input.id)).limit(1);
+    if (!identity) throw new Error("Usage reservation was not found.");
+    const [usage] = await tx.select().from(usageTracking)
+      .where(eq(usageTracking.tenantId, identity.tenantId)).for("update");
+    if (!usage) throw new Error("Workspace usage row was not found.");
     const [reservation] = await tx.select().from(usageReservations)
       .where(eq(usageReservations.id, input.id)).for("update");
     if (!reservation) throw new Error("Usage reservation was not found.");
     if (reservation.status !== "reserved") return reservation;
-
-    let [usage] = await tx.select().from(usageTracking)
-      .where(eq(usageTracking.tenantId, reservation.tenantId)).for("update");
-    if (!usage) throw new Error("Workspace usage row was not found.");
     if (reservation.periodStart.getTime() !== nowPeriod.getTime() || usage.periodStart.getTime() !== nowPeriod.getTime()) {
       await reconcilePriorPeriodReservations(tx, reservation.tenantId, nowPeriod);
       if (usage.periodStart.getTime() === nowPeriod.getTime()) {
@@ -395,13 +411,13 @@ export async function assertBudget(
 /**
  * Counts total AI generations consumed under the free trial for a tenant.
  */
-export async function getTrialGenerationsUsed(tenantId: string): Promise<number> {
+async function countTrialGenerations(query: Pick<typeof db, "select">, tenantId: string): Promise<number> {
   const [eventsRes, reservationsRes] = await Promise.all([
-    db
+    query
       .select({ total: count() })
       .from(agentUsageEvents)
       .where(and(eq(agentUsageEvents.tenantId, tenantId), eq(agentUsageEvents.kind, "text"))),
-    db
+    query
       .select({ total: count() })
       .from(usageReservations)
       .where(and(
@@ -413,7 +429,13 @@ export async function getTrialGenerationsUsed(tenantId: string): Promise<number>
   return (eventsRes?.[0]?.total ?? 0) + (reservationsRes?.[0]?.total ?? 0);
 }
 
+export async function getTrialGenerationsUsed(tenantId: string): Promise<number> {
+  return countTrialGenerations(db, tenantId);
+}
+
 /**
+ * Read-only preflight for display; provider calls must use reserveUsageBudget
+ * with trialGenerationLimit so concurrent admissions are serialized.
  * Asserts that a free trial tenant has not exceeded the max allowed free attempts.
  */
 export async function assertTrialQuota(tenantId: string, maxAttempts: number = 3): Promise<void> {

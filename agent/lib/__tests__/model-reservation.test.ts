@@ -11,7 +11,7 @@ import twitter from "../../subagents/twitter/agent";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.resolve.mockResolvedValue({ model: "fake-google-model", providerModelId: "gemini-3.8-flash", modelContextWindowTokens: 1_048_576 });
+  mocks.resolve.mockResolvedValue({ model: "fake-google-model", providerModelId: "gemini-3.8-flash", modelContextWindowTokens: 1_048_576, trialGenerationLimit: 3 });
   mocks.estimate.mockReturnValue(0.01);
 });
 describe("Eve fallback model reservations", () => {
@@ -22,9 +22,17 @@ describe("Eve fallback model reservations", () => {
       { data: { turnId: "turn", stepIndex: 0, sequence: 0 } },
       { messages, session: { id: "session", auth: { current: { attributes: { tenantId: "tenant", preferredModel: "openai/gpt-5.6-luna" } } } } },
     );
-    expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({ modelId: "gemini-3.8-flash", estimatedCostUsd: 0.01 }));
+    expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({ modelId: "gemini-3.8-flash", estimatedCostUsd: 0.01, trialGenerationLimit: 3 }));
     expect(mocks.estimate).toHaveBeenCalledWith("gemini-3.8-flash", messages, expect.any(Number));
     // Return only public Eve selection fields; accounting metadata is not runtime config.
     expect(selection).toEqual({ model: "fake-google-model", modelContextWindowTokens: 1_048_576 });
+  });
+  it.each([["root", root], ["linkedin", linkedin], ["twitter", twitter]])("%s rejects model selection when atomic trial admission fails", async (_name, definition) => {
+    mocks.reserve.mockRejectedValueOnce(new Error("rate_limit:trial"));
+    const dynamic = definition.model as unknown as { events: { "step.started": (event: unknown, ctx: unknown) => Promise<unknown> } };
+    await expect(dynamic.events["step.started"](
+      { data: { turnId: "turn", stepIndex: 0, sequence: 0 } },
+      { messages: [], session: { id: "session", auth: { current: { attributes: { tenantId: "tenant" } } } } },
+    )).rejects.toThrow("rate_limit:trial");
   });
 });
