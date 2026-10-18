@@ -376,20 +376,17 @@ export async function getPendingReplyCount() {
   }
 }
 
-export async function approveReply(replyDraftId: string) {
+export async function approveReply(replyDraftId: string, expectedContent?: string) {
   try {
     const tenantId = await requireRole(["owner", "admin"]);
 
-    const [approved] = await db.update(replyDrafts)
-      .set({ status: "approved" })
-      .where(and(
-        eq(replyDrafts.id, replyDraftId),
-        eq(replyDrafts.tenantId, tenantId),
-        inArray(replyDrafts.status, ["pending_review", "rejected", "failed"]),
-      ))
-      .returning({ id: replyDrafts.id });
+    if (typeof expectedContent !== "string" || !expectedContent.trim()) {
+      return { error: "Reload the reply and review its current content before approving" };
+    }
+    const { approveReviewedReply } = await import("@/lib/reply-drafts");
+    const approved = await approveReviewedReply(tenantId, replyDraftId, expectedContent);
 
-    if (!approved) return { error: "Reply is no longer available for approval" };
+    if (!approved) return { error: "Reply changed or is no longer available. Reload and review it before approving" };
 
     return { success: true };
   } catch (error: any) {

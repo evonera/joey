@@ -99,7 +99,7 @@ export function ReplyCard({
   const handleApproveAndSend = async () => {
     if (!item.replyDraft) return;
     setLoading(true);
-    const res = await approveReply(item.replyDraft.id);
+    const res = await approveReply(item.replyDraft.id, draftContent);
     if (res.success) {
       const sendRes = await sendReply(item.replyDraft.id);
       if (sendRes.error) {
@@ -107,7 +107,7 @@ export function ReplyCard({
       } else {
         toast.success("Reply sent successfully!");
       }
-    }
+    } else if (res.error) toast.error(res.error);
     setLoading(false);
     onActionComplete();
   };
@@ -115,8 +115,13 @@ export function ReplyCard({
   const handleSendEdited = async () => {
     if (!item.replyDraft) return;
     setLoading(true);
-    await updateReplyDraft(item.replyDraft.id, draftContent);
-    const res = await approveReply(item.replyDraft.id);
+    const saved = await updateReplyDraft(item.replyDraft.id, draftContent);
+    if (saved.error) {
+      toast.error(saved.error);
+      setLoading(false);
+      return;
+    }
+    const res = await approveReply(item.replyDraft.id, draftContent.trim());
     if (res.success) {
       const sendRes = await sendReply(item.replyDraft.id);
       if (sendRes.error) {
@@ -124,7 +129,7 @@ export function ReplyCard({
       } else {
         toast.success("Reply sent successfully!");
       }
-    }
+    } else if (res.error) toast.error(res.error);
     setLoading(false);
     setIsEditing(false);
     onActionComplete();

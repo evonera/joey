@@ -5,16 +5,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReplyCard } from "@/components/engagement/reply-card";
 
 const updateReplyDraft = vi.fn(async (_replyDraftId: string, _content: string) => ({ success: true }));
+const replyActions = vi.hoisted(() => ({ approve: vi.fn(), send: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: replyActions.error } }));
 
 afterEach(() => {
   updateReplyDraft.mockReset();
   updateReplyDraft.mockResolvedValue({ success: true });
+  vi.clearAllMocks();
 });
 
 vi.mock("@/app/actions/engagement", () => ({
-  approveReply: vi.fn(),
+  approveReply: replyActions.approve,
   rejectReply: vi.fn(),
-  sendReply: vi.fn(),
+  sendReply: replyActions.send,
   skipEngagementItem: vi.fn(),
   updateReplyDraft: (replyDraftId: string, content: string) => updateReplyDraft(replyDraftId, content),
 }));
@@ -38,6 +41,14 @@ const item = {
 };
 
 describe("ReplyCard WebMCP staging", () => {
+  it("approves only the visible content and never sends after a stale approval", async () => {
+    replyActions.approve.mockResolvedValueOnce({ error: "Reply changed; review again" });
+    render(<ReplyCard item={item} onActionComplete={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Approve & Send" }));
+    expect(replyActions.approve).toHaveBeenCalledWith("draft-1", "Original reply");
+    expect(replyActions.send).not.toHaveBeenCalled();
+    expect(replyActions.error).toHaveBeenCalledWith("Reply changed; review again");
+  });
   it("opens staged content in the editor without exposing approve or send", async () => {
     const onDiscard = vi.fn();
     render(<ReplyCard

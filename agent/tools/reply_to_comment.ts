@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { replyDrafts, engagementItems, agentConfigs } from "@/lib/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
+import { replaceReplyDraftSnapshot } from "@/lib/reply-drafts";
 
 export default defineTool({
   description:
@@ -45,9 +46,10 @@ export default defineTool({
       if (existing.status !== "pending_review" && existing.status !== "failed") {
         return { success: true, replyDraftId: existing.id, message: "An active reply draft already exists." };
       }
-      await db.update(replyDrafts)
-        .set({ content, feedback: tone || null, status: "pending_review" })
-        .where(and(eq(replyDrafts.id, existing.id), eq(replyDrafts.tenantId, tenantId)));
+      const updated = await replaceReplyDraftSnapshot(tenantId, existing, content, tone || null);
+      if (!updated) {
+        return { success: false, replyDraftId: existing.id, message: "Reply changed during drafting. Reload it for review; no content was replaced." };
+      }
       return { success: true, replyDraftId: existing.id, message: "Existing reply draft updated." };
     }
 

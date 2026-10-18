@@ -128,6 +128,10 @@ export const auth = betterAuth({
         : {},
     plugins: [
         organization({
+            // The generic endpoint cascades tenant billing references without
+            // cancelling Dodo. Keep records until a billing-aware deletion
+            // workflow can reconcile cancellation and late provider webhooks.
+            disableOrganizationDeletion: true,
             schema: {
                 organization: {
                     modelName: "tenants"
