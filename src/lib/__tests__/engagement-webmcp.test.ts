@@ -148,6 +148,15 @@ describe("engagement WebMCP tools", () => {
     expect(sent.data.error).toContain("sent");
   });
 
+  it("rejects even legacy failed replies whose delivery outcome needs reconciliation", async () => {
+    const { tools, getState, stageReplyEdit } = harness();
+    getState().selectedItem!.replyDraft!.status = "failed";
+    const response = await call(tools, "joey_stage_reply_edit", { replyDraftId: "draft-1", content: "Changed payload" });
+    expect(response.isError).toBe(true);
+    expect(response.data.error).toContain("uncertain");
+    expect(stageReplyEdit).not.toHaveBeenCalled();
+  });
+
   it("rejects staging while the selected draft is open for human editing", async () => {
     const state = stateFixture();
     const stageReplyEdit = vi.fn();

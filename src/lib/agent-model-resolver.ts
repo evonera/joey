@@ -16,6 +16,8 @@ export interface ResolvedModelResult {
   modelContextWindowTokens: number;
   /** Actual provider model selected, including provider-key fallback. */
   providerModelId: string;
+  /** Pass to reserveUsageBudget for atomic free platform admission. */
+  trialGenerationLimit?: number;
 }
 
 /**
@@ -114,9 +116,9 @@ export async function resolveModelForTurn(
 
   // Happy path: preferred model's provider has a key
   if (preferredKeyInfo.key) {
-    await _enforceTrialQuotaIfNeeded(options.tenantId, preferredKeyInfo);
+    const trialGenerationLimit = await trialLimitForKey(options.tenantId, preferredKeyInfo);
     const model = await resolveLanguageModel(preferredModelDef, preferredKeyInfo.key);
-    return { model, modelContextWindowTokens: preferredModelDef.contextWindowTokens, providerModelId: preferredModelDef.providerModelId };
+    return { model, modelContextWindowTokens: preferredModelDef.contextWindowTokens, providerModelId: preferredModelDef.providerModelId, trialGenerationLimit };
   }
 
   // Fallback: try other providers in preference order (google → anthropic → openai)
@@ -140,9 +142,9 @@ export async function resolveModelForTurn(
       `Falling back to "${fallbackModelDef.id}" (${provider}).`
     );
 
-    await _enforceTrialQuotaIfNeeded(options.tenantId, fallbackKeyInfo);
+    const trialGenerationLimit = await trialLimitForKey(options.tenantId, fallbackKeyInfo);
     const model = await resolveLanguageModel(fallbackModelDef, fallbackKeyInfo.key);
-    return { model, modelContextWindowTokens: fallbackModelDef.contextWindowTokens, providerModelId: fallbackModelDef.providerModelId };
+    return { model, modelContextWindowTokens: fallbackModelDef.contextWindowTokens, providerModelId: fallbackModelDef.providerModelId, trialGenerationLimit };
   }
 
   // No provider has a key — surface a clear, actionable error
@@ -152,17 +154,17 @@ export async function resolveModelForTurn(
   );
 }
 
-/** Enforce the 3-attempt trial quota when using a platform (non-BYOK) key. */
-async function _enforceTrialQuotaIfNeeded(
+/** Select the admission policy; the reservation transaction enforces it. */
+async function trialLimitForKey(
   tenantId: string | null | undefined,
   keyInfo: { isByok: boolean }
-): Promise<void> {
+): Promise<number | undefined> {
   if (tenantId && !keyInfo.isByok) {
     const { isProTenant } = await import("@/lib/billing");
     const isPro = await isProTenant(tenantId);
     if (!isPro) {
-      const { assertTrialQuota } = await import("@/lib/usage");
-      await assertTrialQuota(tenantId, 3);
+      return 3;
     }
   }
+  return undefined;
 }

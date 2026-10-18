@@ -7,7 +7,6 @@ import { encrypt } from "@/lib/crypto";
 
 vi.mock("@/lib/usage", () => ({
   assertBudget: vi.fn().mockResolvedValue({ allowed: true }),
-  assertTrialQuota: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/db", () => {
@@ -100,20 +99,29 @@ describe("agent-model-resolver", () => {
     expect(result.model).toBeDefined();
     expect(result.modelContextWindowTokens).toBe(1_048_576);
     expect(result.providerModelId).toBe("gemini-3.6-flash");
+    expect(result.trialGenerationLimit).toBeUndefined();
   });
 
-  it("enforces trial quota when using fallback server key for free tenant", async () => {
+  it("carries trial policy into atomic reservation when using a platform key for a free tenant", async () => {
     const { db } = await import("@/lib/db");
-    const { assertTrialQuota } = await import("@/lib/usage");
     (db.query.apiKeys.findFirst as any).mockResolvedValueOnce(null);
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "AIzaSyTestServerKey";
 
-    await resolveModelForTurn({
+    const resolved = await resolveModelForTurn({
       preferredModel: "google/gemini-3.6-flash",
       tenantId: "tenant-free-trial",
     });
 
-    expect(assertTrialQuota).toHaveBeenCalledWith("tenant-free-trial", 3);
+    expect(resolved.trialGenerationLimit).toBe(3);
+  });
+
+  it("does not apply a trial limit to an active paid workspace using a platform key", async () => {
+    const { db } = await import("@/lib/db");
+    (db.query.apiKeys.findFirst as any).mockResolvedValueOnce(null);
+    (db.query.tenants.findFirst as any).mockResolvedValueOnce({ subscriptionPlan: "creator", subscriptionStatus: "active" });
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "AIzaSyTestServerKey";
+    const resolved = await resolveModelForTurn({ preferredModel: "google/gemini-3.6-flash", tenantId: "paid-workspace" });
+    expect(resolved.trialGenerationLimit).toBeUndefined();
   });
 
   it("falls back to google/gemini when preferred openai model has no key", async () => {

@@ -2,7 +2,7 @@ import { estimateTextCallCost, getTextModelCost } from "@/lib/ai-pricing";
 import { findModelById, getModelById } from "@/lib/models";
 import { failUsageReservation, reserveUsageBudget, settleUsageReservation } from "@/lib/usage";
 
-async function resolveKey(tenantId: string | undefined, provider: string): Promise<string> {
+async function resolveKey(tenantId: string | undefined, provider: string): Promise<{ key: string; trialGenerationLimit?: number }> {
   if (tenantId) {
     const { db } = await import("@/lib/db");
     const { apiKeys } = await import("@/lib/db/schema");
@@ -18,7 +18,7 @@ async function resolveKey(tenantId: string | undefined, provider: string): Promi
       if (tenantKey.status !== "active") {
         throw new Error(`${provider} API key for this workspace is revoked or disabled.`);
       }
-      return decrypt(tenantKey.encryptedKey, tenantId);
+      return { key: decrypt(tenantKey.encryptedKey, tenantId) };
     }
   }
   const envKey = provider === "anthropic" 
@@ -29,15 +29,8 @@ async function resolveKey(tenantId: string | undefined, provider: string): Promi
     ? (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY)
     : process.env.OPENAI_API_KEY;
   if (envKey) {
-    if (tenantId) {
-      const { isProTenant } = await import("@/lib/billing");
-      const isPro = await isProTenant(tenantId);
-      if (!isPro) {
-        const { assertTrialQuota } = await import("@/lib/usage");
-        await assertTrialQuota(tenantId, 3);
-      }
-    }
-    return envKey;
+    const { isProTenant } = await import("@/lib/billing");
+    return { key: envKey, trialGenerationLimit: tenantId && !(await isProTenant(tenantId)) ? 3 : undefined };
   }
   throw new Error(
     `No ${provider} API key available. Add one in Settings → API Keys or set the environment variable.`,
@@ -68,12 +61,12 @@ export async function runLlm(opts: {
 }): Promise<LlmResult> {
   // Resolve key with automatic provider fallback.
   // openrouter is treated as its own provider with no cross-provider fallback.
-  let apiKey!: string;  // definite-assignment: either resolveKey succeeds or we throw
+  let keyInfo!: Awaited<ReturnType<typeof resolveKey>>;  // resolveKey succeeds or we throw
   let effectiveProvider = opts.provider;
   let effectiveModel = opts.model;
 
   try {
-    apiKey = await resolveKey(opts.tenantId, opts.provider);
+    keyInfo = await resolveKey(opts.tenantId, opts.provider);
   } catch (keyErr: any) {
     // Only attempt fallback for BYOK providers (not openrouter)
     if (opts.provider === "openrouter") throw keyErr;
@@ -84,7 +77,7 @@ export async function runLlm(opts: {
     let found = false;
     for (const fp of fallbackOrder) {
       try {
-        apiKey = await resolveKey(opts.tenantId, fp);
+        keyInfo = await resolveKey(opts.tenantId, fp);
         effectiveProvider = fp;
         // Use that provider's default model since the requested model is provider-specific
         const fallbackDef = fp === "google"
@@ -120,6 +113,7 @@ export async function runLlm(opts: {
   }
   const reservation = await reserveUsageBudget({
     tenantId: opts.tenantId,
+    trialGenerationLimit: keyInfo.trialGenerationLimit,
     kind: "text",
     modelId: effectiveModel,
     estimatedCostUsd: estimateTextCallCost(effectiveModel, opts.messages, maxTokens),
@@ -129,7 +123,7 @@ export async function runLlm(opts: {
   try {
     if (effectiveProvider === "anthropic") {
       const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      const client = new Anthropic({ apiKey });
+      const client = new Anthropic({ apiKey: keyInfo.key });
       const system = opts.messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
       const rest = opts.messages.filter((m) => m.role !== "system");
       const response = await client.messages.create(
@@ -192,7 +186,7 @@ export async function runLlm(opts: {
     const isGoogle = effectiveProvider === "google";
     const isOpenRouter = effectiveProvider === "openrouter";
     const client = new OpenAI({
-      apiKey,
+      apiKey: keyInfo.key,
       ...(isGoogle
         ? { baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" }
         : isOpenRouter

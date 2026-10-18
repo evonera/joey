@@ -13,10 +13,11 @@ import {
   YAxis,
 } from "recharts";
 
+import type { MetricTotals } from "@/lib/analytics-metrics";
 import { ChartAreaInteractive } from "@/components/chart-area-interactive";
 
-type SeriesPoint = { label: string; impressions: number; likes: number; comments: number; shares: number; views?: number };
-type PlatformPoint = { platform: string; label: string; impressions: number; likes: number; comments: number; shares: number; views: number };
+type SeriesPoint = MetricTotals & { label: string };
+type PlatformPoint = MetricTotals & { platform: string; label: string };
 
 /**
  * Chart-heavy section split out of the analytics page so recharts stays off

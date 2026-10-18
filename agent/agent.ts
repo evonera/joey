@@ -25,6 +25,7 @@ export default defineAgent({
             tenantId,
             kind: "text",
             modelId: resolved.providerModelId,
+            trialGenerationLimit: resolved.trialGenerationLimit,
             estimatedCostUsd: estimateTextCallCost(resolved.providerModelId, ctx.messages, maxOutputTokens),
             metadata: {
               source: "eve",

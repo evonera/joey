@@ -52,6 +52,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
+import { aggregateMetrics, engagementRate, metricValue, publishedTimestamp } from "@/lib/analytics-metrics";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export interface PostPerformanceItem {
@@ -80,27 +81,14 @@ export function PostPerformanceTable({ posts }: { posts: PostPerformanceItem[] }
 
   const flatData = React.useMemo(() => {
     return posts.map((post) => {
-      let impressions = 0;
-      let likes = 0;
-      let comments = 0;
-      let shares = 0;
-
-      for (const p of post.platforms) {
-        if (p.analytics) {
-          impressions += p.analytics.impressions ?? 0;
-          likes += p.analytics.likes ?? 0;
-          comments += p.analytics.comments ?? 0;
-          shares += p.analytics.shares ?? 0;
-        }
-      }
-
-      const totalEngagements = likes + comments + shares;
-      const rate = impressions > 0 ? (totalEngagements / impressions) * 100 : 0;
+      const observations = post.platforms.map(platform => platform.analytics);
+      const { impressions, likes, comments, shares } = aggregateMetrics(observations);
+      const rate = engagementRate(observations);
 
       return {
         id: post.id,
         content: post.content || "(No text content)",
-        publishedAt: post.publishedAt || new Date().toISOString(),
+        publishedAt: publishedTimestamp(post.publishedAt),
         platforms: post.platforms.map((p) => p.platform),
         impressions,
         likes,
@@ -146,7 +134,7 @@ export function PostPerformanceTable({ posts }: { posts: PostPerformanceItem[] }
       accessorKey: "publishedAt",
       header: "Published",
       cell: ({ row }) => {
-        const d = new Date(row.original.publishedAt);
+        const d = new Date(row.original.publishedAt ?? "");
         return (
           <span className="text-xs text-muted-foreground whitespace-nowrap">
             {!isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
@@ -169,7 +157,7 @@ export function PostPerformanceTable({ posts }: { posts: PostPerformanceItem[] }
       ),
       cell: ({ row }) => (
         <span className="tabular-nums text-xs font-semibold text-right block pr-2">
-          {row.original.impressions.toLocaleString()}
+          {row.original.impressions?.toLocaleString() ?? "—"}
         </span>
       ),
     },
@@ -178,7 +166,7 @@ export function PostPerformanceTable({ posts }: { posts: PostPerformanceItem[] }
       header: "Likes",
       cell: ({ row }) => (
         <span className="tabular-nums text-xs text-muted-foreground text-right block pr-2">
-          {row.original.likes.toLocaleString()}
+          {row.original.likes?.toLocaleString() ?? "—"}
         </span>
       ),
     },
@@ -187,16 +175,16 @@ export function PostPerformanceTable({ posts }: { posts: PostPerformanceItem[] }
       header: "Replies",
       cell: ({ row }) => (
         <span className="tabular-nums text-xs text-muted-foreground text-right block pr-2">
-          {row.original.comments.toLocaleString()}
+          {row.original.comments?.toLocaleString() ?? "—"}
         </span>
       ),
     },
     {
       accessorKey: "rate",
-      header: "Rate",
+      header: () => <span title="Likes, replies and shares divided by impressions, or views when impressions are unavailable">Rate</span>,
       cell: ({ row }) => (
         <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/20">
-          {row.original.rate.toFixed(1)}%
+          {row.original.rate === null ? "—" : `${row.original.rate.toFixed(1)}%`}
         </Badge>
       ),
     },
@@ -227,7 +215,7 @@ export function PostPerformanceTable({ posts }: { posts: PostPerformanceItem[] }
         {/* Table Toolbar */}
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
-            Showing <span className="font-semibold text-foreground">{flatData.length}</span> published posts
+            Missing metrics and dates are shown as —. Showing <span className="font-semibold text-foreground">{flatData.length}</span> published posts
           </p>
 
           <DropdownMenu>
@@ -366,19 +354,19 @@ export function PostPerformanceTable({ posts }: { posts: PostPerformanceItem[] }
                     <div className="flex items-center gap-3 text-xs tabular-nums text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <IconEye className="size-3.5 text-primary" />
-                        {p.analytics?.impressions ?? 0}
+                        {metricValue(p.analytics?.impressions) ?? "—"}
                       </span>
                       <span className="flex items-center gap-1">
                         <IconHeart className="size-3.5 text-rose-500" />
-                        {p.analytics?.likes ?? 0}
+                        {metricValue(p.analytics?.likes) ?? "—"}
                       </span>
                       <span className="flex items-center gap-1">
                         <IconMessageCircle className="size-3.5 text-amber-500" />
-                        {p.analytics?.comments ?? 0}
+                        {metricValue(p.analytics?.comments) ?? "—"}
                       </span>
                       <span className="flex items-center gap-1">
                         <IconShare className="size-3.5 text-indigo-500" />
-                        {p.analytics?.shares ?? 0}
+                        {metricValue(p.analytics?.shares) ?? "—"}
                       </span>
                     </div>
                   </div>

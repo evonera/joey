@@ -280,7 +280,7 @@ export async function setFlowStatus(
 export async function runFlow(
   id: string,
   triggerPayload?: unknown,
-): Promise<{ runId?: string; error?: string }> {
+): Promise<{ runId?: string; status?: RunStatus; error?: string }> {
   const authorization = await requireFlowOperator();
   if (!authorization.authorized) return { error: authorization.error };
   const { tenantId } = authorization;
@@ -294,7 +294,13 @@ export async function runFlow(
     trigger: "manual",
     triggerPayload,
   });
-  return { runId: result.runId, ...(result.persisted ? {} : { error: result.error }) };
+  return {
+    runId: result.runId,
+    status: result.status,
+    ...(!result.persisted || result.status === "failed"
+      ? { error: result.error || (result.persisted ? "Flow run failed. Open the runs panel for details." : "Failed to persist the flow run status.") }
+      : {}),
+  };
 }
 
 export async function resumeRun(

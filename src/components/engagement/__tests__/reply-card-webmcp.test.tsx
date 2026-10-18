@@ -5,16 +5,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReplyCard } from "@/components/engagement/reply-card";
 
 const updateReplyDraft = vi.fn(async (_replyDraftId: string, _content: string) => ({ success: true }));
+const replyActions = vi.hoisted(() => ({ approve: vi.fn(), send: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: replyActions.error } }));
 
 afterEach(() => {
   updateReplyDraft.mockReset();
   updateReplyDraft.mockResolvedValue({ success: true });
+  vi.clearAllMocks();
 });
 
 vi.mock("@/app/actions/engagement", () => ({
-  approveReply: vi.fn(),
+  approveReply: replyActions.approve,
   rejectReply: vi.fn(),
-  sendReply: vi.fn(),
+  sendReply: replyActions.send,
   skipEngagementItem: vi.fn(),
   updateReplyDraft: (replyDraftId: string, content: string) => updateReplyDraft(replyDraftId, content),
 }));
@@ -38,6 +41,21 @@ const item = {
 };
 
 describe("ReplyCard WebMCP staging", () => {
+  it("keeps uncertain public replies immutable and asks for provider reconciliation", () => {
+    render(<ReplyCard item={{ ...item, replyDraft: { ...item.replyDraft, status: "failed" } }} onActionComplete={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("The provider may have received this reply");
+    expect(screen.getByText("Original reply")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry|Approve|Edit|Send/ })).not.toBeInTheDocument();
+    expect(replyActions.send).not.toHaveBeenCalled();
+  });
+  it("approves only the visible content and never sends after a stale approval", async () => {
+    replyActions.approve.mockResolvedValueOnce({ error: "Reply changed; review again" });
+    render(<ReplyCard item={item} onActionComplete={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Approve & Send" }));
+    expect(replyActions.approve).toHaveBeenCalledWith("draft-1", "Original reply");
+    expect(replyActions.send).not.toHaveBeenCalled();
+    expect(replyActions.error).toHaveBeenCalledWith("Reply changed; review again");
+  });
   it("opens staged content in the editor without exposing approve or send", async () => {
     const onDiscard = vi.fn();
     render(<ReplyCard

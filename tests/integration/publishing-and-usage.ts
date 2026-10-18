@@ -141,6 +141,8 @@ try {
     nodeRegistry["ai.llm"].execute = originalLlm;
     nodeRegistry["ai.image"].execute = originalImage;
   }
+  const { verifyUsageAccountingConcurrency } = await import("./usage-accounting");
+  await verifyUsageAccountingConcurrency();
   console.log("PASS: publication intent, reconciliation races, concurrent claims, duplicate prevention, usage precision, webhook timestamp fencing and bounded concurrent recovery, draft account/media validation and Instagram/TikTok template execution");
 } catch (error) { console.error(error); failed = true; }
 finally { await db.delete(webhookEvents).where(eq(webhookEvents.tenantId, tenantId)); await db.delete(tenants).where(eq(tenants.id, tenantId)); }

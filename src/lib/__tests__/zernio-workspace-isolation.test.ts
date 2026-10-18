@@ -31,6 +31,19 @@ describe("social workspace isolation", () => {
     expect(mock.write).not.toHaveBeenCalled(); expect(mock.messages).not.toHaveBeenCalled();
     for (const method of [mock.conversations, mock.mentions, mock.reviews]) expect(method).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ profileId: "workspace-profile" }) }));
   });
+  it("reports incomplete provider sources without advancing their cursors", async () => {
+    mock.mentions.mockResolvedValue({ error: new Error("Provider unavailable") });
+    mock.reviews.mockResolvedValue({ error: new Error("Provider unavailable") });
+    const result = await syncZernioInboxBackfill("workspace");
+    expect(result.warnings).toEqual(["Mentions could not be synced.", "Reviews could not be synced."]);
+    expect(mock.write).not.toHaveBeenCalled();
+    expect(result.conversationsSynced).toBe(0);
+  });
+  it("rejects a failed conversation listing instead of returning sync success", async () => {
+    mock.conversations.mockResolvedValue({ error: new Error("Provider unavailable") });
+    await expect(syncZernioInboxBackfill("workspace")).rejects.toThrow("Provider unavailable");
+    expect(mock.write).not.toHaveBeenCalled();
+  });
   it("refuses ambiguous webhook ownership instead of selecting the first workspace", async () => {
     mock.accounts.mockResolvedValue([{ tenantId: "a" }, { tenantId: "b" }]);
     const payload = { id: "event", event: "message.received", timestamp: new Date().toISOString(), account: { _id: "shared" } };

@@ -8,7 +8,6 @@ import {
   engagementItems,
   socialAccounts,
   tenants,
-  agentConfigs,
   engagementActivities,
   engagementConversations,
 } from "@/lib/db/schema";
@@ -201,6 +200,7 @@ export async function getUnifiedInbox(input: {
           status: selectedDraft.status,
           feedback: selectedDraft.feedback,
           createdAt: selectedDraft.createdAt,
+          deliveryUncertain: selectedDraft.status === "failed",
         } : null,
       } : null,
       nextCursor: hasMore && conversations.at(-1)
@@ -347,6 +347,7 @@ export async function getEngagementItems(status?: string) {
                 status: reply.status,
                 feedback: reply.feedback,
                 createdAt: reply.createdAt,
+                deliveryUncertain: reply.status === "failed",
               }
             : null,
         };
@@ -376,20 +377,17 @@ export async function getPendingReplyCount() {
   }
 }
 
-export async function approveReply(replyDraftId: string) {
+export async function approveReply(replyDraftId: string, expectedContent?: string) {
   try {
     const tenantId = await requireRole(["owner", "admin"]);
 
-    const [approved] = await db.update(replyDrafts)
-      .set({ status: "approved" })
-      .where(and(
-        eq(replyDrafts.id, replyDraftId),
-        eq(replyDrafts.tenantId, tenantId),
-        inArray(replyDrafts.status, ["pending_review", "rejected", "failed"]),
-      ))
-      .returning({ id: replyDrafts.id });
+    if (typeof expectedContent !== "string" || !expectedContent.trim()) {
+      return { error: "Reload the reply and review its current content before approving" };
+    }
+    const { approveReviewedReply } = await import("@/lib/reply-drafts");
+    const approved = await approveReviewedReply(tenantId, replyDraftId, expectedContent);
 
-    if (!approved) return { error: "Reply is no longer available for approval" };
+    if (!approved) return { error: "Reply changed or is no longer available. Reload and review it before approving" };
 
     return { success: true };
   } catch (error: any) {
@@ -424,105 +422,8 @@ export async function sendReply(replyDraftId: string) {
   try {
     const tenantId = await requireRole(["owner", "admin"]);
 
-    // Claim the approved draft before performing the external side effect. This
-    // compare-and-swap prevents double clicks and concurrent workers from sending
-    // the same reply more than once.
-    const [draft] = await db.update(replyDrafts)
-      .set({ status: "sending", sendClaimedAt: new Date() })
-      .where(and(
-        eq(replyDrafts.id, replyDraftId),
-        eq(replyDrafts.tenantId, tenantId),
-        eq(replyDrafts.status, "approved"),
-      ))
-      .returning();
-    if (!draft) return { error: "Reply must be approved and not already sending" };
-
-    try {
-      const item = await db.query.engagementItems.findFirst({
-      where: and(
-        eq(engagementItems.id, draft.engagementItemId),
-        eq(engagementItems.tenantId, tenantId),
-      ),
-    });
-    if (!item) {
-      await db.update(replyDrafts)
-          .set({ status: "failed", sendClaimedAt: null })
-        .where(and(
-          eq(replyDrafts.id, replyDraftId),
-          eq(replyDrafts.tenantId, tenantId),
-          eq(replyDrafts.status, "sending"),
-        ));
-      return { error: "Engagement item not found" };
-    }
-
-      const { zernio } = await getZernioClient();
-
-      const account = await db.query.socialAccounts.findFirst({
-      where: and(
-        eq(socialAccounts.tenantId, tenantId),
-        item.socialAccountId
-          ? eq(socialAccounts.id, item.socialAccountId)
-          : eq(socialAccounts.platform, item.platform),
-      ),
-    });
-      if (!account) throw new Error(`No connected account found for ${item.platform}`);
-
-      const platformPostId = item.metadata as any;
-      const postId = item.platformPostId || platformPostId?.comment?.postId;
-      if (!postId) throw new Error("No post ID available for reply");
-
-      const response = await zernio.comments.replyToInboxPost({
-        path: { postId },
-        headers: { "Idempotency-Key": `engagement-reply:${replyDraftId}` },
-        body: {
-          accountId: account.platformAccountId,
-          message: draft.content,
-          ...(item.platformCommentId ? { commentId: item.platformCommentId } : {}),
-        },
-      });
-
-      if (response.error) throw response.error;
-
-      await db.transaction(async (tx) => {
-        await tx.update(replyDrafts)
-          .set({ status: "sent", sentAt: new Date(), sendClaimedAt: null })
-          .where(and(
-            eq(replyDrafts.id, replyDraftId),
-            eq(replyDrafts.tenantId, tenantId),
-            eq(replyDrafts.status, "sending"),
-          ));
-
-        await tx.update(engagementItems)
-          .set({ status: "replied" })
-          .where(and(
-            eq(engagementItems.id, item.id),
-            eq(engagementItems.tenantId, tenantId),
-          ));
-      });
-
-      return { success: true };
-    } catch (error: any) {
-      const status = error?.status || error?.response?.status;
-      await db.update(replyDrafts)
-        .set({ status: "failed", sendClaimedAt: null })
-        .where(and(
-          eq(replyDrafts.id, replyDraftId),
-          eq(replyDrafts.tenantId, tenantId),
-          eq(replyDrafts.status, "sending"),
-        ));
-
-      if (status === 401 || status === 403) {
-        try {
-          await db.update(agentConfigs)
-            .set({ isPaused: true, pauseReason: "api_failure" })
-            .where(eq(agentConfigs.tenantId, tenantId));
-        } catch (pauseError) {
-          console.error("Failed to pause agent after Zernio authorization error:", pauseError);
-        }
-      }
-
-      return { error: error?.message || "Failed to send reply" };
-    }
+    const { sendApprovedReply } = await import("@/lib/engagement-delivery");
+    return await sendApprovedReply(tenantId, replyDraftId, getZernioClient);
   } catch (error: any) {
     console.error("Failed to send reply:", error);
     return { error: error.message || "An unexpected error occurred" };
@@ -536,14 +437,8 @@ export async function updateReplyDraft(replyDraftId: string, content: string) {
     const normalizedContent = content.trim();
     if (!normalizedContent) return { error: "Reply cannot be empty" };
 
-    const [updated] = await db.update(replyDrafts)
-      .set({ content: normalizedContent })
-      .where(and(
-        eq(replyDrafts.id, replyDraftId),
-        eq(replyDrafts.tenantId, tenantId),
-        inArray(replyDrafts.status, ["pending_review", "rejected", "failed"]),
-      ))
-      .returning({ id: replyDrafts.id });
+    const { editUnsentReply } = await import("@/lib/reply-drafts");
+    const updated = await editUnsentReply(tenantId, replyDraftId, normalizedContent);
 
     if (!updated) return { error: "Reply can no longer be edited" };
 

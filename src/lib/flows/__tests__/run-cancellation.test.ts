@@ -38,6 +38,10 @@ describe("Flow run cancellation admission and terminal state", () => {
     expect(await executeAdmittedFlowRun({ flow, runId: "run", signal: AbortSignal.abort() })).toMatchObject({ status: "failed", persisted: true });
     expect(mocks.execute).not.toHaveBeenCalled();
   });
+  it("retains a failed execution message after successfully persisting it", async () => {
+    mocks.execute.mockResolvedValueOnce({ status: "failed", steps: [], error: "RSS provider rejected the request" });
+    expect(await startFlowRun({ flow, trigger: "manual" })).toEqual({ runId: "run", status: "failed", persisted: true, error: "RSS provider rejected the request" });
+  });
   it("retains ordinary run success", async () => {
     expect(await startFlowRun({ flow, trigger: "manual" })).toMatchObject({ status: "succeeded", persisted: true });
   });

@@ -18,6 +18,8 @@ import {
   type NodeProps,
   type NodeTypes,
   type ReactFlowInstance,
+  type NodeChange,
+  type EdgeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Link from "next/link";
@@ -262,13 +264,50 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
   const [lastAgentChange, setLastAgentChange] = useState<string | null>(null);
   const idCounter = useRef(1);
   const webMcpNodeCounter = useRef(1);
-  const agentChangeRevisionRef = useRef(0);
+  const editRevisionRef = useRef(0);
+  const [recoverableDraft, setRecoverableDraft] = useState<{ name: string; graph: FlowGraphDoc } | null>(null);
+  const draftKey = `joey:flow-draft:${flow.id}`;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const reactFlowRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   const graphRef = useRef<FlowGraphDoc>(initialGraph);
   const nameRef = useRef(name);
   graphRef.current = builderStateToGraphDoc(rfNodes, rfEdges);
   nameRef.current = name;
+
+  const markChanged = useCallback(() => {
+    editRevisionRef.current += 1;
+    setIsDirty(true);
+  }, []);
+
+  // Keep a tab-local recovery copy across sidebar navigation and browser Back.
+  // A stale saved copy is never automatically applied over the server version.
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(draftKey);
+      if (!stored) return;
+      const draft = JSON.parse(stored);
+      if (typeof draft.name === "string" && Array.isArray(draft.graph?.nodes) && Array.isArray(draft.graph?.edges)) {
+        setRecoverableDraft(draft);
+      }
+    } catch { /* Storage can be unavailable in private browsing. */ }
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    try {
+      sessionStorage.setItem(draftKey, JSON.stringify({ name, graph: builderStateToGraphDoc(rfNodes, rfEdges) }));
+    } catch { /* The beforeunload guard still protects refresh/close. */ }
+  }, [draftKey, isDirty, name, rfNodes, rfEdges]);
+
+  const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    onNodesChange(changes);
+    if (changes.some(change => change.type !== "select" && change.type !== "dimensions" && (change.type !== "position" || change.position !== undefined))) markChanged();
+  }, [onNodesChange, markChanged]);
+
+  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+    onEdgesChange(changes);
+    if (changes.some(change => change.type !== "select")) markChanged();
+  }, [onEdgesChange, markChanged]);
 
   // Unsaved changes beforeunload protection
   useEffect(() => {
@@ -282,6 +321,21 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
 
+  useEffect(() => {
+    if (!isDirty) return;
+    const confirmNavigation = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!link || link.target === "_blank" || link.hasAttribute("download") || link.href === window.location.href || link.getAttribute("href")?.startsWith("#")) return;
+      if (!window.confirm("This flow has unsaved edits. Leave this page?")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener("click", confirmNavigation, true);
+    return () => document.removeEventListener("click", confirmNavigation, true);
+  }, [isDirty]);
+
   const selectedNode = useMemo(() => rfNodes.find((n) => n.id === selectedId), [rfNodes, selectedId]);
   const selectedDef = selectedNode ? getNode((selectedNode.data as { nodeType: string }).nodeType) : undefined;
 
@@ -291,26 +345,24 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
 
   const stageAgentGraph = useCallback((graph: FlowGraphDoc, selectedNodeId: string, summary: string) => {
     graphRef.current = graph;
-    agentChangeRevisionRef.current += 1;
     setRfNodes(graph.nodes.map(graphNodeToReactFlow));
     setRfEdges(graph.edges.map(graphEdgeToReactFlow));
     setSelectedId(selectedNodeId);
     setAgentChangeCount((count) => count + 1);
     setLastAgentChange(summary);
-    setIsDirty(true);
+    markChanged();
     requestAnimationFrame(() => {
       void reactFlowRef.current?.fitView({ padding: 0.25, duration: 300 });
     });
-  }, [setRfEdges, setRfNodes]);
+  }, [setRfEdges, setRfNodes, markChanged]);
 
   const stageAgentName = useCallback((nextName: string, summary: string) => {
     nameRef.current = nextName;
-    agentChangeRevisionRef.current += 1;
     setName(nextName);
     setAgentChangeCount((count) => count + 1);
     setLastAgentChange(summary);
-    setIsDirty(true);
-  }, []);
+    markChanged();
+  }, [markChanged]);
 
   const nextWebMcpNodeId = useCallback(() => {
     let id: string;
@@ -344,9 +396,9 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
   const onConnect = useCallback(
     (connection: Connection) => {
       setRfEdges((eds) => addEdge({ ...connection, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, eds));
-      setIsDirty(true);
+      markChanged();
     },
-    [setRfEdges],
+    [setRfEdges, markChanged],
   );
 
   function addNodeType(type: string, screenPos?: { x: number; y: number }, connectAfterLast = false) {
@@ -391,7 +443,7 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
     ]);
     if (previous) setRfEdges((edges) => [...edges, graphEdgeToReactFlow({ from: previous.id, to: id })]);
     setSelectedId(id);
-    setIsDirty(true);
+    markChanged();
   }
 
 
@@ -415,7 +467,7 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
   }
 
   async function handleSave() {
-    const reviewedAgentRevision = agentChangeRevisionRef.current;
+    const reviewedRevision = editRevisionRef.current;
     const reviewedGraph = toGraphDoc();
     const reviewedName = nameRef.current;
     setBusy(true);
@@ -424,21 +476,23 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
       if (res.error || res.issues) {
         toast.error(res.error ?? res.issues!.filter(i=>i.severity==="error").map(i=>i.message).join("\n"));
       } else {
-        if (isAgentReviewSnapshotCurrent(reviewedAgentRevision, agentChangeRevisionRef.current)) {
+        if (isAgentReviewSnapshotCurrent(reviewedRevision, editRevisionRef.current)) {
           toast.success("Saved");
           setIsDirty(false);
+          setRecoverableDraft(null);
+          try { sessionStorage.removeItem(draftKey); } catch {}
           setAgentChangeCount(0);
           setLastAgentChange(null);
         } else {
-          toast.info("Saved the reviewed snapshot. New WebMCP changes are still staged.");
+          toast.info("Saved the reviewed snapshot. New edits are still unsaved.");
         }
         router.refresh();
       }
-    } finally { setBusy(false); }
+    } catch { toast.error("Could not save this flow. Your edits are still unsaved."); } finally { setBusy(false); }
   }
 
   async function handleTestRun() {
-    const reviewedAgentRevision = agentChangeRevisionRef.current;
+    const reviewedRevision = editRevisionRef.current;
     const reviewedGraph = toGraphDoc();
     const reviewedName = nameRef.current;
     setBusy(true);
@@ -448,20 +502,27 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
         toast.error(saveRes.error ?? saveRes.issues!.map(i=>i.message).join("\n"));
         return;
       }
-      if (!isAgentReviewSnapshotCurrent(reviewedAgentRevision, agentChangeRevisionRef.current)) {
-        toast.warning("New WebMCP changes arrived during save. Review them before testing.");
+      if (!isAgentReviewSnapshotCurrent(reviewedRevision, editRevisionRef.current)) {
+        toast.warning("New edits arrived during save. Save them before testing.");
         return;
       }
+      setIsDirty(false);
+      setRecoverableDraft(null);
+      try { sessionStorage.removeItem(draftKey); } catch {}
       setAgentChangeCount(0);
       setLastAgentChange(null);
       const res = await runFlow(flow.id);
-      if (res.runId) {
+      if (res.runId) setRunsOpen(true);
+      if (res.error || res.status === "failed") {
+        toast.error(res.error ?? "Run failed. Open the runs panel for details.");
+      } else if (res.status === "waiting_approval") {
+        toast.info("Run is waiting for approval — opening runs panel");
+      } else if (res.status === "succeeded") {
         toast.success("Run finished — opening runs panel");
-        setRunsOpen(true);
-      } else {
-        toast.error(res.error ?? "Run failed");
-      }
-    } finally { setBusy(false); }
+      } else if (res.runId) {
+        toast.info("Run started — opening runs panel");
+      } else toast.error("Run could not be started");
+    } catch { toast.error("Could not save or test this flow. Please retry."); } finally { setBusy(false); }
   }
 
   async function handleToggleActive() {
@@ -516,7 +577,7 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
   function updateSelectedConfig(config: Record<string, unknown>) {
     if (!selectedId) return;
     setRfNodes((nds) => nds.map((n) => (n.id === selectedId ? { ...n, data: { ...n.data, config } } : n)));
-    setIsDirty(true);
+    markChanged();
   }
 
   const grouped = useMemo(() => {
@@ -595,7 +656,7 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 bg-card/20">
           <div className="flex items-center gap-2 min-w-0">
-            <Input value={name} onChange={(e)=>setName(e.target.value)} className="h-8 w-32 sm:w-44 text-sm font-semibold border-none shadow-none px-1" />
+            <Input aria-label="Flow name" value={name} onChange={(e)=>{ nameRef.current = e.target.value; setName(e.target.value); markChanged(); }} className="h-8 w-32 sm:w-44 text-sm font-semibold border-none shadow-none px-1" />
             <Badge variant={status === "active" ? "default" : "secondary"} className="text-[10px] shrink-0">{status}</Badge>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -692,6 +753,19 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
             </DropdownMenu>
           </div>
         </div>
+        {recoverableDraft && !isDirty && <div role="status" className="flex flex-wrap items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-xs">
+          <span>Unsaved edits from your previous visit are available in this tab.</span>
+          <Button size="sm" variant="outline" onClick={() => {
+            nameRef.current = recoverableDraft.name;
+            graphRef.current = recoverableDraft.graph;
+            setName(recoverableDraft.name);
+            setRfNodes(recoverableDraft.graph.nodes.map(graphNodeToReactFlow));
+            setRfEdges(recoverableDraft.graph.edges.map(graphEdgeToReactFlow));
+            setRecoverableDraft(null);
+            markChanged();
+          }}>Restore edits</Button>
+          <Button size="sm" variant="ghost" onClick={() => { setRecoverableDraft(null); try { sessionStorage.removeItem(draftKey); } catch {} }}>Discard recovered edits</Button>
+        </div>}
         {status !== "active" && activationIssues.length > 0 && (
           <div role="status" className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs">
             <p className="font-semibold">Before you activate</p>
@@ -722,8 +796,8 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
           <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
             onInit={(instance) => { reactFlowRef.current = instance; }}
             nodeTypes={nodeTypes}
@@ -836,7 +910,7 @@ export function FlowBuilder({ flow, accounts = [], activationIssues = [] }: { fl
                     setRfNodes((nds) => nds.filter((n) => n.id !== selectedId));
                     setRfEdges((eds) => eds.filter((e) => e.source !== selectedId && e.target !== selectedId));
                     setSelectedId(null);
-                    setIsDirty(true);
+                    markChanged();
                   }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />

@@ -98,7 +98,7 @@ export async function finalizeFlowRun(
         .set({ ...common, ...(steps !== undefined ? { steps } : {}) })
         .where(runFence(runId, tenantId))
         .returning({ id: flowRuns.id });
-      if (updated.length > 0) return { runId, status, persisted: true };
+      if (updated.length > 0) return { runId, status, persisted: true, ...(error ? { error } : {}) };
     } catch (primaryError) {
       console.warn(`[flow-finalize] Rich finalization attempt ${attempt + 1} failed for ${runId}:`, primaryError);
     }
@@ -109,7 +109,7 @@ export async function finalizeFlowRun(
         .set(common)
         .where(runFence(runId, tenantId))
         .returning({ id: flowRuns.id });
-      if (updated.length > 0) return { runId, status, persisted: true };
+      if (updated.length > 0) return { runId, status, persisted: true, ...(error ? { error } : {}) };
     } catch (fallbackError) {
       console.error(`[flow-finalize] Minimal finalization attempt ${attempt + 1} failed for ${runId}:`, fallbackError);
     }
@@ -117,10 +117,10 @@ export async function finalizeFlowRun(
     try {
       const existing = await db.query.flowRuns.findFirst({
         where: and(eq(flowRuns.id, runId), eq(flowRuns.tenantId, tenantId)),
-        columns: { status: true },
+        columns: { status: true, error: true },
       });
       if (existing && existing.status !== "running") {
-        return { runId, status: existing.status as RunStatus, persisted: true };
+        return { runId, status: existing.status as RunStatus, persisted: true, ...(existing.error ? { error: existing.error } : {}) };
       }
     } catch {}
 

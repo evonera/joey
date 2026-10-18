@@ -7,17 +7,7 @@ import { tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { fetchZernioAnalyticsPages } from "@/lib/zernio-analytics";
 
-type Metrics = {
-  impressions?: number;
-  reach?: number;
-  likes?: number;
-  comments?: number;
-  shares?: number;
-  saves?: number;
-  clicks?: number;
-  views?: number;
-  follows?: number;
-};
+import { aggregateMetrics, engagementRate, publishedTimestamp, type AnalyticsMetrics as Metrics, type MetricTotals } from "@/lib/analytics-metrics";
 
 interface PlatformMeta {
   platform: string;
@@ -31,21 +21,7 @@ interface PostRow {
   platforms: PlatformMeta[];
 }
 
-interface SeriesPoint {
-  label: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  impressions: number;
-  views: number;
-}
-
-function toNumber(v: unknown): number {
-  return typeof v === "number" ? v : Number(v) || 0;
-}
-
-const EMPTY_ACC = () => ({ impressions: 0, likes: 0, comments: 0, shares: 0, views: 0 });
-type Acc = ReturnType<typeof EMPTY_ACC>;
+type SeriesPoint = MetricTotals & { label: string };
 
 const PLATFORM_LABELS: Record<string, string> = {
   twitter: "X",
@@ -65,17 +41,17 @@ export interface AnalyticsSnapshot {
   success: true;
   summary: {
     totalPosts: number;
-    impressions: number;
-    likes: number;
-    comments: number;
-    shares: number;
-    views: number;
-    engagementRate: number;
+    impressions: number | null;
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    views: number | null;
+    engagementRate: number | null;
     lastSync?: string | null;
     pagesFetched: number;
     truncated: boolean;
   };
-  byPlatform: { platform: string; label: string; impressions: number; likes: number; comments: number; shares: number; views: number }[];
+  byPlatform: (MetricTotals & { platform: string; label: string })[];
   posts: PostRow[];
   series: SeriesPoint[];
 }
@@ -113,62 +89,33 @@ export async function getAnalytics(days = 30): Promise<AnalyticsResult> {
       return {
         id: p._id || p.latePostId || "unknown",
         content: p.content,
-        publishedAt: p.publishedAt || p.scheduledFor,
+        publishedAt: publishedTimestamp(p.publishedAt),
         platforms,
       };
     });
 
-    const total = EMPTY_ACC();
-    const platformTotals: Record<string, Acc> = {};
-    const dayCount: Record<string, SeriesPoint> = {};
-
+    const allMetrics: Array<Metrics | null> = [];
+    const platformMetrics: Record<string, Array<Metrics | null>> = Object.create(null);
+    const dailyMetrics: Record<string, Array<Metrics | null>> = Object.create(null);
     for (const post of posts) {
-      for (const pl of post.platforms) {
-        const a = pl.analytics;
-        if (!a) continue;
-        const add = {
-          impressions: toNumber(a.impressions),
-          likes: toNumber(a.likes),
-          comments: toNumber(a.comments),
-          shares: toNumber(a.shares),
-          views: toNumber(a.views),
-        };
-
-        total.impressions += add.impressions;
-        total.likes += add.likes;
-        total.comments += add.comments;
-        total.shares += add.shares;
-        total.views += add.views;
-
-        const pt = platformTotals[pl.platform] || EMPTY_ACC();
-        pt.impressions += add.impressions;
-        pt.likes += add.likes;
-        pt.comments += add.comments;
-        pt.shares += add.shares;
-        pt.views += add.views;
-        platformTotals[pl.platform] = pt;
-
-        const day = post.publishedAt ? post.publishedAt.slice(0, 10) : null;
-        if (day) {
-          const dpt = dayCount[day] || { label: day, likes: 0, comments: 0, shares: 0, impressions: 0, views: 0 };
-          dpt.impressions += add.impressions;
-          dpt.likes += add.likes;
-          dpt.comments += add.comments;
-          dpt.shares += add.shares;
-          dpt.views += add.views;
-          dayCount[day] = dpt;
-        }
+      if (!post.platforms.length) {
+        allMetrics.push(null);
+        if (post.publishedAt) (dailyMetrics[post.publishedAt.slice(0, 10)] ??= []).push(null);
+      }
+      for (const platform of post.platforms) {
+        allMetrics.push(platform.analytics);
+        (platformMetrics[platform.platform] ??= []).push(platform.analytics);
+        // An undated post contributes to the period totals, never to an invented day.
+        if (post.publishedAt) (dailyMetrics[post.publishedAt.slice(0, 10)] ??= []).push(platform.analytics);
       }
     }
-
-    const byPlatform = Object.entries(platformTotals)
-      .map(([platform, v]) => ({ platform, label: PLATFORM_LABELS[platform] || platform, ...v }))
-      .sort((a, b) => b.impressions - a.impressions);
-
-    const series = Object.values(dayCount).sort((a, b) => a.label.localeCompare(b.label));
-
-    const engagementBase = total.impressions + total.views;
-    const engagementRate = engagementBase > 0 ? ((total.likes + total.comments + total.shares) / engagementBase) * 100 : 0;
+    const total = aggregateMetrics(allMetrics);
+    const byPlatform = Object.entries(platformMetrics)
+      .map(([platform, rows]) => ({ platform, label: PLATFORM_LABELS[platform] || platform, ...aggregateMetrics(rows) }))
+      .sort((a, b) => (b.impressions ?? -1) - (a.impressions ?? -1));
+    const series = Object.entries(dailyMetrics)
+      .map(([label, rows]) => ({ label, ...aggregateMetrics(rows) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
 
     return {
       success: true,
@@ -179,7 +126,7 @@ export async function getAnalytics(days = 30): Promise<AnalyticsResult> {
         comments: total.comments,
         shares: total.shares,
         views: total.views,
-        engagementRate: Math.round(engagementRate * 100) / 100,
+        engagementRate: engagementRate(allMetrics),
         lastSync: anyData.overview?.lastSync ?? null,
         pagesFetched: anyData.pagesFetched,
         truncated: anyData.truncated,

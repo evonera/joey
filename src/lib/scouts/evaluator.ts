@@ -164,7 +164,14 @@ export async function evaluateScout(scoutId: string, options: EvaluateScoutOptio
       // An explicit Stop crosses the following guard and terminally fails the
       // receipt, so another caller cannot silently resume cancelled work.
       const observedAt = new Date().toISOString();
-      items = items.map((item) => ({ ...item, observedAt }));
+      // Connector evidence is a saved acquisition, not a fresh network read.
+      // Its Joey-assigned collection time must survive every manual/poll check.
+      items = items.map((item) => ({
+        ...item,
+        observedAt: provider.kind === "connector" ? item.observedAt : observedAt,
+      }));
+      if (provider.kind === "connector" && items.some((item) => !item.observedAt))
+        throw new Error("Connector evidence has no acquisition time. Submit a new observation.");
       receipt = await markScoutEvaluationPhase(receipt, "collected", items);
     }
     await guard();

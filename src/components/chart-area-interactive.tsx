@@ -128,11 +128,11 @@ const chartData = [
 
 export interface ChartSeriesPoint {
   label: string;
-  impressions: number;
-  likes: number;
-  comments: number;
-  shares: number;
-  views?: number;
+  impressions: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  views?: number | null;
 }
 
 const chartConfig = {
@@ -194,7 +194,7 @@ export function ChartAreaInteractive({
       const mapped = series.map((s) => ({
         date: s.label,
         impressions: s.impressions,
-        engagements: s.likes + s.comments + s.shares,
+        engagements: s.likes !== null && s.comments !== null && s.shares !== null ? s.likes + s.comments + s.shares : null,
       }))
       const sliceCount = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90
       return mapped.slice(-sliceCount)

@@ -336,7 +336,7 @@ export async function getScoutDataProvider(
   if (source) {
     const { findConnectorEvidence } = await import("./connector");
     const saved = await findConnectorEvidence(tenantId, source);
-    if (saved && Array.isArray(saved.items)) return new ConnectorScoutProvider(saved.items as ScoutPostItem[]);
+    if (saved && Array.isArray(saved.items)) return new ConnectorScoutProvider((saved.items as ScoutPostItem[]).map(item => ({ ...item, observedAt: observedTimestamp(item.observedAt) ?? saved.createdAt.toISOString() })));
   }
   const kind = scoutProviderKind();
   if (kind === "mock") {

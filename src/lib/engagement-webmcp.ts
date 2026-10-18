@@ -50,6 +50,7 @@ export type EngagementWebMcpItem = {
     content: string;
     status: string;
     feedback: string | null;
+    deliveryUncertain?: boolean;
   } | null;
 } | null;
 
@@ -120,6 +121,7 @@ function inspectSelected(state: EngagementWebMcpState) {
         id: draft.id,
         content: text(state.stagedReplyEdits[draft.id] ?? draft.content, 4_096),
         status: draft.status,
+        deliveryUncertain: draft.status === "failed" || draft.deliveryUncertain === true,
         feedback: text(draft.feedback, 1_000),
         stagedByWebMcp: draft.id in state.stagedReplyEdits,
       } : null,
@@ -180,7 +182,8 @@ export function createEngagementWebMcpTools(controller: EngagementWebMcpControll
       if (!selectedDraft || selectedDraft.id !== replyDraftId) {
         throw new Error("The requested reply draft is not selected in the visible inbox");
       }
-      if (!["pending_review", "failed"].includes(selectedDraft.status)) {
+      if (selectedDraft.status === "failed" || selectedDraft.deliveryUncertain) throw new Error("Reply delivery is uncertain. Check the provider before changing or resending it.");
+      if (!["pending_review"].includes(selectedDraft.status)) {
         throw new Error(`Reply draft cannot be edited while its status is "${selectedDraft.status}"`);
       }
       if (controller.canStageReplyEdit?.(replyDraftId) === false) {

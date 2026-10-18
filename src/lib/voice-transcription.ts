@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { resolveProviderKeyInfo } from "@/lib/agent-model-resolver";
 import { isProTenant } from "@/lib/billing";
-import { assertTrialQuota, reserveUsageBudget, settleUsageReservation, failUsageReservation } from "@/lib/usage";
+import { reserveUsageBudget, settleUsageReservation, failUsageReservation } from "@/lib/usage";
 import { getTextModelCost } from "@/lib/ai-pricing";
 
 export const MAX_VOICE_BYTES = 2 * 1024 * 1024;
@@ -24,9 +24,9 @@ export async function transcribeVoice(tenantId: string, audio: Uint8Array, media
   validateVoiceAudio(audio, mediaType);
   const key = await resolveProviderKeyInfo("google", tenantId);
   if (!key.key) throw new Error("Add a Google AI key in Settings → AI Providers to use voice input.");
-  if (!key.isByok && !(await isProTenant(tenantId))) await assertTrialQuota(tenantId, 3);
+  const trialGenerationLimit = !key.isByok && !(await isProTenant(tenantId)) ? 3 : undefined;
   const reservation = await reserveUsageBudget({
-    tenantId, kind: "text", modelId: MODEL,
+    tenantId, kind: "text", modelId: MODEL, trialGenerationLimit,
     estimatedCostUsd: getTextModelCost(MODEL, Math.ceil(audio.byteLength / 2) + 1000, 1024),
     metadata: { provider: "google", source: "voice_transcription" },
   });
