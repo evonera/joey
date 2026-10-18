@@ -4,13 +4,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { UnifiedInbox } from "../unified-inbox";
 
 const mockGetUnifiedInbox = vi.fn();
+const mockSyncUnifiedInbox = vi.fn().mockResolvedValue({ success: true });
+const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
+vi.mock("sonner", () => ({ toast: toastMocks }));
 const mockMarkConversationRead = vi.fn().mockResolvedValue({ success: true });
 const webMcpHarness = vi.hoisted(() => ({ tools: [] as WebMCP.ModelContextTool[] }));
 
 vi.mock("@/app/actions/engagement", () => ({
   getUnifiedInbox: (...args: unknown[]) => mockGetUnifiedInbox(...args),
   markConversationRead: (...args: unknown[]) => mockMarkConversationRead(...args),
-  syncUnifiedInbox: vi.fn().mockResolvedValue({ success: true }),
+  syncUnifiedInbox: (...args: unknown[]) => mockSyncUnifiedInbox(...args),
 }));
 
 vi.mock("@/components/engagement/reply-card", () => ({ ReplyCard: () => null }));
@@ -70,6 +73,59 @@ function result(selectedConversation: typeof conversationA, activities: ReturnTy
 }
 
 describe("UnifiedInbox", () => {
+  it("shows a returned refresh error while retaining the selected conversation, then retries", async () => {
+    mockGetUnifiedInbox.mockResolvedValueOnce({ error: "Inbox unavailable" }).mockResolvedValueOnce(result(conversationA, [activity("alpha-message", "Fresh Alpha", "2026-09-01T10:00:00Z")]));
+    render(<UnifiedInbox initialResult={result(conversationA, [activity("alpha-message", "Alpha timeline", "2026-09-01T10:00:00Z")])} />);
+    await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Inbox unavailable");
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+    expect(screen.getByText("Alpha timeline")).toBeInTheDocument();
+    expect(toastMocks.success).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Retry inbox" }));
+    expect(await screen.findByText("Fresh Alpha")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("surfaces a selected-conversation error rather than silently keeping stale results", async () => {
+    mockGetUnifiedInbox.mockResolvedValue({ error: "Conversation fetch failed" });
+    render(<UnifiedInbox initialResult={result(conversationA, [])} />);
+    await userEvent.click(screen.getByRole("button", { name: /Beta Recent Beta/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Conversation fetch failed");
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+  });
+
+  it("clears sync loading after a rejected request and does not show success", async () => {
+    mockSyncUnifiedInbox.mockRejectedValueOnce(new Error("Offline"));
+    render(<UnifiedInbox initialResult={result(conversationA, [])} />);
+    await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
+    expect(screen.getByRole("button", { name: "Sync Zernio" })).toBeEnabled();
+    expect(toastMocks.error).toHaveBeenCalledWith("Failed to sync inbox. Please retry.");
+    expect(toastMocks.success).not.toHaveBeenCalled();
+  });
+
+  it("reports incomplete provider sync as a warning instead of success", async () => {
+    mockSyncUnifiedInbox.mockResolvedValueOnce({ success: true, warnings: ["Mentions could not be synced."] });
+    mockGetUnifiedInbox.mockResolvedValueOnce(result(conversationA, []));
+    render(<UnifiedInbox initialResult={result(conversationA, [])} />);
+    await userEvent.click(screen.getByRole("button", { name: "Sync Zernio" }));
+    expect(toastMocks.warning).toHaveBeenCalledWith(expect.stringContaining("Mentions could not be synced."));
+    expect(toastMocks.success).not.toHaveBeenCalled();
+  });
+
+  it("does not replace a newer successful conversation with a stale error", async () => {
+    let fail!: (value: { error: string }) => void;
+    mockGetUnifiedInbox.mockImplementation((input: { selectedConversationId?: string }) => input.selectedConversationId === conversationB.id
+      ? new Promise(resolve => { fail = resolve; })
+      : Promise.resolve(result(conversationC, [])));
+    render(<UnifiedInbox initialResult={result(conversationA, [])} />);
+    await userEvent.click(screen.getByRole("button", { name: /Beta Recent Beta/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Gamma Recent Gamma/ }));
+    await screen.findByRole("heading", { name: "Gamma" });
+    fail({ error: "Stale failure" });
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Gamma" })).toBeInTheDocument();
+  });
+
   it("makes a successful agent selection immediately observable to inspection", async () => {
     mockGetUnifiedInbox.mockResolvedValue(result(
       conversationB,

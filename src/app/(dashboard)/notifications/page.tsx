@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getNotifications, markAsRead, markAllAsRead } from '@/app/actions/notifications';
 import { IconBell, IconCheck, IconAlertTriangle, IconEdit, IconMessageDots, IconBroadcast } from '@tabler/icons-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -13,47 +13,67 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [marking, setMarking] = useState(false);
+  const requestId = useRef(0);
   const router = useRouter();
 
   const fetchNotifs = useCallback(async () => {
+    const request = ++requestId.current;
     setIsLoading(true);
     try {
       const res = await getNotifications({ limit: 100, unreadOnly: filter === 'unread' });
-      if (res.notifications) {
-        setNotifications(res.notifications);
-      }
-    } catch (err) {
-      console.error(err);
+      if (request !== requestId.current) return;
+      if (res.error) { setError(res.error); return; }
+      setNotifications(res.notifications ?? []);
+      setError(null);
+    } catch {
+      if (request === requestId.current) setError('Could not load notifications. Please retry.');
     } finally {
-      setIsLoading(false);
+      if (request === requestId.current) setIsLoading(false);
     }
   }, [filter]);
 
   useEffect(() => {
-    fetchNotifs();
+    void fetchNotifs();
+    return () => { requestId.current += 1; };
   }, [fetchNotifs]);
 
+  const persistRead = async (id?: string) => {
+    if (marking) return false;
+    const ids = new Set(id ? [id] : notifications.map(n => n.id));
+    setMarking(true);
+    try {
+      const res = id ? await markAsRead(id) : await markAllAsRead();
+      if (!res.success) throw new Error(res.error ?? 'Could not mark notifications as read');
+      // Do not allow an earlier fetch to undo a confirmed mutation.
+      requestId.current += 1;
+      setIsLoading(false);
+      setNotifications(prev => filter === 'unread'
+        ? prev.filter(n => !ids.has(n.id))
+        : prev.map(n => ids.has(n.id) ? { ...n, isRead: true } : n));
+      setError(null);
+      return true;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Could not mark notifications as read';
+      setError(message);
+      toast.error(message);
+      return false;
+    } finally { setMarking(false); }
+  };
+
   const handleMarkAllAsRead = async () => {
-    await markAllAsRead();
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    toast.success('All notifications marked as read');
+    if (await persistRead()) toast.success('All notifications marked as read');
   };
 
   const handleMarkSingleRead = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    await markAsRead(id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
-    toast.success('Marked as read');
+    if (await persistRead(id)) toast.success('Marked as read');
   };
 
   const handleNotificationClick = async (notif: any) => {
-    if (!notif.isRead) {
-      await markAsRead(notif.id);
-      setNotifications((prev) => prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n)));
-    }
-    if (notif.link) {
-      router.push(notif.link);
-    }
+    if (!notif.isRead && !(await persistRead(notif.id))) return;
+    if (notif.link) router.push(notif.link);
   };
 
   const getIcon = (type: string) => {
@@ -82,6 +102,7 @@ export default function NotificationsPage() {
           <Button
             variant="outline"
             size="sm"
+            disabled={marking}
             onClick={handleMarkAllAsRead}
             className="text-xs gap-1.5"
           >
@@ -94,11 +115,13 @@ export default function NotificationsPage() {
       <div className="flex items-center justify-between border-b border-border pb-4">
         <Tabs value={filter} onValueChange={(v) => setFilter(v as 'all' | 'unread')}>
           <TabsList className="grid grid-cols-2 w-48">
-            <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
-            <TabsTrigger value="unread" className="text-xs">Unread</TabsTrigger>
+            <TabsTrigger disabled={marking} value="all" className="text-xs">All</TabsTrigger>
+            <TabsTrigger disabled={marking} value="unread" className="text-xs">Unread</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
+
+      {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 p-3 text-sm text-destructive"><span>{error}</span><Button variant="outline" size="sm" disabled={isLoading} onClick={() => void fetchNotifs()}>Retry notifications</Button></div>}
 
       {isLoading ? (
         <div className="space-y-3">
@@ -113,7 +136,7 @@ export default function NotificationsPage() {
             </div>
           ))}
         </div>
-      ) : notifications.length === 0 ? (
+      ) : notifications.length === 0 && !error ? (
         <div className="text-center py-16 border rounded-xl border-dashed border-border bg-card">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-4">
             <IconBell className="h-6 w-6 text-primary" />
@@ -130,7 +153,7 @@ export default function NotificationsPage() {
               tabIndex={0}
               onClick={() => handleNotificationClick(notif)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
                   e.preventDefault();
                   handleNotificationClick(notif);
                 }
@@ -153,6 +176,7 @@ export default function NotificationsPage() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      disabled={marking}
                       onClick={(e) => handleMarkSingleRead(e, notif.id)}
                       className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground shrink-0"
                     >

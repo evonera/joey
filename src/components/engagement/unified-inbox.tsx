@@ -36,6 +36,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   const [result, setResult] = useState<InboxResult | null>(initialResult ?? null);
   const [loading, setLoading] = useState(!initialResult);
   const [syncing, setSyncing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(initialResult && "error" in initialResult ? initialResult.error ?? null : null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("all");
@@ -63,8 +64,11 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
     try {
       response = await getUnifiedInbox({ status, kind, search, cursor: options?.cursor ?? undefined, activityCursor: options?.activityCursor ?? undefined, selectedConversationId: requestedSelectedId });
     } catch (error) {
-      if (requestId === loadRequestId.current) setLoading(false);
-      throw error;
+      if (requestId === loadRequestId.current) {
+        setLoading(false);
+        setLoadError(error instanceof Error ? error.message : "Failed to refresh inbox");
+      }
+      return false;
     }
     const responseEstablishesRequestedSelection = Boolean(
       options?.selected
@@ -77,14 +81,20 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
       if (!responseEstablishesRequestedSelection) return false;
       if (selectedRef.current?.id === requestedSelectedId) return true;
     }
+    if ("error" in response) {
+      if (requestId === loadRequestId.current) { setLoadError(response.error ?? "Failed to refresh inbox"); setLoading(false); }
+      return false;
+    }
     if (requestedSelectedId && selectedConversationIdRef.current && requestedSelectedId !== selectedConversationIdRef.current) {
       setLoading(false);
       return false;
     }
     if (requestedSelectedId && (!("selectedConversation" in response) || response.selectedConversation?.id !== requestedSelectedId)) {
       setLoading(false);
+      setLoadError("The requested conversation could not be loaded. Please retry.");
       return false;
     }
+    setLoadError(null);
     setResult(response);
     if ("conversations" in response) {
       const conversations = response.conversations ?? [];
@@ -117,7 +127,6 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
   const selectedItem = result && "selectedEngagementItem" in result ? result.selectedEngagementItem : null;
   const nextCursor = result && "nextCursor" in result ? result.nextCursor : null;
   const olderActivityCursor = result && "olderActivityCursor" in result ? result.olderActivityCursor : null;
-  const error = result && "error" in result ? result.error : null;
   pagesRef.current = pages;
   selectedRef.current = selected ?? null;
   activitiesRef.current = activityPages;
@@ -238,21 +247,27 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
       }
     }
     if (conversation.unreadCount > 0) {
-      const read = await markConversationRead(conversation.id);
-      if (read.success) setPages((current) => current.map((row) => row.id === conversation.id ? { ...row, unreadCount: 0 } : row));
+      try {
+        const read = await markConversationRead(conversation.id);
+        if (read.success) setPages((current) => current.map((row) => row.id === conversation.id ? { ...row, unreadCount: 0 } : row));
+        else toast.error(read.error ?? "Could not mark conversation as read");
+      } catch { toast.error("Could not mark conversation as read"); }
     }
   };
 
   const sync = async () => {
     setSyncing(true);
-    const response = await syncUnifiedInbox();
-    setSyncing(false);
-    if (response.error) {
-      toast.error(response.error);
-    } else {
-      toast.success("Inbox synced");
-      await load();
-    }
+    try {
+      const response = await syncUnifiedInbox();
+      if (response.error) toast.error(response.error);
+      else {
+        const refreshed = await load();
+        if (!refreshed) toast.error("Sync completed, but the inbox could not be refreshed. Please retry.");
+        else if ("warnings" in response && response.warnings.length) toast.warning(`Inbox partially synced. ${response.warnings.join(" ")} Retry sync to fetch the missing activity.`);
+        else toast.success("Inbox synced");
+      }
+    } catch { toast.error("Failed to sync inbox. Please retry."); }
+    finally { setSyncing(false); }
   };
 
   return (
@@ -261,6 +276,8 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
         <div><h1 className="text-2xl font-semibold tracking-tight">Engagement</h1><p className="text-sm text-muted-foreground">Comments, direct messages, mentions, reactions, and reviews in one queue.</p></div>
         <Button variant="outline" onClick={sync} disabled={syncing}><IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "Syncing…" : "Sync Zernio"}</Button>
       </div>
+
+      {loadError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 p-3 text-sm text-destructive"><span>{loadError} Previously loaded conversations may be out of date.</span><Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>Retry inbox</Button></div> : null}
 
       {stagedReplyCount > 0 ? <div role="status" data-testid="engagement-webmcp-staged-banner" className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-950 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"><IconSparkles className="size-3.5" /><span className="font-medium">WebMCP staged {stagedReplyCount} {stagedReplyCount === 1 ? "reply edit" : "reply edits"}.</span><span className="text-indigo-700 dark:text-indigo-300">Open each draft and click Save. Approval and sending remain separate.</span></div> : null}
 
@@ -278,8 +295,7 @@ export function UnifiedInbox({ initialResult }: { initialResult?: InboxResult })
             <p className="text-[11px] text-muted-foreground sm:hidden">Swipe filters to see more →</p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {error ? <p className="p-6 text-center text-sm text-destructive">{error}</p> : null}
-            {!loading && pages.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground sm:p-8">No conversations match this view.</p> : null}
+            {!loading && !loadError && pages.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground sm:p-8">No conversations match this view.</p> : null}
             {pages.map((conversation) => <button key={conversation.id} onClick={() => void selectConversation(conversation)} className={`flex w-full gap-3 border-b p-3 text-left transition-colors hover:bg-muted/60 ${selectedId === conversation.id ? "bg-muted" : ""}`}>
               <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-xs font-semibold">{conversation.participantAvatar ? <img src={conversation.participantAvatar} alt="" className="size-full object-cover" /> : initials(conversation.participantName)}</div>
               <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{conversation.participantName || conversation.participantHandle || "Unknown contact"}</span>{conversation.unreadCount > 0 ? <Badge className="ml-auto min-w-5 justify-center px-1.5">{conversation.unreadCount}</Badge> : null}</div>

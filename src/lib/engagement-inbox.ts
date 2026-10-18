@@ -675,6 +675,7 @@ export async function syncZernioInboxBackfill(
   });
   if (response.error) throw response.error;
 
+  const warnings: string[] = [];
   let conversationsSynced = 0;
   let activitiesSynced = 0;
   let conversationPageComplete = true;
@@ -719,6 +720,7 @@ export async function syncZernioInboxBackfill(
     });
     if (messages.error) {
       conversationPageComplete = false;
+      if (!warnings.includes("Some conversation messages could not be synced.")) warnings.push("Some conversation messages could not be synced.");
       continue;
     }
     for (const message of messages.data?.messages ?? []) {
@@ -774,6 +776,7 @@ export async function syncZernioInboxBackfill(
   const mentions = await zernio.mentions.listInboxMentions({
     query: { profileId, limit: conversationLimit, sortOrder: "desc", cursor: mentionCursor?.cursor },
   });
+  if (mentions.error) warnings.push("Mentions could not be synced.");
   if (!mentions.error) {
     for (const mention of mentions.data?.data ?? []) {
       if (!mention.id || !mention.accountId || !allowedAccounts.has(mention.accountId)) continue;
@@ -803,6 +806,7 @@ export async function syncZernioInboxBackfill(
   const reviews = await zernio.reviews.listInboxReviews({
     query: { profileId, limit: conversationLimit, sortBy: "date", sortOrder: "desc", cursor: reviewCursor?.cursor },
   });
+  if (reviews.error) warnings.push("Reviews could not be synced.");
   if (!reviews.error) {
     for (const review of reviews.data?.data ?? []) {
       if (!review.id || !review.accountId || !review.platform || !allowedAccounts.has(review.accountId)) continue;
@@ -830,6 +834,7 @@ export async function syncZernioInboxBackfill(
   return {
     conversationsSynced,
     activitiesSynced,
+    warnings,
     hasMore: response.data?.pagination?.hasMore === true || mentions.data?.pagination?.hasMore === true || reviews.data?.pagination?.hasMore === true,
   };
 }
