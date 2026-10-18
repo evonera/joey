@@ -47,6 +47,16 @@ describe("scheduler admission", () => {
     expect(body.summary.find((task: { task: string }) => task.task === "scoutsTick")).toEqual({ task: "scoutsTick", status: "fulfilled", error: "Task reported failed operations" });
     expect(mocks.publish).toHaveBeenCalledOnce();
   });
+  it("reports caught Flow maintenance failures without stopping other cron tasks", async () => {
+    mocks.flows.mockResolvedValueOnce({ failed: 1, flowFailures: 0, subProcessors: [{ task: "media-render-settlement", status: "failed" }] });
+    const result = await GET(request());
+    expect(result.status).toBe(503);
+    const body = await result.json();
+    expect(body.ok).toBe(false);
+    expect(body.summary.find((task: { task: string }) => task.task === "flowsTick").error).toBe("Task reported failed operations");
+    expect(mocks.scouts).toHaveBeenCalledOnce();
+    expect(mocks.publish).toHaveBeenCalledOnce();
+  });
   it("keeps normal unconfigured sources and empty error values distinct from dispatch failure", async () => {
     mocks.scouts.mockResolvedValueOnce({ dispatchedCount: 0, blockedCount: 2, error: undefined });
     const result = await GET(request());

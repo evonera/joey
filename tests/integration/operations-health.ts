@@ -13,6 +13,11 @@ const recent = new Date(now.getTime() - 60_000);
 const old = new Date(now.getTime() - 2 * 86_400_000);
 const hourAgo = new Date(now.getTime() - 60 * 60_000);
 const tomorrow = new Date(now.getTime() + 86_400_000);
+const originalProvider = process.env.SCOUT_DATA_PROVIDER;
+const originalEndpoint = process.env.SCOUT_PROVIDER_ENDPOINT;
+// Keep this process's provider readiness deterministic without real credentials.
+process.env.SCOUT_DATA_PROVIDER = "custom";
+process.env.SCOUT_PROVIDER_ENDPOINT = "";
 let failed = false;
 try {
   await db.insert(tenants).values([tenantId, foreignId].map(id => ({ id, name: "Disposable operational health acceptance" })));
@@ -71,11 +76,21 @@ try {
   assert.equal(health.stalledRenders, 1, "recent queue admission is not a stalled render");
   assert.equal(health.publicationFailures, 2, "include failed Studio packages and chat drafts, exclude foreign workspace");
   assert.equal(health.pendingPublications, 3, "only old claims/provider submissions and overdue packages count; fresh claims/submissions, unknown ages and future schedules excluded");
+  assert.equal(health.blockedScouts, 2, "active Free Scouts cannot run autonomous monitoring, even with an available RSS source");
+  await db.update(tenants).set({ subscriptionPlan: "creator", subscriptionStatus: "active" }).where(eq(tenants.id, tenantId));
+  assert.equal((await getOperationalHealth(tenantId, now)).blockedScouts, 0, "paid RSS Scouts are ready");
+  await db.insert(scouts).values({ tenantId, name: "Missing social provider fixture", targetUrl: "https://instagram.com/fixture", platform: "instagram", goalCondition: "New post", pollIntervalMinutes: 1440, createdAt: recent, lastPolledAt: recent });
+  const blockedHealth = await getOperationalHealth(tenantId, now);
+  assert.equal(blockedHealth.blockedScouts, 1, "a recent readiness-only backoff cannot hide a missing social provider");
+  assert.equal(blockedHealth.overdueScouts, 1, "provider blocking is distinct from an overdue poll");
+  assert.equal(blockedHealth.scoutReadinessUnchecked, 0);
   const clean = await getOperationalHealth(crypto.randomUUID(), now);
   for (const [key, value] of Object.entries(clean)) if (key !== "generatedAt") assert.equal(value, 0, `${key} leaked another workspace`);
   console.log("PASS: PostgreSQL operational health predicates, Scout intervals, overdue publications, unresolved uncertainty and workspace isolation.");
 } catch (error) { failed = true; console.error(error); }
 finally {
+  if (originalProvider === undefined) delete process.env.SCOUT_DATA_PROVIDER; else process.env.SCOUT_DATA_PROVIDER = originalProvider;
+  if (originalEndpoint === undefined) delete process.env.SCOUT_PROVIDER_ENDPOINT; else process.env.SCOUT_PROVIDER_ENDPOINT = originalEndpoint;
   // The format FK is restrictive; remove packages before tenant-owned formats.
   await db.delete(contentPackages).where(eq(contentPackages.tenantId, tenantId));
   await db.delete(tenants).where(inArray(tenants.id, [tenantId, foreignId]));

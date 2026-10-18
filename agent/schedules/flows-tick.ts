@@ -31,6 +31,8 @@ import { operationalEvent } from "@/lib/operations-log";
  * above); the due check makes each fire idempotent.
  */
 export async function runFlowsTick() {
+    const subProcessorResults: Array<{ task: string; status: "fulfilled" | "failed" }> = [];
+    let flowFailures = 0;
     // Global backstop FIRST: any run stuck as running with NO heartbeat/update
     // for >30 min (from any trigger, including approval resumes or crashed flows)
     // is reconciled based on its accumulated step execution state. Active runs
@@ -127,8 +129,14 @@ export async function runFlowsTick() {
     ];
     for (const [label, task] of subProcessors) {
       try {
-        await task();
+        const result = await task();
+        const reportedFailure = result && typeof result === "object" && (
+          ("failed" in result && typeof result.failed === "number" && result.failed > 0) ||
+          ("error" in result && Boolean(result.error))
+        );
+        subProcessorResults.push({ task: label, status: reportedFailure ? "failed" : "fulfilled" });
       } catch (err) {
+        subProcessorResults.push({ task: label, status: "failed" });
         operationalEvent("error", "flows_tick.subprocessor_failed", {
           task: label,
           error: err instanceof Error ? err.message : String(err),
@@ -211,10 +219,12 @@ export async function runFlowsTick() {
             runId: run.id,
             triggerPayload,
           });
+          if (!execution.persisted || execution.status === "failed") flowFailures++;
           if (!execution.persisted) {
             console.error(`[flows-tick] Run ${run.id} could not persist its terminal state: ${execution.error}`);
           }
         } catch (err) {
+          flowFailures++;
           console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
         } finally {
           // Advance the rotation stamp on every examination (admitted or
@@ -225,10 +235,16 @@ export async function runFlowsTick() {
               .set({ lastTickedAt: new Date() })
               .where(and(eq(flows.id, flow.id), eq(flows.tenantId, flow.tenantId)));
           } catch (err) {
+            flowFailures++;
             console.error(`[flows-tick] Failed to stamp tick for flow ${flow.id}:`, err);
           }
         }
     });
+    return {
+      failed: flowFailures + subProcessorResults.filter(result => result.status === "failed").length,
+      flowFailures,
+      subProcessors: subProcessorResults,
+    };
 }
 
 export const FLOWS_TICK_BATCH_LIMIT = 50;
@@ -263,7 +279,10 @@ export default defineSchedule({
   // Hobby-safe daily cadence (see cadence note above). Do NOT raise above
   // once per day without a Pro plan — Vercel fails the deployment.
   cron: "0 1 * * *",
-  run: runFlowsTick,
+  async run() {
+    const result = await runFlowsTick();
+    if (result.failed > 0) throw new Error("Flow tick reported failed operations. Review the processor logs.");
+  },
 });
 
 export function isScheduleDue(

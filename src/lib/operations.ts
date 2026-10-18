@@ -1,4 +1,6 @@
 import { and, count, eq, gte, lt, lte, sql } from "drizzle-orm";
+import { checkUsageLimits } from "@/lib/billing";
+import { getScoutProviderSetup } from "@/lib/scouts/data-provider";
 import { db } from "@/lib/db";
 import { flowRuns, flowWebhookDeliveries, r2CleanupTasks, telegramOutbox, scouts, scoutEvaluations, mediaRenderJobs, drafts, posts, contentPackages, customAgentRuns } from "@/lib/db/schema";
 
@@ -15,6 +17,8 @@ export type OperationalHealth = {
   scoutFailures24h: number;
   scoutUncertain: number;
   overdueScouts: number;
+  blockedScouts: number;
+  scoutReadinessUnchecked: number;
   renderFailures24h: number;
   stalledRenders: number;
   publicationFailures: number;
@@ -58,6 +62,8 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
     pendingDrafts,
     pendingPackages,
     agencyFailures24h,
+    activeScoutCount,
+    activeScouts,
   ] = await Promise.all([
     db.select({ value: count() }).from(flowRuns).where(and(eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "failed"), gte(flowRuns.updatedAt, dayAgo))),
     db.select({ value: count() }).from(flowRuns).where(and(eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running"), lt(flowRuns.updatedAt, staleRunCutoff))),
@@ -101,10 +107,31 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
     db.select({ value: count() }).from(drafts).where(and(eq(drafts.tenantId, tenantId), eq(drafts.status, "publishing"), sql`${draftPublicationStartedAt} < ${staleRunCutoff.toISOString()}::timestamp`, sql`(${drafts.scheduledFor} IS NULL OR ${drafts.scheduledFor} < ${staleRunCutoff.toISOString()}::timestamp)`)),
     db.select({ value: count() }).from(contentPackages).where(and(eq(contentPackages.tenantId, tenantId), eq(contentPackages.status, "publishing"), sql`COALESCE(${contentPackages.scheduledFor}, ${contentPackages.updatedAt}) < ${staleRunCutoff.toISOString()}::timestamp`)),
     db.select({ value: count() }).from(customAgentRuns).where(and(eq(customAgentRuns.tenantId, tenantId), eq(customAgentRuns.status, "failed"), gte(customAgentRuns.updatedAt, dayAgo))),
+    db.select({ value: count() }).from(scouts).where(and(eq(scouts.tenantId, tenantId), eq(scouts.isActive, true))),
+    db.query.scouts.findMany({
+      where: and(eq(scouts.tenantId, tenantId), eq(scouts.isActive, true)),
+      orderBy: scouts.id,
+      limit: 100,
+    }),
   ]);
+
+  // Readiness-only scheduler backoff advances lastPolledAt. Independently
+  // inspect the same paid/provider gates so that a recent scan cannot conceal
+  // a blocked source. Bound both database work and provider resolution fan-out.
+  let blockedScouts = 0;
+  if (activeScouts.length) {
+    const limits = await checkUsageLimits(tenantId);
+    if (!limits.allowsAutonomousCadence) blockedScouts = activeScouts.length;
+    else for (let offset = 0; offset < activeScouts.length; offset += 5) {
+      const results = await Promise.all(activeScouts.slice(offset, offset + 5).map(source => getScoutProviderSetup(tenantId, source)));
+      blockedScouts += results.filter(result => !result.ready).length;
+    }
+  }
 
   return {
     generatedAt: now.toISOString(),
+    blockedScouts,
+    scoutReadinessUnchecked: Math.max(0, Number(activeScoutCount[0]?.value ?? 0) - activeScouts.length),
     flowFailures24h: Number(flowFailures24h[0]?.value ?? 0),
     staleFlowRuns: Number(staleFlowRuns[0]?.value ?? 0),
     webhookFailures24h: Number(webhookFailures24h[0]?.value ?? 0),

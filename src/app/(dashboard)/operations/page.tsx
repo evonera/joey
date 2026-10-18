@@ -11,6 +11,8 @@ export default async function OperationsPage() {
   const signals = [
     { label: "Failed Scout evaluations", value: health.scoutFailures24h, description: "Last 24 hours; inspect Scout run history", href: "/scouts" },
     { label: "Uncertain Scout outcomes", value: health.scoutUncertain, description: "Review interrupted collection before retrying", href: "/scouts" },
+    { label: "Blocked active Scouts", value: health.blockedScouts, description: "Paid access or source acquisition is unavailable", href: "/scouts" },
+    { label: "Scouts beyond readiness scan", value: health.scoutReadinessUnchecked, description: "This page checks the first 100 active Scouts; review remaining sources", href: "/scouts" },
     { label: "Overdue active Scouts", value: health.overdueScouts, description: "Poll interval plus 15 minutes without a check", href: "/scouts" },
     { label: "Failed media renders", value: health.renderFailures24h, description: "Last 24 hours; inspect draft media errors", href: "/drafts?tab=failed" },
     { label: "Stalled media renders", value: health.stalledRenders, description: "Queued or rendering without progress for 30 minutes", href: "/drafts?tab=all" },
