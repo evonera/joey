@@ -12,7 +12,11 @@ temp
 output/
 coverage/
 tests
-scripts/__tests__/
+scripts/__tests__
 .playwright
 playwright-report
+output
+workers/media/.venv
+workers/media/output
+workers/media/__pycache__
 test-results/

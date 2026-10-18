@@ -93,6 +93,18 @@ jobs:
         run: npm run test:integration:scouts
         env:
           JOEY_INTEGRATION_TEST: "true"
+      - name: Verify Scout evidence deduplication and failed-fetch backoff
+        run: node --import tsx tests/integration/scout-evidence.ts
+        env:
+          JOEY_INTEGRATION_TEST: "true"
+      - name: Verify account-free Theme Studio draft and export journey
+        run: node --import tsx tests/integration/theme-studio-release1.ts
+        env:
+          JOEY_INTEGRATION_TEST: "true"
+      - name: Verify connector evidence and full-frame video settings
+        run: node --import tsx tests/integration/acquisition-and-video.ts
+        env:
+          JOEY_INTEGRATION_TEST: "true"
       - name: Verify Scout interval and flow cancellation boundaries
         run: npx vitest run tests/integration/scout-security.test.ts
         env:
@@ -103,6 +115,10 @@ jobs:
           JOEY_INTEGRATION_TEST: "true"
       - name: Agency governance acceptance
         run: npm run test:integration:agency
+        env:
+          JOEY_INTEGRATION_TEST: "true"
+      - name: Billing quota and cancellation acceptance
+        run: node --import tsx tests/integration/billing-entitlements.ts
         env:
           JOEY_INTEGRATION_TEST: "true"
       - name: Editorial account-lock and permission acceptance
@@ -120,6 +136,22 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  media-worker:
+    name: Media worker quality
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: python -m pip install httpx==0.28.1 playwright==1.55.0 sentry-sdk==2.69.1
+      - name: Verify worker contracts and real full-frame crop/audio exports
+        run: python -m unittest discover -s workers/media -p 'test_*.py'
+      - name: Verify bounded Scout monitoring acceptance
+        run: python -m unittest discover -s workers/monitoring -p 'test_*.py'
 
   desktop:
     name: Tauri quality

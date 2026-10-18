@@ -708,10 +708,13 @@ function AgentChatInner({
             </PromptInputSelectContent>
           </PromptInputSelect>
           <SpeechInput
+            disabled={isBusy}
             onTranscription={(text) => {
-              if (isBusy) return;
-              prepareTurn();
-              void agent.send(text);
+              const composer = textareaRef.current;
+              if (!composer) return;
+              composer.value = [composer.value.trim(), text.trim()].filter(Boolean).join(" ");
+              composer.dispatchEvent(new Event("input", { bubbles: true }));
+              composer.focus();
             }}
           />
         </PromptInputTools>

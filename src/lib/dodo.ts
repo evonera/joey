@@ -25,10 +25,17 @@ function readLegacyProductIds(plan: BillingPlan) {
 }
 
 export function getBillingConfig() {
-  const apiKey = process.env.DODO_PAYMENTS_API_KEY?.trim();
-  const webhookKey = (process.env.DODO_PAYMENTS_WEBHOOK_SECRET || process.env.DODO_PAYMENTS_WEBHOOK_KEY)?.trim();
-  const productIds = Object.fromEntries(BILLING_PLANS.map((plan) => [plan, readProductId(plan)])) as Record<BillingPlan, string | undefined>;
   const environment = process.env.DODO_PAYMENTS_ENVIRONMENT || "test_mode";
+  if ((process.env.VERCEL_ENV === "production" && environment !== "live_mode") ||
+      (process.env.VERCEL_ENV === "preview" && environment !== "test_mode")) {
+    throw new Error("Billing mode does not match the deployment environment.");
+  }
+  // Vercel sensitive variables cannot be renamed or exported. Select the
+  // staged live pair together; a missing half must never fall back to TEST.
+  const stagedLive = environment === "live_mode" && Boolean(process.env.DODO_LIVE_API_KEY || process.env.DODO_LIVE_WEBHOOK_SECRET);
+  const apiKey = (stagedLive ? process.env.DODO_LIVE_API_KEY : process.env.DODO_PAYMENTS_API_KEY)?.trim();
+  const webhookKey = (stagedLive ? process.env.DODO_LIVE_WEBHOOK_SECRET : process.env.DODO_PAYMENTS_WEBHOOK_SECRET || process.env.DODO_PAYMENTS_WEBHOOK_KEY)?.trim();
+  const productIds = Object.fromEntries(BILLING_PLANS.map((plan) => [plan, readProductId(plan)])) as Record<BillingPlan, string | undefined>;
   return {
     apiKey, webhookKey, productIds, productId: productIds.pro, environment,
     configured: Boolean(apiKey && webhookKey && BILLING_PLANS.every((plan) => productIds[plan]) && ["test_mode", "live_mode"].includes(environment)),

@@ -144,6 +144,7 @@ export const socialAccounts = pgTable("social_accounts", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
+  tenantCreatedIdx: index("social_accounts_tenant_created_idx").on(table.tenantId, table.createdAt.desc(), table.id.desc()),
   tenantIdentity: uniqueIndex("social_accounts_tenant_identity").on(table.tenantId, table.id),
 }));
 
@@ -192,7 +193,9 @@ export const drafts = pgTable("drafts", {
   scheduledFor: timestamp("scheduled_for"), // null means publish immediately upon approval
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  tenantCreatedIdx: index("drafts_tenant_created_idx").on(table.tenantId, table.createdAt.desc(), table.id.desc()),
+}));
 
 export const posts = pgTable("posts", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -203,7 +206,9 @@ export const posts = pgTable("posts", {
   publishedAt: timestamp("published_at").defaultNow().notNull(),
   status: varchar("status", { length: 50 }).default('published').notNull(),
   metrics: jsonb("metrics"), // views, likes, etc., updated via analytics tool
-});
+}, (table) => ({
+  tenantPublishedIdx: index("posts_tenant_published_idx").on(table.tenantId, table.publishedAt.desc(), table.id.desc()),
+}));
 
 export const webhookEvents = pgTable("webhook_events", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -690,6 +695,9 @@ export const themeSources = pgTable("theme_sources", {
   rightsCategory: varchar("rights_category", { length: 30 }).default("unknown").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   lastPolledAt: timestamp("last_polled_at"),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  lastSuccessAt: timestamp("last_success_at"),
+  lastPollError: text("last_poll_error"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

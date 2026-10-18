@@ -1,6 +1,7 @@
 "use client";
 
 import { RenderControls } from "./RenderControls";
+import { PackageReview } from "./PackageReview";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -16,8 +17,8 @@ interface ThemePackageSummary {
   renderedAssetUrls: unknown;
   metrics?: unknown;
   provenance?: unknown;
+  updatedAt: Date | string;
   createdAt: Date | string;
-  updatedAt?: Date | string;
 }
 
 function firstAsset(value: unknown): string | undefined {
@@ -101,7 +102,8 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
                 <label className="flex items-start gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setFactAcknowledgements(previous => ({ ...previous, [pkg.id]: event.target.checked ? revision : "" }))} />I reviewed the sources and resolved uncertainty in this draft.</label>
               </details>}
               <div className="flex flex-wrap gap-2">
-                {["pending_review", "rejected", "failed"].includes(pkg.status) && <RenderControls packageId={pkg.id} renderJobId={typeof (pkg.metrics as { renderJobId?: unknown } | null)?.renderJobId === "string" ? (pkg.metrics as { renderJobId: string }).renderJobId : undefined} />}
+                <PackageReview pkg={pkg} />
+                {["pending_review", "rejected", "failed"].includes(pkg.status) && <RenderControls packageId={pkg.id} hasFinishedMedia={Boolean(asset)} renderJobId={typeof (pkg.metrics as { renderJobId?: unknown } | null)?.renderJobId === "string" ? (pkg.metrics as { renderJobId: string }).renderJobId : undefined} />}
                 {pkg.status === "pending_review" || pkg.status === "rejected" ? (
                   <>
                     <button type="button" disabled={busy || !asset || needsFactReview && !acknowledged} onClick={() => review(pkg.id, "approve")} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">Approve</button>

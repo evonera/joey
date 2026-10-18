@@ -4,6 +4,7 @@ import { drizzle as drizzleNode } from 'drizzle-orm/postgres-js';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
+import { assertDeploymentDatabaseIsolation } from './deployment-isolation';
 
 // Lazily constructed: importing this module must not require DATABASE_URL so
 // that pure logic (flow executor, unit tests) can transitively import schemas
@@ -14,6 +15,7 @@ let instance: Db | null = null;
 
 function getDb(): Db {
     if (!instance) {
+        assertDeploymentDatabaseIsolation(process.env);
         const connectionString = process.env.DATABASE_URL || '';
         const provider = process.env.DATABASE_PROVIDER;
         const isNeon = provider === 'neon' || connectionString.includes('neon.tech');

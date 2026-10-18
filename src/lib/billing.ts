@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
-import { tenants, themePages, socialAccounts, member } from "@/lib/db/schema";
+import { tenants, themePages, socialAccounts, member, themeSlots } from "@/lib/db/schema";
 import { eq, count, and } from "drizzle-orm";
-import { getPlanDefinition, PLAN_CATALOG } from "@/lib/plans";
+import { getPlanDefinition, hasPaidPlanAccess, PLAN_CATALOG } from "@/lib/plans";
 
 export interface TenantBillingLimits {
   isPro: boolean;
@@ -29,7 +29,7 @@ export async function checkUsageLimits(tenantId: string, runner: typeof db = db)
   const limits = getPlanDefinition(tenant.subscriptionPlan);
   const isPro =
     (process.env.NODE_ENV !== "production" && process.env.BILLING_TEST_BYPASS === "true") ||
-    (limits.paid && tenant.subscriptionStatus === "active");
+    hasPaidPlanAccess(tenant.subscriptionPlan, tenant.subscriptionStatus);
 
   return {
     isPro,
@@ -117,7 +117,7 @@ export async function assertWorkspaceQuota(
       where: eq(tenants.id, m.organizationId),
       columns: { subscriptionPlan: true, subscriptionStatus: true },
     });
-    if (tenant?.subscriptionStatus === "active") {
+    if (tenant && hasPaidPlanAccess(tenant.subscriptionPlan, tenant.subscriptionStatus)) {
       const plan = getPlanDefinition(tenant.subscriptionPlan);
       if (plan?.paid) {
         hasPaid = true;
@@ -130,5 +130,17 @@ export async function assertWorkspaceQuota(
     throw new Error(
       `Workspace limit reached (${maxAllowed} workspace${maxAllowed === 1 ? "" : "s"}).${hasPaid ? "" : " Free accounts are limited to 1 workspace. Upgrade to Pro to create more workspaces."}`
     );
+  }
+}
+
+export class SlotQuotaError extends Error {}
+
+/** Caller holds the page row lock and tenant share lock through insertion. */
+export async function assertThemeSlotQuota(tenantId: string, themePageId: string, runner: typeof db = db) {
+  const limits = await checkUsageLimits(tenantId, runner);
+  const [res] = await runner.select({ total: count() }).from(themeSlots)
+    .where(and(eq(themeSlots.tenantId, tenantId), eq(themeSlots.themePageId, themePageId)));
+  if ((res?.total ?? 0) >= limits.slotLimitPerPage) {
+    throw new SlotQuotaError(`This plan allows ${limits.slotLimitPerPage} content slots per theme page. Remove a slot or upgrade your plan.`);
   }
 }

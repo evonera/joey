@@ -83,6 +83,22 @@ const spec = {
   },
   security: [{ bearerAuth: [] }],
   paths: {
+    "/api/v1/scouts": {
+      get: { summary: "List saved Scout sources (read scope)", operationId: "listScouts", tags: ["Scouts"], parameters: [{ name: "scoutId", in: "query", schema: { type: "string", format: "uuid" } }], responses: { "200": { description: "Up to 100 sources belonging to this token's workspace" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "429": { $ref: "#/components/responses/RateLimited" } } },
+    },
+    "/api/v1/scouts/observations": {
+      post: {
+        summary: "Supply real source observations (write scope); no approval or publishing", operationId: "submitScoutObservations", tags: ["Scouts"],
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false, required: ["version", "scoutId", "targetUrl", "platform", "items"], properties: {
+          version: { type: "integer", enum: [1] }, scoutId: { type: "string", format: "uuid" }, targetUrl: { type: "string", format: "uri", maxLength: 2048 }, platform: { type: "string", enum: ["instagram", "tiktok", "twitter", "youtube", "web", "rss"] },
+          items: { type: "array", minItems: 1, maxItems: 15, items: { type: "object", additionalProperties: false, required: ["id", "url", "text"], properties: { id: { type: "string", maxLength: 120 }, url: { type: "string", format: "uri", maxLength: 2048 }, text: { type: "string", maxLength: 6000 }, views: { type: "number", minimum: 0, maximum: 1e12 }, likes: { type: "number", minimum: 0, maximum: 1e12 }, timestamp: { type: "string", format: "date-time" } } } },
+        } } } } },
+        responses: { "202": { description: "Evidence queued or an existing durable receipt reused. Observation time is assigned by Joey." }, "400": { description: "Invalid observation; missing metrics must be omitted" }, "409": { description: "Scout belongs to another workspace, was retargeted, or changed during ingestion" }, "413": { description: "Body exceeds 128 KiB" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "429": { $ref: "#/components/responses/RateLimited" } },
+      },
+    },
+    "/api/v1/theme-packages/{id}/source-media": {
+      post: { summary: "Offer discovered media to a draft package (write scope)", operationId: "offerThemeSourceMedia", tags: ["Theme Studio"], parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false, required: ["sourceUrl", "rightsCategory", "media"], properties: { sourceUrl: { type: "string", format: "uri", maxLength: 2048 }, rightsCategory: { type: "string", enum: ["owned", "public_domain", "cc_by", "cc_by_sa", "commercial_license"] }, media: { type: "array", minItems: 1, maxItems: 8, items: { type: "object", additionalProperties: false, required: ["url", "kind"], properties: { url: { type: "string", format: "uri", maxLength: 4096 }, kind: { type: "string", enum: ["image", "video"] } } } } } } } } }, responses: { "200": { description: "Candidates saved. Choose a candidate in Render media to import and register a workspace asset." }, "400": { description: "Invalid source, media, package ID or reuse rights" }, "409": { description: "Package cannot be edited or changed during discovery" }, "413": { description: "Body exceeds 64 KiB" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "429": { $ref: "#/components/responses/RateLimited" } } },
+    },
     "/api/v1/accounts": {
       get: {
         summary: "List connected social accounts",

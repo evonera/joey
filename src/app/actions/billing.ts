@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { auth, getActiveTenantMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { tenants } from "@/lib/db/schema";
-import { BILLING_PLANS, canReuseCheckoutSession, getBillingConfig, getDodoClient, productIdForPlan, type BillingPlan } from "@/lib/dodo";
+import { BILLING_PLANS, canReuseCheckoutSession, getBillingConfig, getDodoClient, productIdForPlan, planForProductId, type BillingPlan } from "@/lib/dodo";
 import { checkUsageLimits } from "@/lib/billing";
 
 export async function getBillingSummary() {
@@ -14,16 +14,28 @@ export async function getBillingSummary() {
     checkUsageLimits(membership.tenantId),
     db.query.tenants.findFirst({
       where: eq(tenants.id, membership.tenantId),
-      columns: { dodoCustomerId: true, name: true },
+      columns: { dodoCustomerId: true, dodoSubscriptionId: true, name: true },
     }),
   ]);
+  let subscription: { renewsAt: string; cancelAtPeriodEnd: boolean; status: string; scheduledPlan: string | null; scheduledAt: string | null } | null = null;
+  let providerUnavailable = false;
+  if (tenant?.dodoSubscriptionId && getBillingConfig().configured && ["owner", "admin"].includes(membership.role)) {
+    try {
+      const current = await getDodoClient().subscriptions.retrieve(tenant.dodoSubscriptionId);
+      if (current.customer.customer_id !== tenant.dodoCustomerId || current.metadata.tenantId !== membership.tenantId) throw new Error("Subscription ownership mismatch");
+      subscription = { renewsAt: current.next_billing_date, cancelAtPeriodEnd: current.cancel_at_next_billing_date, status: current.status, scheduledPlan: current.scheduled_change ? planForProductId(current.scheduled_change.product_id) ?? null : null, scheduledAt: current.scheduled_change?.effective_at ?? null };
+    } catch { providerUnavailable = true; }
+  }
   return {
     ...limits,
     workspaceName: tenant?.name || "Workspace",
-    configured: getBillingConfig().configured,
+    configured: getBillingConfig().configured && process.env.BILLING_MAINTENANCE !== "true",
+    maintenance: process.env.BILLING_MAINTENANCE === "true",
     testMode: getBillingConfig().environment === "test_mode",
     canManage: ["owner", "admin"].includes(membership.role),
     hasCustomer: Boolean(tenant?.dodoCustomerId),
+    subscription,
+    providerUnavailable,
   };
 }
 
@@ -33,6 +45,7 @@ function billingReturnUrl() {
 
 export async function startCheckout(plan: BillingPlan, attemptId: string) {
   const { tenantId } = await getActiveTenantMembership(["owner", "admin"]);
+  assertBillingAvailable();
   if (!BILLING_PLANS.includes(plan)) throw new Error("Unknown billing plan.");
   if (!/^[\da-f-]{36}$/i.test(attemptId)) throw new Error("Invalid checkout attempt. Please reload and try again.");
   const session = await auth.api.getSession({ headers: await headers() });
@@ -45,7 +58,7 @@ export async function startCheckout(plan: BillingPlan, attemptId: string) {
     if (!tenant) throw new Error("Workspace not found");
     if (tenant.dodoSubscriptionId) {
       const current = await client.subscriptions.retrieve(tenant.dodoSubscriptionId);
-      if (["active", "on_hold", "pending"].includes(current.status)) {
+      if (!["cancelled", "failed", "expired"].includes(current.status)) {
         throw new Error("This workspace already has a subscription. Use Manage billing to update it.");
       }
     }
@@ -90,6 +103,7 @@ export async function startProCheckout(attemptId: string) {
 
 export async function openBillingPortal() {
   const { tenantId } = await getActiveTenantMembership(["owner", "admin"]);
+  assertBillingAvailable();
   const tenant = await db.query.tenants.findFirst({
     where: eq(tenants.id, tenantId), columns: { dodoCustomerId: true },
   });
@@ -98,4 +112,8 @@ export async function openBillingPortal() {
     return_url: billingReturnUrl(),
   });
   return { url: portal.link };
+}
+
+function assertBillingAvailable() {
+  if (process.env.BILLING_MAINTENANCE === "true") throw new Error("Billing is being updated. Please try again shortly or contact joey@evonera.net.");
 }

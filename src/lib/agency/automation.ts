@@ -1,3 +1,4 @@
+import { checkUsageLimits } from "@/lib/billing";
 import { db } from "@/lib/db";
 import { customAgents, customAgentRuns, member, themeSlots, themeContentFormats } from "@/lib/db/schema";
 import { and, eq, gt, asc, sql } from "drizzle-orm";
@@ -57,6 +58,8 @@ export async function executeAgencyDraft(actor: AgencyActor, agentId: string, ve
     // run for that day; preserve its recorded outcome and draft link.
     return { status: receipt.status, expired: true, runId: receipt.id, packageId: receipt.packageId, duplicate: receipt.duplicate };
   }
+  if (dispatchedDay !== undefined && !(await checkUsageLimits(actor.tenantId)).allowsAutonomousCadence)
+    throw new Error("Scheduled agency drafts require paid access.");
   const claim = await reserveAgencyRun(actor, agentId, version, eventKey);
   if (!claim.claimed)
     return { status: claim.run.status, runId: claim.run.id, packageId: claim.run.packageId, duplicate: true };
@@ -65,6 +68,8 @@ export async function executeAgencyDraft(actor: AgencyActor, agentId: string, ve
   const guard = async () => {
     deadline.throwIfAborted();
     requireAgencyAutomationEnabled();
+    if (dispatchedDay !== undefined && !(await checkUsageLimits(actor.tenantId)).allowsAutonomousCadence)
+      throw new Error("Scheduled agency drafts require paid access.");
     await assertAgencyRunCurrent(run);
   };
   try {

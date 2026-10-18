@@ -14,16 +14,17 @@ import { resolveAuthBaseURL } from "./auth-base-url";
 // Dodo Payments is optional at boot so the app can be built and self-hosted
 // without billing credentials. Billing routes fail gracefully at runtime if
 // the key is absent.
-const DODO_API_KEY = process.env.DODO_PAYMENTS_API_KEY;
+const billingConfig = getBillingConfig();
+const DODO_API_KEY = billingConfig.apiKey;
 if (process.env.NODE_ENV === "production" && !DODO_API_KEY) {
     console.warn(
-        "[billing] DODO_PAYMENTS_API_KEY is not set. Checkout/portal/webhook billing routes will fail. " +
+        "[billing] A Dodo API key is not configured. Checkout/portal billing routes will fail. " +
         "Self-hosted instances that do not use billing can ignore this warning.",
     );
 }
 export const dodoPayments = new DodoPayments({
     bearerToken: DODO_API_KEY || "dodo_dev_placeholder",
-    environment: (process.env.DODO_PAYMENTS_ENVIRONMENT as "test_mode" | "live_mode") || "test_mode",
+    environment: billingConfig.environment as "test_mode" | "live_mode",
 });
 
 const isBuildPhase =

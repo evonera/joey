@@ -57,7 +57,7 @@ export interface ScoutItem {
   updatedAt: Date;
 }
 
-export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) {
+export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: { initialScouts: ScoutItem[]; dailyMonitoringAllowed?: boolean }) {
   const router = useRouter();
   const [scoutsList, setScoutsList] = useState<ScoutItem[]>(initialScouts);
   const [selectedId, setSelectedId] = useState<string>(
@@ -66,6 +66,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [editingScout, setEditingScout] = useState<ScoutItem | null>(null);
   const [setup, setSetup] = useState<Awaited<ReturnType<typeof getScoutSetup>> | null>(null);
+  const [sourceSetups, setSourceSetups] = useState<Record<string, { ready: boolean; provider: string; issue?: string }>>({});
   const [isRunning, setIsRunning] = useState(false);
 
   function createFromScout(scout: ScoutItem) {
@@ -90,6 +91,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const lastRun = runs[0] || null;
 
   useEffect(() => { void getScoutSetup().then(setSetup).catch(() => {}); }, []);
+  useEffect(() => { let stopped = false; void Promise.all(scoutsList.map(async scout => [scout.id, await getScoutSetup(scout.id)] as const)).then(rows => { if (!stopped) setSourceSetups(Object.fromEntries(rows)); }).catch(() => {}); return () => { stopped = true; }; }, [scoutsList]);
 
   // Synchronize state when server props update
   useEffect(() => {
@@ -105,7 +107,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   // New scout form state
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
-  const [newPlatform, setNewPlatform] = useState<"instagram" | "tiktok" | "twitter" | "youtube" | "web">("instagram");
+  const [newPlatform, setNewPlatform] = useState<"instagram" | "tiktok" | "twitter" | "youtube" | "web" | "rss">("instagram");
   const [newGoal, setNewGoal] = useState("");
   const newInterval = 1440;
 
@@ -174,7 +176,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const handleRunNow = async (scoutId: string) => {
     setIsRunning(true);
     try {
-      const res = await runScoutNow(scoutId);
+      const res = await runScoutNow(scoutId, crypto.randomUUID());
       if (res.error) {
         toast.error(res.error);
         getScoutRuns(scoutId)
@@ -190,13 +192,17 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
             ? {
                 ...s,
                 latestAlert: res.alert !== undefined ? res.alert : s.latestAlert,
-                lastPolledAt: new Date(),
+                lastPolledAt: res.pending || res.reused ? s.lastPolledAt : new Date(),
               }
             : s
         )
       );
 
-      if (res.triggered) {
+      if (res.pending) {
+        toast.info("This Scout is already checking. Its current run will finish shortly.");
+      } else if (res.reused) {
+        toast.info("Showing the result of this check. No duplicate collection was started.");
+      } else if (res.triggered) {
         toast.success(`Scout triggered an alert!`);
       } else {
         toast.info("Scout completed. No new changes matched the goal.");
@@ -247,8 +253,13 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
     }
   };
 
-  const activeCount = scoutsList.filter((s) => s.isActive).length;
-  const pausedCount = scoutsList.length - activeCount;
+  const configuredActiveCount = scoutsList.filter((s) => s.isActive).length;
+  const sourceReady = (scout: ScoutItem) => ["rss", "youtube", "web"].includes(scout.platform) || sourceSetups[scout.id]?.ready === true || setup?.ready === true;
+  const selectedReady = selectedScout ? sourceReady(selectedScout) : false;
+  const waitingCount = scoutsList.filter(scout => scout.isActive && (!dailyMonitoringAllowed || !sourceReady(scout))).length;
+  const hasUnconfiguredSocialSource = scoutsList.some(scout => !["rss", "youtube", "web"].includes(scout.platform) && !sourceReady(scout));
+  const activeCount = configuredActiveCount - waitingCount;
+  const pausedCount = scoutsList.length - configuredActiveCount;
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6">
@@ -314,6 +325,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       <option value="twitter">X / Twitter</option>
                       <option value="youtube">YouTube</option>
                       <option value="web">Web Page</option>
+                      <option value="rss">RSS / Atom articles (no scraping provider)</option>
                     </select>
                   </div>
                   <div className="space-y-1.5 text-xs"><p className="font-medium">Check cadence</p><p className="rounded-md border border-input bg-background px-2 py-2 text-muted-foreground">Daily automatic check</p></div>
@@ -335,7 +347,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                   </label>
                   <Textarea
                     id="scout-goal"
-                    placeholder="Alert when any reel exceeds 50k views or introduces a new split-screen text hook format."
+                    placeholder={newPlatform === "rss" ? "Alert when an article reports a new product launch." : "views > 50k (or describe a qualitative change)"}
                     value={newGoal}
                     onChange={(e) => setNewGoal(e.target.value)}
                     required
@@ -360,7 +372,9 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
         </div>
       </div>
 
-      {setup && !setup.ready && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>{setup.issue}</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
+      <p className="text-xs text-muted-foreground">RSS, YouTube and websites collect directly. Connected Instagram, X and TikTok accounts use your workspace&apos;s publishing provider. <Link href="/docs#local-connector" className="underline">Set up acquisition for other profiles</Link>.</p>
+      {!dailyMonitoringAllowed && <div role="status" className="rounded-xl border border-border/40 p-3 text-sm">Check Now is available on Free. Daily automatic monitoring requires a paid workspace plan. <Link href="/settings?tab=billing" className="underline">Choose a plan</Link>.</div>}
+      {setup && !setup.ready && (scoutsList.length === 0 || hasUnconfiguredSocialSource) && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources needing acquisition: {setup.issue} RSS/Atom, YouTube and website sources remain available.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
 
       {scoutsList.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-border/60 p-12 text-center bg-card/30">
@@ -369,7 +383,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           </div>
           <h3 className="text-base font-semibold text-foreground">No Scouts Active Yet</h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1 mb-5">
-            Save a source and a clear goal. Configure a Scout provider before running manual or daily checks.
+            Save a source and a clear goal. RSS/Atom articles run without a scraping provider. Social profiles can use the local UGC connector or a custom provider. Apify is optional.
           </p>
           <Button size="sm" onClick={beginCreate} className="gap-1.5 text-xs">
             <Plus className="size-3.5" />
@@ -383,7 +397,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           <div className={cn("lg:col-span-5 space-y-3", mobileView === "details" && "hidden lg:block")}>
             <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
               <span>
-                {activeCount} active · {pausedCount} paused · {scoutsList.length} total
+                {activeCount} active · {waitingCount} waiting for plan or source · {pausedCount} paused · {scoutsList.length} total
               </span>
               {/* Mobile List|Details segmented toggle */}
               <span className="lg:hidden inline-flex rounded-lg border border-border/40 p-0.5 text-[11px] font-medium">
@@ -431,7 +445,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                         <span
                           className={cn(
                             "size-2 rounded-full",
-                            scout.isActive ? "bg-emerald-500" : "bg-muted-foreground/40"
+                            scout.isActive ? !dailyMonitoringAllowed || !sourceReady(scout) ? "bg-amber-500" : "bg-emerald-500" : "bg-muted-foreground/40"
                           )}
                         />
                         <span className="text-xs font-semibold text-foreground truncate max-w-[200px]">
@@ -439,7 +453,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                         </span>
                       </div>
                       <span className="text-[10px] font-mono text-muted-foreground">
-                        Daily automatic
+                        {dailyMonitoringAllowed ? "Daily automatic" : "Manual checks"}
                       </span>
                     </div>
 
@@ -508,6 +522,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       </span>
                       <span className="shrink-0">·</span>
                       <span className="capitalize shrink-0">{selectedScout.platform}</span>
+                      <span>{sourceSetups[selectedScout.id]?.provider ?? (["rss", "youtube", "web"].includes(selectedScout.platform) ? "direct" : "waiting for source")}</span>
                     </div>
                   </div>
 
@@ -517,9 +532,9 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       variant="outline"
                       size="sm"
                       onClick={() => handleRunNow(selectedScout.id)}
-                      disabled={isRunning || setup?.ready === false}
+                      disabled={isRunning || !selectedReady}
                       className="h-11 w-11 p-0 sm:h-8 sm:w-auto sm:px-2.5 text-xs gap-1"
-                      title={setup?.ready === false ? "Configure a Scout provider in Settings to run a scan" : "Run scout scan right now"}
+                      title={!selectedReady ? "Configure a Scout provider in Settings to run a scan" : "Run scout scan right now"}
                       aria-label="Run scout scan right now"
                     >
                       <RefreshCw className={cn("size-4 sm:size-3", isRunning && "animate-spin")} />
@@ -529,8 +544,9 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       variant="ghost"
                       size="sm"
                       onClick={() => handleToggle(selectedScout.id, selectedScout.isActive)}
+                      disabled={!selectedScout.isActive && !dailyMonitoringAllowed}
                       className="h-11 w-11 p-0 sm:h-8 sm:w-auto sm:px-2 text-xs"
-                      title={selectedScout.isActive ? "Pause Scout" : "Resume Scout"}
+                      title={selectedScout.isActive ? "Pause Scout" : dailyMonitoringAllowed ? "Resume Scout" : "Choose a paid plan for daily monitoring"}
                       aria-label={selectedScout.isActive ? "Pause Scout" : "Resume Scout"}
                     >
                       {selectedScout.isActive ? (
@@ -596,6 +612,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                 </div>
 
                 {/* Section: Changes / Before & After */}
+                <details className="rounded border p-3 text-xs"><summary className="cursor-pointer">Local connector setup</summary><p className="mt-2 break-all">Scout ID: {selectedScout.id}</p><button type="button" className="mt-2 rounded border px-2 py-1" onClick={async () => { try { const result = await getScoutSetup(selectedScout.id); setSourceSetups(current => ({ ...current, [selectedScout.id]: result })); } catch { toast.error("Could not refresh source status"); } }}>Refresh source status</button><Link href="/docs#local-connector" className="mt-2 block underline">Download and run the local source connector</Link>{sourceSetups[selectedScout.id]?.issue && <p className="mt-2">{sourceSetups[selectedScout.id].issue}</p>}</details>
                 {selectedScout.latestAlert?.samplePost?.url && <div className="rounded-lg border border-border/40 p-3 text-xs"><p className="font-semibold">Source evidence</p><a href={selectedScout.latestAlert.samplePost.url} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all underline">{selectedScout.latestAlert.samplePost.url}</a>{selectedScout.latestAlert.samplePost.content && <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-muted-foreground">{selectedScout.latestAlert.samplePost.content}</p>}<p className="mt-1 text-muted-foreground">Detected {new Date(selectedScout.latestAlert.detectedAt).toLocaleString()}</p></div>}
                 {selectedScout.latestAlert?.changes?.length > 0 ? (
                   <div className="space-y-3">

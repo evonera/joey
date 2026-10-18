@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ThemeRecipeMode } from "@/lib/flows/theme-recipe-mode";
 
 import { defineWebMcpTool } from "@/lib/webmcp";
 import { isRightsCategoryAllowed } from "@/lib/theme-studio/pipeline/fact-rights-verifier";
@@ -15,6 +16,7 @@ export interface ThemeStudioWebMcpState {
     rightsPolicy: string;
     connectedAccountCount: number;
     connectedPlatforms: string[];
+    executionMode?: ThemeRecipeMode;
   };
   sources: Array<{
     id: string;
@@ -27,7 +29,7 @@ export interface ThemeStudioWebMcpState {
   packages: Array<{ id: string; title: string; status: string }>;
 }
 
-export function getThemeStudioReadinessIssues(state: ThemeStudioWebMcpState): string[] {
+export function getThemeStudioReadinessIssues(state: ThemeStudioWebMcpState, mode = state.page.executionMode ?? "publishing"): string[] {
   const activeSources = state.sources.filter((source) => source.isActive);
   const policy = state.page.rightsPolicy === "moderate" || state.page.rightsPolicy === "permissive"
     ? state.page.rightsPolicy : "strict";
@@ -42,7 +44,7 @@ export function getThemeStudioReadinessIssues(state: ThemeStudioWebMcpState): st
     ...(activeSources.length === 0 ? ["Add at least one active source"] : []),
     ...(activeSources.length > 0 && usableSources.length === 0 ? ["Review source rights: no active source is allowed by this page's policy"] : []),
     ...(state.slots.some((slot) => slot.isActive) ? [] : ["Add at least one active content slot"]),
-    ...missingPlatforms.map((platform) => `Select an active ${platform} publishing account`),
+    ...(mode === "publishing" ? missingPlatforms.map((platform) => `Select an active ${platform} publishing account`) : []),
   ];
 }
 
@@ -80,6 +82,8 @@ export function createThemeStudioWebMcpTools(
         return {
           viewOnly: true,
           ready: issues.length === 0,
+          executionMode: state.page.executionMode ?? "publishing",
+          publishingIssues: getThemeStudioReadinessIssues(state, "publishing"),
           issues,
           note: "Approval and publishing remain explicit human actions in Joey.",
         };

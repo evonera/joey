@@ -106,6 +106,16 @@ describe("Theme Studio Learning Loop, DM Automation & WebMCP (Phase 6)", () => {
       expect(payload.issues).toContain("Select an active instagram publishing account");
     });
 
+    it("distinguishes draft readiness from publishing readiness", () => {
+      const state = {
+        page: { id: "page", name: "Daily", niche: null, audience: null, status: "draft", rightsPolicy: "strict", connectedAccountCount: 0, connectedPlatforms: [], executionMode: "draft_only" as const },
+        sources: [{ id: "source", name: "Own feed", sourceType: "rss", rightsCategory: "owned", isActive: true }],
+        slots: [{ id: "slot", label: "Card", cadence: "daily", isActive: true, platform: "instagram" }], packages: [],
+      };
+      expect(getThemeStudioReadinessIssues(state)).toEqual([]);
+      expect(getThemeStudioReadinessIssues(state, "publishing")).toEqual(["Select an active instagram publishing account"]);
+    });
+
     it("surfaces an unknown-rights source as a setup blocker", () => {
       const issues = getThemeStudioReadinessIssues({
         page: {

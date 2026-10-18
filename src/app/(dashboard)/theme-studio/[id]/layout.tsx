@@ -21,6 +21,7 @@ export default async function ThemePageLayout({
     <div className="flex flex-col min-h-full">
       <ThemePageHeader
         page={res.page}
+        executionMode={res.executionMode}
         webMcpState={{
           page: {
             id: res.page.id,

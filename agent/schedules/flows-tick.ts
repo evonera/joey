@@ -18,6 +18,7 @@
 import { defineSchedule } from "eve/schedules";
 import { db } from "@/lib/db";
 import { flows, flowRuns } from "@/lib/db/schema";
+import { admitPaidScheduledFlow } from "@/lib/flows/scheduled-admission";
 import { and, asc, eq, lt, or, sql } from "drizzle-orm";
 import { getNode } from "@/lib/flows/registry";
 import { executeAdmittedFlowRun } from "@/lib/flows/run-flow-server";
@@ -190,17 +191,7 @@ export async function runFlowsTick() {
           const triggerPayload = { scheduledAt: new Date().toISOString() };
           let run;
           try {
-            const inserted = await db
-              .insert(flowRuns)
-              .values({
-                flowId: flow.id,
-                tenantId: flow.tenantId,
-                trigger: "schedule",
-                triggerPayload,
-              })
-              .onConflictDoNothing()
-              .returning();
-            run = inserted[0];
+            run = await admitPaidScheduledFlow(flow.tenantId, flow.id, triggerPayload);
           } catch (err: any) {
             if (err?.code === "23505" || err?.message?.includes("unique")) {
               return;
@@ -225,16 +216,17 @@ export async function runFlowsTick() {
           }
         } catch (err) {
           console.error(`[flows-tick] Flow ${flow.id} failed:`, err);
-        }
-        // Advance the rotation stamp on every examination (admitted or
-        // skipped) so this row yields the window to unexamined flows.
-        try {
-          await db
-            .update(flows)
-            .set({ lastTickedAt: new Date() })
-            .where(and(eq(flows.id, flow.id), eq(flows.tenantId, flow.tenantId)));
-        } catch (err) {
-          console.error(`[flows-tick] Failed to stamp tick for flow ${flow.id}:`, err);
+        } finally {
+          // Advance the rotation stamp on every examination (admitted or
+          // skipped) so this row yields the window to unexamined flows.
+          try {
+            await db
+              .update(flows)
+              .set({ lastTickedAt: new Date() })
+              .where(and(eq(flows.id, flow.id), eq(flows.tenantId, flow.tenantId)));
+          } catch (err) {
+            console.error(`[flows-tick] Failed to stamp tick for flow ${flow.id}:`, err);
+          }
         }
     });
 }

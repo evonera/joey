@@ -3,6 +3,7 @@ export interface VerificationPolicyCheck {
   policy: "strict" | "moderate" | "permissive";
   hasSourceUrl: boolean;
   hasTimestamp: boolean;
+  hasDiscoveryTimestamp?: boolean;
   sourceName?: string;
   sourceUrl?: string;
 }
@@ -72,8 +73,8 @@ export function verifyRightsAndProvenance(check: VerificationPolicyCheck): Verif
     violations.push("Missing verified source URL for factual claim.");
     provenancePassed = false;
   }
-  if (!hasTimestamp) {
-    violations.push("Missing publication timestamp on source item.");
+  if (!hasTimestamp && !check.hasDiscoveryTimestamp) {
+    violations.push("Missing publication or discovery timestamp on source item.");
     provenancePassed = false;
   }
 

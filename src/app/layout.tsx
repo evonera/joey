@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -59,7 +60,7 @@ const schemaData = {
       contactPoint: {
         "@type": "ContactPoint",
         contactType: "customer support",
-        email: "support@joey.ai",
+        email: "joey@evonera.net",
       },
     },
     {
@@ -129,6 +130,7 @@ export default function RootLayout({
             dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaData) }}
           />
           {children}
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

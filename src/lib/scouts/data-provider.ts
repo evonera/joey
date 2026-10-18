@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { parseRssXml } from "@/lib/theme-studio/feed-parser";
+import { canonicalScoutPostUrl, scoutPostIdentity, observedMetric, observedTimestamp } from "./post-evidence";
 import { resolveToken } from "@/lib/flows/nodes/data/apify-actor";
 import { readBoundedJson } from "@/lib/http/read-bounded-json";
 import { outboundRequest, resolveOutboundTarget } from "@/lib/flows/outbound-request";
@@ -13,8 +15,12 @@ export interface ScoutPostItem {
   views?: number;
   likes?: number;
   timestamp?: string;
+  /** Collection time assigned by Joey, never supplied by an upstream provider. */
+  observedAt?: string;
 }
 export interface ScoutCollectionRequest {
+  id?: string;
+  goalCondition?: string;
   targetUrl: string;
   platform: string;
 }
@@ -24,7 +30,7 @@ export interface ScoutCollectionContext {
   beforePaidPhase?: () => Promise<void>;
 }
 export interface ScoutDataProvider {
-  readonly kind: "apify" | "custom" | "mock";
+  readonly kind: "apify" | "custom" | "mock" | "rss" | "youtube" | "connector" | "web" | "connected";
   fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext): Promise<ScoutPostItem[]>;
 }
 
@@ -53,9 +59,93 @@ async function validateTarget(request: ScoutCollectionRequest, signal: AbortSign
   }
 }
 
-function metric(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? Math.min(n, 1e12) : 0;
+/** Article evidence only: a feed cannot report social engagement or profile changes. */
+export class RssScoutProvider implements ScoutDataProvider {
+  readonly kind = "rss" as const;
+  async fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext) {
+    context.signal.throwIfAborted();
+    if (request.platform !== "rss") throw new Error("RSS collection requires an RSS/Atom source.");
+    await validateTarget(request, context.signal);
+    await context.beforePaidPhase?.();
+    context.signal.throwIfAborted();
+    const response = await outboundRequest(request.targetUrl, {
+      method: "GET",
+      headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" },
+      signal: context.signal,
+      timeoutMs: 20_000,
+      maxBytes: MAX_BYTES,
+      maxRedirects: 3,
+    });
+    if (response.status < 200 || response.status >= 300)
+      throw new Error(`RSS source returned HTTP ${response.status}.`);
+    const xml = new TextDecoder("utf8", { fatal: true }).decode(response.buffer);
+    if (!/<(?:rss|feed|rdf:RDF)(?:\s|>)/i.test(xml)) throw new Error("Source did not return an RSS or Atom feed.");
+    const items = parseRssXml(xml)
+      .slice(0, MAX_ITEMS)
+      .map((item) => {
+        const url = canonicalScoutPostUrl(item.url);
+        if (!url) throw new Error("RSS source contains an invalid article URL.");
+        return {
+          id: scoutPostIdentity(url),
+          url,
+          text: `${item.title}\n${item.body}`.slice(0, 6000),
+          ...(item.publishedAt ? { timestamp: item.publishedAt.toISOString() } : {}),
+        };
+      });
+    return [...new Map(items.map((item) => [item.id, item])).values()];
+  }
+}
+
+export class YoutubeScoutProvider implements ScoutDataProvider {
+  readonly kind = "youtube" as const;
+  async fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext) {
+    validateScoutSource(request.targetUrl, "youtube");
+    const source = new URL(request.targetUrl);
+    const videoId = source.hostname === "youtu.be" ? source.pathname.slice(1) : source.searchParams.get("v") ?? source.pathname.match(/^\/(?:shorts|live|embed)\/([\w-]{11})\/?$/)?.[1];
+    if (videoId && /^[\w-]{11}$/.test(videoId)) {
+      await context.beforePaidPhase?.();
+      const url = `https://www.youtube.com/watch?v=${videoId}`;
+      const response = await outboundRequest(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, { signal: context.signal, timeoutMs: 20000, maxBytes: 64 * 1024, maxRedirects: 0 });
+      if (response.status !== 200) throw new Error(`YouTube video metadata returned HTTP ${response.status}.`);
+      const data = z.object({ title: z.string().max(6000) }).parse(JSON.parse(response.buffer.toString("utf8")));
+      return [{ id: videoId, url, text: data.title }];
+    }
+    let channelId = source.pathname.match(/^\/channel\/(UC[\w-]{22})(?:\/|$)/)?.[1] ?? source.searchParams.get("channel_id") ?? undefined;
+    if (!channelId) {
+      if (!/^\/(?:@[\w.-]+|(?:c|user)\/[\w.-]+)(?:\/(?:videos|shorts|streams))?\/?$/.test(source.pathname)) throw new Error("Use a YouTube channel or individual video URL.");
+      await context.beforePaidPhase?.();
+      const response = await outboundRequest(source.toString(), { signal: context.signal, timeoutMs: 20000, maxBytes: 2 * 1024 * 1024, maxRedirects: 3 });
+      if (response.status !== 200) throw new Error(`YouTube channel returned HTTP ${response.status}.`);
+      const html = response.buffer.toString("utf8");
+      channelId = html.match(/"externalId"\s*:\s*"(UC[\w-]{22})"/)?.[1] ?? html.match(/channel_id=(UC[\w-]{22})/)?.[1];
+    }
+    if (!channelId || !/^UC[\w-]{22}$/.test(channelId)) throw new Error("Channel ID could not be resolved. Use its /channel/UC… URL or send observations with the local connector.");
+    return new RssScoutProvider().fetchRecentPosts({ platform: "rss", targetUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}` }, context);
+  }
+}
+
+export class WebScoutProvider implements ScoutDataProvider {
+  readonly kind = "web" as const;
+  async fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext) {
+    await validateTarget(request, context.signal);
+    await context.beforePaidPhase?.();
+    const response = await outboundRequest(request.targetUrl, { signal: context.signal, timeoutMs: 20000, maxBytes: 2 * 1024 * 1024, maxRedirects: 3 });
+    if (response.status !== 200) throw new Error(`Website returned HTTP ${response.status}.`);
+    const { parseHtmlMetadata } = await import("@/lib/theme-studio/pipeline/source-poller");
+    const item = parseHtmlMetadata(response.buffer.toString("utf8"), response.finalUrl);
+    if (!item) throw new Error("Website exposes no supported public metadata. Choose its RSS feed or use the connector.");
+    const url = canonicalScoutPostUrl(response.finalUrl)!;
+    return [{ id: scoutPostIdentity(url), url, text: `${item.title}\n${item.body}`.slice(0, 6000), ...(item.publishedAt ? { timestamp: item.publishedAt.toISOString() } : {}) }];
+  }
+}
+
+class ConnectorScoutProvider implements ScoutDataProvider {
+  readonly kind = "connector" as const;
+  constructor(private readonly items: ScoutPostItem[]) {}
+  async fetchRecentPosts(_request: ScoutCollectionRequest, context: ScoutCollectionContext) {
+    context.signal.throwIfAborted();
+    return this.items;
+  }
 }
 
 export class ApifyScoutProvider implements ScoutDataProvider {
@@ -100,18 +190,28 @@ export class ApifyScoutProvider implements ScoutDataProvider {
     const rows = bounded.value.slice(0, MAX_ITEMS);
     if (rows.some((row) => !row || typeof row !== "object" || Array.isArray(row)))
       throw new Error("Invalid Scout source items.");
-    return rows.map((row: Record<string, unknown>, index) => {
-      const url = String(row.url || row.postUrl || request.targetUrl);
-      if (!publicHttps(url)) throw new Error("Invalid Scout source item URL.");
+    const target = canonicalScoutPostUrl(request.targetUrl);
+    const items = rows.map((row: Record<string, unknown>) => {
+      const url = canonicalScoutPostUrl(row.url || row.postUrl);
+      if (!url || url === target) throw new Error("Invalid Scout source item URL: a stable post link is required.");
+      const rawId = row.id;
+      const id =
+        (typeof rawId === "string" || typeof rawId === "number") && String(rawId).trim() && String(rawId).length <= 120
+          ? String(rawId)
+          : scoutPostIdentity(url);
+      const views = observedMetric(row.videoViewCount ?? row.playCount ?? row.views);
+      const likes = observedMetric(row.likesCount ?? row.diggCount ?? row.likes);
+      const timestamp = observedTimestamp(row.timestamp ?? row.createTimeISO ?? row.createTime);
       return {
-        id: String(row.id || index).slice(0, 120),
+        id,
         url,
         text: String(row.caption || row.text || row.description || "").slice(0, 6000),
-        views: metric(row.videoViewCount ?? row.playCount ?? row.views),
-        likes: metric(row.likesCount ?? row.diggCount ?? row.likes),
-        timestamp: String(row.timestamp || row.createTimeISO || new Date().toISOString()).slice(0, 64),
+        ...(views !== undefined ? { views } : {}),
+        ...(likes !== undefined ? { likes } : {}),
+        ...(timestamp ? { timestamp } : {}),
       };
     });
+    return [...new Map(items.map((item) => [item.id, item])).values()];
   }
 }
 
@@ -182,8 +282,7 @@ export class CustomScoutProvider implements ScoutDataProvider {
     } catch {
       throw new Error("Custom Scout collection failed or timed out.");
     }
-    if (response.status < 200 || response.status >= 300)
-      throw customProviderFailure(response.status);
+    if (response.status < 200 || response.status >= 300) throw customProviderFailure(response.status);
     try {
       return envelopeSchema.parse(JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(response.buffer))).items;
     } catch {
@@ -221,8 +320,24 @@ async function customToken(tenantId: string) {
 }
 
 /** Credentials are resolved per workspace per call, never globally cached. */
-export async function getScoutDataProvider(tenantId: string): Promise<ScoutDataProvider> {
+export async function getScoutDataProvider(
+  tenantId: string,
+  source?: ScoutCollectionRequest
+): Promise<ScoutDataProvider> {
   if (!tenantId) throw new Error("Scout collection requires a workspace.");
+  if (source) validateScoutSource(source.targetUrl, source.platform);
+  if (source?.platform === "rss") return new RssScoutProvider();
+  if (source?.platform === "youtube") return new YoutubeScoutProvider();
+  if (source?.platform === "web") return new WebScoutProvider();
+  if (source) {
+    const { findConnectedScoutAccount, ConnectedAccountScoutProvider } = await import("./connected-provider");
+    if (await findConnectedScoutAccount(tenantId, source)) return new ConnectedAccountScoutProvider(tenantId);
+  }
+  if (source) {
+    const { findConnectorEvidence } = await import("./connector");
+    const saved = await findConnectorEvidence(tenantId, source);
+    if (saved && Array.isArray(saved.items)) return new ConnectorScoutProvider(saved.items as ScoutPostItem[]);
+  }
   const kind = scoutProviderKind();
   if (kind === "mock") {
     if (!mockAllowed()) throw new Error("Mock Scout collection is disabled in production.");
@@ -243,16 +358,16 @@ export async function getScoutDataProvider(tenantId: string): Promise<ScoutDataP
   } catch {
     if (mockAllowed()) return new MockScoutProvider();
     throw new Error(
-      "Apify integration not configured. Please add an active Apify API token in Integrations to enable live scout monitoring."
+      "No social acquisition source is connected. Send observations with the local UGC connector, configure a Custom Scout provider, or optionally connect Apify."
     );
   }
 }
 
-export async function getScoutProviderSetup(tenantId: string) {
+export async function getScoutProviderSetup(tenantId: string, source?: ScoutCollectionRequest) {
   let provider: ScoutDataProvider["kind"] | "unconfigured" = "unconfigured";
   try {
-    provider = scoutProviderKind();
-    const resolved = await getScoutDataProvider(tenantId);
+    provider = source?.platform === "rss" ? "rss" : scoutProviderKind();
+    const resolved = await getScoutDataProvider(tenantId, source);
     return { ready: true, provider: resolved.kind, customEnabled: provider === "custom" };
   } catch (error) {
     return {

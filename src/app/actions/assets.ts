@@ -10,7 +10,7 @@ import { queryAssets } from "@/lib/assets";
 import { cancelR2Cleanup, enqueueR2Cleanup, rearmR2Cleanup } from "@/lib/storage-cleanup";
 
 export async function checkR2Status() {
-  return { isConfigured: isR2Configured() };
+  return { isConfigured: isR2Configured(), publicDeliveryReady: /^https:\/\//i.test(process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL || "") };
 }
 
 export async function requestUploadUrl(filename: string, mimeType: string) {

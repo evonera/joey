@@ -80,6 +80,21 @@ const mockScouts = [
 ];
 
 describe("mobile responsive (390px) guards", () => {
+  it("labels Free Scouts as manual and does not report blocked monitoring as active", () => {
+    render(<ScoutsClient initialScouts={[{ ...mockScouts[0], platform: "youtube", targetUrl: "https://youtube.com/@GoogleDevelopers" }] as never} dailyMonitoringAllowed={false} />);
+    expect(screen.getByText(/0 active · 1 waiting for plan or source/)).toBeInTheDocument();
+    expect(screen.getByText("Manual checks")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "/settings?tab=billing");
+    expect(screen.getByRole("button", { name: /run scout scan right now/i })).toBeEnabled();
+  });
+
+  it("shows paid ready sources as active daily monitoring", () => {
+    render(<ScoutsClient initialScouts={[{ ...mockScouts[0], platform: "youtube", targetUrl: "https://youtube.com/@GoogleDevelopers" }] as never} dailyMonitoringAllowed />);
+    expect(screen.getByText(/1 active · 0 waiting for plan or source/)).toBeInTheDocument();
+    expect(screen.getByText("Daily automatic")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Choose a plan" })).not.toBeInTheDocument();
+  });
+
   it("ScoutsClient renders List|Details toggle with back button", () => {
     render(<ScoutsClient initialScouts={mockScouts as never} />);
     expect(screen.getByRole("button", { name: /back to scout list/i })).toBeDefined();

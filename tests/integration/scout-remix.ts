@@ -45,6 +45,25 @@ try {
   assert.equal(resultFromScoutEvaluation(await reserveScoutEvaluation(scout, "daily:another-agent")).alert?.samplePost?.url, alert.samplePost.url);
   assert.equal((await db.query.scoutEvaluationEvents.findMany({ where: eq(scoutEvaluationEvents.evaluationId, collected.id) })).length, 2);
 
+  // A new manual check bypasses completed poll evidence; retry and overlap stay deduplicated.
+  const [manualSource] = await db.insert(scouts).values({ tenantId, name: "Manual freshness", targetUrl: "https://example.com/manual/feed", platform: "rss", goalCondition: "views > 0", isActive: false }).returning();
+  const baselineReceipt = await reserveScoutEvaluation(manualSource, "poll:baseline");
+  const baselineLease = await claimScoutEvaluation(baselineReceipt);
+  await completeScoutEvaluation(baselineLease.receipt, manualSource, { triggered: false, itemsFound: 0 });
+  const currentManualSource = (await db.query.scouts.findFirst({ where: eq(scouts.id, manualSource.id) }))!;
+  const firstManual = await reserveScoutEvaluation(manualSource, "manual:first", { fresh: true });
+  assert.notEqual(firstManual.id, baselineReceipt.id, "manual click collects after a completed scheduled scan");
+  const overlapping = await reserveScoutEvaluation(manualSource, "manual:overlap", { fresh: true });
+  assert.equal(overlapping.id, firstManual.id, "overlapping clicks share one pending collection");
+  const manualLease = await claimScoutEvaluation(firstManual);
+  await completeScoutEvaluation(manualLease.receipt, currentManualSource, { triggered: false, itemsFound: 0 });
+  assert.equal((await reserveScoutEvaluation(manualSource, "manual:first", { fresh: true })).id, firstManual.id, "same request retry remains idempotent after completion");
+  const secondManual = await reserveScoutEvaluation(manualSource, "manual:second", { fresh: true });
+  assert.notEqual(secondManual.id, firstManual.id, "a later new click gets a new observation");
+  const secondManualLease = await claimScoutEvaluation(secondManual);
+  const latestManualSource = (await db.query.scouts.findFirst({ where: eq(scouts.id, manualSource.id) }))!;
+  await completeScoutEvaluation(secondManualLease.receipt, latestManualSource, { triggered: false, itemsFound: 0 });
+
   const interrupted = await reserveScoutEvaluation(scout, "poll:interrupted");
   const paidClaim = await claimScoutEvaluation(interrupted);
   const paidReceipt = await markScoutEvaluationPhase(paidClaim.receipt, "collecting");
@@ -66,7 +85,7 @@ try {
   await assert.rejects(markScoutEvaluationPhase(stored, "judging"), /lease expired/);
   await failScoutEvaluation(resumed.receipt, "Acceptance cleanup");
 
-  const capacitySources = await db.insert(scouts).values(Array.from({ length: 3 }, (_, i) => ({ tenantId, name: `Capacity ${i}`, targetUrl: `https://instagram.com/capacity${i}`, platform: "instagram", goalCondition: "New source", isActive: false }))).returning();
+  const capacitySources = await db.insert(scouts).values(Array.from({ length: 3 }, (_, i) => ({ tenantId, name: `Capacity ${i}`, targetUrl: `https://example.com/capacity${i}/feed`, platform: "rss", goalCondition: "New source", isActive: false }))).returning();
   const capacityReceipts = await Promise.all(capacitySources.map((source) => reserveScoutEvaluation(source, "capacity")));
   const slots = await Promise.all(capacityReceipts.map((receipt) => claimScoutEvaluation(receipt)));
   assert.equal(slots.filter((claim) => claim.claimed).length, 2, "the global DB limit is two across independent dispatchers");
@@ -117,8 +136,14 @@ try {
   await dispatchScoutsTick(async () => { throw new Error("fake handoff only; no provider calls"); });
   assert.equal((await db.query.scoutEvaluations.findFirst({ where: eq(scoutEvaluations.id, dispatchReceipt.id) }))?.status, "failed", "exhausted pending handoffs are surfaced instead of silently blocking future intervals");
   await db.update(scouts).set({ isActive: false }).where(eq(scouts.id, dispatchSource.id));
-  const dispatchSources = await db.insert(scouts).values(Array.from({ length: 26 }, (_, i) => ({ tenantId, name: `Dispatch page ${i}`, targetUrl: `https://instagram.com/dispatch${i}`, platform: "instagram", goalCondition: "New source", isActive: true }))).returning();
+  const dispatchSources = await db.insert(scouts).values(Array.from({ length: 26 }, (_, i) => ({ tenantId, name: `Dispatch page ${i}`, targetUrl: `https://example.com/dispatch${i}/feed`, platform: "rss", goalCondition: "New source", isActive: true }))).returning();
   const handedOff: string[][] = [];
+  const freePage = await dispatchScoutsTick(async (jobs) => { handedOff.push(jobs.map((job) => job.scoutId)); });
+  assert.equal(freePage.dispatchedCount, 0, "Free workspaces cannot start autonomous Scout polling");
+  assert.equal(handedOff.length, 0, "Free polling cannot hand work to the provider");
+  await db.update(tenants).set({ subscriptionPlan: "creator", subscriptionStatus: "active" }).where(eq(tenants.id, tenantId));
+  // The rejected Free scan advanced backoff; make the next interval due.
+  await db.update(scouts).set({ lastPolledAt: null }).where(eq(scouts.tenantId, tenantId));
   const firstPage = await dispatchScoutsTick(async (jobs) => { handedOff.push(jobs.map((job) => job.scoutId)); });
   assert.equal(firstPage.dispatchedCount, 25, "cron dispatch is bounded at25");
   const secondPage = await dispatchScoutsTick(async (jobs) => { handedOff.push(jobs.map((job) => job.scoutId)); });

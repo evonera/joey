@@ -10,11 +10,14 @@ import { getScoutDataProvider, getScoutProviderSetup } from "@/lib/scouts/data-p
 import { validateScoutSource } from "@/lib/scouts/source-validation";
 import { dailyScoutInterval } from "@/lib/scouts/validation";
 import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/service";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { checkUsageLimits } from "@/lib/billing";
 
 export interface CreateScoutInput {
   name: string;
   targetUrl: string;
-  platform?: "instagram" | "tiktok" | "twitter" | "youtube" | "web";
+  platform?: "instagram" | "tiktok" | "twitter" | "youtube" | "web" | "rss";
   goalCondition: string;
   pollIntervalMinutes?: number;
 }
@@ -29,9 +32,11 @@ function validateScoutInput(input: CreateScoutInput) {
   return { name: input.name.trim(), targetUrl, platform, goalCondition: input.goalCondition.trim(), pollIntervalMinutes: dailyScoutInterval(input.pollIntervalMinutes) };
 }
 
-export async function getScoutSetup() {
+export async function getScoutSetup(scoutId?: string) {
   const tenantId = await getActiveTenantId();
-  return getScoutProviderSetup(tenantId);
+  const source = scoutId ? await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) }) : undefined;
+  if (scoutId && !source) throw new Error("Scout not found.");
+  return getScoutProviderSetup(tenantId, source);
 }
 
 export async function getScouts() {
@@ -103,8 +108,9 @@ export async function updateScout(scoutId: string, input: CreateScoutInput) {
   return updated;
 }
 
-export async function runScoutNow(scoutId: string) {
+export async function runScoutNow(scoutId: string, attemptId: string = randomUUID()) {
   const tenantId = await requireRole(["owner", "admin"]);
+  if (!z.uuid().safeParse(attemptId).success) throw new Error("Invalid check attempt. Refresh and try again.");
   const scout = await db.query.scouts.findFirst({
     where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
   });
@@ -112,9 +118,9 @@ export async function runScoutNow(scoutId: string) {
 
   // A missing token is a setup problem, not a failed scan. Avoid creating a
   // misleading failed run that the user could never have completed.
-  await getScoutDataProvider(tenantId);
+  await getScoutDataProvider(tenantId, scout);
 
-  const result = await evaluateScout(scoutId, { tenantId, force: true });
+  const result = await evaluateScout(scoutId, { tenantId, force: true, fresh: true, eventKey: `manual:${attemptId}` });
   revalidatePath("/scouts");
   return result;
 }
@@ -125,7 +131,14 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
   // bypass the active-Scout deletion restriction.
   const tenantId = await requireRole(["owner", "admin"]);
   const { userId } = await getActiveTenantMembership();
-  if (isActive) await getScoutDataProvider(tenantId);
+  if (isActive) {
+    if (!(await checkUsageLimits(tenantId)).allowsAutonomousCadence) {
+      throw new Error("Daily Scout monitoring requires a paid workspace plan. You can still use Check Now.");
+    }
+    const scout = await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) });
+    if (!scout) throw new Error("Scout not found.");
+    await getScoutDataProvider(tenantId, scout);
+  }
   await db.transaction(async tx => {
   await guardAgencyScoutChange(tx, { tenantId, userId }, scoutId, isActive);
   await tx
