@@ -37,7 +37,7 @@ try {
   const [, overdueClaim] = await db.insert(drafts).values([
     { tenantId, status: "failed" },
     { tenantId, status: "publishing", createdAt: old, errorMessage: `claimed:${hourAgo.getTime()}` },
-    { tenantId, status: "publishing", createdAt: old, scheduledFor: tomorrow },
+    { tenantId, status: "publishing", createdAt: old, scheduledFor: tomorrow, errorMessage: `claimed:${hourAgo.getTime()}` },
     { tenantId: foreignId, status: "failed" },
     // An old draft entering publication now must not be called overdue.
     { tenantId, status: "publishing", createdAt: old, errorMessage: `claimed:${recent.getTime()}` },
