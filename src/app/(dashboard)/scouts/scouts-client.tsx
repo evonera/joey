@@ -57,7 +57,7 @@ export interface ScoutItem {
   updatedAt: Date;
 }
 
-export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) {
+export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: { initialScouts: ScoutItem[]; dailyMonitoringAllowed?: boolean }) {
   const router = useRouter();
   const [scoutsList, setScoutsList] = useState<ScoutItem[]>(initialScouts);
   const [selectedId, setSelectedId] = useState<string>(
@@ -256,7 +256,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const configuredActiveCount = scoutsList.filter((s) => s.isActive).length;
   const sourceReady = (scout: ScoutItem) => ["rss", "youtube", "web"].includes(scout.platform) || sourceSetups[scout.id]?.ready === true || setup?.ready === true;
   const selectedReady = selectedScout ? sourceReady(selectedScout) : false;
-  const waitingCount = scoutsList.filter(scout => scout.isActive && !sourceReady(scout)).length;
+  const waitingCount = scoutsList.filter(scout => scout.isActive && (!dailyMonitoringAllowed || !sourceReady(scout))).length;
   const hasUnconfiguredSocialSource = scoutsList.some(scout => !["rss", "youtube", "web"].includes(scout.platform) && !sourceReady(scout));
   const activeCount = configuredActiveCount - waitingCount;
   const pausedCount = scoutsList.length - configuredActiveCount;
@@ -373,6 +373,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
       </div>
 
       <p className="text-xs text-muted-foreground">RSS, YouTube and websites collect directly. Connected Instagram, X and TikTok accounts use your workspace&apos;s publishing provider. <Link href="/docs#local-connector" className="underline">Set up acquisition for other profiles</Link>.</p>
+      {!dailyMonitoringAllowed && <div role="status" className="rounded-xl border border-border/40 p-3 text-sm">Check Now is available on Free. Daily automatic monitoring requires a paid workspace plan. <Link href="/settings?tab=billing" className="underline">Choose a plan</Link>.</div>}
       {setup && !setup.ready && (scoutsList.length === 0 || hasUnconfiguredSocialSource) && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources needing acquisition: {setup.issue} RSS/Atom, YouTube and website sources remain available.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
 
       {scoutsList.length === 0 ? (
@@ -396,7 +397,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
           <div className={cn("lg:col-span-5 space-y-3", mobileView === "details" && "hidden lg:block")}>
             <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
               <span>
-                {activeCount} active · {waitingCount} waiting for configuration · {pausedCount} paused · {scoutsList.length} total
+                {activeCount} active · {waitingCount} waiting for plan or source · {pausedCount} paused · {scoutsList.length} total
               </span>
               {/* Mobile List|Details segmented toggle */}
               <span className="lg:hidden inline-flex rounded-lg border border-border/40 p-0.5 text-[11px] font-medium">
@@ -444,7 +445,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                         <span
                           className={cn(
                             "size-2 rounded-full",
-                            scout.isActive ? !sourceReady(scout) ? "bg-amber-500" : "bg-emerald-500" : "bg-muted-foreground/40"
+                            scout.isActive ? !dailyMonitoringAllowed || !sourceReady(scout) ? "bg-amber-500" : "bg-emerald-500" : "bg-muted-foreground/40"
                           )}
                         />
                         <span className="text-xs font-semibold text-foreground truncate max-w-[200px]">
@@ -452,7 +453,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                         </span>
                       </div>
                       <span className="text-[10px] font-mono text-muted-foreground">
-                        Daily automatic
+                        {dailyMonitoringAllowed ? "Daily automatic" : "Manual checks"}
                       </span>
                     </div>
 
@@ -543,8 +544,9 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
                       variant="ghost"
                       size="sm"
                       onClick={() => handleToggle(selectedScout.id, selectedScout.isActive)}
+                      disabled={!selectedScout.isActive && !dailyMonitoringAllowed}
                       className="h-11 w-11 p-0 sm:h-8 sm:w-auto sm:px-2 text-xs"
-                      title={selectedScout.isActive ? "Pause Scout" : "Resume Scout"}
+                      title={selectedScout.isActive ? "Pause Scout" : dailyMonitoringAllowed ? "Resume Scout" : "Choose a paid plan for daily monitoring"}
                       aria-label={selectedScout.isActive ? "Pause Scout" : "Resume Scout"}
                     >
                       {selectedScout.isActive ? (

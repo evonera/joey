@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   set: vi.fn(),
   where: vi.fn(),
+  limits: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -32,6 +33,7 @@ vi.mock("@/lib/agency/service", () => ({ detachAgencyResource: vi.fn(), guardAge
 vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: mocks.evaluateScout }));
 vi.mock("@/lib/scouts/data-provider", () => ({ getScoutDataProvider: mocks.resolveToken, getScoutProviderSetup: mocks.setup }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/billing", () => ({ checkUsageLimits: mocks.limits }));
 
 import { createScout, getScoutSetup, runScoutNow, toggleScout, updateScout } from "@/app/actions/scouts";
 
@@ -41,6 +43,7 @@ const input = { name: "Daily Scout", targetUrl: "https://instagram.com/example",
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.limits.mockResolvedValue({ allowsAutonomousCadence: true });
   mocks.getActiveTenantId.mockResolvedValue("tenant-1");
   mocks.getActiveTenantMembership.mockResolvedValue({ tenantId: "tenant-1", role: "member" });
   mocks.requireRole.mockResolvedValue("tenant-1");
@@ -54,6 +57,15 @@ beforeEach(() => {
 });
 
 describe("toggleScout authorization", () => {
+  it("blocks Free activation while retaining manual checks and pausing", async () => {
+    mocks.limits.mockResolvedValue({ allowsAutonomousCadence: false });
+    await expect(toggleScout("scout-1", true)).rejects.toThrow("paid workspace plan");
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.resolveToken).not.toHaveBeenCalled();
+    await runScoutNow("scout-1");
+    expect(mocks.evaluateScout).toHaveBeenCalledOnce();
+    await expect(toggleScout("scout-1", false)).resolves.toEqual({ success: true });
+  });
   it("uses the same provider resolver for setup and manual scans", async () => {
     expect(await getScoutSetup()).toEqual({ ready: true, provider: "custom", customEnabled: true });
     expect(mocks.setup).toHaveBeenCalledWith("tenant-1", undefined);

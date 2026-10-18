@@ -12,6 +12,7 @@ import { dailyScoutInterval } from "@/lib/scouts/validation";
 import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/service";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { checkUsageLimits } from "@/lib/billing";
 
 export interface CreateScoutInput {
   name: string;
@@ -131,6 +132,9 @@ export async function toggleScout(scoutId: string, isActive: boolean) {
   const tenantId = await requireRole(["owner", "admin"]);
   const { userId } = await getActiveTenantMembership();
   if (isActive) {
+    if (!(await checkUsageLimits(tenantId)).allowsAutonomousCadence) {
+      throw new Error("Daily Scout monitoring requires a paid workspace plan. You can still use Check Now.");
+    }
     const scout = await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) });
     if (!scout) throw new Error("Scout not found.");
     await getScoutDataProvider(tenantId, scout);
