@@ -372,7 +372,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">RSS, YouTube and websites collect directly. <Link href="/docs#local-connector" className="underline">Connect a local collector for social profiles</Link>.</p>
+      <p className="text-xs text-muted-foreground">RSS, YouTube and websites collect directly. Connected Instagram, X and TikTok accounts use your workspace&apos;s publishing provider. <Link href="/docs#local-connector" className="underline">Set up acquisition for other profiles</Link>.</p>
       {setup && !setup.ready && (scoutsList.length === 0 || hasUnconfiguredSocialSource) && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources needing acquisition: {setup.issue} RSS/Atom, YouTube and website sources remain available.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
 
       {scoutsList.length === 0 ? (

@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import type { Plan } from "@/lib/billingsdk-config";
 import type { BillingPlan } from "@/lib/dodo";
 import Link from "next/link";
-import { PLAN_CATALOG, planFeatures } from "@/lib/plans";
+import { PLAN_CATALOG, planFeatures, getPlanDefinition } from "@/lib/plans";
 
 const paidPlans: Array<Plan & { id: BillingPlan }> = (["creator", "pro", "agency"] as const).map((id) => ({
   id, title: PLAN_CATALOG[id].name,
@@ -56,17 +56,17 @@ export function BillingPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{summary.workspaceName} · {summary.isPro ? (summary.plan || "Paid") : "Free"}</CardTitle>
+        <CardTitle>{summary.workspaceName} · {summary.isPro ? getPlanDefinition(summary.plan).name : "Free"}</CardTitle>
         <CardDescription>Billing applies to this workspace. {summary.status && `Subscription status: ${summary.status.replaceAll("_", " ")}.`}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {summary.subscription && ["active", "past_due"].includes(summary.subscription.status) && <p className="text-sm">{summary.subscription.cancelAtPeriodEnd ? "Paid access ends" : "Next billing date"}: {new Date(summary.subscription.renewsAt).toLocaleDateString()}. {summary.subscription.cancelAtPeriodEnd && "Renewal is cancelled."}</p>}
         {summary.subscription?.scheduledPlan && summary.subscription.scheduledAt && <p className="text-sm">Plan changes to {summary.subscription.scheduledPlan} on {new Date(summary.subscription.scheduledAt).toLocaleDateString()}. Your current limits apply until then.</p>}
         {summary.providerUnavailable && <p role="status" className="text-sm text-muted-foreground">Couldn’t confirm the current renewal details. Open Manage billing for the latest status.</p>}
-        <div className="rounded-lg border p-4 space-y-2">
+        {!summary.isPro && <div className="rounded-lg border p-4 space-y-2">
             <h3 className="font-semibold">Free</h3>
             <p className="text-sm text-muted-foreground">1 connected account, 1 theme page, 3 content slots, 3 AI generations, manual runs and review before publishing.</p>
-        </div>
+        </div>}
         <PricingTableOne
           plans={selectablePlans}
           title="Choose a workspace plan"

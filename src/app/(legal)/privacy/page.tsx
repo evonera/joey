@@ -11,7 +11,7 @@ export default function PrivacyPage() {
     <div>
       <h1 className="text-3xl font-semibold tracking-tight mb-8">Privacy Policy</h1>
       <div className="space-y-6 text-white/70 leading-relaxed text-sm">
-        <p><strong>Last updated:</strong> October 11, 2026</p>
+        <p><strong>Last updated:</strong> October 19, 2026</p>
         <section>
           <h2 className="text-lg font-medium text-white mb-2">1. Information We Collect</h2>
           <p>When you sign up for Joey, we collect your name, email address, and account credentials. When you connect social media accounts, we store OAuth tokens necessary to authenticate with third-party platforms (Twitter/X, LinkedIn, Facebook). We also store drafts, uploaded images and videos, source links, branding, approvals and publishing history. For billing we store customer and subscription identifiers, plan and payment status, and checkout references. Payment details are collected by Dodo Payments; Joey does not store full card numbers or card security codes.</p>
@@ -19,6 +19,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-lg font-medium text-white mb-2">2. How We Use Your Information</h2>
           <p>We use your information solely to operate the Joey platform: authenticating your account, generating and storing social media drafts, posting approved content on your behalf, and improving the service. We do not sell, rent, or share your personal data with third parties for their own marketing purposes.</p>
+          <p>When you choose voice input, Joey records microphone audio until you press Stop or the 45-second limit is reached. The recording is sent through Joey to Google for transcription. Joey processes the audio in memory and does not save it as an uploaded asset. The transcript stays in your chat box for review until you submit it. Google processes the recording under its own terms and retention rules.</p>
         </section>
         <section>
           <h2 className="text-lg font-medium text-white mb-2">3. Data Security</h2>

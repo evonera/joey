@@ -206,7 +206,8 @@ export default function DocsPage() {
 
         <section id="local-connector" className="space-y-4">
           <h2 className="text-2xl font-bold">Local source connector</h2>
-          <p className="text-sm text-muted-foreground">RSS, YouTube and public website sources collect directly. Instagram and X profiles can use the installed local UGC collectors or a custom provider. Apify remains optional. Some sources require platform access configured on your own computer; unavailable sources report an access error rather than invented posts.</p>
+          <p className="text-sm text-muted-foreground">RSS, YouTube and public website sources collect directly. Scouts for Instagram, X and TikTok profiles connected to your workspace use its Zernio account to refresh recent posts. Other profiles need the installed local UGC collectors or a custom provider; Apify remains optional. Unavailable sources report an access error rather than invented posts.</p>
+          <p className="text-sm text-muted-foreground">Check Now starts a new collection after the previous check finishes. Retrying the same request shares its result. Connected-account refreshes have a short provider debounce window, and detailed engagement insights can arrive later than the posts themselves. Missing metrics remain unknown. Automatic customer scans run daily and require a paid plan.</p>
           <p className="text-sm">Create a workspace API token with read and write scopes, then <a href="/connectors/ugc-scout-connector.py" download className="underline">download the connector</a>. Use your UGC environment’s Python so gallery-dl and yt-dlp are installed. Login cookies stay local.</p>
           <Code>{`export JOEY_API_TOKEN="your-workspace-token"
 export JOEY_URL="https://your-joey-site.example"
@@ -215,6 +216,12 @@ export JOEY_URL="https://your-joey-site.example"
 # Offer an individual post's media to an existing draft package:
 /path/to/ugc/.venv/bin/python ugc-scout-connector.py --ugc-root /path/to/ugc --post https://www.instagram.com/p/POST_ID/ --package-id PACKAGE_ID --rights owned`}</Code>
           <p className="text-sm text-muted-foreground">Use --dry-run to collect without submitting. The connector must remain running for fresh profile monitoring. The service accepts source evidence, not approvals; review a finished export in Joey before publishing. Missing dates and engagement counts remain unknown.</p>
+        </section>
+
+        <section id="voice-input" className="space-y-4">
+          <h2 className="text-2xl font-bold">Voice input</h2>
+          <p className="text-sm text-muted-foreground">In Chat, choose Voice input and allow microphone access. Speak, then press Stop; recordings also stop after 45 seconds. Joey uses Google to transcribe the recording and places the words in your composer for review. Press Send only when you are ready. A Google AI key or available platform trial access is required; your workspace usage limits apply.</p>
+          <p className="text-sm text-muted-foreground">Joey does not store recordings as assets. See the <Link href="/privacy" className="underline">privacy policy</Link> for processing details.</p>
         </section>
 
         <aside className="p-8 rounded-2xl bg-card border border-border text-center shadow-xs">
