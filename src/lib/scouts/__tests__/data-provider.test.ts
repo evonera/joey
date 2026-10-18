@@ -71,12 +71,19 @@ afterEach(() => {
 describe("Scout provider selection and isolation", () => {
   it("uses saved connector evidence only for the requested source without an Apify credential", async () => {
     mocks.apify.mockRejectedValue(new Error("missing"));
-    mocks.connector.mockResolvedValue({ items: [item] });
+    const observedAt = "2026-10-01T00:00:00.000Z";
+    mocks.connector.mockResolvedValue({ items: [{ ...item, observedAt }], createdAt: new Date(observedAt) });
     const provider = await getScoutDataProvider("tenant-a", request);
     expect(provider.kind).toBe("connector");
-    expect(await provider.fetchRecentPosts(request, context())).toEqual([item]);
+    expect(await provider.fetchRecentPosts(request, context())).toEqual([{ ...item, observedAt }]);
     expect(mocks.connector).toHaveBeenCalledWith("tenant-a", request);
     expect(mocks.apify).not.toHaveBeenCalled();
+  });
+  it("dates legacy connector evidence from its saved receipt, never from a repeated check", async () => {
+    const createdAt = new Date("2026-10-01T01:02:03.000Z");
+    mocks.connector.mockResolvedValue({ items: [item], createdAt });
+    const provider = await getScoutDataProvider("tenant-a", request);
+    expect(await provider.fetchRecentPosts(request, context())).toEqual([{ ...item, observedAt: createdAt.toISOString() }]);
   });
   it("uses public YouTube feed evidence with stable IDs and no guessed engagement", async () => {
     mocks.outbound.mockResolvedValue({ status: 200, headers: {}, finalUrl: "https://www.youtube.com/feeds/videos.xml", buffer: Buffer.from('<feed><entry><title>Actual video</title><link href="https://www.youtube.com/watch?v=abcdefghijk"/><published>2026-10-01T12:00:00Z</published></entry></feed>') });

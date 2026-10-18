@@ -9,6 +9,14 @@ export const dynamic = "force-dynamic";
 export default async function OperationsPage() {
   const health = await getTenantOperationalHealth();
   const signals = [
+    { label: "Failed Scout evaluations", value: health.scoutFailures24h, description: "Last 24 hours; inspect Scout run history", href: "/scouts" },
+    { label: "Uncertain Scout outcomes", value: health.scoutUncertain, description: "Review interrupted collection before retrying", href: "/scouts" },
+    { label: "Overdue active Scouts", value: health.overdueScouts, description: "Poll interval plus 15 minutes without a check", href: "/scouts" },
+    { label: "Failed media renders", value: health.renderFailures24h, description: "Last 24 hours; inspect draft media errors", href: "/drafts?tab=failed" },
+    { label: "Stalled media renders", value: health.stalledRenders, description: "Queued or rendering without progress for 30 minutes", href: "/drafts?tab=all" },
+    { label: "Failed content packages or posts", value: health.publicationFailures, description: "Includes preparation and publication failures", href: "/drafts?tab=failed" },
+    { label: "Unconfirmed overdue publications", value: health.pendingPublications, description: "Publishing for 30 minutes past the expected publication time", href: "/drafts?tab=publishing" },
+    { label: "Failed agency runs", value: health.agencyFailures24h, description: "Last 24 hours; inspect agent history", href: "/agents" },
     { label: "Failed flow runs", value: health.flowFailures24h, description: "Last 24 hours", href: "/flows" },
     { label: "Stale running flows", value: health.staleFlowRuns, description: "No heartbeat for 30 minutes", href: "/flows" },
     { label: "Failed webhook deliveries", value: health.webhookFailures24h, description: "Last 24 hours", href: "/flows" },
@@ -25,11 +33,11 @@ export default async function OperationsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Operations</h1>
-          <p className="text-sm text-muted-foreground">Tenant-scoped delivery, execution, and cleanup health.</p>
+          <p className="text-sm text-muted-foreground">Workspace monitoring, creation, publication, delivery, and cleanup signals.</p>
         </div>
         <Badge variant={hasIssues ? "destructive" : "secondary"} className="gap-1">
           {hasIssues ? <AlertTriangle className="size-3" /> : <CheckCircle2 className="size-3" />}
-          {hasIssues ? "Attention required" : "Healthy"}
+          {hasIssues ? "Attention required" : "No issues in monitored signals"}
         </Badge>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -52,7 +60,7 @@ export default async function OperationsPage() {
           </Link>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">Updated {new Date(health.generatedAt).toLocaleString()}</p>
+      <p className="text-xs text-muted-foreground">These database signals do not verify upstream provider availability or confirm that every scheduled worker is running. Updated {new Date(health.generatedAt).toLocaleString()}</p>
     </div>
   );
 }

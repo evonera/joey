@@ -1,6 +1,6 @@
 import { and, count, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { flowRuns, flowWebhookDeliveries, r2CleanupTasks, telegramOutbox } from "@/lib/db/schema";
+import { flowRuns, flowWebhookDeliveries, r2CleanupTasks, telegramOutbox, scouts, scoutEvaluations, mediaRenderJobs, drafts, contentPackages, customAgentRuns } from "@/lib/db/schema";
 
 export type OperationalHealth = {
   generatedAt: string;
@@ -12,6 +12,14 @@ export type OperationalHealth = {
   cleanupRepeatedFailures: number;
   telegramPending: number;
   telegramUncertain: number;
+  scoutFailures24h: number;
+  scoutUncertain: number;
+  overdueScouts: number;
+  renderFailures24h: number;
+  stalledRenders: number;
+  publicationFailures: number;
+  pendingPublications: number;
+  agencyFailures24h: number;
 };
 
 export async function getOperationalHealth(tenantId: string, now = new Date()): Promise<OperationalHealth> {
@@ -30,6 +38,16 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
     cleanupRepeatedFailures,
     telegramPending,
     telegramUncertain,
+    scoutFailures24h,
+    scoutUncertain,
+    overdueScouts,
+    renderFailures24h,
+    stalledRenders,
+    draftFailures,
+    packageFailures,
+    pendingDrafts,
+    pendingPackages,
+    agencyFailures24h,
   ] = await Promise.all([
     db.select({ value: count() }).from(flowRuns).where(and(eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "failed"), gte(flowRuns.updatedAt, dayAgo))),
     db.select({ value: count() }).from(flowRuns).where(and(eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running"), lt(flowRuns.updatedAt, staleRunCutoff))),
@@ -60,6 +78,19 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
       ),
     ),
     db.select({ value: count() }).from(telegramOutbox).where(and(eq(telegramOutbox.tenantId, tenantId), eq(telegramOutbox.status, "uncertain"))),
+    db.select({ value: count() }).from(scoutEvaluations).where(and(eq(scoutEvaluations.tenantId, tenantId), eq(scoutEvaluations.status, "failed"), gte(scoutEvaluations.updatedAt, dayAgo))),
+    db.select({ value: count() }).from(scoutEvaluations).where(and(eq(scoutEvaluations.tenantId, tenantId), eq(scoutEvaluations.status, "uncertain"))),
+    db.select({ value: count() }).from(scouts).where(and(eq(scouts.tenantId, tenantId), eq(scouts.isActive, true),
+      sql`COALESCE(${scouts.lastPolledAt}, ${scouts.createdAt}) + (${scouts.pollIntervalMinutes} + 15) * interval '1 minute' < ${now.toISOString()}::timestamp`)),
+    db.select({ value: count() }).from(mediaRenderJobs).where(and(eq(mediaRenderJobs.tenantId, tenantId), eq(mediaRenderJobs.status, "failed"), gte(mediaRenderJobs.updatedAt, dayAgo))),
+    db.select({ value: count() }).from(mediaRenderJobs).where(and(eq(mediaRenderJobs.tenantId, tenantId), sql`${mediaRenderJobs.status} IN ('queued', 'rendering')`, lt(mediaRenderJobs.updatedAt, staleRunCutoff))),
+    db.select({ value: count() }).from(drafts).where(and(eq(drafts.tenantId, tenantId), eq(drafts.status, "failed"))),
+    db.select({ value: count() }).from(contentPackages).where(and(eq(contentPackages.tenantId, tenantId), eq(contentPackages.status, "failed"))),
+    // A provider-accepted/scheduled post remains pending until confirmed published.
+    // Future scheduled work is expected; only overdue or immediate work needs review.
+    db.select({ value: count() }).from(drafts).where(and(eq(drafts.tenantId, tenantId), eq(drafts.status, "publishing"), sql`COALESCE(${drafts.scheduledFor}, ${drafts.createdAt}) < ${staleRunCutoff.toISOString()}::timestamp`)),
+    db.select({ value: count() }).from(contentPackages).where(and(eq(contentPackages.tenantId, tenantId), eq(contentPackages.status, "publishing"), sql`COALESCE(${contentPackages.scheduledFor}, ${contentPackages.updatedAt}) < ${staleRunCutoff.toISOString()}::timestamp`)),
+    db.select({ value: count() }).from(customAgentRuns).where(and(eq(customAgentRuns.tenantId, tenantId), eq(customAgentRuns.status, "failed"), gte(customAgentRuns.updatedAt, dayAgo))),
   ]);
 
   return {
@@ -72,5 +103,13 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
     cleanupRepeatedFailures: Number(cleanupRepeatedFailures[0]?.value ?? 0),
     telegramPending: Number(telegramPending[0]?.value ?? 0),
     telegramUncertain: Number(telegramUncertain[0]?.value ?? 0),
+    scoutFailures24h: Number(scoutFailures24h[0]?.value ?? 0),
+    scoutUncertain: Number(scoutUncertain[0]?.value ?? 0),
+    overdueScouts: Number(overdueScouts[0]?.value ?? 0),
+    renderFailures24h: Number(renderFailures24h[0]?.value ?? 0),
+    stalledRenders: Number(stalledRenders[0]?.value ?? 0),
+    publicationFailures: Number(draftFailures[0]?.value ?? 0) + Number(packageFailures[0]?.value ?? 0),
+    pendingPublications: Number(pendingDrafts[0]?.value ?? 0) + Number(pendingPackages[0]?.value ?? 0),
+    agencyFailures24h: Number(agencyFailures24h[0]?.value ?? 0),
   };
 }

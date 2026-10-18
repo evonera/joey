@@ -47,6 +47,20 @@ describe("Durable Scout evaluator", () => {
     expect(mocks.phase.mock.calls.map((call) => call[1])).toEqual(["collecting", "collected", "judging"]);
     expect(mocks.phase).toHaveBeenCalledWith(expect.anything(), "collected", [expect.objectContaining({ ...post, observedAt: expect.any(String) })]);
   });
+  it("preserves connector acquisition time when a fresh check evaluates saved evidence", async () => {
+    const observedAt = "2026-10-01T00:00:00.000Z";
+    mocks.provider.mockResolvedValue({ kind: "connector", fetchRecentPosts: mocks.fetch });
+    mocks.fetch.mockResolvedValue([{ ...post, observedAt }]);
+    await evaluateScout(scout.id, { fresh: true });
+    expect(mocks.phase).toHaveBeenCalledWith(expect.anything(), "collected", [{ ...post, observedAt }]);
+    expect(mocks.llm.mock.calls[0][0].messages[1].content).toContain(observedAt);
+  });
+  it("refuses to assign a fresh time to undated connector evidence", async () => {
+    mocks.provider.mockResolvedValue({ kind: "connector", fetchRecentPosts: mocks.fetch });
+    mocks.fetch.mockResolvedValue([post]);
+    expect(await evaluateScout(scout.id, { fresh: true })).toMatchObject({ error: expect.stringContaining("acquisition time") });
+    expect(mocks.llm).not.toHaveBeenCalled();
+  });
   it("reuses completed immutable evidence for another agent with no paid work", async () => {
     const result = { triggered: true, alert: { title: "Saved evidence" }, itemsFound: 1 };
     mocks.reserve.mockResolvedValue({ ...receipt, status: "completed", result });

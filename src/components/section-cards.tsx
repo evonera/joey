@@ -16,9 +16,9 @@ export function SectionCards({
   summary?: AnalyticsSnapshot["summary"]
   days?: number
 }) {
-  const impressions = summary?.impressions ?? 0
-  const engagementRate = summary?.engagementRate ?? 0
-  const totalInteractions = (summary?.likes ?? 0) + (summary?.comments ?? 0) + (summary?.shares ?? 0)
+  const impressions = summary?.impressions ?? null
+  const engagementRate = summary?.engagementRate ?? null
+  const totalInteractions = summary && summary.likes !== null && summary.comments !== null && summary.shares !== null ? summary.likes + summary.comments + summary.shares : null
   const totalPosts = summary?.totalPosts ?? 0
 
   return (
@@ -27,7 +27,7 @@ export function SectionCards({
         <CardHeader>
           <CardDescription>Total Impressions</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {impressions.toLocaleString()}
+            {impressions?.toLocaleString() ?? "—"}
           </CardTitle>
           <CardAction>
             <Badge variant="outline" className="text-muted-foreground border-border text-[11px] font-normal">
@@ -40,7 +40,7 @@ export function SectionCards({
             Reach across channels
           </div>
           <div className="text-muted-foreground text-xs">
-            Aggregated cross-platform impressions
+            Complete provider totals; — means unavailable
           </div>
         </CardFooter>
       </Card>
@@ -49,7 +49,7 @@ export function SectionCards({
         <CardHeader>
           <CardDescription>Engagement Rate</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {engagementRate.toFixed(2)}%
+            {engagementRate === null ? "—" : `${engagementRate.toFixed(2)}%`}
           </CardTitle>
           <CardAction>
             <Badge variant="outline" className="text-muted-foreground border-border text-[11px] font-normal">
@@ -59,10 +59,10 @@ export function SectionCards({
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
-            Interactions vs impressions
+            Interactions per exposure
           </div>
           <div className="text-muted-foreground text-xs">
-            Likes, comments &amp; shares ratio
+            Likes, comments &amp; shares ÷ impressions (views when unavailable)
           </div>
         </CardFooter>
       </Card>
@@ -71,7 +71,7 @@ export function SectionCards({
         <CardHeader>
           <CardDescription>Total Engagements</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {totalInteractions.toLocaleString()}
+            {totalInteractions?.toLocaleString() ?? "—"}
           </CardTitle>
           <CardAction>
             <Badge
