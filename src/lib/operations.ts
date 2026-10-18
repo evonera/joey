@@ -1,6 +1,6 @@
 import { and, count, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { flowRuns, flowWebhookDeliveries, r2CleanupTasks, telegramOutbox, scouts, scoutEvaluations, mediaRenderJobs, drafts, contentPackages, customAgentRuns } from "@/lib/db/schema";
+import { flowRuns, flowWebhookDeliveries, r2CleanupTasks, telegramOutbox, scouts, scoutEvaluations, mediaRenderJobs, drafts, posts, contentPackages, customAgentRuns } from "@/lib/db/schema";
 
 export type OperationalHealth = {
   generatedAt: string;
@@ -28,6 +28,16 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
   const staleDeliveryCutoff = new Date(now.getTime() - 10 * 60_000);
   const staleWebhookRunCutoff = new Date(now.getTime() - 2 * 60_000);
   const oldOutboxCutoff = new Date(now.getTime() - 5 * 60_000);
+  // Draft creation can precede approval by weeks. Only a valid claim or a
+  // tenant-owned provider submission establishes when publishing started.
+  // Missing legacy timing remains unknown rather than an invented overdue age.
+  const draftPublicationStartedAt = sql`GREATEST(
+    CASE WHEN ${drafts.errorMessage} ~ '^claimed:[0-9]{13}$'
+      THEN to_timestamp(substring(${drafts.errorMessage} FROM 9)::double precision / 1000) AT TIME ZONE 'UTC'
+      ELSE NULL END,
+    (SELECT max(${posts.publishedAt}) FROM ${posts}
+      WHERE ${posts.tenantId} = ${drafts.tenantId} AND ${posts.draftId} = ${drafts.id})
+  )`;
 
   const [
     flowFailures24h,
@@ -88,7 +98,7 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
     db.select({ value: count() }).from(contentPackages).where(and(eq(contentPackages.tenantId, tenantId), eq(contentPackages.status, "failed"))),
     // A provider-accepted/scheduled post remains pending until confirmed published.
     // Future scheduled work is expected; only overdue or immediate work needs review.
-    db.select({ value: count() }).from(drafts).where(and(eq(drafts.tenantId, tenantId), eq(drafts.status, "publishing"), sql`COALESCE(${drafts.scheduledFor}, ${drafts.createdAt}) < ${staleRunCutoff.toISOString()}::timestamp`)),
+    db.select({ value: count() }).from(drafts).where(and(eq(drafts.tenantId, tenantId), eq(drafts.status, "publishing"), sql`${draftPublicationStartedAt} < ${staleRunCutoff.toISOString()}::timestamp`, sql`(${drafts.scheduledFor} IS NULL OR ${drafts.scheduledFor} < ${staleRunCutoff.toISOString()}::timestamp)`)),
     db.select({ value: count() }).from(contentPackages).where(and(eq(contentPackages.tenantId, tenantId), eq(contentPackages.status, "publishing"), sql`COALESCE(${contentPackages.scheduledFor}, ${contentPackages.updatedAt}) < ${staleRunCutoff.toISOString()}::timestamp`)),
     db.select({ value: count() }).from(customAgentRuns).where(and(eq(customAgentRuns.tenantId, tenantId), eq(customAgentRuns.status, "failed"), gte(customAgentRuns.updatedAt, dayAgo))),
   ]);

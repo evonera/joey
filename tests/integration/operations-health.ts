@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { requireDisposableDatabase } from "./require-disposable-database";
 await requireDisposableDatabase();
 const { db } = await import("../../src/lib/db");
-const { tenants, scouts, scoutEvaluations, mediaRenderJobs, drafts, themePages, themeContentFormats, contentPackages } = await import("../../src/lib/db/schema");
+const { tenants, scouts, scoutEvaluations, mediaRenderJobs, drafts, posts, themePages, themeContentFormats, contentPackages } = await import("../../src/lib/db/schema");
 const { getOperationalHealth } = await import("../../src/lib/operations");
 const { scoutConfigurationKey } = await import("../../src/lib/scouts/evaluation-receipts");
 const { eq, inArray } = await import("drizzle-orm");
@@ -34,11 +34,27 @@ try {
     { tenantId, inputHash: "normal-queued", spec: {}, status: "queued", updatedAt: recent },
     { tenantId: foreignId, inputHash: "foreign-failure", spec: {}, status: "failed", updatedAt: recent },
   ]);
-  await db.insert(drafts).values([
+  const [, overdueClaim] = await db.insert(drafts).values([
     { tenantId, status: "failed" },
-    { tenantId, status: "publishing", createdAt: hourAgo },
+    { tenantId, status: "publishing", createdAt: old, errorMessage: `claimed:${hourAgo.getTime()}` },
     { tenantId, status: "publishing", createdAt: old, scheduledFor: tomorrow },
     { tenantId: foreignId, status: "failed" },
+    // An old draft entering publication now must not be called overdue.
+    { tenantId, status: "publishing", createdAt: old, errorMessage: `claimed:${recent.getTime()}` },
+    // Legacy timing is unknown; do not invent an age from draft creation.
+    { tenantId, status: "publishing", createdAt: old, errorMessage: "claimed:invalid" },
+  ]).returning();
+  const [recentProvider, overdueProvider, recentRetry] = await db.insert(drafts).values([
+    { tenantId, status: "publishing", createdAt: old },
+    { tenantId, status: "publishing", createdAt: old },
+    { tenantId, status: "publishing", createdAt: old, errorMessage: `claimed:${recent.getTime()}` },
+  ]).returning();
+  await db.insert(posts).values([
+    { tenantId, draftId: recentProvider.id, content: "Recent provider submission", status: "publishing", publishedAt: recent },
+    { tenantId, draftId: overdueProvider.id, content: "Overdue provider submission", status: "publishing", publishedAt: hourAgo },
+    { tenantId, draftId: recentRetry.id, content: "Old submission with a new claim", status: "failed", publishedAt: old },
+    // Even malformed cross-workspace linkage must not reset the claim's age.
+    { tenantId: foreignId, draftId: overdueClaim.id, content: "Foreign timestamp", status: "publishing", publishedAt: recent },
   ]);
   const [page] = await db.insert(themePages).values({ tenantId, name: "Fixture page" }).returning();
   const [format] = await db.insert(themeContentFormats).values({ tenantId, slug: "fixture", name: "Fixture format", platform: "instagram", mediaType: "image", renderer: "puppeteer" }).returning();
@@ -54,7 +70,7 @@ try {
   assert.equal(health.renderFailures24h, 1, "old/foreign renders excluded");
   assert.equal(health.stalledRenders, 1, "recent queue admission is not a stalled render");
   assert.equal(health.publicationFailures, 2, "include failed Studio packages and chat drafts, exclude foreign workspace");
-  assert.equal(health.pendingPublications, 2, "overdue publication visible, future scheduled publication excluded");
+  assert.equal(health.pendingPublications, 3, "only old claims/provider submissions and overdue packages count; fresh claims/submissions, unknown ages and future schedules excluded");
   const clean = await getOperationalHealth(crypto.randomUUID(), now);
   for (const [key, value] of Object.entries(clean)) if (key !== "generatedAt") assert.equal(value, 0, `${key} leaked another workspace`);
   console.log("PASS: PostgreSQL operational health predicates, Scout intervals, overdue publications, unresolved uncertainty and workspace isolation.");

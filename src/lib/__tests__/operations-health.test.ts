@@ -19,6 +19,10 @@ describe("operational health coverage", () => {
     expect(queries[10].sql).toContain('"poll_interval_minutes" + 15');
     expect(queries[10].sql).toContain('COALESCE');
     expect(queries[15].sql).toContain('"scheduled_for"');
+    expect(queries[15].sql).toContain('GREATEST');
+    expect(queries[15].sql).toContain('^claimed:[0-9]{13}$');
+    expect(queries[15].sql).toContain('"posts"."tenant_id" = "drafts"."tenant_id"');
+    expect(queries[15].sql).not.toContain('"drafts"."created_at"');
     expect(queries[16].sql).toContain('"scheduled_for"');
   });
   it("does not turn a failed health query into a clean report", async () => {
