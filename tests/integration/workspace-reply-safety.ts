@@ -63,6 +63,8 @@ try {
   assert.equal(await approveReviewedReply(id, edited.id, edited.content), undefined);
   assert.equal(await approveReviewedReply("foreign-tenant", edited.id, "Human edit"), undefined);
   assert(await approveReviewedReply(id, edited.id, "Human edit"));
+  const { verifyReplyDeliverySafety } = await import("./reply-delivery");
+  await verifyReplyDeliverySafety();
   console.log("PASS: authenticated workspace deletion retains billing records; reply approval and AI edits cannot authorize or overwrite unseen content.");
 } finally {
   await db.delete(tenants).where(eq(tenants.id, id));

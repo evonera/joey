@@ -91,7 +91,8 @@ export function ReplyCard({
     return () => onEditingChange?.(replyDraftId, false);
   }, [hasHumanEdits, isEditing, item.replyDraft?.id, onEditingChange]);
 
-  const pendingReply = item.replyDraft && ["pending_review", "failed"].includes(item.replyDraft.status);
+  const deliveryUncertain = item.replyDraft?.status === "failed" || item.replyDraft?.deliveryUncertain === true;
+  const pendingReply = item.replyDraft && !deliveryUncertain && ["pending_review", "failed"].includes(item.replyDraft.status);
   const sendFailed = item.replyDraft?.status === "failed";
   const hasSentReply = item.replyDraft?.status === "sent";
   const noReplyYet = !item.replyDraft;
@@ -225,6 +226,13 @@ export function ReplyCard({
         </div>
       </div>
 
+      {deliveryUncertain && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
+          <p className="font-medium">Check reply delivery</p>
+          <p>The provider may have received this reply. Check your connected account and contact support before changing or resending it.</p>
+          <p className="mt-2 whitespace-pre-wrap">{item.replyDraft.content}</p>
+        </div>
+      )}
       {/* AI Draft reply */}
       {pendingReply && (
         <>

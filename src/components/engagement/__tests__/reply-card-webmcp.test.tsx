@@ -41,6 +41,13 @@ const item = {
 };
 
 describe("ReplyCard WebMCP staging", () => {
+  it("keeps uncertain public replies immutable and asks for provider reconciliation", () => {
+    render(<ReplyCard item={{ ...item, replyDraft: { ...item.replyDraft, status: "failed" } }} onActionComplete={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("The provider may have received this reply");
+    expect(screen.getByText("Original reply")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry|Approve|Edit|Send/ })).not.toBeInTheDocument();
+    expect(replyActions.send).not.toHaveBeenCalled();
+  });
   it("approves only the visible content and never sends after a stale approval", async () => {
     replyActions.approve.mockResolvedValueOnce({ error: "Reply changed; review again" });
     render(<ReplyCard item={item} onActionComplete={vi.fn()} />);
