@@ -8,125 +8,95 @@ import { toast } from "sonner";
 
 export type SpeechInputProps = {
   onTranscription?: (text: string) => void;
-  onInterimResult?: (text: string) => void;
-  isListening?: boolean;
   onListeningChange?: (listening: boolean) => void;
+  disabled?: boolean;
   className?: string;
 };
 
-export function SpeechInput({
-  onTranscription,
-  onInterimResult,
-  isListening: controlledListening,
-  onListeningChange,
-  className,
-}: SpeechInputProps) {
-  const [internalListening, setInternalListening] = React.useState(false);
-  const isListening = controlledListening ?? internalListening;
-  const recognitionRef = React.useRef<any>(null);
+type RecordingState = "idle" | "requesting" | "recording" | "transcribing";
 
-  const startListening = () => {
-    if (typeof window === "undefined") return;
+export function SpeechInput({ onTranscription, onListeningChange, disabled, className }: SpeechInputProps) {
+  const [state, setState] = React.useState<RecordingState>("idle");
+  const recorder = React.useRef<MediaRecorder | null>(null);
+  const stream = React.useRef<MediaStream | null>(null);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const request = React.useRef<AbortController | null>(null);
+  const mounted = React.useRef(false);
+  const callbacks = React.useRef({ onTranscription, onListeningChange });
+  React.useEffect(() => { callbacks.current = { onTranscription, onListeningChange }; }, [onTranscription, onListeningChange]);
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (timer.current) clearTimeout(timer.current);
+      request.current?.abort();
+      if (recorder.current?.state === "recording") recorder.current.stop();
+      stream.current?.getTracks().forEach(track => track.stop());
+    };
+  }, []);
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      toast.error("Speech recognition is not supported in this browser.");
-      return;
+  const stop = () => { if (recorder.current?.state === "recording") recorder.current.stop(); };
+  const start = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      toast.error("Voice recording is unavailable in this browser. Please type your message."); return;
     }
-
+    setState("requesting");
     try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = "en-US";
-
-      recognition.onresult = (event: any) => {
-        let interim = "";
-        let final = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
-          }
-        }
-        if (final && onTranscription) {
-          stopListening();
-          onTranscription(final);
-        }
-        if (interim && onInterimResult) {
-          onInterimResult(interim);
-        }
+      const media = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mounted.current) { media.getTracks().forEach(track => track.stop()); return; }
+      stream.current = media;
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(type => MediaRecorder.isTypeSupported(type));
+      if (!mimeType) throw new Error("No supported recording format. Try another browser.");
+      const active = new MediaRecorder(media, { mimeType, audioBitsPerSecond: 64_000 });
+      recorder.current = active;
+      const chunks: Blob[] = []; let size = 0, failed = false;
+      active.ondataavailable = event => {
+        if (event.data.size) { chunks.push(event.data); size += event.data.size; }
+        if (size > 2 * 1024 * 1024) { failed = true; stop(); toast.error("Recording is too large. Try a shorter message."); }
       };
-
-      recognition.onerror = () => {
-        stopListening();
+      active.onerror = () => { failed = true; stop(); toast.error("Microphone recording failed. Please try again."); };
+      active.onstop = async () => {
+        if (timer.current) clearTimeout(timer.current);
+        media.getTracks().forEach(track => track.stop());
+        recorder.current = null; stream.current = null;
+        if (!mounted.current) return;
+        callbacks.current.onListeningChange?.(false);
+        if (failed) { setState("idle"); return; }
+        setState("transcribing");
+        const controller = new AbortController(); request.current = controller;
+        const timeout = setTimeout(() => controller.abort(), 40_000);
+        try {
+          const audio = new Blob(chunks, { type: active.mimeType });
+          if (audio.size < 100) throw new Error("No audio recorded. Speak before pressing Stop.");
+          const response = await fetch("/api/voice/transcribe", { method: "POST", headers: { "Content-Type": active.mimeType }, body: audio, signal: controller.signal });
+          const result = await response.json();
+          if (!response.ok || typeof result.text !== "string" || !result.text.trim()) throw new Error(result.error || "No clear speech detected. Try again.");
+          if (mounted.current) callbacks.current.onTranscription?.(result.text);
+        } catch (error) {
+          if (mounted.current) toast.error(error instanceof Error && error.name !== "AbortError" ? error.message : "Transcription timed out. Please try again.");
+        } finally { clearTimeout(timeout); request.current = null; if (mounted.current) setState("idle"); }
       };
-
-      recognition.onend = () => {
-        setInternalListening(false);
-        onListeningChange?.(false);
-      };
-
-      recognition.start();
-      recognitionRef.current = recognition;
-      setInternalListening(true);
-      onListeningChange?.(true);
-    } catch {
-      setInternalListening(false);
-      onListeningChange?.(false);
+      media.getAudioTracks().forEach(track => { track.onended = stop; });
+      active.start(1000);
+      setState("recording"); callbacks.current.onListeningChange?.(true);
+      timer.current = setTimeout(stop, 45_000);
+    } catch (error) {
+      stream.current?.getTracks().forEach(track => track.stop()); stream.current = null;
+      if (mounted.current) {
+        setState("idle");
+        toast.error(error instanceof DOMException && error.name === "NotAllowedError" ? "Allow microphone access in your browser, then try again." : error instanceof Error ? error.message : "Could not start the microphone.");
+      }
     }
   };
-
-  const stopListening = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-    setInternalListening(false);
-    onListeningChange?.(false);
-  };
-
-  const toggle = () => {
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
-    }
-  };
-
-  return (
-    <div className={cn("inline-flex items-center gap-2", className)}>
-      <Button
-        type="button"
-        variant={isListening ? "default" : "ghost"}
-        size="sm"
-        onClick={toggle}
-        className={cn(
-          "h-8 w-8 rounded-full p-0 cursor-pointer transition-all",
-          isListening && "bg-red-500 hover:bg-red-600 text-white animate-pulse"
-        )}
-        title={isListening ? "Stop listening" : "Voice input"}
-        aria-label={isListening ? "Stop listening" : "Voice input"}
-      >
-        {isListening ? <StopIcon className="size-4" /> : <MicIcon className="size-4 text-muted-foreground hover:text-foreground" />}
-      </Button>
-
-      {isListening ? <SpeechInputVisualizer /> : null}
-    </div>
-  );
-}
-
-export function SpeechInputVisualizer() {
-  return (
-    <div className="flex items-center gap-0.5 h-4 px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
-      <span className="w-0.5 h-2 rounded-full bg-red-500 animate-[pulse_0.6s_ease-in-out_infinite]" />
-      <span className="w-0.5 h-3 rounded-full bg-red-500 animate-[pulse_0.8s_ease-in-out_infinite]" />
-      <span className="w-0.5 h-1.5 rounded-full bg-red-500 animate-[pulse_0.5s_ease-in-out_infinite]" />
-      <span className="w-0.5 h-2.5 rounded-full bg-red-500 animate-[pulse_0.7s_ease-in-out_infinite]" />
-      <span className="text-[10px] font-medium text-red-500 ml-1 select-none">Rec</span>
-    </div>
-  );
+  const recording = state === "recording";
+  const label = recording ? "Stop listening" : state === "transcribing" ? "Transcribing voice" : state === "requesting" ? "Waiting for microphone" : "Voice input";
+  return <div className={cn("inline-flex items-center gap-2", className)}>
+    <Button type="button" variant={recording ? "default" : "ghost"} size="sm" disabled={state === "transcribing" || state === "requesting" || (disabled && !recording)}
+      onClick={() => { if (recording) stop(); else void start(); }}
+      className={cn("h-8 w-8 rounded-full p-0 cursor-pointer", recording && "bg-red-500 hover:bg-red-600 text-white")}
+      title={label} aria-label={label} aria-pressed={recording}>
+      {recording ? <StopIcon className="size-4" /> : <MicIcon className="size-4" />}
+    </Button>
+    {state !== "idle" && <span role="status" className="text-xs text-muted-foreground">{recording ? "Recording · press Stop" : state === "transcribing" ? "Transcribing…" : "Allow microphone access"}</span>}
+  </div>;
 }

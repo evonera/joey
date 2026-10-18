@@ -6,6 +6,7 @@ import { getScoutDataProvider, type ScoutPostItem } from "@/lib/scouts/data-prov
 import { runLlm } from "@/lib/llm";
 import { z } from "zod";
 import { setTimeout as delay } from "node:timers/promises";
+import { randomUUID } from "node:crypto";
 import { evaluateScoutTriggerSemantically } from "@/lib/typesafe";
 import {
   reserveScoutEvaluation,
@@ -45,6 +46,8 @@ export interface EvaluateScoutResult {
 }
 export interface EvaluateScoutOptions {
   force?: boolean;
+  /** Explicit user check: skip completed poll-cache evidence, retain retry/concurrency deduplication. */
+  fresh?: boolean;
   tenantId?: string;
   signal?: AbortSignal;
   beforePaidPhase?: () => Promise<void>;
@@ -108,6 +111,10 @@ export async function evaluateScout(scoutId: string, options: EvaluateScoutOptio
       throw new Error("Scout was edited, paused, or removed; no new phase will start.");
   };
   await guard();
+  // Agent-initiated manual checks also request fresh evidence. Named agency
+  // events keep their existing daily sharing and replay behavior.
+  const fresh = options.fresh ?? Boolean(options.force && !options.eventKey && !options.evaluationId);
+  const eventKey = options.eventKey ?? (fresh ? `manual:${randomUUID()}` : undefined);
   const reserved = options.evaluationId
     ? await db.query.scoutEvaluations.findFirst({
         where: and(
@@ -116,7 +123,7 @@ export async function evaluateScout(scoutId: string, options: EvaluateScoutOptio
           eq(scoutEvaluations.tenantId, scout.tenantId)
         ),
       })
-    : await reserveScoutEvaluation(scout, options.eventKey);
+    : await reserveScoutEvaluation(scout, eventKey, { fresh });
   if (!reserved || reserved.configKey !== scoutConfigurationKey(scout))
     throw new Error("Scout evaluation receipt does not match its source configuration.");
   if (["completed", "failed", "uncertain"].includes(reserved.status)) return resultFromScoutEvaluation(reserved);

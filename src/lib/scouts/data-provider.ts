@@ -30,7 +30,7 @@ export interface ScoutCollectionContext {
   beforePaidPhase?: () => Promise<void>;
 }
 export interface ScoutDataProvider {
-  readonly kind: "apify" | "custom" | "mock" | "rss" | "youtube" | "connector" | "web";
+  readonly kind: "apify" | "custom" | "mock" | "rss" | "youtube" | "connector" | "web" | "connected";
   fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext): Promise<ScoutPostItem[]>;
 }
 
@@ -329,6 +329,10 @@ export async function getScoutDataProvider(
   if (source?.platform === "rss") return new RssScoutProvider();
   if (source?.platform === "youtube") return new YoutubeScoutProvider();
   if (source?.platform === "web") return new WebScoutProvider();
+  if (source) {
+    const { findConnectedScoutAccount, ConnectedAccountScoutProvider } = await import("./connected-provider");
+    if (await findConnectedScoutAccount(tenantId, source)) return new ConnectedAccountScoutProvider(tenantId);
+  }
   if (source) {
     const { findConnectorEvidence } = await import("./connector");
     const saved = await findConnectorEvidence(tenantId, source);

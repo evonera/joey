@@ -56,6 +56,12 @@ describe("Durable Scout evaluator", () => {
     expect(mocks.gate).not.toHaveBeenCalled();
     expect(mocks.llm).not.toHaveBeenCalled();
   });
+  it("requests fresh collection for an agent's manual check without breaking named agency replay", async () => {
+    await evaluateScout(scout.id, { force: true });
+    expect(mocks.reserve).toHaveBeenCalledWith(scout, expect.stringMatching(/^manual:/), { fresh: true });
+    await evaluateScout(scout.id, { force: true, eventKey: "daily:agency" });
+    expect(mocks.reserve).toHaveBeenLastCalledWith(scout, "daily:agency", { fresh: false });
+  });
   it("preserves repeated source findings for different agency consumers", async () => {
     const result = await evaluateScout(scout.id);
     mocks.scout.mockResolvedValue({ ...scout, latestAlert: result.alert });

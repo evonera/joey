@@ -41,14 +41,13 @@ export async function deferScoutEvaluationDispatch(job: ScoutDispatchJob) {
 }
 
 export async function claimScoutDispatch(receipt: ScoutEvaluationReceipt) {
-  const now = new Date();
   // 25 jobs at concurrency two can occupy the workflow for ~24 minutes.
   const [claimed] = await db
     .update(scoutEvaluations)
     .set({
       dispatchAttempts: sql`${scoutEvaluations.dispatchAttempts} + 1`,
-      dispatchLeaseUntil: new Date(now.getTime() + 35 * 60_000),
-      updatedAt: now,
+      dispatchLeaseUntil: sql`date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC') + interval '35 minutes'`,
+      updatedAt: sql`date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC')`,
     })
     .where(
       and(
@@ -56,9 +55,11 @@ export async function claimScoutDispatch(receipt: ScoutEvaluationReceipt) {
         eq(scoutEvaluations.tenantId, receipt.tenantId),
         inArray(scoutEvaluations.status, ["pending", "running"]),
         lt(scoutEvaluations.dispatchAttempts, SCOUT_DISPATCH_ATTEMPTS),
-        lte(scoutEvaluations.nextDispatchAt, now),
-        or(sql`${scoutEvaluations.dispatchLeaseUntil} IS NULL`, lte(scoutEvaluations.dispatchLeaseUntil, now)),
-        or(eq(scoutEvaluations.status, "pending"), lte(scoutEvaluations.leaseExpiresAt, now))
+        // Newly inserted rows use the database default clock. Comparing those
+        // with an app server's earlier clock can strand the last batch item.
+        lte(scoutEvaluations.nextDispatchAt, sql`clock_timestamp() AT TIME ZONE 'UTC'`),
+        or(sql`${scoutEvaluations.dispatchLeaseUntil} IS NULL`, lte(scoutEvaluations.dispatchLeaseUntil, sql`clock_timestamp() AT TIME ZONE 'UTC'`)),
+        or(eq(scoutEvaluations.status, "pending"), lte(scoutEvaluations.leaseExpiresAt, sql`clock_timestamp() AT TIME ZONE 'UTC'`))
       )
     )
     .returning();
@@ -222,10 +223,17 @@ export function scoutDispatchUrl() {
 async function dispatchScoutBatchToEve(jobs: ScoutDispatchJob[]) {
   const secret = process.env.CRON_SECRET;
   if (!secret) throw new Error("Scout dispatch requires the cron secret.");
-  const response = await fetch(scoutDispatchUrl(), {
+  const url = scoutDispatchUrl();
+  const headers: Record<string, string> = { "content-type": "application/json", authorization: `Bearer ${secret}` };
+  const ownOrigin = process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL;
+  if (process.env.VERCEL_ENV === "preview" && process.env.VERCEL_AUTOMATION_BYPASS_SECRET && ownOrigin &&
+      new URL(url).origin === new URL(ownOrigin).origin) {
+    headers["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  }
+  const response = await fetch(url, {
     method: "POST",
     redirect: "error",
-    headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+    headers,
     body: JSON.stringify({ jobs }),
     signal: AbortSignal.timeout(15_000),
   });

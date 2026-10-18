@@ -10,6 +10,11 @@ describe("Billing mode credentials", () => {
     for (const plan of ["CREATOR", "PRO", "AGENCY"]) vi.stubEnv(`DODO_${plan}_PRODUCT_ID`, plan);
   });
   afterEach(() => vi.unstubAllEnvs());
+  it.each([["production", "test_mode"], ["preview", "live_mode"]])("rejects %s using %s billing", (deployment, mode) => {
+    vi.stubEnv("VERCEL_ENV", deployment);
+    vi.stubEnv("DODO_PAYMENTS_ENVIRONMENT", mode);
+    expect(() => getBillingConfig()).toThrow("does not match");
+  });
   it("preserves test credentials while live values are staged", () => {
     vi.stubEnv("DODO_PAYMENTS_ENVIRONMENT", "test_mode");
     expect(getBillingConfig()).toMatchObject({ apiKey: "test-api", webhookKey: "test-signing", configured: true });

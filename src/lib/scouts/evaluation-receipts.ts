@@ -22,7 +22,7 @@ export function scoutPollEventKey(scout: Pick<typeof scouts.$inferSelect, "pollI
   return `poll:${Math.floor(now.getTime() / (Math.max(1, scout.pollIntervalMinutes) * 60_000))}`;
 }
 
-export async function reserveScoutEvaluation(scout: typeof scouts.$inferSelect, eventKey = scoutPollEventKey(scout)) {
+export async function reserveScoutEvaluation(scout: typeof scouts.$inferSelect, eventKey = scoutPollEventKey(scout), options: { fresh?: boolean } = {}) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`scout-evaluation:${scout.tenantId}:${scout.id}`}))`);
     const configKey = scoutConfigurationKey(scout);
@@ -48,10 +48,10 @@ export async function reserveScoutEvaluation(scout: typeof scouts.$inferSelect, 
         or(
           eq(scoutEvaluations.eventKey, eventKey),
           inArray(scoutEvaluations.status, ["pending", "running"]),
-          and(
+          ...(!options.fresh ? [and(
             eq(scoutEvaluations.status, "completed"),
             gt(scoutEvaluations.createdAt, new Date(Date.now() - scout.pollIntervalMinutes * 60_000))
-          )
+          )] : [])
         )
       ),
       orderBy: [desc(scoutEvaluations.createdAt)],

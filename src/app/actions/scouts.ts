@@ -10,6 +10,8 @@ import { getScoutDataProvider, getScoutProviderSetup } from "@/lib/scouts/data-p
 import { validateScoutSource } from "@/lib/scouts/source-validation";
 import { dailyScoutInterval } from "@/lib/scouts/validation";
 import { detachAgencyResource, guardAgencyScoutChange } from "@/lib/agency/service";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 export interface CreateScoutInput {
   name: string;
@@ -105,8 +107,9 @@ export async function updateScout(scoutId: string, input: CreateScoutInput) {
   return updated;
 }
 
-export async function runScoutNow(scoutId: string) {
+export async function runScoutNow(scoutId: string, attemptId: string = randomUUID()) {
   const tenantId = await requireRole(["owner", "admin"]);
+  if (!z.uuid().safeParse(attemptId).success) throw new Error("Invalid check attempt. Refresh and try again.");
   const scout = await db.query.scouts.findFirst({
     where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)),
   });
@@ -116,7 +119,7 @@ export async function runScoutNow(scoutId: string) {
   // misleading failed run that the user could never have completed.
   await getScoutDataProvider(tenantId, scout);
 
-  const result = await evaluateScout(scoutId, { tenantId, force: true });
+  const result = await evaluateScout(scoutId, { tenantId, force: true, fresh: true, eventKey: `manual:${attemptId}` });
   revalidatePath("/scouts");
   return result;
 }

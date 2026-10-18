@@ -18,6 +18,7 @@ vi.mock("@/lib/flows/outbound-request", async (importOriginal) => ({
 vi.mock("@/lib/db", () => ({ db: { query: { apiKeys: { findFirst: mocks.key } } } }));
 vi.mock("@/lib/crypto", () => ({ decrypt: mocks.decrypt }));
 vi.mock("../connector", () => ({ findConnectorEvidence: mocks.connector }));
+vi.mock("../connected-provider", async (original) => ({ ...await original<typeof import("../connected-provider")>(), findConnectedScoutAccount: async () => undefined }));
 
 import {
   ApifyScoutProvider,

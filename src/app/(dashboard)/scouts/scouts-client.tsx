@@ -176,7 +176,7 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
   const handleRunNow = async (scoutId: string) => {
     setIsRunning(true);
     try {
-      const res = await runScoutNow(scoutId);
+      const res = await runScoutNow(scoutId, crypto.randomUUID());
       if (res.error) {
         toast.error(res.error);
         getScoutRuns(scoutId)
@@ -192,13 +192,17 @@ export function ScoutsClient({ initialScouts }: { initialScouts: ScoutItem[] }) 
             ? {
                 ...s,
                 latestAlert: res.alert !== undefined ? res.alert : s.latestAlert,
-                lastPolledAt: new Date(),
+                lastPolledAt: res.pending || res.reused ? s.lastPolledAt : new Date(),
               }
             : s
         )
       );
 
-      if (res.triggered) {
+      if (res.pending) {
+        toast.info("This Scout is already checking. Its current run will finish shortly.");
+      } else if (res.reused) {
+        toast.info("Showing the result of this check. No duplicate collection was started.");
+      } else if (res.triggered) {
         toast.success(`Scout triggered an alert!`);
       } else {
         toast.info("Scout completed. No new changes matched the goal.");

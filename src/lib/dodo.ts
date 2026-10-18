@@ -26,6 +26,10 @@ function readLegacyProductIds(plan: BillingPlan) {
 
 export function getBillingConfig() {
   const environment = process.env.DODO_PAYMENTS_ENVIRONMENT || "test_mode";
+  if ((process.env.VERCEL_ENV === "production" && environment !== "live_mode") ||
+      (process.env.VERCEL_ENV === "preview" && environment !== "test_mode")) {
+    throw new Error("Billing mode does not match the deployment environment.");
+  }
   // Vercel sensitive variables cannot be renamed or exported. Select the
   // staged live pair together; a missing half must never fall back to TEST.
   const stagedLive = environment === "live_mode" && Boolean(process.env.DODO_LIVE_API_KEY || process.env.DODO_LIVE_WEBHOOK_SECRET);

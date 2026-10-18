@@ -59,8 +59,19 @@ describe("toggleScout authorization", () => {
     expect(mocks.setup).toHaveBeenCalledWith("tenant-1", undefined);
     await runScoutNow("scout-1");
     expect(mocks.resolveToken).toHaveBeenCalledWith("tenant-1", expect.objectContaining({ id: "scout-1" }));
-    expect(mocks.evaluateScout).toHaveBeenCalledWith("scout-1", { tenantId: "tenant-1", force: true });
+    expect(mocks.evaluateScout).toHaveBeenCalledWith("scout-1", { tenantId: "tenant-1", force: true, fresh: true, eventKey: expect.stringMatching(/^manual:[a-f0-9-]{36}$/) });
     expect(mocks.requireRole).toHaveBeenCalledWith(["owner", "admin"]);
+  });
+
+  it("keeps a retried manual check bound to its original attempt", async () => {
+    const id = "d34ea8a6-555b-4d54-a0c8-27f61271ce82";
+    await runScoutNow("scout-1", id);
+    expect(mocks.evaluateScout).toHaveBeenCalledWith("scout-1", expect.objectContaining({ fresh: true, eventKey: `manual:${id}` }));
+  });
+
+  it("rejects a forged check attempt before acquiring evidence", async () => {
+    await expect(runScoutNow("scout-1", "poll:old-result")).rejects.toThrow("Invalid check attempt");
+    expect(mocks.evaluateScout).not.toHaveBeenCalled();
   });
 
   it("blocks live manual scans with no token before evaluating", async () => {

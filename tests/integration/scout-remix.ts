@@ -45,6 +45,25 @@ try {
   assert.equal(resultFromScoutEvaluation(await reserveScoutEvaluation(scout, "daily:another-agent")).alert?.samplePost?.url, alert.samplePost.url);
   assert.equal((await db.query.scoutEvaluationEvents.findMany({ where: eq(scoutEvaluationEvents.evaluationId, collected.id) })).length, 2);
 
+  // A new manual check bypasses completed poll evidence; retry and overlap stay deduplicated.
+  const [manualSource] = await db.insert(scouts).values({ tenantId, name: "Manual freshness", targetUrl: "https://example.com/manual/feed", platform: "rss", goalCondition: "views > 0", isActive: false }).returning();
+  const baselineReceipt = await reserveScoutEvaluation(manualSource, "poll:baseline");
+  const baselineLease = await claimScoutEvaluation(baselineReceipt);
+  await completeScoutEvaluation(baselineLease.receipt, manualSource, { triggered: false, itemsFound: 0 });
+  const currentManualSource = (await db.query.scouts.findFirst({ where: eq(scouts.id, manualSource.id) }))!;
+  const firstManual = await reserveScoutEvaluation(manualSource, "manual:first", { fresh: true });
+  assert.notEqual(firstManual.id, baselineReceipt.id, "manual click collects after a completed scheduled scan");
+  const overlapping = await reserveScoutEvaluation(manualSource, "manual:overlap", { fresh: true });
+  assert.equal(overlapping.id, firstManual.id, "overlapping clicks share one pending collection");
+  const manualLease = await claimScoutEvaluation(firstManual);
+  await completeScoutEvaluation(manualLease.receipt, currentManualSource, { triggered: false, itemsFound: 0 });
+  assert.equal((await reserveScoutEvaluation(manualSource, "manual:first", { fresh: true })).id, firstManual.id, "same request retry remains idempotent after completion");
+  const secondManual = await reserveScoutEvaluation(manualSource, "manual:second", { fresh: true });
+  assert.notEqual(secondManual.id, firstManual.id, "a later new click gets a new observation");
+  const secondManualLease = await claimScoutEvaluation(secondManual);
+  const latestManualSource = (await db.query.scouts.findFirst({ where: eq(scouts.id, manualSource.id) }))!;
+  await completeScoutEvaluation(secondManualLease.receipt, latestManualSource, { triggered: false, itemsFound: 0 });
+
   const interrupted = await reserveScoutEvaluation(scout, "poll:interrupted");
   const paidClaim = await claimScoutEvaluation(interrupted);
   const paidReceipt = await markScoutEvaluationPhase(paidClaim.receipt, "collecting");
