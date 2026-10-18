@@ -21,7 +21,7 @@ def tick():
     import psycopg
     from psycopg.rows import dict_row
     sys.path.insert(0, "/acceptance")
-    from scout_soak_core import instant, summarize, validate_run
+    from scout_soak_core import instant, summarize, validate_run, cancel_test_subscription
 
     run = state.get("run")
     if not run:
@@ -52,9 +52,7 @@ def tick():
                     raise RuntimeError("Acceptance Scout ownership changed")
         with httpx.Client(follow_redirects=False, timeout=15) as client:
             if stop:
-                response = client.patch("https://test.dodopayments.com/subscriptions/" + run["subscriptionId"], headers={"Authorization": "Bearer " + os.environ["JOEY_SOAK_DODO_TEST_KEY"]}, json={"status": "cancelled"})
-                if response.status_code != 200 or response.json().get("status") != "cancelled":
-                    raise RuntimeError("TEST subscription cancellation not confirmed")
+                cancel_test_subscription(client, run, os.environ["JOEY_SOAK_DODO_TEST_KEY"])
                 record["providerStatus"] = "cancelled"
             else:
                 response = client.get(os.environ["JOEY_SOAK_ORIGIN"] + "/api/cron", headers={"Authorization": "Bearer " + os.environ["JOEY_SOAK_CRON_SECRET"], "x-vercel-protection-bypass": os.environ["JOEY_SOAK_BYPASS"]}, timeout=65)

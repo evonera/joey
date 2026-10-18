@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
-from scout_soak_core import PREVIEW_HOST, PREVIEW_ORIGIN, summarize, validate_run
+from scout_soak_core import PREVIEW_HOST, PREVIEW_ORIGIN, summarize, validate_run, cancel_test_subscription
+from unittest.mock import Mock
 
 
 class ScoutSoakTests(unittest.TestCase):
@@ -50,6 +51,27 @@ class ScoutSoakTests(unittest.TestCase):
         self.assertEqual(result["scouts"][0]["emptyCollections"], 1)
         self.assertEqual(result["scouts"][1]["stalled"], 1)
         self.assertGreaterEqual(len(result["issues"]), 5)
+
+    def test_cancels_only_the_provider_owned_test_subscription(self):
+        client = Mock()
+        client.get.return_value = Mock(status_code=200, json=lambda: {"status": "active", "metadata": {"tenantId": "qa-only"}})
+        client.patch.return_value = Mock(status_code=200, json=lambda: {"status": "cancelled"})
+        cancel_test_subscription(client, self.run, "test-key")
+        self.assertEqual(client.patch.call_args.args[0], "https://test.dodopayments.com/subscriptions/sub_test")
+        self.assertEqual(client.patch.call_args.kwargs["json"], {"status": "cancelled"})
+
+    def test_already_cancelled_is_idempotent_while_webhook_sync_finishes(self):
+        client = Mock()
+        client.get.return_value = Mock(status_code=200, json=lambda: {"status": "cancelled", "metadata": {"tenantId": "qa-only"}})
+        cancel_test_subscription(client, self.run, "test-key")
+        client.patch.assert_not_called()
+
+    def test_foreign_subscription_is_not_cancelled(self):
+        client = Mock()
+        client.get.return_value = Mock(status_code=200, json=lambda: {"status": "active", "metadata": {"tenantId": "foreign"}})
+        with self.assertRaisesRegex(RuntimeError, "ownership"):
+            cancel_test_subscription(client, self.run, "test-key")
+        client.patch.assert_not_called()
 
 
 if __name__ == "__main__":

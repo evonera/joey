@@ -6,6 +6,21 @@ PREVIEW_ORIGIN = "https://joey-git-codex-theme-studio-rollout-20261010-evonera.v
 PREVIEW_HOST = "ep-young-bread-axqgw7ml-pooler.c-4.us-east-2.aws.neon.tech"
 
 
+def cancel_test_subscription(client, run, api_key):
+    url = "https://test.dodopayments.com/subscriptions/" + run["subscriptionId"]
+    headers = {"Authorization": "Bearer " + api_key}
+    response = client.get(url, headers=headers)
+    if response.status_code != 200:
+        raise RuntimeError("TEST subscription ownership could not be confirmed")
+    current = response.json()
+    if current.get("metadata", {}).get("tenantId") != run["tenantId"]:
+        raise RuntimeError("TEST subscription ownership changed")
+    if current.get("status") != "cancelled":
+        response = client.patch(url, headers=headers, json={"status": "cancelled"})
+        if response.status_code != 200 or response.json().get("status") != "cancelled":
+            raise RuntimeError("TEST subscription cancellation not confirmed")
+
+
 def instant(value):
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
