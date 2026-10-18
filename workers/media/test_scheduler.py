@@ -3,10 +3,19 @@ import unittest
 from unittest.mock import patch
 
 import httpx
-from scheduler import run_tick
+from scheduler import run_tick, acceptance_target
+from datetime import datetime, timedelta, timezone
 
 
 class SchedulerTests(unittest.TestCase):
+    def test_acceptance_dispatch_is_named_bounded_and_independent(self):
+        now = datetime.now(timezone.utc)
+        control = {"enabled": True, "appName": "joey-scout-soak-20261019", "startedAt": now.isoformat(), "dispatchUntil": (now + timedelta(hours=73)).isoformat()}
+        self.assertEqual(acceptance_target(control, now), control["appName"])
+        for overrides in ({"appName": "another-production-app"}, {"enabled": False}, {"dispatchUntil": (now + timedelta(hours=77)).isoformat()}, {"dispatchUntil": "invalid"}, {"startedAt": now.replace(tzinfo=None).isoformat()}):
+            self.assertIsNone(acceptance_target({**control, **overrides}, now))
+        self.assertIsNone(acceptance_target(control, now + timedelta(hours=74)))
+
     def execute(self, responses):
         seen = []
 

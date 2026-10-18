@@ -23,8 +23,16 @@ def maintenance_tick():
     sys.path.insert(0, "/worker")
     sentry_sdk.init(dsn=os.environ.get("SENTRY_DSN"), environment=os.environ.get("SENTRY_ENVIRONMENT", "production"), send_default_pii=False, include_local_variables=False)
     sentry_sdk.set_tag("service", "joey-scheduler")
-    from scheduler import run_tick
-    return run_tick()
+    from scheduler import run_tick, dispatch_acceptance
+    try:
+        return run_tick()
+    finally:
+        # Acceptance must not change production tick success/failure, and it
+        # must still finalize if production's readiness check is unavailable.
+        try:
+            dispatch_acceptance()
+        except Exception as error:
+            sentry_sdk.capture_exception(error)
 
 @app.function(image=image, cpu=2, memory=4096, timeout=600, min_containers=0, max_containers=2, scaledown_window=2, secrets=[secret, sentry_secret])
 def render_cpu():
