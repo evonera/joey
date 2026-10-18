@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowWebhookDeliveries } from "@/lib/db/schema";
 import { operationalEvent } from "@/lib/operations-log";
@@ -354,7 +354,7 @@ export async function recoverStaleWebhookDeliveries(limit = 10, now = new Date()
   const staleDeliveries = await db.query.flowWebhookDeliveries.findMany({
     where: and(
       eq(flowWebhookDeliveries.status, "processing"),
-      sql`${flowWebhookDeliveries.updatedAt} <= ${staleBefore}`,
+      lte(flowWebhookDeliveries.updatedAt, staleBefore),
     ),
     orderBy: (delivs, { asc }) => [asc(delivs.updatedAt)],
     limit,
@@ -453,4 +453,3 @@ export async function recoverStaleWebhookDeliveries(limit = 10, now = new Date()
 
   return recoveredCount;
 }
-
