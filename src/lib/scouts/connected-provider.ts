@@ -44,6 +44,19 @@ export function connectedScoutItems(posts: AnalyticsPost[], accountId: string, p
   return [...new Map(items.map(item => [item.id, item])).values()].slice(0, 15);
 }
 
+type ExternalPost = { platform?: unknown; platformPostUrl?: unknown; content?: unknown; publishedAt?: unknown; analytics?: { likes?: unknown } };
+/** Listing counters are current; delayed insights (including zero views) are not supplied here. */
+export function connectedExternalItems(posts: ExternalPost[], platform: string): ScoutPostItem[] {
+  return posts.flatMap(post => {
+    if (post.platform !== platform) return [];
+    const url = canonicalScoutPostUrl(post.platformPostUrl);
+    if (!url) return [];
+    validateScoutSource(url, platform);
+    const likes = observedMetric(post.analytics?.likes), timestamp = observedTimestamp(post.publishedAt);
+    return [{ id: scoutPostIdentity(url), url, text: typeof post.content === "string" ? post.content.slice(0, 6000) : "", ...(likes !== undefined ? { likes } : {}), ...(timestamp ? { timestamp } : {}) }];
+  }).slice(0, 15);
+}
+
 export class ConnectedAccountScoutProvider implements ScoutDataProvider {
   readonly kind = "connected" as const;
   constructor(private readonly tenantId: string) {}
@@ -55,11 +68,18 @@ export class ConnectedAccountScoutProvider implements ScoutDataProvider {
     const { zernio } = await getZernioClientForTenant(this.tenantId);
     await context.beforePaidPhase?.();
     context.signal.throwIfAborted();
+    const synced = await zernio.analytics.syncExternalPosts({ body: { accountId: selected.account.platformAccountId }, signal: context.signal });
+    context.signal.throwIfAborted();
+    if (synced.error || synced.response.status !== 200 || !synced.data) throw new Error("The provider could not refresh this account. Check its connection before trying again.");
     const response = await zernio.analytics.getAnalytics({ query: { profileId: selected.profileId, accountId: selected.account.platformAccountId, platform: source.platform, source: "all", limit: 15, page: 1, sortBy: "date", order: "desc" }, signal: context.signal });
     context.signal.throwIfAborted();
     if (response.error || response.response.status !== 200 || !response.data) throw new Error("Connected-account analytics are unavailable or still syncing. Try again after the provider sync completes.");
     const data = response.data as { accounts?: Array<{ _id?: string; username?: string; profileId?: string }>; posts?: AnalyticsPost[] };
     if (!data.accounts?.some(a => a._id === selected.account.platformAccountId && a.profileId === selected.profileId && a.username?.replace(/^@/, "").toLowerCase() === selected.handle)) throw new Error("The provider account no longer matches this Scout. Reconnect it before checking again.");
-    return connectedScoutItems(data.posts ?? [], selected.account.platformAccountId, source.platform, selected.profileId);
+    const items = connectedScoutItems(data.posts ?? [], selected.account.platformAccountId, source.platform, selected.profileId);
+    const fresh = connectedExternalItems(synced.data.posts ?? [], source.platform);
+    const combined = new Map(items.map(item => [item.id, item]));
+    for (const item of fresh) combined.set(item.id, { ...combined.get(item.id), ...item });
+    return [...combined.values()].sort((a, b) => (b.timestamp ?? "").localeCompare(a.timestamp ?? "")).slice(0, 15);
   }
 }
