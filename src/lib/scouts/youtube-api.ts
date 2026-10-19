@@ -135,8 +135,8 @@ export class YoutubeApiScoutProvider implements ScoutDataProvider {
   async fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext): Promise<ScoutPostItem[]> {
     context.signal.throwIfAborted();
     if (request.platform !== "youtube") throw new Error("YouTube Data API collection requires a YouTube source.");
-    validateScoutSource(request.targetUrl, "youtube");
-    const source = new URL(request.targetUrl);
+    const source = URL.parse(validateScoutSource(request.targetUrl, "youtube"));
+    if (!source) throw new Error("Use a valid YouTube source URL.");
     if (source.port && source.port !== "443") throw new Error("Use a standard HTTPS YouTube source URL.");
     const directId = source.hostname === "youtu.be" ? source.pathname.slice(1) : source.pathname === "/watch" ? source.searchParams.get("v") : source.pathname.match(/^\/(?:shorts|live|embed)\/([\w-]{11})\/?$/)?.[1];
     const lookup: Record<string, string> = {};
@@ -147,7 +147,10 @@ export class YoutubeApiScoutProvider implements ScoutDataProvider {
       const handle = source.pathname.match(/^\/@([^/]+)(?:\/(?:videos|shorts|streams))?\/?$/)?.[1];
       const username = source.pathname.match(/^\/user\/([\w.-]+)(?:\/(?:videos|shorts|streams))?\/?$/)?.[1];
       if (id) lookup.id = id;
-      else if (handle) lookup.forHandle = `@${decodeURIComponent(handle)}`;
+      else if (handle) {
+        try { lookup.forHandle = `@${decodeURIComponent(handle)}`; }
+        catch { throw new Error("YouTube channel handle has invalid URL encoding. Use its normal /@handle URL."); }
+      }
       else if (username) lookup.forUsername = username;
       else throw new Error("YouTube Data API needs a /channel/UC… or /@handle URL, legacy /user/ URL, or individual video. Replace /c/ custom URLs with the channel handle.");
     }
@@ -178,11 +181,12 @@ export class YoutubeApiScoutProvider implements ScoutDataProvider {
       // videos.list does not support maxResults with id; ids are already bounded.
       const videos = videoEnvelope.safeParse(await this.get("videos", { part: "snippet,statistics", id: ids.join(",") }, bounded));
       if (!videos.success) throw new Error("YouTube videos returned invalid metadata.");
-      if (videos.data.items.some((video) => !ids.includes(video.id) || (expectedChannel && video.snippet.channelId !== expectedChannel)) || new Set(videos.data.items.map((video) => video.id)).size !== videos.data.items.length) {
+      const order = new Map(ids.map((id, index) => [id, index]));
+      if (videos.data.items.some((video) => !order.has(video.id) || (expectedChannel && video.snippet.channelId !== expectedChannel)) || new Set(videos.data.items.map((video) => video.id)).size !== videos.data.items.length) {
         throw new Error("YouTube video metadata does not match the requested source.");
       }
       // Preserve upload playlist order rather than trusting videos.list response order.
-      return videos.data.items.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)).map((video) => {
+      return videos.data.items.sort((a, b) => order.get(a.id)! - order.get(b.id)!).map((video) => {
         const url = `https://www.youtube.com/watch?v=${video.id}`;
         const views = observedMetric(video.statistics?.viewCount);
         const likes = observedMetric(video.statistics?.likeCount);

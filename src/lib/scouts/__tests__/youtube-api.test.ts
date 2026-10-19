@@ -193,3 +193,11 @@ describe("YouTube API quota admission", () => {
     expect(mocks.outbound).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("YouTube handle input errors", () => {
+  it("reports invalid percent encoding without contacting Google", async () => {
+    await expect(provider().fetchRecentPosts({ ...source, targetUrl: "https://www.youtube.com/@bad%ZZ" }, context())).rejects.toThrow("invalid URL encoding");
+    expect(mocks.outbound).not.toHaveBeenCalled();
+    expect(mocks.quota).not.toHaveBeenCalled();
+  });
+});
