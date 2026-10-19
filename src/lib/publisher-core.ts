@@ -282,8 +282,11 @@ async function reconcileRecordedDraft(draftId: string, tenantId: string, options
                 throw new Error("Could not confirm the existing provider post.");
             }
             status = draftStatusFromZernio(remote.status);
-            const providerDate = remote.publishedAt && new Date(remote.publishedAt);
-            publishedAt = providerDate && Number.isFinite(providerDate.getTime()) ? providerDate : checkedAt;
+            const targets = (remote.platforms ?? []) as Array<{ status?: string; publishedAt?: string }>;
+            const providerDates = [remote.publishedAt, ...targets
+                .filter(platform => platform.status === "published").map(platform => platform.publishedAt)]
+                .filter((value): value is string => Boolean(value)).map(value => new Date(value).getTime()).filter(Number.isFinite);
+            publishedAt = providerDates.length ? new Date(Math.max(...providerDates)) : checkedAt;
             await tx.update(posts).set({ status, ...(status === "published" ? { publishedAt } : {}) })
                 .where(and(eq(posts.id, recorded.id), eq(posts.tenantId, tenantId)));
         }

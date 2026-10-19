@@ -25,7 +25,7 @@ globalThis.fetch = async (input) => {
   assert.ok(fixture, `Unexpected provider read: ${id}`);
   await new Promise(resolve => setTimeout(resolve, 30));
   return Response.json(fixture.empty ? {} : fixture.httpStatus ? { error: "fixture-private-provider-error" } : {
-    post: { _id: fixture._id ?? id, status: fixture.status, metadata: fixture.metadata, publishedAt: publishedAt.toISOString() },
+    post: { _id: fixture._id ?? id, status: fixture.status, metadata: fixture.metadata, platforms: [{ status: fixture.status, publishedAt: publishedAt.toISOString() }] },
   }, { status: fixture.httpStatus ?? 200 });
 };
 async function pending(options: { status?: string; receiptStatus?: string; noReceipt?: boolean; noRemoteId?: boolean; publicationCheckedAt?: Date; tenantId?: string } = {}) {
