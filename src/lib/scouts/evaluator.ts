@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { scouts, scoutEvaluations } from "@/lib/db/schema";
 import { eq, and, desc, ne } from "drizzle-orm";
 import { evaluateMeasuredGoal, measuredPostIncreases } from "./measured-goal";
+import { canonicalScoutPostUrl, normalizeScoutPostEvidence } from "./post-evidence";
 import { getScoutDataProvider, type ScoutPostItem } from "@/lib/scouts/data-provider";
 import { runLlm } from "@/lib/llm";
 import { z } from "zod";
@@ -77,14 +78,15 @@ const judgementSchema = z.object({
 });
 
 export function isRepeatedScoutAlert(previous: ScoutAlert | null, next: ScoutAlert): boolean {
-  if (!previous?.samplePost?.url || !next.samplePost?.url || previous.samplePost.url !== next.samplePost.url)
+  const previousUrl = canonicalScoutPostUrl(previous?.samplePost?.url);
+  if (!previousUrl || !next.samplePost?.url || previousUrl !== canonicalScoutPostUrl(next.samplePost.url))
     return false;
   const changes = (alert: ScoutAlert) =>
     alert.changes
       .map((change) => JSON.stringify([change.type, change.label, change.after]))
       .sort()
       .join("|");
-  return changes(previous) === changes(next);
+  return previous ? changes(previous) === changes(next) : false;
 }
 
 /** Every process uses the same leased receipt; completed evidence survives agent handoff. */
@@ -176,6 +178,8 @@ export async function evaluateScout(scoutId: string, options: EvaluateScoutOptio
     }
     await guard();
     if (!items.length) return await completeScoutEvaluation(receipt, scout, { triggered: false, itemsFound: 0 }, guard);
+    // Compare canonical video identities without rewriting historical/raw receipts.
+    items = items.map(normalizeScoutPostEvidence);
 
     await guard();
     const previousReceipts = await db.query.scoutEvaluations.findMany({
@@ -199,6 +203,7 @@ export async function evaluateScout(scoutId: string, options: EvaluateScoutOptio
             Array.isArray(row.items) ? (row.items as ScoutPostItem[]).filter((item) => item.observedAt) : []
           )
           .reverse()
+          .map(normalizeScoutPostEvidence)
           .map((item) => [JSON.stringify([item.id, item.url]), item])
       ).values(),
     ];
@@ -220,7 +225,7 @@ export async function evaluateScout(scoutId: string, options: EvaluateScoutOptio
       if (gate && !gate.triggered && gate.confidence >= 0.85 && gate.probability >= 0.75)
         return await completeScoutEvaluation(receipt, scout, { triggered: false, itemsFound: items.length }, guard);
 
-      const prompt = `Evaluate whether the supplied recent posts from ${scout.targetUrl} (${scout.platform}) trigger this Scout goal: ${JSON.stringify(scout.goalCondition)}.\nPOSTS:\n${JSON.stringify(items)}\nSAVED BASELINE OBSERVATIONS:\n${JSON.stringify(baseline)}\nOnly trigger when supplied evidence meets the goal. Missing dates and metrics are unknown, never zero or today. A current count alone cannot establish a spike or growth; those need dated baseline observations of the same post. If there is no matching baseline, do not report a spike or growth. RSS supplies articles, not social engagement. Do not invent metrics. Use ADDED for an absolute threshold; SPIKE requires saved dated counter increases. Return JSON {triggered, title, changes:[{type:"SPIKE"|"CHANGED"|"ADDED",label,before?,after,rationale}], topPostIndex}.`;
+      const prompt = `Evaluate whether the supplied recent posts from ${scout.targetUrl} (${scout.platform}) trigger this Scout goal: ${JSON.stringify(scout.goalCondition)}.\nPOSTS:\n${JSON.stringify(items)}\nSAVED BASELINE OBSERVATIONS:\n${JSON.stringify(baseline)}\nOnly trigger when supplied evidence meets the goal. Matching canonical post IDs/URLs identify the same saved post across adapters; a YouTube Short and its watch URL are one video. API enrichment, newly available metrics, and different caption formatting do not establish a new upload or a content edit. Missing dates and metrics are unknown, never zero or today. A current count alone cannot establish a spike or growth; those need dated baseline observations of the same post. If there is no matching baseline, do not report a spike or growth. RSS supplies articles, not social engagement. Do not invent metrics. Use ADDED for an absolute threshold; SPIKE requires saved dated counter increases. Return JSON {triggered, title, changes:[{type:"SPIKE"|"CHANGED"|"ADDED",label,before?,after,rationale}], topPostIndex}.`;
       await guard();
       const { text } = await runLlm({
         provider: "google",

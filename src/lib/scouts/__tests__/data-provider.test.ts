@@ -85,15 +85,20 @@ describe("Scout provider selection and isolation", () => {
     const provider = await getScoutDataProvider("tenant-a", request);
     expect(await provider.fetchRecentPosts(request, context())).toEqual([{ ...item, observedAt: createdAt.toISOString() }]);
   });
-  it("uses public YouTube feed evidence with stable IDs and no guessed engagement", async () => {
-    mocks.outbound.mockResolvedValue({ status: 200, headers: {}, finalUrl: "https://www.youtube.com/feeds/videos.xml", buffer: Buffer.from('<feed><entry><title>Actual video</title><link href="https://www.youtube.com/watch?v=abcdefghijk"/><published>2026-10-01T12:00:00Z</published></entry></feed>') });
+  it("requires official YouTube API configuration and keeps RSS available", async () => {
+    mocks.key.mockResolvedValue(null);
+    vi.stubEnv("YOUTUBE_DATA_API_KEY", "");
     const source = { platform: "youtube", targetUrl: "https://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa" };
-    expect((await getScoutDataProvider("tenant", source)).kind).toBe("youtube");
-    const items = await new YoutubeScoutProvider().fetchRecentPosts(source, context());
-    expect(items).toHaveLength(1);
-    expect(items[0]).not.toHaveProperty("views");
-    expect(items[0]).not.toHaveProperty("likes");
-    expect(items[0].timestamp).toBe("2026-10-01T12:00:00.000Z");
+    expect(await getScoutProviderSetup("tenant", source)).toMatchObject({ ready: false, provider: "youtube", degraded: true });
+    await expect(getScoutDataProvider("tenant", source)).rejects.toThrow("YouTube monitoring is degraded");
+    expect((await getScoutDataProvider("tenant", { platform: "rss", targetUrl: "https://example.com/feed" })).kind).toBe("rss");
+    expect(mocks.outbound).not.toHaveBeenCalled();
+    expect(mocks.apify).not.toHaveBeenCalled();
+  });
+  it("selects the official YouTube adapter with its separate workspace key", async () => {
+    const source = { platform: "youtube", targetUrl: "https://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa" };
+    expect(await getScoutDataProvider("tenant", source)).toBeInstanceOf(YoutubeScoutProvider);
+    expect(mocks.decrypt).toHaveBeenCalledWith("encrypted-key", "tenant");
     expect(mocks.apify).not.toHaveBeenCalled();
   });
   it("keeps Apify as the independent default and resolves each workspace", async () => {

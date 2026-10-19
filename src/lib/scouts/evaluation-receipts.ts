@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { scouts, scoutEvaluations, scoutEvaluationEvents, scoutRuns, notifications } from "@/lib/db/schema";
 import type { EvaluateScoutResult, ScoutAlert } from "./evaluator";
 import type { ScoutPostItem } from "./data-provider";
+import { canonicalScoutPostUrl, youtubeScoutVideoId } from "./post-evidence";
 
 export type ScoutEvaluationReceipt = typeof scoutEvaluations.$inferSelect;
 export const SCOUT_EVALUATION_CONCURRENCY = 2;
@@ -227,7 +228,7 @@ export async function completeScoutEvaluation(
         alertData: result.alert ?? null,
       });
     const fingerprint = result.alert ? scoutAlertFingerprint(result.alert) : undefined;
-    const alreadyNotified = fingerprint
+    let alreadyNotified = fingerprint
       ? await tx.query.notifications.findFirst({
           where: and(
             eq(notifications.tenantId, scout.tenantId),
@@ -238,6 +239,30 @@ export async function completeScoutEvaluation(
           columns: { id: true },
         })
       : undefined;
+    // Old feed notifications have hashes of Shorts URLs and feed-specific copy.
+    // Read matching-video metadata to compare its canonical fingerprint; never
+    // rewrite the original alert or raw acquisition evidence during migration.
+    const videoId = result.alert?.platform === "youtube" && result.alert.samplePost?.url ? youtubeScoutVideoId(result.alert.samplePost.url) : undefined;
+    if (result.alert && fingerprint && videoId && !alreadyNotified && !sameAlert(scout.latestAlert as ScoutAlert | null, result.alert)) {
+      const videoPattern = `^https://((www\\.|m\\.|music\\.)?youtube\\.com/(watch\\?([^#]*&)?v=|shorts/|live/|embed/)|youtu\\.be/)${videoId}([/?&#]|$)`;
+      const legacy = await tx.query.notifications.findMany({
+        where: and(
+          eq(notifications.tenantId, scout.tenantId),
+          eq(notifications.type, "scout_alert"),
+          sql`${notifications.metadata}->>'scoutId' = ${scout.id}`,
+          sql`${notifications.metadata}->>'goal' = ${result.alert.goal}`,
+          sql`${notifications.metadata}->'samplePost'->>'url' ~ ${videoPattern}`,
+          sql`coalesce(${notifications.metadata}->>'fingerprintVersion', '') <> '2'`
+        ),
+        columns: { id: true, metadata: true },
+        orderBy: [desc(notifications.createdAt)],
+        limit: 100,
+      });
+      alreadyNotified = legacy.find((notification) => {
+        const old = notification.metadata as unknown as ScoutAlert | null;
+        return old?.platform === "youtube" && Array.isArray(old.changes) && typeof old.samplePost?.content === "string" && scoutAlertFingerprint(old) === fingerprint;
+      });
+    }
     if (result.alert && !alreadyNotified && !sameAlert(scout.latestAlert as ScoutAlert | null, result.alert)) {
       await tx
         .insert(notifications)
@@ -247,7 +272,7 @@ export async function completeScoutEvaluation(
           title: result.alert.title,
           body: `Competitor change detected for ${scout.name}: ${result.alert.changes.map((change) => change.label).join(", ")}`,
           link: "/scouts",
-          metadata: { ...result.alert, evaluationId: receipt.id, scoutId: scout.id, fingerprint },
+          metadata: { ...result.alert, evaluationId: receipt.id, scoutId: scout.id, fingerprint, fingerprintVersion: 2 },
         });
     }
     await beforeCommit?.();
@@ -255,6 +280,20 @@ export async function completeScoutEvaluation(
   });
 }
 export function scoutAlertFingerprint(alert: ScoutAlert) {
+  const youtubeVideo = alert.platform === "youtube" && alert.samplePost?.url ? youtubeScoutVideoId(alert.samplePost.url) : undefined;
+  if (youtubeVideo) {
+    // ADDED means the same post/goal has already been announced. Adding API
+    // counts or replacing feed copy with a description is not another new post.
+    // Actual CHANGED/SPIKE findings retain their changed evidence in the hash.
+    const spike = alert.changes.some((change) => change.type === "SPIKE");
+    const changed = alert.changes.some((change) => change.type === "CHANGED");
+    return createHash("sha256").update(JSON.stringify([
+      alert.targetUrl, alert.platform, alert.goal, canonicalScoutPostUrl(alert.samplePost!.url),
+      changed ? alert.samplePost?.content : null,
+      spike ? alert.samplePost?.views ?? null : null,
+      spike ? alert.samplePost?.likes ?? null : null,
+    ])).digest("hex");
+  }
   return createHash("sha256")
     .update(
       JSON.stringify([

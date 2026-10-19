@@ -36,7 +36,15 @@ export async function getScoutSetup(scoutId?: string) {
   const tenantId = await getActiveTenantId();
   const source = scoutId ? await db.query.scouts.findFirst({ where: and(eq(scouts.id, scoutId), eq(scouts.tenantId, tenantId)) }) : undefined;
   if (scoutId && !source) throw new Error("Scout not found.");
-  return getScoutProviderSetup(tenantId, source);
+  const provider = await getScoutProviderSetup(tenantId, source);
+  if (source?.platform !== "youtube" || !provider.ready) return provider;
+  const latest = await db.query.scoutRuns.findFirst({
+    where: and(eq(scoutRuns.scoutId, source.id), eq(scoutRuns.tenantId, tenantId)),
+    orderBy: [desc(scoutRuns.createdAt)],
+  });
+  return latest?.status === "failed"
+    ? { ...provider, degraded: true, issue: latest.error ?? "YouTube's latest collection failed. Check the API configuration or quota, then retry." }
+    : { ...provider, degraded: false };
 }
 
 export async function getScouts() {

@@ -11,6 +11,7 @@ const ALLOWED_PROVIDERS = new Set([
   'openai',
   'anthropic',
   'google',
+  'youtube',
   'fal',
   'openrouter',
   'supadata',
