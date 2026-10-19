@@ -450,7 +450,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                     accountName: platformOpts?.accountName || platform,
                     platform: platform,
                 }]}
-                content={currentVariantContent || content}
+                content={draft.content || ""}
                 mediaCount={mediaUrls.length}
                 actionLabel={isScheduled ? "Publish Early" : "Publish Now"}
             />
