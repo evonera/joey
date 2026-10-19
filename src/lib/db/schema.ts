@@ -192,9 +192,11 @@ export const drafts = pgTable("drafts", {
   platformOptions: jsonb("platform_options"), // target platforms/entities and specific configs
   scheduledFor: timestamp("scheduled_for"), // null means publish immediately upon approval
   errorMessage: text("error_message"),
+  publicationCheckedAt: timestamp("publication_checked_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   tenantCreatedIdx: index("drafts_tenant_created_idx").on(table.tenantId, table.createdAt.desc(), table.id.desc()),
+  publicationRecoveryIdx: index("drafts_publication_recovery_idx").on(table.publicationCheckedAt, table.createdAt).where(sql`${table.status} = 'publishing'`),
 }));
 
 export const posts = pgTable("posts", {

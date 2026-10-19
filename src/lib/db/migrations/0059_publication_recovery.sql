@@ -1,0 +1,2 @@
+ALTER TABLE "drafts" ADD COLUMN "publication_checked_at" timestamp;--> statement-breakpoint
+CREATE INDEX "drafts_publication_recovery_idx" ON "drafts" USING btree ("publication_checked_at","created_at") WHERE "drafts"."status" = 'publishing';
