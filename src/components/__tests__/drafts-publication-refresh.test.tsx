@@ -46,4 +46,17 @@ describe("automatic publication display", () => {
     await tick();
     expect(mock.drafts).toHaveBeenCalledTimes(reads);
   });
+  it("keeps checking when counts finish before the list or a server action returns an error", async () => {
+    render(<DraftsPage />);
+    await settle();
+    mock.counts.mockResolvedValue(totals(0));
+    // The parallel queries can observe different database snapshots.
+    await tick();
+    expect(screen.getByText("Post status: publishing")).toBeInTheDocument();
+    mock.drafts.mockResolvedValueOnce({ error: "Temporary list failure" });
+    await tick();
+    mock.drafts.mockResolvedValue(list("published"));
+    await tick();
+    expect(screen.getByText("Post status: published")).toBeInTheDocument();
+  });
 });

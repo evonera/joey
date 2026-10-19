@@ -120,8 +120,9 @@ export default function DraftsPage() {
 
     // Provider publication is asynchronous. Reflect the worker/webhook result
     // without making customers reload or clicking Publish again.
+    const hasPublishing = counts.publishing > 0 || drafts.some(draft => draft.status === "publishing");
     useEffect(() => {
-        if (counts.publishing === 0) return;
+        if (!hasPublishing) return;
         let active = true;
         let timer: ReturnType<typeof setTimeout>;
         const refreshPublishing = async () => {
@@ -131,15 +132,17 @@ export default function DraftsPage() {
                     getDraftCounts(),
                 ]);
                 if (!active) return;
-                if (list.drafts) setDrafts(list.drafts);
-                if (totals.counts) setCounts(totals.counts);
+                if (list.drafts && totals.counts) {
+                    setDrafts(list.drafts);
+                    setCounts(totals.counts);
+                }
             } finally {
                 if (active) timer = setTimeout(() => { void refreshPublishing().catch(() => {}); }, 10_000);
             }
         };
         timer = setTimeout(() => { void refreshPublishing().catch(() => {}); }, 10_000);
         return () => { active = false; clearTimeout(timer); };
-    }, [counts.publishing, statusFilter, platformFilter, searchQuery, sourceFilter]);
+    }, [hasPublishing, statusFilter, platformFilter, searchQuery, sourceFilter]);
 
     const handleActionComplete = useCallback(() => {
         fetchDrafts();
