@@ -85,6 +85,10 @@ jobs:
         run: npm run test:integration
         env:
           JOEY_INTEGRATION_TEST: "true"
+      - name: Verify automatic publication status recovery
+        run: node --import tsx tests/integration/publication-recovery.ts
+        env:
+          JOEY_INTEGRATION_TEST: "true"
       - name: Verify workspace deletion and reply approval races
         run: node --import tsx tests/integration/workspace-reply-safety.ts
         env:

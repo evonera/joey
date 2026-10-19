@@ -32,34 +32,21 @@ export async function getZernioClientForTenant(tenantId: string) {
 }
 
 // Reusable core logic for publishing a draft
-export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio, publishEarly = false) {
+export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio, publishEarly = false): Promise<{ success?: boolean; error?: string; status?: string }> {
     // 0. Idempotency check: reconcile if this draft was already recorded in posts
     const alreadyPublished = await db.query.posts.findFirst({
         where: and(eq(posts.tenantId, tenantId), eq(posts.draftId, draftId))
     });
     if (alreadyPublished) {
-        if (alreadyPublished.status !== "published" && alreadyPublished.zernioPostId) {
-            return db.transaction(async (tx) => {
-            await tx.execute(sql`SELECT id FROM ${drafts} WHERE id = ${draftId} AND tenant_id = ${tenantId} FOR UPDATE`);
-            const existing = await zernio.posts.getPost({ path: { postId: alreadyPublished.zernioPostId } });
-            if (existing.error || !existing.data?.post) return { error: "Couldn’t confirm the existing post. Please try again later." };
-            const status = draftStatusFromZernio(existing.data.post.status);
-            await tx.update(posts).set({ status, ...(status === "published" ? { publishedAt: new Date() } : {}) }).where(eq(posts.id, alreadyPublished.id));
-            await tx.update(drafts).set({ status, errorMessage: status === "failed" ? "Zernio reported a publishing failure. Review the post in Zernio before retrying." : null })
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
-            return status === "failed" ? { error: "Zernio reported a publishing failure." } : { success: true, status };
-            });
-        }
-        await db.update(drafts).set({ status: alreadyPublished.status, errorMessage: null })
-            .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
-        return { success: true, status: alreadyPublished.status };
+        return reconcileRecordedDraft(draftId, tenantId, { zernio });
     }
 
     // 1. Atomically claim the draft for publishing
     const updateResult = await db.update(drafts)
         .set({ 
             status: "publishing",
-            errorMessage: `claimed:${Date.now()}` 
+            errorMessage: `claimed:${Date.now()}`,
+            publicationCheckedAt: new Date(),
         })
         .where(
             and(
@@ -264,94 +251,94 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     }
 }
 
-/**
- * Recovers a bounded batch of interrupted publishing claims. Existing remote
- * posts retain their recorded status. Unknown outcomes require verification;
- * resetting a claim for a later retry could cross Zernio's idempotency window.
- */
-export async function recoverStalePublishingDrafts(options: { limit?: number; staleAfterMs?: number; tenantId?: string } = {}): Promise<number> {
-    const now = Date.now();
-    const staleAfterMs = options.staleAfterMs ?? 2 * 60 * 1000;
-    const staleCutoffDate = new Date(now - staleAfterMs);
-    const staleCutoffTimestamp = now - staleAfterMs;
-    const staleClaimBound = `claimed:${staleCutoffTimestamp}`;
-    const batchLimit = options.limit ?? 10;
+/** Refresh an existing receipt; this path never creates or retries a remote post. */
+async function reconcileRecordedDraft(draftId: string, tenantId: string, options: { zernio?: Zernio; staleCutoff?: Date } = {}): Promise<{ success?: boolean; error?: string; status?: string; skipped?: boolean }> {
+    return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT id FROM ${drafts} WHERE id = ${draftId} AND tenant_id = ${tenantId} FOR UPDATE`);
+        const draft = await tx.query.drafts.findFirst({ where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)) });
+        if (!draft) return { error: "Draft not found." };
+        if (options.staleCutoff && (draft.status !== "publishing" || (draft.publicationCheckedAt && draft.publicationCheckedAt > options.staleCutoff))) {
+            return { skipped: true };
+        }
+        const recorded = await tx.query.posts.findFirst({ where: and(eq(posts.tenantId, tenantId), eq(posts.draftId, draftId)) });
+        const checkedAt = new Date();
+        if (!recorded || (recorded.status !== "published" && !recorded.zernioPostId)) {
+            // A missing receipt is an uncertain outcome, never permission to POST again.
+            await tx.update(drafts).set({
+                status: "failed", publicationCheckedAt: checkedAt,
+                errorMessage: "verify: Publishing was interrupted. Check Zernio before creating another post.",
+            }).where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+            return { error: "Publication requires verification.", status: "failed" };
+        }
+        let status = recorded.status;
+        let publishedAt = recorded.publishedAt;
+        if (status !== "published") {
+            const zernio = options.zernio ?? (await getZernioClientForTenant(tenantId)).zernio;
+            const response = await zernio.posts.getPost({ path: { postId: recorded.zernioPostId! }, signal: AbortSignal.timeout(4_000) });
+            const remote = response.data?.post;
+            if (response.error || !remote || remote._id !== recorded.zernioPostId ||
+                (remote.metadata?.draftId !== undefined && remote.metadata.draftId !== draftId) ||
+                !["published", "publishing", "scheduled", "pending", "failed", "partial"].includes(remote.status ?? "")) {
+                throw new Error("Could not confirm the existing provider post.");
+            }
+            status = draftStatusFromZernio(remote.status);
+            const providerDate = remote.publishedAt && new Date(remote.publishedAt);
+            publishedAt = providerDate && Number.isFinite(providerDate.getTime()) ? providerDate : checkedAt;
+            await tx.update(posts).set({ status, ...(status === "published" ? { publishedAt } : {}) })
+                .where(and(eq(posts.id, recorded.id), eq(posts.tenantId, tenantId)));
+        }
+        await tx.update(drafts).set({
+            status, publicationCheckedAt: checkedAt,
+            errorMessage: status === "failed" ? "Zernio reported a publishing failure. Review the existing post before retrying." : null,
+        }).where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)));
+        return status === "failed" ? { error: "Zernio reported a publishing failure.", status } : { success: true, status };
+    });
+}
 
+/**
+ * Reconcile old publishing claims from durable provider receipts. Failed reads
+ * stay pending and rotate behind older checks; one failure cannot block a batch.
+ * Claims without remote IDs require verification and are never resubmitted.
+ */
+export async function recoverStalePublishingDrafts(options: { limit?: number; staleAfterMs?: number; tenantId?: string } = {}): Promise<{ recovered: number; failed: number }> {
+    const now = Date.now();
+    const staleCutoffDate = new Date(now - (options.staleAfterMs ?? 2 * 60 * 1000));
+    const staleClaimBound = `claimed:${staleCutoffDate.getTime()}`;
     const conditions = [
         eq(drafts.status, "publishing"),
+        or(isNull(drafts.publicationCheckedAt), lte(drafts.publicationCheckedAt, staleCutoffDate)),
         or(
-            // Claimed with a timestamp at or older than stale cutoff
+            and(sql`${drafts.errorMessage} LIKE 'claimed:%'`, sql`${drafts.errorMessage} <= ${staleClaimBound}`),
             and(
-                sql`${drafts.errorMessage} LIKE 'claimed:%'`,
-                sql`${drafts.errorMessage} <= ${staleClaimBound}`
+                or(isNull(drafts.errorMessage), sql`${drafts.errorMessage} NOT LIKE 'claimed:%'`),
+                or(lte(drafts.scheduledFor, staleCutoffDate), lte(drafts.createdAt, staleCutoffDate)),
             ),
-            // Or legacy/unmarked claim whose scheduledFor or createdAt has expired
-            and(
-                or(
-                    isNull(drafts.errorMessage),
-                    sql`${drafts.errorMessage} NOT LIKE 'claimed:%'`
-                ),
-                or(
-                    lte(drafts.scheduledFor, staleCutoffDate),
-                    lte(drafts.createdAt, staleCutoffDate)
-                )
-            )
-        )
+        ),
     ];
-
-    if (options.tenantId) {
-        conditions.push(eq(drafts.tenantId, options.tenantId));
-    }
-
-    const stranded = await db.select({
-        id: drafts.id,
-        tenantId: drafts.tenantId,
-        content: drafts.content,
-        errorMessage: drafts.errorMessage,
-        scheduledFor: drafts.scheduledFor,
-        createdAt: drafts.createdAt,
-    })
-    .from(drafts)
-    .where(and(...conditions))
-    .orderBy(asc(drafts.createdAt))
-    .limit(batchLimit);
-
-    let recoveredCount = 0;
-    for (const d of stranded) {
-        // 1. Check if the draft was already recorded in posts table
-        const recorded = await db.query.posts.findFirst({
-            where: and(eq(posts.tenantId, d.tenantId), eq(posts.draftId, d.id))
-        });
-        if (recorded) {
-            await db.update(drafts)
-                .set({ status: recorded.status, errorMessage: null })
-                .where(and(eq(drafts.id, d.id), eq(drafts.tenantId, d.tenantId)));
-            recoveredCount++;
-            continue;
+    if (options.tenantId) conditions.push(eq(drafts.tenantId, options.tenantId));
+    const stranded = await db.select({ id: drafts.id, tenantId: drafts.tenantId })
+        .from(drafts).where(and(...conditions))
+        .orderBy(sql`${drafts.publicationCheckedAt} ASC NULLS FIRST`, asc(drafts.createdAt))
+        .limit(options.limit ?? 10);
+    let recovered = 0;
+    let failed = 0;
+    for (const draft of stranded) {
+        try {
+            const result = await reconcileRecordedDraft(draft.id, draft.tenantId, { staleCutoff: staleCutoffDate });
+            if (result.error) failed++;
+            if (!result.skipped && result.status && result.status !== "publishing") recovered++;
+        } catch {
+            failed++;
+            // Avoid exposing raw provider exceptions or reverting a concurrent webhook.
+            await db.update(drafts).set({
+                publicationCheckedAt: new Date(),
+                errorMessage: "Publication status is temporarily unavailable. Joey will check again automatically. Do not create another post.",
+            }).where(and(eq(drafts.id, draft.id), eq(drafts.tenantId, draft.tenantId), eq(drafts.status, "publishing"),
+                or(isNull(drafts.publicationCheckedAt), lte(drafts.publicationCheckedAt, staleCutoffDate))));
+            console.error("Publication status check failed", { draftId: draft.id, tenantId: draft.tenantId });
         }
-
-        let claimTimestamp = 0;
-        if (d.errorMessage?.startsWith("claimed:")) {
-            claimTimestamp = parseInt(d.errorMessage.split(":")[1], 10);
-        }
-
-        const isStale = (claimTimestamp > 0 && now - claimTimestamp >= staleAfterMs) ||
-            (!claimTimestamp && d.scheduledFor && d.scheduledFor < staleCutoffDate) ||
-            (!claimTimestamp && d.createdAt < staleCutoffDate);
-
-        if (!isStale) continue;
-
-        // A reset followed by a later worker run can cross the provider window.
-        // Without a durable remote ID, require reconciliation rather than resubmit.
-        await db.update(drafts).set({
-            status: "failed",
-            errorMessage: "verify: Publishing was interrupted. Check Zernio before creating another post.",
-        }).where(and(eq(drafts.id, d.id), eq(drafts.status, "publishing")));
-        recoveredCount++;
-
     }
-
-    return recoveredCount;
+    return { recovered, failed };
 }
 
 /**
@@ -360,7 +347,7 @@ export async function recoverStalePublishingDrafts(options: { limit?: number; st
  */
 export async function publishDueDrafts(options: { limit?: number; staleAfterMs?: number } = {}): Promise<{ published: number; failed: number; recovered: number }> {
     const batchLimit = options.limit ?? 10;
-    const recovered = await recoverStalePublishingDrafts({ 
+    const recovery = await recoverStalePublishingDrafts({
         limit: batchLimit, 
         staleAfterMs: options.staleAfterMs 
     });
@@ -381,7 +368,7 @@ export async function publishDueDrafts(options: { limit?: number; staleAfterMs?:
     .limit(batchLimit);
 
     let published = 0;
-    let failed = 0;
+    let failed = recovery.failed;
 
     for (const draft of pendingDrafts) {
         try {
@@ -408,5 +395,5 @@ export async function publishDueDrafts(options: { limit?: number; staleAfterMs?:
         }
     }
 
-    return { published, failed, recovered };
+    return { published, failed, recovered: recovery.recovered };
 }

@@ -14,13 +14,14 @@ export async function GET(request: Request) {
     const result = await db.execute(sql`
       SELECT
         (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public'
-          AND table_name = 'theme_sources' AND column_name IN ('last_attempt_at', 'last_success_at', 'last_poll_error')) AS columns,
+          AND ((table_name = 'theme_sources' AND column_name IN ('last_attempt_at', 'last_success_at', 'last_poll_error'))
+            OR (table_name = 'drafts' AND column_name = 'publication_checked_at'))) AS columns,
         (SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'public'
-          AND indexname IN ('drafts_tenant_created_idx', 'posts_tenant_published_idx', 'social_accounts_tenant_created_idx')) AS indexes
+          AND indexname IN ('drafts_tenant_created_idx', 'posts_tenant_published_idx', 'social_accounts_tenant_created_idx', 'drafts_publication_recovery_idx')) AS indexes
     `);
     const row = (Array.isArray(result) ? result[0] : (result as unknown as { rows: Array<{ columns: number; indexes: number }> }).rows[0]) as { columns: number; indexes: number };
     const checks = {
-      schema: row.columns === 3 && row.indexes === 3,
+      schema: row.columns === 4 && row.indexes === 4,
       storage: themeMediaStorageReady(),
       worker: (process.env.MEDIA_WORKER_SECRET?.length ?? 0) >= 32 && /^https:\/\/[^/]+\.modal\.run\/?$/.test(process.env.MEDIA_WORKER_DISPATCH_URL || ""),
     };

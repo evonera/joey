@@ -10,7 +10,7 @@ describe("read-only runtime probe", () => {
     process.env.CRON_SECRET = "test-cron-secret";
     process.env.MEDIA_WORKER_SECRET = "x".repeat(64);
     process.env.MEDIA_WORKER_DISPATCH_URL = "https://worker.modal.run";
-    mocks.execute.mockResolvedValue({ rows: [{ columns: 3, indexes: 3 }] });
+    mocks.execute.mockResolvedValue({ rows: [{ columns: 4, indexes: 4 }] });
     mocks.storage.mockReturnValue(true);
   });
   const request = () => new Request("https://joey.example/api/internal/runtime", { headers: { authorization: "Bearer test-cron-secret" } });
@@ -26,7 +26,11 @@ describe("read-only runtime probe", () => {
   });
   it("supports both Neon result objects and Postgres row arrays", async () => {
     expect((await GET(request())).status).toBe(200);
-    mocks.execute.mockResolvedValueOnce([{ columns: 3, indexes: 3 }]);
+    mocks.execute.mockResolvedValueOnce([{ columns: 4, indexes: 4 }]);
     expect((await GET(request())).status).toBe(200);
+  });
+  it("blocks rollout before publication recovery is migrated", async () => {
+    mocks.execute.mockResolvedValueOnce([{ columns: 3, indexes: 3 }]);
+    expect((await GET(request())).status).toBe(503);
   });
 });
