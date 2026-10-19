@@ -1,9 +1,25 @@
 import { createHash } from "node:crypto";
 import { isPublicScoutHttpsUrl } from "./source-validation";
 
+/** The same public video may be exposed as a Short, watch, embed, or share link. */
+export function youtubeScoutVideoId(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return undefined;
+    const host = url.hostname.toLowerCase();
+    const id = host === "youtu.be" ? url.pathname.replace(/^\/|\/$/g, "") :
+      ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"].includes(host) ?
+        url.pathname.replace(/\/$/, "") === "/watch" ? url.searchParams.get("v") :
+          url.pathname.match(/^\/(?:shorts|live|embed)\/([\w-]{11})\/?$/)?.[1] : undefined;
+    return id && /^[\w-]{11}$/.test(id) ? id : undefined;
+  } catch { return undefined; }
+}
+
 /** A canonical source link is stable evidence; profile URLs and array positions are not. */
 export function canonicalScoutPostUrl(value: unknown): string | undefined {
   if (typeof value !== "string" || !isPublicScoutHttpsUrl(value)) return undefined;
+  const videoId = youtubeScoutVideoId(value);
+  if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
   const url = new URL(value);
   url.hash = "";
   for (const key of [...url.searchParams.keys()]) {
@@ -14,7 +30,21 @@ export function canonicalScoutPostUrl(value: unknown): string | undefined {
   return url.toString();
 }
 export function scoutPostIdentity(url: string): string {
-  return `url:${createHash("sha256").update(url).digest("hex")}`;
+  const videoId = youtubeScoutVideoId(url);
+  return `url:${createHash("sha256").update(videoId ? `https://www.youtube.com/watch?v=${videoId}` : url).digest("hex")}`;
+}
+
+/** Normalize only a comparison copy. Historical acquisition receipts stay immutable. */
+export function normalizeScoutPostEvidence<T extends { id: string; url: string }>(item: T): T {
+  const videoId = youtubeScoutVideoId(item.url);
+  if (!videoId) return item;
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  return { ...item, id: scoutPostIdentity(url), url };
+}
+
+export function sameScoutPostEvidence(a: { id: string; url: string }, b: { id: string; url: string }): boolean {
+  const left = normalizeScoutPostEvidence(a), right = normalizeScoutPostEvidence(b);
+  return left.id === right.id && left.url === right.url;
 }
 export function observedMetric(value: unknown): number | undefined {
   if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return undefined;

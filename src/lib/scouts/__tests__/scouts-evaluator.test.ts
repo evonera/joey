@@ -200,4 +200,16 @@ describe("Durable Scout evaluator", () => {
     expect(await evaluateScout(scout.id)).toMatchObject({ triggered: true, alert: { changes: [{ before: expect.stringContaining("100000 views"), after: expect.stringContaining("125000 views") }] } });
   });
 
+  it("presents one canonical YouTube baseline to the judge across historical feed URL forms", async () => {
+    const old = { id: "legacy-shorts-hash", url: "https://www.youtube.com/shorts/abcdefghijk", text: "Original feed text", observedAt: "2026-10-01T00:00:00Z" };
+    const latest = { ...old, id: "legacy-watch-hash", url: "https://www.youtube.com/watch?v=abcdefghijk", text: "Later title", observedAt: "2026-10-02T00:00:00Z" };
+    mocks.history.mockResolvedValue([{ items: [latest] }, { items: [old] }]);
+    await evaluateScout(scout.id);
+    const prompt = mocks.llm.mock.calls[0][0].messages[1].content as string;
+    const baseline = JSON.parse(prompt.split("SAVED BASELINE OBSERVATIONS:\n")[1].split("\nOnly trigger")[0]);
+    expect(baseline).toHaveLength(1);
+    expect(baseline[0]).toMatchObject({ text: "Later title", observedAt: latest.observedAt, url: latest.url });
+    expect(old.url).toContain("/shorts/");
+  });
+
 });

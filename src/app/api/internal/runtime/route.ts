@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       worker: (process.env.MEDIA_WORKER_SECRET?.length ?? 0) >= 32 && /^https:\/\/[^/]+\.modal\.run\/?$/.test(process.env.MEDIA_WORKER_DISPATCH_URL || ""),
     };
     const ready = Object.values(checks).every(Boolean);
-    return NextResponse.json({ ready, checks, renderer: RENDERER_VERSION }, { status: ready ? 200 : 503 });
+    return NextResponse.json({ ready, checks, renderer: RENDERER_VERSION, sourceCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null }, { status: ready ? 200 : 503 });
   } catch {
     return NextResponse.json({ ready: false, checks: { database: false } }, { status: 503 });
   }

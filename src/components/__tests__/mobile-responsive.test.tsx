@@ -81,7 +81,7 @@ const mockScouts = [
 
 describe("mobile responsive (390px) guards", () => {
   it("labels Free Scouts as manual and does not report blocked monitoring as active", () => {
-    render(<ScoutsClient initialScouts={[{ ...mockScouts[0], platform: "youtube", targetUrl: "https://youtube.com/@GoogleDevelopers" }] as never} dailyMonitoringAllowed={false} />);
+    render(<ScoutsClient initialScouts={[{ ...mockScouts[0], platform: "rss", targetUrl: "https://example.com/feed" }] as never} dailyMonitoringAllowed={false} />);
     expect(screen.getByText(/0 active · 1 waiting for plan or source/)).toBeInTheDocument();
     expect(screen.getByText("Manual checks")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "/settings?tab=billing");
@@ -89,7 +89,7 @@ describe("mobile responsive (390px) guards", () => {
   });
 
   it("shows paid ready sources as active daily monitoring", () => {
-    render(<ScoutsClient initialScouts={[{ ...mockScouts[0], platform: "youtube", targetUrl: "https://youtube.com/@GoogleDevelopers" }] as never} dailyMonitoringAllowed />);
+    render(<ScoutsClient initialScouts={[{ ...mockScouts[0], platform: "rss", targetUrl: "https://example.com/feed" }] as never} dailyMonitoringAllowed />);
     expect(screen.getByText(/1 active · 0 waiting for plan or source/)).toBeInTheDocument();
     expect(screen.getByText("Daily automatic")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Choose a plan" })).not.toBeInTheDocument();

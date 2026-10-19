@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   setup: vi.fn(),
   evaluateScout: vi.fn(),
   findFirst: vi.fn(),
+  latestRun: vi.fn(),
   insert: vi.fn(),
   values: vi.fn(),
   returning: vi.fn(),
@@ -27,7 +28,7 @@ vi.mock("@/lib/db", () => ({ db: {
   transaction: (fn: (tx: unknown) => unknown) => fn({ update: mocks.update }),
   update: mocks.update,
   insert: mocks.insert,
-  query: { scouts: { findFirst: mocks.findFirst } },
+  query: { scouts: { findFirst: mocks.findFirst }, scoutRuns: { findFirst: mocks.latestRun } },
 } }));
 vi.mock("@/lib/agency/service", () => ({ detachAgencyResource: vi.fn(), guardAgencyScoutChange: vi.fn() }));
 vi.mock("@/lib/scouts/evaluator", () => ({ evaluateScout: mocks.evaluateScout }));
@@ -50,10 +51,31 @@ beforeEach(() => {
   mocks.resolveToken.mockResolvedValue("test-token");
   mocks.setup.mockResolvedValue({ ready: true, provider: "custom", customEnabled: true });
   mocks.findFirst.mockResolvedValue({ id: "scout-1", ...input, platform: "instagram", isActive: false });
+  mocks.latestRun.mockResolvedValue(undefined);
   mocks.returning.mockResolvedValue([{ id: "scout-1", isActive: false }]);
   mocks.where.mockReturnValue({ returning: mocks.returning });
   mocks.update.mockReturnValue({ set: mocks.set.mockReturnValue({ where: mocks.where }) });
   mocks.insert.mockReturnValue({ values: mocks.values.mockReturnValue({ returning: mocks.returning }) });
+});
+
+describe("YouTube Scout collection health", () => {
+  beforeEach(() => {
+    mocks.findFirst.mockResolvedValue({ id: "scout-1", platform: "youtube" });
+    mocks.setup.mockResolvedValue({ ready: true, provider: "youtube" });
+  });
+  it("keeps API collection failures visible while allowing a retry", async () => {
+    mocks.latestRun.mockResolvedValue({ status: "failed", error: "YouTube Data API daily quota exhausted." });
+    expect(await getScoutSetup("scout-1")).toEqual({ ready: true, provider: "youtube", degraded: true, issue: "YouTube Data API daily quota exhausted." });
+  });
+  it("clears degraded health after a successful collection", async () => {
+    mocks.latestRun.mockResolvedValue({ status: "no_alert" });
+    expect(await getScoutSetup("scout-1")).toEqual({ ready: true, provider: "youtube", degraded: false });
+  });
+  it("preserves a missing-key setup error without a collection lookup", async () => {
+    mocks.setup.mockResolvedValue({ ready: false, provider: "youtube", degraded: true, issue: "Configure YouTube Data API." });
+    expect(await getScoutSetup("scout-1")).toMatchObject({ ready: false, degraded: true });
+    expect(mocks.latestRun).not.toHaveBeenCalled();
+  });
 });
 
 describe("toggleScout authorization", () => {

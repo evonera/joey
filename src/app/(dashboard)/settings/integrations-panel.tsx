@@ -12,6 +12,7 @@ const INTEGRATIONS = [
   { provider: "zernio", label: "Zernio", placeholder: "sk_…", url: "https://zernio.com/dashboard/api-keys", hint: "Social account connections, publishing, analytics, and inbox" },
   { provider: "openrouter", label: "OpenRouter", placeholder: "sk-or-v1-…", url: "https://openrouter.ai/settings/keys", hint: "Multiple LLM providers through one key" },
   { provider: "supadata", label: "Supadata", placeholder: "Supadata API key", url: "https://supadata.ai/dashboard", hint: "YouTube transcript extraction" },
+  { provider: "youtube", label: "YouTube Data API", placeholder: "Restricted YouTube API key", url: "https://console.cloud.google.com/apis/credentials", hint: "Official channel uploads and video statistics for Scouts. Enable YouTube Data API v3 and restrict this key to that API. Separate from Google AI and transcripts." },
   { provider: "apify", label: "Apify", placeholder: "apify_api_…", url: "https://console.apify.com/settings/integrations", hint: "Scrapers (Instagram, TikTok, LinkedIn…)" },
   { provider: "exa", label: "Exa", placeholder: "Exa API key", url: "https://dashboard.exa.ai/api-keys", hint: "Neural web research" },
   { provider: "tavily", label: "Tavily", placeholder: "tvly-…", url: "https://app.tavily.com/home", hint: "Fast web search + answers" },

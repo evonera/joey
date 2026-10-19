@@ -28,13 +28,44 @@ def acceptance_target(control, now):
     return app_name
 
 
+def youtube_acceptance_target(control, now):
+    """The API replacement has its own independently owned deadline."""
+    from datetime import datetime, timezone
+    import re
+    if not isinstance(control, dict) or not control.get("enabled"):
+        return None
+    app_name = control.get("appName", "")
+    if not re.fullmatch(r"joey-youtube-api-soak-[0-9]{8}", app_name):
+        return None
+    try:
+        started = datetime.fromisoformat(control["startedAt"].replace("Z", "+00:00"))
+        deadline = datetime.fromisoformat(control["dispatchUntil"].replace("Z", "+00:00"))
+        if started.tzinfo is None or deadline.tzinfo is None:
+            return None
+        if not 0 < (deadline - started).total_seconds() <= 75 * 3600:
+            return None
+        if not started <= now.astimezone(timezone.utc) < deadline:
+            return None
+    except (ValueError, KeyError, TypeError):
+        return None
+    return app_name
+
+
 def dispatch_acceptance():
     import modal
     from datetime import datetime, timezone
-    control = modal.Dict.from_name("joey-scout-soak-control", create_if_missing=True).get("active")
-    target = acceptance_target(control, datetime.now(timezone.utc))
-    if target:
-        modal.Function.from_name(target, "tick").spawn()
+    controls = modal.Dict.from_name("joey-scout-soak-control", create_if_missing=True)
+    failures = 0
+    for key, validate in (("active", acceptance_target), ("youtube_api", youtube_acceptance_target)):
+        try:
+            target = validate(controls.get(key), datetime.now(timezone.utc))
+            if target:
+                modal.Function.from_name(target, "tick").spawn()
+        except Exception:
+            # A failing temporary child must not starve the other acceptance run.
+            failures += 1
+    if failures:
+        raise RuntimeError(f"Temporary acceptance dispatch failed for {failures} child job(s)") from None
 
 
 def run_tick():

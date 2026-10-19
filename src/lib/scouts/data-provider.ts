@@ -6,6 +6,9 @@ import { readBoundedJson } from "@/lib/http/read-bounded-json";
 import { outboundRequest, resolveOutboundTarget } from "@/lib/flows/outbound-request";
 import { isPublicScoutHttpsUrl as publicHttps, validateScoutSource } from "./source-validation";
 import { customProviderFailure, scoutCloudHeaders } from "./cloud-transport";
+import { YoutubeApiScoutProvider, resolveYoutubeScoutKey } from "./youtube-api";
+
+export { YoutubeApiScoutProvider as YoutubeScoutProvider } from "./youtube-api";
 
 /** Server-owned collection boundary. Providers supply evidence, never approvals or drafts. */
 export interface ScoutPostItem {
@@ -17,6 +20,8 @@ export interface ScoutPostItem {
   timestamp?: string;
   /** Collection time assigned by Joey, never supplied by an upstream provider. */
   observedAt?: string;
+  /** Set by the server adapter, never accepted from connector/provider uploads. */
+  acquisitionProvider?: "youtube-data-api";
 }
 export interface ScoutCollectionRequest {
   id?: string;
@@ -93,34 +98,6 @@ export class RssScoutProvider implements ScoutDataProvider {
         };
       });
     return [...new Map(items.map((item) => [item.id, item])).values()];
-  }
-}
-
-export class YoutubeScoutProvider implements ScoutDataProvider {
-  readonly kind = "youtube" as const;
-  async fetchRecentPosts(request: ScoutCollectionRequest, context: ScoutCollectionContext) {
-    validateScoutSource(request.targetUrl, "youtube");
-    const source = new URL(request.targetUrl);
-    const videoId = source.hostname === "youtu.be" ? source.pathname.slice(1) : source.searchParams.get("v") ?? source.pathname.match(/^\/(?:shorts|live|embed)\/([\w-]{11})\/?$/)?.[1];
-    if (videoId && /^[\w-]{11}$/.test(videoId)) {
-      await context.beforePaidPhase?.();
-      const url = `https://www.youtube.com/watch?v=${videoId}`;
-      const response = await outboundRequest(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, { signal: context.signal, timeoutMs: 20000, maxBytes: 64 * 1024, maxRedirects: 0 });
-      if (response.status !== 200) throw new Error(`YouTube video metadata returned HTTP ${response.status}.`);
-      const data = z.object({ title: z.string().max(6000) }).parse(JSON.parse(response.buffer.toString("utf8")));
-      return [{ id: videoId, url, text: data.title }];
-    }
-    let channelId = source.pathname.match(/^\/channel\/(UC[\w-]{22})(?:\/|$)/)?.[1] ?? source.searchParams.get("channel_id") ?? undefined;
-    if (!channelId) {
-      if (!/^\/(?:@[\w.-]+|(?:c|user)\/[\w.-]+)(?:\/(?:videos|shorts|streams))?\/?$/.test(source.pathname)) throw new Error("Use a YouTube channel or individual video URL.");
-      await context.beforePaidPhase?.();
-      const response = await outboundRequest(source.toString(), { signal: context.signal, timeoutMs: 20000, maxBytes: 2 * 1024 * 1024, maxRedirects: 3 });
-      if (response.status !== 200) throw new Error(`YouTube channel returned HTTP ${response.status}.`);
-      const html = response.buffer.toString("utf8");
-      channelId = html.match(/"externalId"\s*:\s*"(UC[\w-]{22})"/)?.[1] ?? html.match(/channel_id=(UC[\w-]{22})/)?.[1];
-    }
-    if (!channelId || !/^UC[\w-]{22}$/.test(channelId)) throw new Error("Channel ID could not be resolved. Use its /channel/UC… URL or send observations with the local connector.");
-    return new RssScoutProvider().fetchRecentPosts({ platform: "rss", targetUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}` }, context);
   }
 }
 
@@ -327,7 +304,11 @@ export async function getScoutDataProvider(
   if (!tenantId) throw new Error("Scout collection requires a workspace.");
   if (source) validateScoutSource(source.targetUrl, source.platform);
   if (source?.platform === "rss") return new RssScoutProvider();
-  if (source?.platform === "youtube") return new YoutubeScoutProvider();
+  if (source?.platform === "youtube") {
+    const key = await resolveYoutubeScoutKey(tenantId);
+    if (!key) throw new Error("YouTube monitoring is degraded: the public feed is unreliable. Add a restricted YouTube Data API key in Settings → Integrations to enable official API collection.");
+    return new YoutubeApiScoutProvider(key, tenantId);
+  }
   if (source?.platform === "web") return new WebScoutProvider();
   if (source) {
     const { findConnectedScoutAccount, ConnectedAccountScoutProvider } = await import("./connected-provider");
@@ -366,7 +347,7 @@ export async function getScoutDataProvider(
 export async function getScoutProviderSetup(tenantId: string, source?: ScoutCollectionRequest) {
   let provider: ScoutDataProvider["kind"] | "unconfigured" = "unconfigured";
   try {
-    provider = source?.platform === "rss" ? "rss" : scoutProviderKind();
+    provider = source?.platform === "rss" ? "rss" : source?.platform === "youtube" ? "youtube" : scoutProviderKind();
     const resolved = await getScoutDataProvider(tenantId, source);
     return { ready: true, provider: resolved.kind, customEnabled: provider === "custom" };
   } catch (error) {
@@ -374,6 +355,7 @@ export async function getScoutProviderSetup(tenantId: string, source?: ScoutColl
       ready: false,
       provider,
       customEnabled: provider === "custom",
+      degraded: source?.platform === "youtube",
       issue: error instanceof Error ? error.message : "Scout provider is unavailable.",
     };
   }

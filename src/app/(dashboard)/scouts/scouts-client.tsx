@@ -66,7 +66,7 @@ export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: 
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [editingScout, setEditingScout] = useState<ScoutItem | null>(null);
   const [setup, setSetup] = useState<Awaited<ReturnType<typeof getScoutSetup>> | null>(null);
-  const [sourceSetups, setSourceSetups] = useState<Record<string, { ready: boolean; provider: string; issue?: string }>>({});
+  const [sourceSetups, setSourceSetups] = useState<Record<string, { ready: boolean; provider: string; issue?: string; degraded?: boolean }>>({});
   const [isRunning, setIsRunning] = useState(false);
 
   function createFromScout(scout: ScoutItem) {
@@ -254,7 +254,8 @@ export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: 
   };
 
   const configuredActiveCount = scoutsList.filter((s) => s.isActive).length;
-  const sourceReady = (scout: ScoutItem) => ["rss", "youtube", "web"].includes(scout.platform) || sourceSetups[scout.id]?.ready === true || setup?.ready === true;
+  const sourceReady = (scout: ScoutItem) => sourceSetups[scout.id]?.ready ?? (["rss", "web"].includes(scout.platform) || (scout.platform !== "youtube" && setup?.ready === true));
+  const youtubeDegraded = (scout: ScoutItem) => scout.platform === "youtube" && (sourceSetups[scout.id]?.degraded || sourceSetups[scout.id]?.ready === false);
   const selectedReady = selectedScout ? sourceReady(selectedScout) : false;
   const waitingCount = scoutsList.filter(scout => scout.isActive && (!dailyMonitoringAllowed || !sourceReady(scout))).length;
   const hasUnconfiguredSocialSource = scoutsList.some(scout => !["rss", "youtube", "web"].includes(scout.platform) && !sourceReady(scout));
@@ -372,9 +373,9 @@ export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: 
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">RSS, YouTube and websites collect directly. Connected Instagram, X and TikTok accounts use your workspace&apos;s publishing provider. <Link href="/docs#local-connector" className="underline">Set up acquisition for other profiles</Link>.</p>
+      <p className="text-xs text-muted-foreground">RSS and websites collect directly. YouTube uses its official Data API and requires configured API access. Connected Instagram, X and TikTok accounts use your workspace&apos;s publishing provider. <Link href="/docs#local-connector" className="underline">Set up acquisition for other profiles</Link>.</p>
       {!dailyMonitoringAllowed && <div role="status" className="rounded-xl border border-border/40 p-3 text-sm">Check Now is available on Free. Daily automatic monitoring requires a paid workspace plan. <Link href="/settings?tab=billing" className="underline">Choose a plan</Link>.</div>}
-      {setup && !setup.ready && (scoutsList.length === 0 || hasUnconfiguredSocialSource) && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources needing acquisition: {setup.issue} RSS/Atom, YouTube and website sources remain available.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
+      {setup && !setup.ready && (scoutsList.length === 0 || hasUnconfiguredSocialSource) && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><p>Social sources needing acquisition: {setup.issue} RSS/Atom and website sources remain available. YouTube requires a separate Data API key.</p><Link href="/settings?tab=apps" className="font-medium underline">Configure Scout provider</Link></div>}
 
       {scoutsList.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-border/60 p-12 text-center bg-card/30">
@@ -445,7 +446,7 @@ export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: 
                         <span
                           className={cn(
                             "size-2 rounded-full",
-                            scout.isActive ? !dailyMonitoringAllowed || !sourceReady(scout) ? "bg-amber-500" : "bg-emerald-500" : "bg-muted-foreground/40"
+                            scout.isActive ? !dailyMonitoringAllowed || !sourceReady(scout) || youtubeDegraded(scout) ? "bg-amber-500" : "bg-emerald-500" : "bg-muted-foreground/40"
                           )}
                         />
                         <span className="text-xs font-semibold text-foreground truncate max-w-[200px]">
@@ -453,7 +454,7 @@ export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: 
                         </span>
                       </div>
                       <span className="text-[10px] font-mono text-muted-foreground">
-                        {dailyMonitoringAllowed ? "Daily automatic" : "Manual checks"}
+                        {youtubeDegraded(scout) ? "YouTube degraded" : dailyMonitoringAllowed ? "Daily automatic" : "Manual checks"}
                       </span>
                     </div>
 
@@ -522,7 +523,7 @@ export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: 
                       </span>
                       <span className="shrink-0">·</span>
                       <span className="capitalize shrink-0">{selectedScout.platform}</span>
-                      <span>{sourceSetups[selectedScout.id]?.provider ?? (["rss", "youtube", "web"].includes(selectedScout.platform) ? "direct" : "waiting for source")}</span>
+                      <span>{sourceSetups[selectedScout.id]?.provider === "youtube" && sourceReady(selectedScout) ? "YouTube Data API" : sourceSetups[selectedScout.id]?.provider ?? (["rss", "web"].includes(selectedScout.platform) ? "direct" : "waiting for source")}</span>
                     </div>
                   </div>
 
@@ -567,6 +568,12 @@ export function ScoutsClient({ initialScouts, dailyMonitoringAllowed = false }: 
                     </Button>
                   </div>
                 </div>
+
+                {youtubeDegraded(selectedScout) && <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+                  <p className="font-semibold">YouTube monitoring degraded</p>
+                  <p className="mt-1">{sourceSetups[selectedScout.id]?.issue ?? "YouTube API collection needs attention. RSS monitoring remains available."}</p>
+                  <Link href="/settings?tab=apps" className="mt-2 inline-block underline">Configure YouTube Data API</Link>
+                </div>}
 
                 {/* Section: Last scan (persists after toasts fade) */}
                 {lastRun && (

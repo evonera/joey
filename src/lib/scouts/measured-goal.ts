@@ -1,4 +1,5 @@
 import type { ScoutPostItem } from "./data-provider";
+import { sameScoutPostEvidence } from "./post-evidence";
 
 export interface MeasuredGoalResult {
   triggered: boolean;
@@ -28,7 +29,7 @@ export function evaluateMeasuredGoal(
     const value = item[metric];
     if (typeof value !== "number") continue;
     const previous = baseline.find(
-      (post) => post.id === item.id && post.url === item.url && post[metric] !== undefined
+      (post) => sameScoutPostEvidence(post, item) && post[metric] !== undefined
     );
     let measured = value;
     if (growth) {
@@ -65,7 +66,7 @@ export function evaluateMeasuredGoal(
 
 /** Never accept a model's SPIKE claim without a matching, dated counter increase. */
 export function measuredPostIncreases(post: ScoutPostItem, baseline: ScoutPostItem[]): MeasuredGoalResult["changes"] {
-  const previous = baseline.find((item) => item.id === post.id && item.url === post.url);
+  const previous = baseline.find((item) => sameScoutPostEvidence(item, post));
   if (!previous?.observedAt || !post.observedAt || !(Date.parse(previous.observedAt) < Date.parse(post.observedAt)))
     return [];
   return (["views", "likes"] as const).flatMap((metric) => {
