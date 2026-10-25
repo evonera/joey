@@ -23,14 +23,18 @@ def maintenance_tick():
     sys.path.insert(0, "/worker")
     sentry_sdk.init(dsn=os.environ.get("SENTRY_DSN"), environment=os.environ.get("SENTRY_ENVIRONMENT", "production"), send_default_pii=False, include_local_variables=False)
     sentry_sdk.set_tag("service", "joey-scheduler")
-    from scheduler import run_tick, dispatch_acceptance
+    from scheduler import run_tick, dispatch_acceptance, dispatch_capacity
     try:
-        return run_tick()
+        return run_tick(readiness_cache=modal.Dict.from_name("joey-scheduler-readiness", create_if_missing=True))
     finally:
         # Acceptance must not change production tick success/failure, and it
         # must still finalize if production's readiness check is unavailable.
         try:
             dispatch_acceptance()
+        except Exception as error:
+            sentry_sdk.capture_exception(error)
+        try:
+            dispatch_capacity()
         except Exception as error:
             sentry_sdk.capture_exception(error)
 
@@ -48,7 +52,9 @@ def render_t4():
     from render import process_one
     return process_one("h264_nvenc")
 
-@app.function(image=image, schedule=modal.Period(minutes=1), timeout=30, secrets=[secret, sentry_secret])
+# Jobs normally dispatch immediately after commit. This backstop recovers a
+# lost wake-up without opening a second database polling loop every minute.
+@app.function(image=image, schedule=modal.Period(minutes=5), timeout=30, secrets=[secret, sentry_secret])
 def tick():
     import os
     import sentry_sdk

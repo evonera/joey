@@ -59,7 +59,7 @@ def collection_time(receipt):
         return instant(receipt["createdAt"])
 
 
-def summarize(run, receipts, now, tick_errors=0):
+def summarize(run, receipts, now, tick_errors=0, require_api=True):
     started, deadline = instant(run["startedAt"]), instant(run["endsAt"])
     end = min(now.astimezone(timezone.utc), deadline)
     reports, issues, observed_issues = [], [], []
@@ -79,7 +79,7 @@ def summarize(run, receipts, now, tick_errors=0):
             "stalled": sum(r["status"] in ("pending", "running") and (now - instant(r["createdAt"])).total_seconds() > 900 for r in rows),
             "duplicateEvents": len(rows) - len({r["eventKey"] for r in rows}),
             "emptyCollections": sum(r["itemCount"] < 1 for r in all_completed),
-            "nonApiCollections": sum(r.get("apiItemCount", 0) != r["itemCount"] for r in all_completed),
+            "nonApiCollections": sum(r.get("apiItemCount", 0) != r["itemCount"] for r in all_completed) if require_api else 0,
             "staleCollections": sum(not fresh_observation(r) for r in all_completed),
             "outOfWindowCollections": len(all_completed) - len(completed),
             "lateAdmissions": sum(instant(r["createdAt"]) > deadline for r in rows),
