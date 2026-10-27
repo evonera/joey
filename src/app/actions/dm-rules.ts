@@ -1,6 +1,6 @@
 'use server';
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { dmAutomationRules, themePages } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -37,7 +37,7 @@ export async function getDmRules(themePageId: string) {
 
 export async function createDmRule(data: CreateDmRuleInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
 
     if (!data.triggerValue || !data.triggerValue.trim()) {
       return { error: "Trigger keyword is required" };
@@ -79,7 +79,7 @@ export async function createDmRule(data: CreateDmRuleInput) {
 
 export async function updateDmRule(id: string, data: UpdateDmRuleInput) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     if (data.triggerType !== undefined && data.triggerType !== "keyword") return { error: "Unsupported DM trigger type" };
     if (data.triggerValue !== undefined && (!data.triggerValue.trim() || data.triggerValue.trim().length > 80)) return { error: "Trigger keyword must be between 1 and 80 characters" };
     if (data.responseTemplate !== undefined && (!data.responseTemplate.trim() || data.responseTemplate.trim().length > 2000)) return { error: "Response message must be between 1 and 2000 characters" };
@@ -113,7 +113,7 @@ export async function updateDmRule(id: string, data: UpdateDmRuleInput) {
 
 export async function deleteDmRule(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     await db.delete(dmAutomationRules)
       .where(and(eq(dmAutomationRules.id, id), eq(dmAutomationRules.tenantId, tenantId)));
 
@@ -126,7 +126,7 @@ export async function deleteDmRule(id: string) {
 
 export async function toggleDmRule(id: string) {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin"]);
     const existing = await db.query.dmAutomationRules.findFirst({
       where: and(eq(dmAutomationRules.id, id), eq(dmAutomationRules.tenantId, tenantId)),
     });

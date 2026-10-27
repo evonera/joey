@@ -1,6 +1,6 @@
 "use server";
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import {
   getPendingRecommendation,
   acceptMixRecommendation,
@@ -34,16 +34,16 @@ export async function getMixRecommendations(themePageId: string) {
 }
 
 export async function acceptRecommendation(recommendationId: string) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin"]);
   const result = await acceptMixRecommendation(tenantId, recommendationId);
-  if (result.applied === 0) {
+  if (!result.accepted) {
     return { error: "Recommendation not found or already processed" };
   }
   return { applied: result.applied };
 }
 
 export async function discardRecommendation(recommendationId: string) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin"]);
   const discarded = await discardMixRecommendation(tenantId, recommendationId);
   if (!discarded) {
     return { error: "Recommendation not found or already processed" };

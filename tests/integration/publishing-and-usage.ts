@@ -3,7 +3,7 @@ import { requireDisposableDatabase } from "./require-disposable-database";
 await requireDisposableDatabase();
 const { db } = await import("../../src/lib/db");
 const { tenants, socialAccounts, drafts, posts, usageTracking, usageReservations, agentUsageEvents, webhookEvents, flows, flowRuns } = await import("../../src/lib/db/schema");
-const { eq } = await import("drizzle-orm");
+const { eq, sql } = await import("drizzle-orm");
 const { executePublishDraft } = await import("../../src/lib/publisher-core");
 const { recordAgentUsage } = await import("../../src/lib/agent-usage");
 const { releaseUsageReservation, reserveUsageBudget, UsageBudgetExceededError } = await import("../../src/lib/usage");
@@ -48,6 +48,16 @@ try {
   const rejected = await executePublishDraft(invalid.id, tenantId, { posts: { createPost: async () => ({ error: { error: "Bad media" }, response: { status: 400 } }) } } as any);
   assert.ok(rejected.error);
   assert.equal((await db.query.posts.findMany({ where: eq(posts.draftId, invalid.id) })).length, 0);
+  const lostReceipt = await draft();
+  await db.execute(sql`ALTER TABLE posts ADD CONSTRAINT audit_reject_receipt CHECK (zernio_post_id IS DISTINCT FROM 'accepted-before-db-failure')`);
+  try {
+    const failReceipt = { posts: { createPost: async () => ({ data: { post: { _id: "accepted-before-db-failure", status: "published" } } }) } };
+    const failedReceipt = await executePublishDraft(lostReceipt.id, tenantId, failReceipt as any);
+    assert.match(failedReceipt.error || "", /^verify:/);
+  } finally { await db.execute(sql`ALTER TABLE posts DROP CONSTRAINT audit_reject_receipt`); }
+  assert.match((await db.query.drafts.findFirst({ where: eq(drafts.id, lostReceipt.id) }))?.errorMessage || "", /^verify:/);
+  assert.ok((await executePublishDraft(lostReceipt.id, tenantId, fake as any)).error, "a lost receipt must never be submitted again");
+
   const uncertain = await draft("failed", { errorMessage: "verify: Check Zernio first" });
   assert.ok((await executePublishDraft(uncertain.id, tenantId, fake as any)).error);
   assert.equal(calls, before + 2);

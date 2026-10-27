@@ -77,6 +77,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     // Type casting to ensure TypeScript knows it's a string from here on
     const postContent = draft.content || "";
 
+    let providerAccepted = false;
     try {
 
     const platformOpts = draft.platformOptions as any;
@@ -214,6 +215,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
 
     const remotePost = response?.data?.post || response?.data?.existingPost;
     if (!remotePost?._id) throw new Error("verify: Zernio did not return a post identifier. Check Zernio before creating another post.");
+    providerAccepted = true;
     const result = await db.transaction(async (tx) => {
         await tx.execute(sql`SELECT id FROM ${drafts} WHERE id = ${draftId} AND tenant_id = ${tenantId} FOR UPDATE`);
         const current = await tx.query.drafts.findFirst({ where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)) });
@@ -243,11 +245,14 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     } catch (unexpectedError: any) {
         console.error("Unexpected error during publish:", unexpectedError);
         // Reset status to failed on unexpected errors (e.g. DB transaction failure)
+        const message = providerAccepted
+            ? "verify: Zernio accepted the post but Joey could not save its receipt. Check Zernio before creating another post."
+            : unexpectedError.message || "An unexpected system error occurred.";
         await db.update(drafts)
-            .set({ status: "failed", errorMessage: unexpectedError.message || "An unexpected system error occurred." })
+            .set({ status: "failed", errorMessage: message })
             .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), eq(drafts.errorMessage, draft.errorMessage!)));
             
-        return { error: unexpectedError.message || "An unexpected system error occurred." };
+        return { error: message };
     }
 }
 

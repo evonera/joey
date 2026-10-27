@@ -85,6 +85,14 @@ jobs:
         run: npm run test:integration
         env:
           JOEY_INTEGRATION_TEST: "true"
+      - name: Verify uncertain private reply recovery
+        run: node --import tsx tests/integration/private-reply-recovery.ts
+        env:
+          JOEY_INTEGRATION_TEST: "true"
+      - name: Verify recommendation concurrency and rollback
+        run: node --import tsx tests/integration/mix-recommendation.ts
+        env:
+          JOEY_INTEGRATION_TEST: "true"
       - name: Verify automatic publication status recovery
         run: node --import tsx tests/integration/publication-recovery.ts
         env:

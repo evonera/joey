@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { Alert02Icon as AlertTriangle, CheckmarkCircle02Icon as CheckCircle2, ArrowRight01Icon as ArrowRight } from "hugeicons-react";
-import { getTenantOperationalHealth } from "@/app/actions/operations";
+import { getTenantOperationalHealth, listUncertainPrivateReplies } from "@/app/actions/operations";
+import { UncertainPrivateReplies } from "@/components/uncertain-private-replies";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
 export default async function OperationsPage() {
-  const health = await getTenantOperationalHealth();
+  const [health, uncertainReplies] = await Promise.all([getTenantOperationalHealth(), listUncertainPrivateReplies()]);
   const signals = [
     { label: "Failed Scout evaluations", value: health.scoutFailures24h, description: "Last 24 hours; inspect Scout run history", href: "/scouts" },
     { label: "Uncertain Scout outcomes", value: health.scoutUncertain, description: "Review interrupted collection before retrying", href: "/scouts" },
@@ -26,6 +27,7 @@ export default async function OperationsPage() {
     { label: "Due R2 cleanup tasks", value: health.cleanupDue, description: "Ready for the cleanup worker", href: "/assets" },
     { label: "Repeated cleanup failures", value: health.cleanupRepeatedFailures, description: "Three or more attempts", href: "/assets" },
     { label: "Delayed Telegram messages", value: health.telegramPending, description: "Pending for over 5 minutes", href: "/settings?tab=apps" },
+    { label: "Unconfirmed private replies", value: health.privateRepliesUncertain, description: "Check the social provider before sending another reply", href: "/engagement" },
     { label: "Uncertain Telegram sends", value: health.telegramUncertain, description: "Requires operator review before replay", href: "/settings?tab=apps" },
   ];
   const hasIssues = signals.some((s) => s.value > 0);
@@ -42,6 +44,7 @@ export default async function OperationsPage() {
           {hasIssues ? "Attention required" : "No issues in monitored signals"}
         </Badge>
       </div>
+      <UncertainPrivateReplies initial={uncertainReplies} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {signals.map((signal) => (
           <Link key={signal.label} href={signal.href} className="group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-xl">

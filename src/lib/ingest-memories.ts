@@ -63,13 +63,13 @@ export async function syncTenantBrandGuidelines(tenantId: string) {
   // dupes are compacted away.
   const prepared = prepareMemoryContent(content);
   const canEmbed = await hasOpenAIKey(tenantId);
-  if (!canEmbed) return;
+  if (!canEmbed) throw new Error("Brand guidelines could not be reindexed. Configure an OpenAI key in Settings.");
   let embedding: number[];
   try {
     embedding = await generateEmbedding(prepared, tenantId);
   } catch (error) {
     console.warn("[memories] Brand guideline was not reindexed because embedding generation failed.", error);
-    return;
+    throw new Error("Brand guidelines could not be reindexed. Check the OpenAI connection and try again.");
   }
   const swap = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
     // Re-check under lock: an overlapping sync may have committed a newer
@@ -178,11 +178,12 @@ export async function syncTenantPublishedPosts(tenantId: string) {
 
     const content = post.content + metrics;
 
-    await insertMemory(tenantId, content, "published_post", {
+    const saved = await insertMemory(tenantId, content, "published_post", {
       postId: post.id,
       publishedAt: post.publishedAt?.toISOString(),
       metrics: post.metrics,
     });
+    if (!saved) throw new Error("Published posts could not be reindexed. Configure an OpenAI key in Settings.");
   }
 }
 

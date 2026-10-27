@@ -28,6 +28,7 @@ export interface DmDispatchResult {
   destinationLink?: string;
   success: boolean;
   retryable?: boolean;
+  uncertain?: boolean;
   providerMessageId?: string;
   error?: string;
 }
@@ -45,11 +46,13 @@ async function dispatchDmReply(
     .replace(/\{\{link\}\}/gi, rule.responseLink || "");
 
   const currentStats = (rule.stats as any) || { triggered: 0, dmsSent: 0, clicks: 0 };
+  let dispatched = false;
   try {
     if (event.platform !== "instagram" && event.platform !== "facebook") {
       throw new PermanentDmDispatchError("Private comment replies are supported only for Instagram and Facebook");
     }
     const { zernio } = await getZernioClientForTenant(tenantId);
+    dispatched = true;
     const response = await zernio.comments.sendPrivateReplyToComment({
       headers: {
         "x-request-id": createHash("sha256")
@@ -75,14 +78,12 @@ async function dispatchDmReply(
       throw new Error("Zernio did not confirm the private reply");
     }
 
-    await db.update(dmAutomationRules).set({
-      stats: {
-        ...currentStats,
-        triggered: (currentStats.triggered || 0) + 1,
-        dmsSent: (currentStats.dmsSent || 0) + 1,
-      },
-      updatedAt: new Date(),
-    }).where(and(eq(dmAutomationRules.id, rule.id), eq(dmAutomationRules.tenantId, tenantId)));
+    try {
+      await db.update(dmAutomationRules).set({
+        stats: { ...currentStats, triggered: (currentStats.triggered || 0) + 1, dmsSent: (currentStats.dmsSent || 0) + 1 },
+        updatedAt: new Date(),
+      }).where(and(eq(dmAutomationRules.id, rule.id), eq(dmAutomationRules.tenantId, tenantId)));
+    } catch (error) { console.error("Private reply sent but statistics could not be updated", error); }
 
     return {
       matched: true,
@@ -95,20 +96,19 @@ async function dispatchDmReply(
       providerMessageId: response.data.messageId,
     };
   } catch (error) {
-    await db.update(dmAutomationRules).set({
-      stats: {
-        ...currentStats,
-        triggered: (currentStats.triggered || 0) + 1,
-        dmsFailed: (currentStats.dmsFailed || 0) + 1,
-      },
-      updatedAt: new Date(),
-    }).where(and(eq(dmAutomationRules.id, rule.id), eq(dmAutomationRules.tenantId, tenantId)));
+    try {
+      await db.update(dmAutomationRules).set({
+        stats: { ...currentStats, triggered: (currentStats.triggered || 0) + 1, dmsFailed: (currentStats.dmsFailed || 0) + 1 },
+        updatedAt: new Date(),
+      }).where(and(eq(dmAutomationRules.id, rule.id), eq(dmAutomationRules.tenantId, tenantId)));
+    } catch (statsError) { console.error("Private reply statistics could not be updated", statsError); }
     return {
       matched: true,
       ruleId: rule.id,
       triggerKeyword,
       success: false,
-      retryable: !(error instanceof PermanentDmDispatchError),
+      retryable: !dispatched && !(error instanceof PermanentDmDispatchError),
+      uncertain: dispatched && !(error instanceof PermanentDmDispatchError),
       error: error instanceof Error ? error.message : "Private reply failed",
     };
   }

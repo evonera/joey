@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { contentPackages, themeSlots, themeContentFormats, mixRecommendations } from "@/lib/db/schema";
+import { contentPackages, themeSlots, themePages, themeContentFormats, mixRecommendations } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { calculateQualityScore } from "./quality-scorer";
 
@@ -179,39 +179,32 @@ export async function storeMixRecommendation(
 export async function acceptMixRecommendation(
   tenantId: string,
   recommendationId: string,
-): Promise<{ applied: number }> {
-  const claimed = await db
-    .update(mixRecommendations)
-    .set({ status: "accepted", acceptedAt: new Date() })
-    .where(
-      and(
-        eq(mixRecommendations.id, recommendationId),
-        eq(mixRecommendations.tenantId, tenantId),
-        eq(mixRecommendations.status, "pending"),
-      ),
-    )
-    .returning({ id: mixRecommendations.id, adjustments: mixRecommendations.adjustments });
-  if (claimed.length === 0) return { applied: 0 };
-
-  const adjustments = claimed[0].adjustments as Array<{
-    slotId: string;
-    previousPriority: number;
-    newPriority: number;
-  }>;
-
-  let applied = 0;
-  for (const adj of adjustments) {
-    if (adj.previousPriority !== adj.newPriority) {
-      const result = await db
-        .update(themeSlots)
-        .set({ priority: adj.newPriority, updatedAt: new Date() })
-        .where(and(eq(themeSlots.id, adj.slotId), eq(themeSlots.tenantId, tenantId)))
-        .returning({ id: themeSlots.id });
-      if (result.length > 0) applied++;
+): Promise<{ accepted: boolean; applied: number }> {
+  return db.transaction(async (tx) => {
+    const claimed = await tx.update(mixRecommendations)
+      .set({ status: "accepted", acceptedAt: new Date() })
+      .where(and(eq(mixRecommendations.id, recommendationId), eq(mixRecommendations.tenantId, tenantId), eq(mixRecommendations.status, "pending")))
+      .returning({ id: mixRecommendations.id, themePageId: mixRecommendations.themePageId, adjustments: mixRecommendations.adjustments });
+    if (claimed.length === 0) return { accepted: false, applied: 0 };
+    const adjustments = claimed[0].adjustments as Array<{ slotId: string; formatId: string; previousPriority: number; newPriority: number }>;
+    await tx.execute(sql`SELECT id FROM ${themePages} WHERE id = ${claimed[0].themePageId} AND tenant_id = ${tenantId} FOR UPDATE`);
+    const current = await tx.select({ id: themeSlots.id, formatId: themeSlots.formatId, priority: themeSlots.priority })
+      .from(themeSlots).where(and(eq(themeSlots.tenantId, tenantId), eq(themeSlots.themePageId, claimed[0].themePageId), eq(themeSlots.isActive, true))).for("update");
+    if (current.length !== adjustments.length || adjustments.some(adj => !current.some(slot => slot.id === adj.slotId && slot.formatId === adj.formatId && slot.priority === adj.previousPriority))) {
+      throw new Error("The content mix changed. Refresh the recommendation before applying it.");
     }
-  }
-
-  return { applied };
+    let applied = 0;
+    for (const adj of adjustments) {
+      if (adj.previousPriority === adj.newPriority) continue;
+      const changed = await tx.update(themeSlots)
+        .set({ priority: adj.newPriority, updatedAt: new Date() })
+        .where(and(eq(themeSlots.id, adj.slotId), eq(themeSlots.tenantId, tenantId), eq(themeSlots.themePageId, claimed[0].themePageId), eq(themeSlots.priority, adj.previousPriority)))
+        .returning({ id: themeSlots.id });
+      if (!changed.length) throw new Error("The content mix changed. Refresh the recommendation before applying it.");
+      applied++;
+    }
+    return { accepted: true, applied };
+  });
 }
 
 /**

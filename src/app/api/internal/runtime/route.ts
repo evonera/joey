@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cronAuthorized } from "@/lib/cron-auth";
 import { themeMediaStorageReady } from "@/lib/theme-studio/runtime-readiness";
+import { operationalEvent } from "@/lib/operations-log";
 import { RENDERER_VERSION } from "@/lib/media-engine/spec";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +23,13 @@ export async function GET(request: Request) {
     const row = (Array.isArray(result) ? result[0] : (result as unknown as { rows: Array<{ columns: number; indexes: number }> }).rows[0]) as { columns: number; indexes: number };
     const checks = {
       schema: row.columns === 4 && row.indexes === 4,
-      storage: themeMediaStorageReady(),
-      worker: (process.env.MEDIA_WORKER_SECRET?.length ?? 0) >= 32 && /^https:\/\/[^/]+\.modal\.run\/?$/.test(process.env.MEDIA_WORKER_DISPATCH_URL || ""),
+      storage: process.env.MEDIA_ENGINE_ENABLED !== "true" || themeMediaStorageReady(),
+      worker: process.env.MEDIA_ENGINE_ENABLED !== "true" || ((process.env.MEDIA_WORKER_SECRET?.length ?? 0) >= 32 && /^https:\/\/[^/]+\.modal\.run\/?$/.test(process.env.MEDIA_WORKER_DISPATCH_URL || "")),
     };
-    const ready = Object.values(checks).every(Boolean);
-    return NextResponse.json({ ready, checks, renderer: RENDERER_VERSION, sourceCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null }, { status: ready ? 200 : 503 });
+    const ready = checks.schema;
+    const mediaReady = process.env.MEDIA_ENGINE_ENABLED === "true" ? checks.storage && checks.worker : null;
+    if (mediaReady === false) operationalEvent("error", "media_readiness.failed", { storage: checks.storage, worker: checks.worker });
+    return NextResponse.json({ ready, mediaReady, checks, renderer: RENDERER_VERSION, sourceCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null }, { status: ready ? 200 : 503 });
   } catch {
     return NextResponse.json({ ready: false, checks: { database: false } }, { status: 503 });
   }

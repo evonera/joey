@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { flows, flowRuns, flowTemplates, drafts, apiKeys, socialAccounts } from "@/lib/db/schema";
-import { and, eq, desc, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, desc, inArray, isNull, or, sql } from "drizzle-orm";
 import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { parseGraphDoc, validateGraph, type ValidationIssue } from "@/lib/flows/validation";
 import type { FlowStep, RunStatus } from "@/lib/flows/types";
@@ -437,32 +437,9 @@ export async function publishTemplate(
 ): Promise<{ slug?: string; error?: string }> {
   const authorization = await requireFlowOperator();
   if (!authorization.authorized) return { error: authorization.error };
-  const { tenantId } = authorization;
-  const flow = await db.query.flows.findFirst({
-    where: and(eq(flows.id, flowId), eq(flows.tenantId, tenantId)),
-  });
-  if (!flow) return { error: "Flow not found" };
-
-  const name = meta.name.trim();
-  if (!name || name.length > 120) return { error: "Template name is required." };
-
-  const baseSlug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 100) || "template";
-  const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 7)}`;
-
-  await db.insert(flowTemplates).values({
-    slug,
-    name,
-    description: meta.description?.trim() || flow.description || undefined,
-    category: meta.category?.trim() || "general",
-    graph: flow.graph,
-    authorTenantId: tenantId,
-  });
-
-  return { slug };
+  void flowId;
+  void meta;
+  return { error: "Community template publishing is unavailable while credential protection is being improved." };
 }
 
 export type TemplateCard = {
@@ -476,9 +453,10 @@ export type TemplateCard = {
 };
 
 export async function listTemplates(): Promise<{ templates: TemplateCard[] }> {
-  await getActiveTenantId();
+  const tenantId = await getActiveTenantId();
   await ensureOfficialTemplates();
   const rows = await db.query.flowTemplates.findMany({
+    where: or(eq(flowTemplates.isOfficial, true), eq(flowTemplates.authorTenantId, tenantId)),
     orderBy: [desc(flowTemplates.installs), desc(flowTemplates.createdAt)],
     columns: {
       id: true,
@@ -496,7 +474,7 @@ export async function listTemplates(): Promise<{ templates: TemplateCard[] }> {
 export async function installTemplate(templateId: string): Promise<{ flowId?: string; error?: string }> {
   const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
   const template = await db.query.flowTemplates.findFirst({
-    where: eq(flowTemplates.id, templateId),
+    where: and(eq(flowTemplates.id, templateId), or(eq(flowTemplates.isOfficial, true), eq(flowTemplates.authorTenantId, tenantId))),
   });
   if (!template) return { error: "Template not found" };
 
