@@ -10,12 +10,15 @@ import { readBoundedJson } from '@/lib/http/read-bounded-json';
 import { apiErrorResponse } from '@/lib/api-error-response';
 
 const createDraftSchema = z.object({
-    content: z.string().min(1, "Draft content cannot be empty").max(50000, "Draft content exceeds maximum length of 50,000 characters"),
+    content: z.string().max(50000, "Draft content exceeds maximum length of 50,000 characters"),
     platform: z.string().max(50).optional(),
     mediaUrls: z.array(z.string().url("Invalid media URL format").max(2048)).max(10, "Maximum 10 media URLs allowed").optional(),
     accountIds: z.array(z.string().max(128)).max(20).optional(),
     scheduledFor: z.string().datetime({ message: "scheduledFor must be a valid ISO 8601 datetime string" }).nullable().optional(),
-}).strict();
+}).strict().refine(
+    ({ content, mediaUrls }) => Boolean(content.trim() || mediaUrls?.length),
+    { path: ["content"], message: "Add draft content or media" },
+);
 
 export async function GET(request: Request) {
     try {

@@ -172,7 +172,7 @@ const spec = {
                 type: "object",
                 required: ["content"],
                 properties: {
-                  content: { type: "string", description: "Post text" },
+                  content: { type: "string", description: "Post text. May be empty when at least one media URL is supplied." },
                   mediaUrls: {
                     type: "array",
                     items: { type: "string", format: "uri" },
