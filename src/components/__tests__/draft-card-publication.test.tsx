@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { DraftCard } from "../draft-card";
+import { approveDraft } from "@/app/actions/drafts";
 
 vi.mock("@/app/actions/drafts", () => ({ updateDraft: vi.fn(), approveDraft: vi.fn(), rejectDraft: vi.fn(), deleteDraft: vi.fn() }));
 vi.mock("@/app/actions/publisher", () => ({ publishDraft: vi.fn() }));
@@ -41,5 +42,16 @@ describe("draft publication confirmation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish Now" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("No text content");
     expect(screen.getByRole("dialog")).not.toHaveTextContent("Do not publish this copy");
+  });
+
+  it("allows approval without choosing an old variant for a media-only draft", async () => {
+    vi.mocked(approveDraft).mockResolvedValueOnce({ success: true });
+    render(<DraftCard draft={{ id: "media-only-review", status: "pending_review", content: "",
+      variants: [{ name: "old", content: "Discarded" }],
+      platformOptions: { accountId: "account", mediaUrls: ["https://example.com/image.png"] },
+    }} onActionComplete={vi.fn()} />);
+    expect(screen.getByText("Media post (no caption)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve without caption" }));
+    expect(approveDraft).toHaveBeenCalledWith("media-only-review", undefined, undefined);
   });
 });

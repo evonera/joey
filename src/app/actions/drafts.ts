@@ -7,6 +7,7 @@ import { drafts, contentPackages, themePages, tenants } from "@/lib/db/schema";
 import { eq, and, or, isNotNull, isNull, inArray, desc, ilike, sql } from "drizzle-orm";
 import { reviewThemePackage } from "@/app/actions/theme-packages";
 import { reviewDraft } from "@/lib/draft-review";
+import { manualPostSchema } from "@/lib/compose-validation";
 
 // A review action must never reset an accepted or uncertain publication.
 function editableDraft(role: string) {
@@ -282,7 +283,7 @@ export async function getPendingDraftCount() {
 
 export async function updateDraft(draftId: string, content: string) {
     try {
-        if (!content || typeof content !== "string" || content.trim().length === 0) {
+        if (typeof content !== "string") {
             return { error: "Content cannot be empty" };
         }
         if (content.length > 50000) {
@@ -293,14 +294,21 @@ export async function updateDraft(draftId: string, content: string) {
         
         const existingDraft = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
-            columns: { id: true }
+            columns: { id: true, platformOptions: true }
         });
 
         if (existingDraft) {
+            const emptyContent = content.trim().length === 0;
+            if (emptyContent) {
+                const options = existingDraft.platformOptions as { mediaUrls?: unknown } | null;
+                const media = manualPostSchema.shape.mediaUrls.safeParse(options?.mediaUrls);
+                if (!media.success || media.data.length === 0) return { error: "Add post content or valid media." };
+            }
             const changed = await db.update(drafts)
-                .set({ content })
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft(role))).returning({ id: drafts.id });
-            if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
+                .set({ content: emptyContent ? "" : content })
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft(role),
+                    emptyContent ? sql`${drafts.platformOptions} IS NOT DISTINCT FROM ${existingDraft.platformOptions == null ? null : JSON.stringify(existingDraft.platformOptions)}::jsonb` : undefined)).returning({ id: drafts.id });
+            if (!changed.length) return { error: "This draft changed, is publishing, or requires publication verification. Refresh before editing or reviewing it." };
             return { success: true };
         }
 
@@ -310,6 +318,7 @@ export async function updateDraft(draftId: string, content: string) {
         });
 
         if (existingPackage) {
+            if (!content.trim()) return { error: "Content cannot be empty" };
             let newTitle = existingPackage.title;
             let newCaption = content.trim();
 

@@ -77,6 +77,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
     const platformOpts = draft.platformOptions as any;
     const platform = platformOpts?.platform || "Universal";
     const mediaUrls: string[] = platformOpts?.mediaUrls || [];
+    const mediaOnly = !draft.content?.trim() && mediaUrls.length > 0;
 
     const isScheduled = Boolean(draft.scheduledFor) && (draft.status === "scheduled" || draft.status === "approved");
 
@@ -213,14 +214,14 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                 </div>
             ) : (
                 <div className="text-foreground whitespace-pre-wrap text-sm leading-relaxed">
-                    {draft.content ? (
+                    {mediaOnly ? (
+                        <span className="italic text-muted-foreground">Media post (no caption)</span>
+                    ) : draft.content ? (
                         draft.content
                     ) : hasVariants ? (
                         <div className="italic text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed text-xs">
                             Multiple draft variations generated. Click <strong>Review & Edit Variants</strong> to select and adjust copy.
                         </div>
-                    ) : mediaUrls.length > 0 ? (
-                        <span className="italic text-muted-foreground">Media post (no caption)</span>
                     ) : (
                         <span className="italic text-muted-foreground">No text content available</span>
                     )}
@@ -359,6 +360,11 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                         </Button>
                     )}
                     
+                    {hasVariants && mediaOnly && (
+                        <Button onClick={() => handleApprove()} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
+                            Approve without caption
+                        </Button>
+                    )}
                     <Button 
                         variant="outline" 
                         size="sm" 
@@ -371,7 +377,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                         Comments
                         <DraftCommentBadge draftId={draft.id} />
                     </Button>
-                    {(!hasVariants || draft.content) && (
+                    {(!hasVariants || draft.content || mediaOnly) && (
                         <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} disabled={loading} className="text-xs">
                             Edit
                         </Button>
