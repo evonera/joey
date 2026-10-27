@@ -104,6 +104,10 @@ const spec = {
         summary: "List connected social accounts",
         operationId: "listAccounts",
         tags: ["Accounts"],
+        parameters: [
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 } },
+          { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "Opaque nextCursor from the preceding page." },
+        ],
         responses: {
           "200": {
             description: "Connected accounts for the token's workspace",
@@ -111,13 +115,16 @@ const spec = {
               "application/json": {
                 schema: {
                   type: "object",
+                  required: ["accounts", "nextCursor"],
                   properties: {
                     accounts: { type: "array", items: { $ref: "#/components/schemas/Account" } },
+                    nextCursor: { type: "string", nullable: true },
                   },
                 },
               },
             },
           },
+          "400": { description: "Invalid limit or cursor" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "429": { $ref: "#/components/responses/RateLimited" },
@@ -130,6 +137,8 @@ const spec = {
         operationId: "listDrafts",
         tags: ["Drafts"],
         parameters: [
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 } },
+          { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "Opaque nextCursor from the preceding page." },
           {
             name: "status",
             in: "query",
@@ -148,13 +157,16 @@ const spec = {
               "application/json": {
                 schema: {
                   type: "object",
+                  required: ["drafts", "nextCursor"],
                   properties: {
                     drafts: { type: "array", items: { $ref: "#/components/schemas/Draft" } },
+                    nextCursor: { type: "string", nullable: true },
                   },
                 },
               },
             },
           },
+          "400": { description: "Invalid limit or cursor" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "429": { $ref: "#/components/responses/RateLimited" },
@@ -307,6 +319,10 @@ const spec = {
         summary: "List published posts",
         operationId: "listPosts",
         tags: ["Posts"],
+        parameters: [
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 } },
+          { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "Opaque nextCursor from the preceding page." },
+        ],
         responses: {
           "200": {
             description: "Published posts for the token's workspace",
@@ -314,13 +330,16 @@ const spec = {
               "application/json": {
                 schema: {
                   type: "object",
+                  required: ["posts", "nextCursor"],
                   properties: {
                     posts: { type: "array", items: { $ref: "#/components/schemas/Post" } },
+                    nextCursor: { type: "string", nullable: true },
                   },
                 },
               },
             },
           },
+          "400": { description: "Invalid limit or cursor" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "429": { $ref: "#/components/responses/RateLimited" },
