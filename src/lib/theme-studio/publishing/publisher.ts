@@ -31,6 +31,10 @@ function isPublicHttpsUrl(value: string): boolean {
   }
 }
 
+function validationFailure(message: string): PublishContentPackageResult {
+  return { success: false, status: "failed", error: message };
+}
+
 export async function failPackage(
   packageId: string,
   tenantId: string,
@@ -109,7 +113,7 @@ export async function publishContentPackage(
     : {};
   const { selectedAccountIds, priorAccountId, lookupIds } = packageDestinationIds(pkg.provenance, page.connectedAccounts, priorMetrics);
   if (selectedAccountIds.length === 0 && !priorAccountId) {
-    return failPackage(packageId, tenantId, "Select a connected social account before publishing", pkg);
+    return validationFailure("Select a connected social account before publishing");
   }
 
   const accounts = await db.query.socialAccounts.findMany({
@@ -121,12 +125,7 @@ export async function publishContentPackage(
   const targetPlatform = zernioPlatform(format.platform);
   const matchingAccounts = matchingPackageAccounts(accounts, format.platform, selectedAccountIds, priorAccountId);
   if (matchingAccounts.length === 0) {
-    return failPackage(
-      packageId,
-      tenantId,
-      `No selected, active ${format.platform} account is connected`,
-      pkg,
-    );
+    return validationFailure(`No selected, active ${format.platform} account is connected`);
   }
   const primaryAccount = matchingAccounts[0];
 

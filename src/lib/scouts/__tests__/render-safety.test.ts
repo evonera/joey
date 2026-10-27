@@ -50,6 +50,12 @@ describe("Scout evidence-to-render safety", () => {
     expect(result).toMatchObject({ success: false, error: expect.stringContaining("fact review") });
     expect(mocks.update).not.toHaveBeenCalled();
   });
+  it("reports a missing destination without changing package state", async () => {
+    mocks.pkg.mockResolvedValue({ id: "pkg", tenantId: "tenant", themePageId: "page", formatId: "format", title: "Test", status: "approved", updatedAt: new Date(), metrics: {}, renderedAssetUrls: [], provenance: {} });
+    const result = await publishContentPackage("pkg", "tenant");
+    expect(result).toMatchObject({ success: false, error: "Select a connected social account before publishing" });
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
   it("does not render rejected packages through draft-only recovery", async () => {
     mocks.pkg.mockResolvedValue({ id: "pkg", status: "rejected", updatedAt: new Date() });
     const result = await renderPackageMedia("pkg", "tenant", "stable-run", undefined, undefined, { preserveReviewDecision: true });
