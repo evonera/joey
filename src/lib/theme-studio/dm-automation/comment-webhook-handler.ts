@@ -54,6 +54,7 @@ async function dispatchDmReply(
     const { zernio } = await getZernioClientForTenant(tenantId);
     dispatched = true;
     const response = await zernio.comments.sendPrivateReplyToComment({
+      signal: AbortSignal.timeout(30_000),
       headers: {
         "x-request-id": createHash("sha256")
           .update(`${tenantId}:${rule.id}:${event.commentId}`)

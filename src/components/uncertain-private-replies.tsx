@@ -14,7 +14,7 @@ export function UncertainPrivateReplies({ initial }: { initial: Item[] }) {
   if (!items.length) return null;
   return <section className="space-y-3 rounded-xl border p-4" aria-label="Unconfirmed private replies">
     <h2 className="font-semibold">Unconfirmed private replies</h2>
-    <p className="text-sm text-muted-foreground">Check each comment and its private reply in the social provider. Mark it reviewed after checking; Joey will not resend it.</p>
+    <p className="text-sm text-muted-foreground">Check each comment and its private reply in the social provider. The provider may still complete an interrupted request later, so check again before sending another reply. Mark it reviewed after checking; Joey will not resend it automatically.</p>
     <ul className="space-y-2">{items.map(item => <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm">
       <span>{item.platform} · {item.commenterHandle || "Unknown account"} · post {item.platformPostId || "unknown"} · comment {item.platformCommentId || "unknown"}</span>
       <Button size="sm" variant="outline" disabled={busy !== null} onClick={async () => {
