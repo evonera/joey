@@ -12,7 +12,6 @@ import { db } from "@/lib/db";
 import { assets, contentPackages, themePages } from "@/lib/db/schema";
 import { assertAvailableSchedule, assertSchedulingRole, lockSchedulingAccount } from "@/lib/editorial-scheduling";
 import { assertThemeRenderCurrent, queueThemeRender } from "@/lib/media-engine/theme-adapter";
-import { publishContentPackage } from "@/lib/theme-studio/publishing/publisher";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 import { timelineSchema } from "@/lib/media-engine/timeline";
 import { soundCuesSchema } from "@/lib/media-engine/sound";
@@ -84,8 +83,9 @@ export async function reviewThemePackage(
 }
 
 export async function publishThemePackage(packageId: string) {
-  const tenantId = await requireRole(["owner", "admin"]);
-  return publishContentPackage(packageId, tenantId);
+  await requireRole(["owner", "admin"]);
+  void packageId;
+  return { success: false, error: "Refresh and confirm the package before publishing." };
 }
 
 export async function renderThemePackage(packageId: string, input?: unknown) {
@@ -168,6 +168,7 @@ export async function updateThemePackageCopy(packageId: string, input: unknown) 
   }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId),
     sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${copy.updatedAt}::timestamp`,
     eq(contentPackages.title, pkg.title), sql`${contentPackages.caption} IS NOT DISTINCT FROM ${pkg.caption}`,
+    sql`${contentPackages.metrics} IS NOT DISTINCT FROM ${pkg.metrics == null ? null : JSON.stringify(pkg.metrics)}::jsonb`,
     inArray(contentPackages.status, ["pending_review", "approved", "rejected", "failed"]), sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`,
   )).returning({ id: contentPackages.id });
   return changed ? { success: true } : { error: "Package changed or is publishing. Refresh before editing." };

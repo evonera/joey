@@ -7,6 +7,7 @@ import { drafts, contentPackages, themePages, tenants } from "@/lib/db/schema";
 import { eq, and, or, isNotNull, isNull, inArray, desc, ilike, sql } from "drizzle-orm";
 import { reviewThemePackage } from "@/app/actions/theme-packages";
 import { reviewDraft } from "@/lib/draft-review";
+import { manualPostSchema } from "@/lib/compose-validation";
 
 // A review action must never reset an accepted or uncertain publication.
 function editableDraft(role: string) {
@@ -282,7 +283,7 @@ export async function getPendingDraftCount() {
 
 export async function updateDraft(draftId: string, content: string) {
     try {
-        if (!content || typeof content !== "string" || content.trim().length === 0) {
+        if (typeof content !== "string") {
             return { error: "Content cannot be empty" };
         }
         if (content.length > 50000) {
@@ -293,23 +294,31 @@ export async function updateDraft(draftId: string, content: string) {
         
         const existingDraft = await db.query.drafts.findFirst({
             where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)),
-            columns: { id: true }
+            columns: { id: true, platformOptions: true }
         });
 
         if (existingDraft) {
+            const emptyContent = content.trim().length === 0;
+            if (emptyContent) {
+                const options = existingDraft.platformOptions as { mediaUrls?: unknown } | null;
+                const media = manualPostSchema.shape.mediaUrls.safeParse(options?.mediaUrls);
+                if (!media.success || media.data.length === 0) return { error: "Add post content or valid media." };
+            }
             const changed = await db.update(drafts)
-                .set({ content })
-                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft(role))).returning({ id: drafts.id });
-            if (!changed.length) return { error: "This draft is already publishing or requires publication verification. Refresh before editing or reviewing it." };
+                .set({ content: emptyContent ? "" : content })
+                .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), editableDraft(role),
+                    emptyContent ? sql`${drafts.platformOptions} IS NOT DISTINCT FROM ${existingDraft.platformOptions == null ? null : JSON.stringify(existingDraft.platformOptions)}::jsonb` : undefined)).returning({ id: drafts.id });
+            if (!changed.length) return { error: "This draft changed, is publishing, or requires publication verification. Refresh before editing or reviewing it." };
             return { success: true };
         }
 
         const existingPackage = await db.query.contentPackages.findFirst({
             where: and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId)),
-            columns: { id: true, title: true, caption: true, metrics: true }
+            columns: { id: true, title: true, caption: true, metrics: true, updatedAt: true }
         });
 
         if (existingPackage) {
+            if (!content.trim()) return { error: "Content cannot be empty" };
             let newTitle = existingPackage.title;
             let newCaption = content.trim();
 
@@ -325,10 +334,12 @@ export async function updateDraft(draftId: string, content: string) {
                 }
             }
 
+            const { component, format } = await (await import("@/lib/media-engine/theme-adapter")).themeRenderInput(tenantId, draftId);
+            const pixelsChanged = newTitle !== existingPackage.title || ((!(existingPackage.metrics as Record<string, unknown> | null)?.renderJobId || format.mediaType === "image" && Boolean(component.bodyTemplate)) && newCaption !== existingPackage.caption);
             const changed = await db.update(contentPackages)
-                .set({ title: newTitle, caption: newCaption, status: "pending_review", ...(newTitle !== existingPackage.title || (!(existingPackage.metrics as Record<string, unknown> | null)?.renderJobId && newCaption !== existingPackage.caption) ? { renderedAssetUrls: [] } : {}), updatedAt: new Date() })
-                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage(role))).returning({ id: contentPackages.id });
-            if (!changed.length) return { error: "This post has already been submitted for publishing. Review it in Theme Studio." };
+                .set({ title: newTitle, caption: newCaption, status: "pending_review", ...(pixelsChanged ? { renderedAssetUrls: [], metrics: sql`(coalesce(${contentPackages.metrics}, '{}'::jsonb) - 'renderJobId' - 'renderRevision' - 'legacyRenderRevision' - 'legacyRenderToken') || '{"failurePhase":"render_required"}'::jsonb` } : {}), updatedAt: new Date() })
+                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage(role), eq(contentPackages.title, existingPackage.title), sql`${contentPackages.caption} IS NOT DISTINCT FROM ${existingPackage.caption}`, sql`${contentPackages.metrics} IS NOT DISTINCT FROM ${existingPackage.metrics == null ? null : JSON.stringify(existingPackage.metrics)}::jsonb`, sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${existingPackage.updatedAt.toISOString()}::timestamp`)).returning({ id: contentPackages.id });
+            if (!changed.length) return { error: "This post changed or has been submitted for publishing. Refresh before editing." };
             return { success: true };
         }
 

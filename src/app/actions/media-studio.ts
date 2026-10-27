@@ -1,11 +1,14 @@
 'use server';
 
-import { getActiveTenantId } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 import { uploadBufferToR2, isR2Configured, assertAllowedUpload, R2_MAX_ASSET_BYTES } from "@/lib/storage";
 import { generateText } from "ai";
+import { z } from "zod";
 import { resolveModelForTurn } from "@/lib/agent-model-resolver";
+import { reserveUsageBudget, settleUsageReservation, failUsageReservation } from "@/lib/usage";
+import { estimateTextCallCost, getTextModelCost } from "@/lib/ai-pricing";
 
 export interface VisualConceptSuggestion {
   text: string;
@@ -33,7 +36,7 @@ export async function saveMediaStudioAsset(input: {
   height?: number;
 }): Promise<{ success: boolean; publicUrl: string; assetId?: string; error?: string }> {
   try {
-    const tenantId = await getActiveTenantId();
+    const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
 
     const matches = input.base64Data.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
     if (!matches || matches.length !== 3) {
@@ -104,7 +107,7 @@ export async function saveMediaStudioAsset(input: {
 export async function generateVisualHookSuggestions(
   postContent: string,
 ): Promise<{ suggestions: VisualConceptSuggestion[] }> {
-  const cleanPost = postContent.trim();
+  const cleanPost = postContent.trim().slice(0, 20_000);
   if (!cleanPost) {
     return {
       suggestions: [
@@ -130,9 +133,9 @@ export async function generateVisualHookSuggestions(
     };
   }
 
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
   try {
-    const tenantId = await getActiveTenantId();
-    const { model } = await resolveModelForTurn({ tenantId });
+    const { model, providerModelId, trialGenerationLimit } = await resolveModelForTurn({ tenantId });
     const prompt = `You are a viral social media packaging expert specializing in YouTube thumbnails, X visual cards, and Instagram cover hooks.
 Analyze this post:
 """${cleanPost}"""
@@ -152,49 +155,29 @@ Respond ONLY with valid JSON in this structure:
   ]
 }`;
 
-    const { text } = await generateText({
-      model,
-      prompt,
-    });
+    const reservation = await reserveUsageBudget({ tenantId, kind: "text", modelId: providerModelId, trialGenerationLimit,
+      estimatedCostUsd: estimateTextCallCost(providerModelId, prompt, 512), metadata: { source: "visual_hook" } });
+    let text: string;
+    try {
+      const result = await generateText({ model, prompt, maxOutputTokens: 512, maxRetries: 0, abortSignal: AbortSignal.timeout(30_000) });
+      await settleUsageReservation({ id: reservation.id, inputTokens: result.usage.inputTokens ?? 0, outputTokens: result.usage.outputTokens ?? 0,
+        actualCostUsd: getTextModelCost(providerModelId, result.usage.inputTokens ?? 0, result.usage.outputTokens ?? 0) });
+      text = result.text;
+    } catch (error) {
+      await failUsageReservation(reservation.id, { reason: "Visual hook generation did not complete." });
+      throw error;
+    }
 
     const cleaned = text.replace(/^```json\s*/i, "").replace(/\s*```$/, "").trim();
-    const parsed = JSON.parse(cleaned);
-
-    if (Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0) {
-      return { suggestions: parsed.suggestions.slice(0, 4) };
-    }
+    const parsed = z.object({ suggestions: z.array(z.object({
+      text: z.string().trim().min(1).max(80),
+      preset: z.enum(["mrbeast", "shock", "vs", "clean", "minimal", "cyber"]),
+      sticker: z.enum(["arrow", "question", "circle", "vs", "badge_100", "none"]),
+      explanation: z.string().trim().min(1).max(500),
+    }).strict()).min(1).max(4) }).strict().parse(JSON.parse(cleaned));
+    return parsed;
   } catch (err) {
-    console.warn("[generateVisualHookSuggestions] LLM failed, using heuristic fallbacks:", err);
+    console.error("[generateVisualHookSuggestions] generation failed:", err);
+    throw new Error("Could not generate suggestions. Check your AI provider and workspace usage limits, then try again.");
   }
-
-  // Algorithmic fallbacks
-  const words = cleanPost.split(/\s+/).filter(Boolean);
-  const fallbacks: VisualConceptSuggestion[] = [
-    {
-      text: "DON'T MISS THIS",
-      preset: "mrbeast",
-      sticker: "arrow",
-      explanation: "Urgent callout to stop the feed scroll.",
-    },
-    {
-      text: "IS THIS TRUE?",
-      preset: "shock",
-      sticker: "question",
-      explanation: "Provocative question triggering debate.",
-    },
-    {
-      text: "STEP BY STEP",
-      preset: "clean",
-      sticker: "none",
-      explanation: "Promises structured tactical knowledge.",
-    },
-    {
-      text: "10X RESULTS",
-      preset: "cyber",
-      sticker: "badge_100",
-      explanation: "Highlights exponential growth and proof.",
-    },
-  ];
-
-  return { suggestions: fallbacks };
 }

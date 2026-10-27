@@ -104,17 +104,18 @@ export const auth = betterAuth({
                 try {
                     const { Resend } = await import("resend");
                     const resend = new Resend(resendApiKey);
-                    await resend.emails.send({
+                    const { error } = await resend.emails.send({
                         from: process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || "Joey <noreply@joey.app>",
                         to: user.email,
                         subject: "Reset your Joey password",
                         html: `<p>Hello ${user.name || "there"},</p><p>You requested a password reset. Click the link below to set a new password:</p><p><a href="${url}">${url}</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
                     });
+                    if (error) throw new Error(`Password reset delivery failed: ${error.message}`);
                 } catch (err) {
                     console.error("Failed to send reset password email via Resend:", err);
                 }
             } else {
-                throw new Error("Password reset email delivery is not configured.");
+                console.error("Password reset email delivery is not configured.");
             }
         },
     },

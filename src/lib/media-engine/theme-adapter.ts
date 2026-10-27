@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assets, contentPackages, customAgentRuns, mediaRenderJobs, scoutRemixes, themeContentFormats, themePages, themeVisualTemplates } from "@/lib/db/schema";
+import { assets, contentPackages, customAgentRuns, mediaRenderJobs, scoutRemixes, storyClusters, themeContentFormats, themePages, themeVisualTemplates } from "@/lib/db/schema";
 import { getRender, retryRender, submitRender } from "./engine";
 import { dispatchQueuedRender } from "./dispatch";
 import { renderSpecSchema, type RenderSpec } from "./spec";
@@ -11,6 +11,15 @@ import { curatedAssetRef } from "./curated-assets";
 import { timelineSchema, timelineFrames } from "./timeline";
 import { soundCuesSchema } from "./sound";
 
+export function deriveThemeRenderInput(pkg: typeof contentPackages.$inferSelect, page: typeof themePages.$inferSelect, format: typeof themeContentFormats.$inferSelect, template: typeof themeVisualTemplates.$inferSelect | undefined, settingsOverride?: Record<string, unknown>) {
+  const settings = settingsOverride ?? (pkg.metrics as { renderSettings?: Record<string, unknown> } | null)?.renderSettings ?? {};
+  const selectedMedia = (pkg.provenance as { selectedMedia?: { assetId?: string } })?.selectedMedia;
+  const component: Record<string, unknown> = { ...(selectedMedia?.assetId ? { mediaAssetId: selectedMedia.assetId } : {}), ...normalizeThemeDesign(template?.componentSpec), ...settings };
+  const brand = (page.brandKit ?? {}) as Record<string, unknown>;
+  const revision = themePackageRenderRevision({ title: pkg.title, component: { ...component, ...(format.mediaType === "image" && component.bodyTemplate ? { renderedCaption: pkg.caption } : {}) }, brand, name: page.name, format: `${format.mediaType}:${format.aspectRatio ?? ""}` });
+  return { pkg, page, format, template, component, brand, revision };
+}
+
 export async function themeRenderInput(tenantId: string, packageId: string, settingsOverride?: Record<string, unknown>) {
   const pkg = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
   if (!pkg) throw new Error("Package not found.");
@@ -20,12 +29,7 @@ export async function themeRenderInput(tenantId: string, packageId: string, sett
     pkg.templateId ? db.query.themeVisualTemplates.findFirst({ where: and(eq(themeVisualTemplates.id, pkg.templateId), eq(themeVisualTemplates.tenantId, tenantId)) }) : undefined,
   ]);
   if (!page || !format) throw new Error("Theme format unavailable.");
-  const settings = settingsOverride ?? (pkg.metrics as { renderSettings?: Record<string, unknown> } | null)?.renderSettings ?? {};
-  const selectedMedia = (pkg.provenance as { selectedMedia?: { assetId?: string } })?.selectedMedia;
-  const component: Record<string, unknown> = { ...(selectedMedia?.assetId ? { mediaAssetId: selectedMedia.assetId } : {}), ...normalizeThemeDesign(template?.componentSpec), ...settings };
-  const brand = (page.brandKit ?? {}) as Record<string, unknown>;
-  const revision = themePackageRenderRevision({ title: pkg.title, component: { ...component, ...(format.mediaType === "image" && component.bodyTemplate ? { renderedCaption: pkg.caption } : {}) }, brand, name: page.name, format: `${format.mediaType}:${format.aspectRatio ?? ""}` });
-  return { pkg, page, format, component, brand, revision };
+  return deriveThemeRenderInput(pkg, page, format, template, settingsOverride);
 }
 
 export async function queueThemeRender(tenantId: string, packageId: string, settings?: Record<string, unknown>, options: { preserveReviewDecision?: boolean } = {}) {
@@ -124,20 +128,15 @@ export async function settleThemeRender(tenantId: string, packageId: string) {
 }
 
 export async function assertThemeRenderCurrent(tenantId: string, packageId: string) {
-  const { pkg, format, revision } = await themeRenderInput(tenantId, packageId);
-  const metrics = pkg.metrics as Record<string, unknown>;
-  if (!metrics?.renderJobId) {
-    if (metrics?.legacyRenderRevision) {
-      const { legacyThemeRenderInput } = await import("./legacy-theme-input");
-      if (metrics.legacyRenderRevision !== (await legacyThemeRenderInput(tenantId, packageId)).revision || metrics.failurePhase) throw new Error("The design or copy has changed. Render again before approval.");
-    }
-    if (format.mediaType === "video" || (Array.isArray(pkg.renderedAssetUrls) && pkg.renderedAssetUrls.some(asset => asset.type === "video"))) throw new Error("Render a finished MP4 before approving or publishing this video.");
-    return;
-  }
-  const job = await getRender(tenantId, String(metrics.renderJobId));
-  if (job.status !== "succeeded" || !job.output || metrics.renderRevision !== revision) throw new Error("The media is still rendering or has changed. Render again and review the finished export.");
-  const attached = Array.isArray(pkg.renderedAssetUrls) ? pkg.renderedAssetUrls : [];
-  if (!attached.some(item => item?.assetId === job.output!.id)) throw new Error("The completed render is not attached to this package yet.");
+  const { pkg, page, format, template } = await themeRenderInput(tenantId, packageId);
+  const metrics = pkg.metrics as Record<string, unknown> | null;
+  const [cluster, job] = await Promise.all([
+    metrics?.legacyRenderRevision && pkg.clusterId ? db.query.storyClusters.findFirst({ where: and(eq(storyClusters.id, pkg.clusterId), eq(storyClusters.tenantId, tenantId)) }) : undefined,
+    metrics?.renderJobId ? db.query.mediaRenderJobs.findFirst({ where: and(eq(mediaRenderJobs.id, String(metrics.renderJobId)), eq(mediaRenderJobs.tenantId, tenantId)) }) : undefined,
+  ]);
+  const output = job?.status === "succeeded" && job.outputAssetId ? await db.query.assets.findFirst({ where: and(eq(assets.id, job.outputAssetId), eq(assets.tenantId, tenantId)) }) : undefined;
+  const { validateThemeRenderSnapshot } = await import("./validate-theme-render");
+  validateThemeRenderSnapshot({ pkg, page, format, template, cluster, job, output });
 }
 
 export async function settleCompletedThemeRenders() {

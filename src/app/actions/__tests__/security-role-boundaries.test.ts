@@ -28,6 +28,7 @@ import { publishDraft } from "../publisher";
 import { createManualPost } from "../compose";
 import { approveReply, sendReply, updateReplyDraft, skipEngagementItem } from "../engagement";
 import { publishThemePackage } from "../theme-packages";
+import { publishConfirmedThemePackage } from "../theme-publication-preview";
 import { createFlow, saveFlow, setFlowStatus, runFlow, provisionFlowWebhookSecret, installTemplate, deleteFlow } from "../flows";
 import { createScout, updateScout, deleteScout } from "../scouts";
 import { startChatVideoRender } from "../chat-video";
@@ -84,7 +85,8 @@ describe("Direct Server Action security boundaries", () => {
   it.each(["owner", "admin"])("%s retains publishing access", async role => {
     mocks.role = role;
     mocks.provider.mockResolvedValue({ success: true });
-    expect(await publishThemePackage("pkg")).toMatchObject({ success: true });
-    expect(mocks.provider).toHaveBeenCalledWith("pkg", "tenant-1");
+    expect(await publishThemePackage("pkg")).toMatchObject({ success: false });
+    expect(await publishConfirmedThemePackage("pkg", false, "a".repeat(64))).toMatchObject({ success: true });
+    expect(mocks.provider).toHaveBeenCalledWith("pkg", "tenant-1", false, "a".repeat(64));
   });
 });
