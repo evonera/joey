@@ -31,21 +31,22 @@ function isPublicHttpsUrl(value: string): boolean {
   }
 }
 
-async function failPackage(
+export async function failPackage(
   packageId: string,
   tenantId: string,
   message: string,
+  observed: typeof contentPackages.$inferSelect,
 ): Promise<PublishContentPackageResult> {
   const changed = await db
     .update(contentPackages)
     .set({ status: "failed", error: message, updatedAt: new Date() })
-    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), ne(contentPackages.status, "published"), sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`))
+    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), ne(contentPackages.status, "published"), eq(contentPackages.status, observed.status), sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${observed.updatedAt.toISOString()}::timestamp`, sql`${contentPackages.metrics} IS NOT DISTINCT FROM ${observed.metrics == null ? null : JSON.stringify(observed.metrics)}::jsonb`, eq(contentPackages.themePageId, observed.themePageId), eq(contentPackages.formatId, observed.formatId), sql`${contentPackages.templateId} IS NOT DISTINCT FROM ${observed.templateId}`, sql`${contentPackages.title} IS NOT DISTINCT FROM ${observed.title}`, sql`${contentPackages.caption} IS NOT DISTINCT FROM ${observed.caption}`, sql`to_jsonb(${contentPackages.hashtags}) IS NOT DISTINCT FROM ${observed.hashtags == null ? null : JSON.stringify(observed.hashtags)}::jsonb`, sql`${contentPackages.scheduledFor} IS NOT DISTINCT FROM ${observed.scheduledFor?.toISOString() ?? null}::timestamp`, sql`${contentPackages.renderedAssetUrls} IS NOT DISTINCT FROM ${observed.renderedAssetUrls == null ? null : JSON.stringify(observed.renderedAssetUrls)}::jsonb`, sql`${contentPackages.provenance} IS NOT DISTINCT FROM ${observed.provenance == null ? null : JSON.stringify(observed.provenance)}::jsonb`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`))
     .returning({ id: contentPackages.id });
   if (!changed.length) {
     const current = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
     if (current) {
       const status = draftStatusFromZernio(current.status);
-      return { success: status !== "failed", status, ...(status === "failed" ? { error: current.error || message } : {}) };
+      return { success: status !== "failed", status, ...(status === "failed" ? { error: "Package changed while publishing was being prepared. Refresh and review it." } : {}) };
     }
   }
 
@@ -79,7 +80,7 @@ export async function publishContentPackage(
     return { success: status !== "failed", status, zernioPostId: savedMetrics.zernioPostId, ...(status === "failed" ? { error: "Review the existing post in Zernio before retrying." } : {}) };
   }
   if (savedMetrics?.publishAttemptAt && Date.now() - Date.parse(String(savedMetrics.publishAttemptAt)) > 4 * 60_000) {
-    return failPackage(packageId, tenantId, "Publication was interrupted beyond the deduplication window. Check Zernio before creating another package.");
+    return failPackage(packageId, tenantId, "Publication was interrupted beyond the deduplication window. Check Zernio before creating another package.", pkg);
   }
   if (scoutFactReviewRequired(pkg.provenance)) {
     return { success: false, status: "failed", error: "Source claims need human fact review in Theme Studio before publication." };
@@ -100,7 +101,7 @@ export async function publishContentPackage(
   ]);
 
   if (!page || !format) {
-    return failPackage(packageId, tenantId, "Theme page or content format not found");
+    return failPackage(packageId, tenantId, "Theme page or content format not found", pkg);
   }
 
   const priorMetrics = pkg.metrics && typeof pkg.metrics === "object"
@@ -108,7 +109,7 @@ export async function publishContentPackage(
     : {};
   const { selectedAccountIds, priorAccountId, lookupIds } = packageDestinationIds(pkg.provenance, page.connectedAccounts, priorMetrics);
   if (selectedAccountIds.length === 0 && !priorAccountId) {
-    return failPackage(packageId, tenantId, "Select a connected social account before publishing");
+    return failPackage(packageId, tenantId, "Select a connected social account before publishing", pkg);
   }
 
   const accounts = await db.query.socialAccounts.findMany({
@@ -124,6 +125,7 @@ export async function publishContentPackage(
       packageId,
       tenantId,
       `No selected, active ${format.platform} account is connected`,
+      pkg,
     );
   }
   const primaryAccount = matchingAccounts[0];
@@ -134,10 +136,10 @@ export async function publishContentPackage(
     format.mediaType as "image" | "carousel" | "video",
   );
   if (variant.mediaUrls.length === 0 || variant.mediaUrls.some((url) => !isPublicHttpsUrl(url))) {
-    return failPackage(packageId, tenantId, "Publishing requires publicly reachable HTTPS media");
+    return failPackage(packageId, tenantId, "Publishing requires publicly reachable HTTPS media", pkg);
   }
   if (format.platform === "tiktok" && variant.mediaType !== "video") {
-    return failPackage(packageId, tenantId, "TikTok publishing requires a rendered video asset");
+    return failPackage(packageId, tenantId, "TikTok publishing requires a rendered video asset", pkg);
   }
 
   const claimTime = new Date();
@@ -167,7 +169,7 @@ export async function publishContentPackage(
         ),
       ),
     )
-    .returning({ id: contentPackages.id });
+    .returning();
   if (claimed.length === 0) {
     return {
       success: false,
@@ -243,6 +245,6 @@ export async function publishContentPackage(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Zernio publishing failed";
-    return failPackage(packageId, tenantId, message);
+    return failPackage(packageId, tenantId, message, claimed[0]);
   }
 }

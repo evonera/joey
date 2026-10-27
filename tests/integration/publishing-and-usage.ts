@@ -6,6 +6,8 @@ const { tenants, socialAccounts, drafts, posts, usageTracking, usageReservations
 const { eq, sql } = await import("drizzle-orm");
 const { executePublishDraft } = await import("../../src/lib/publisher-core");
 const { reviewDraft } = await import("../../src/lib/draft-review");
+const { failPackage } = await import("../../src/lib/theme-studio/publishing/publisher");
+const { themePages, themeContentFormats, contentPackages } = await import("../../src/lib/db/schema");
 const { recordAgentUsage } = await import("../../src/lib/agent-usage");
 const { releaseUsageReservation, reserveUsageBudget, UsageBudgetExceededError } = await import("../../src/lib/usage");
 const { storeWebhookEvent } = await import("../../src/lib/webhooks");
@@ -14,6 +16,20 @@ const tenantId = crypto.randomUUID();
 let failed = false;
 try {
   await db.insert(tenants).values({ id: tenantId, name: "Integration test", slug: tenantId, createdAt: new Date() });
+  const [themePage] = await db.insert(themePages).values({ tenantId, name: "Test theme" }).returning();
+  const [themeFormat] = await db.insert(themeContentFormats).values({ tenantId, name: "Test", slug: "test", platform: "x", mediaType: "image", renderer: "puppeteer" }).returning();
+  const [themePackage] = await db.insert(contentPackages).values({ tenantId, themePageId: themePage.id, formatId: themeFormat.id, title: "Original", status: "approved" }).returning();
+  await db.update(contentPackages).set({ status: "publishing", metrics: { publishAttemptAt: new Date().toISOString() } }).where(eq(contentPackages.id, themePackage.id));
+  await failPackage(themePackage.id, tenantId, "Stale failure", themePackage);
+  assert.equal((await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, themePackage.id) }))?.status, "publishing", "an outdated validation failure must not overwrite a claimed package");
+  const [editablePackage] = await db.insert(contentPackages).values({ tenantId, themePageId: themePage.id, formatId: themeFormat.id, title: "Original", status: "approved" }).returning();
+  await db.update(contentPackages).set({ title: "Repaired" }).where(eq(contentPackages.id, editablePackage.id));
+  await failPackage(editablePackage.id, tenantId, "Stale failure", editablePackage);
+  assert.equal((await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, editablePackage.id) }))?.status, "approved", "an edited package must not be marked failed by an old read");
+  const repaired = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, editablePackage.id) });
+  assert.ok(repaired);
+  assert.equal((await failPackage(editablePackage.id, tenantId, "Current failure", repaired)).error, "Current failure");
+  assert.equal((await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, editablePackage.id) }))?.status, "failed");
   const [account] = await db.insert(socialAccounts).values({ tenantId, platform: "twitter", platformAccountId: "remote-account", accountName: "Test", isActive: true }).returning();
   async function draft(status = "approved", options: Record<string, unknown> = {}) {
     const [row] = await db.insert(drafts).values({ tenantId, status, content: "Integration test post", platformOptions: { platform: "x", accountId: account.id }, ...options }).returning();
