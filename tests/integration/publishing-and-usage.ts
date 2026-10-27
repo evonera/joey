@@ -6,7 +6,7 @@ const { tenants, socialAccounts, drafts, posts, usageTracking, usageReservations
 const { eq, sql } = await import("drizzle-orm");
 const { executePublishDraft } = await import("../../src/lib/publisher-core");
 const { reviewDraft } = await import("../../src/lib/draft-review");
-const { failPackage } = await import("../../src/lib/theme-studio/publishing/publisher");
+const { failPackage, packagePublicationSnapshot } = await import("../../src/lib/theme-studio/publishing/publisher");
 const { themePages, themeContentFormats, contentPackages } = await import("../../src/lib/db/schema");
 const { recordAgentUsage } = await import("../../src/lib/agent-usage");
 const { releaseUsageReservation, reserveUsageBudget, UsageBudgetExceededError } = await import("../../src/lib/usage");
@@ -19,6 +19,18 @@ try {
   const [themePage] = await db.insert(themePages).values({ tenantId, name: "Test theme" }).returning();
   const [themeFormat] = await db.insert(themeContentFormats).values({ tenantId, name: "Test", slug: "test", platform: "x", mediaType: "image", renderer: "puppeteer" }).returning();
   const [themePackage] = await db.insert(contentPackages).values({ tenantId, themePageId: themePage.id, formatId: themeFormat.id, title: "Original", status: "approved" }).returning();
+  const [claimFixture] = await db.insert(contentPackages).values({ tenantId, themePageId: themePage.id, formatId: themeFormat.id, title: "Claim", status: "approved" }).returning();
+  await db.execute(sql`UPDATE content_packages SET scheduled_for = '2030-01-01 00:00:00.123456'::timestamp WHERE id = ${claimFixture.id}`);
+  const scheduledClaimFixture = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, claimFixture.id) });
+  assert.ok(scheduledClaimFixture);
+  const { and } = await import("drizzle-orm");
+  await db.update(contentPackages).set({ caption: "Changed without a timestamp update" }).where(eq(contentPackages.id, claimFixture.id));
+  const staleClaim = await db.update(contentPackages).set({ status: "publishing" }).where(and(eq(contentPackages.id, claimFixture.id), packagePublicationSnapshot(scheduledClaimFixture))).returning();
+  assert.equal(staleClaim.length, 0, "a same-timestamp edit must invalidate the publication claim");
+  const currentClaim = await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, claimFixture.id) });
+  assert.ok(currentClaim);
+  const freshClaim = await db.update(contentPackages).set({ status: "publishing" }).where(and(eq(contentPackages.id, claimFixture.id), packagePublicationSnapshot(currentClaim))).returning();
+  assert.equal(freshClaim.length, 1, "an unchanged database timestamp with microseconds must allow the claim");
   await db.update(contentPackages).set({ status: "publishing", metrics: { publishAttemptAt: new Date().toISOString() } }).where(eq(contentPackages.id, themePackage.id));
   await failPackage(themePackage.id, tenantId, "Stale failure", themePackage);
   assert.equal((await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, themePackage.id) }))?.status, "publishing", "an outdated validation failure must not overwrite a claimed package");
