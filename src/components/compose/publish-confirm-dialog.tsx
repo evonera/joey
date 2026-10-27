@@ -45,9 +45,6 @@ export function PublishConfirmDialog({
   mediaCount = 0,
   actionLabel = "Publish Now",
 }: PublishConfirmDialogProps) {
-  const truncatedContent =
-    content.length > 220 ? `${content.slice(0, 220).trim()}…` : content;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -98,8 +95,8 @@ export function PublishConfirmDialog({
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
               Content Preview
             </span>
-            <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words max-h-36 overflow-y-auto">
-              {truncatedContent || <span className="italic text-muted-foreground">No text content</span>}
+            <div role="region" aria-label="Full post content" tabIndex={0} className="rounded-lg border border-border bg-muted/20 p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words max-h-36 overflow-y-auto">
+              {content || <span className="italic text-muted-foreground">No text content</span>}
             </div>
           </div>
 
