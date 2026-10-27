@@ -11,6 +11,15 @@ import { curatedAssetRef } from "./curated-assets";
 import { timelineSchema, timelineFrames } from "./timeline";
 import { soundCuesSchema } from "./sound";
 
+export function deriveThemeRenderInput(pkg: typeof contentPackages.$inferSelect, page: typeof themePages.$inferSelect, format: typeof themeContentFormats.$inferSelect, template: typeof themeVisualTemplates.$inferSelect | undefined, settingsOverride?: Record<string, unknown>) {
+  const settings = settingsOverride ?? (pkg.metrics as { renderSettings?: Record<string, unknown> } | null)?.renderSettings ?? {};
+  const selectedMedia = (pkg.provenance as { selectedMedia?: { assetId?: string } })?.selectedMedia;
+  const component: Record<string, unknown> = { ...(selectedMedia?.assetId ? { mediaAssetId: selectedMedia.assetId } : {}), ...normalizeThemeDesign(template?.componentSpec), ...settings };
+  const brand = (page.brandKit ?? {}) as Record<string, unknown>;
+  const revision = themePackageRenderRevision({ title: pkg.title, component: { ...component, ...(format.mediaType === "image" && component.bodyTemplate ? { renderedCaption: pkg.caption } : {}) }, brand, name: page.name, format: `${format.mediaType}:${format.aspectRatio ?? ""}` });
+  return { pkg, page, format, component, brand, revision };
+}
+
 export async function themeRenderInput(tenantId: string, packageId: string, settingsOverride?: Record<string, unknown>) {
   const pkg = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
   if (!pkg) throw new Error("Package not found.");
@@ -20,12 +29,7 @@ export async function themeRenderInput(tenantId: string, packageId: string, sett
     pkg.templateId ? db.query.themeVisualTemplates.findFirst({ where: and(eq(themeVisualTemplates.id, pkg.templateId), eq(themeVisualTemplates.tenantId, tenantId)) }) : undefined,
   ]);
   if (!page || !format) throw new Error("Theme format unavailable.");
-  const settings = settingsOverride ?? (pkg.metrics as { renderSettings?: Record<string, unknown> } | null)?.renderSettings ?? {};
-  const selectedMedia = (pkg.provenance as { selectedMedia?: { assetId?: string } })?.selectedMedia;
-  const component: Record<string, unknown> = { ...(selectedMedia?.assetId ? { mediaAssetId: selectedMedia.assetId } : {}), ...normalizeThemeDesign(template?.componentSpec), ...settings };
-  const brand = (page.brandKit ?? {}) as Record<string, unknown>;
-  const revision = themePackageRenderRevision({ title: pkg.title, component: { ...component, ...(format.mediaType === "image" && component.bodyTemplate ? { renderedCaption: pkg.caption } : {}) }, brand, name: page.name, format: `${format.mediaType}:${format.aspectRatio ?? ""}` });
-  return { pkg, page, format, component, brand, revision };
+  return deriveThemeRenderInput(pkg, page, format, template, settingsOverride);
 }
 
 export async function queueThemeRender(tenantId: string, packageId: string, settings?: Record<string, unknown>, options: { preserveReviewDecision?: boolean } = {}) {
