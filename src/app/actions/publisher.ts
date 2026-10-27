@@ -42,8 +42,6 @@ export async function publishConfirmedDraft(draftId: string, publishEarly: boole
 export async function publishDraft(draftId: string, publishEarly = false): Promise<{ success?: boolean; error?: string; status?: string }> {
     try {
         const tenantId = await requireRole(["owner", "admin"]);
-        const { zernio } = await getZernioClientForTenant(tenantId);
-
         // Check if draftId is a Theme Studio content package
         const { db } = await import("@/lib/db");
         const { contentPackages } = await import("@/lib/db/schema");
@@ -62,7 +60,7 @@ export async function publishDraft(draftId: string, publishEarly = false): Promi
             return { success: true, status: res.status };
         }
 
-        return await executePublishDraft(draftId, tenantId, zernio, publishEarly === true);
+        return { error: "Refresh and confirm the draft before publishing." };
     } catch (error: any) {
         console.error("Failed to publish draft:", error);
         return { error: error.message || "An unexpected error occurred." };
