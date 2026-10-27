@@ -168,6 +168,7 @@ export async function updateThemePackageCopy(packageId: string, input: unknown) 
   }).where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId),
     sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${copy.updatedAt}::timestamp`,
     eq(contentPackages.title, pkg.title), sql`${contentPackages.caption} IS NOT DISTINCT FROM ${pkg.caption}`,
+    sql`${contentPackages.metrics} IS NOT DISTINCT FROM ${pkg.metrics == null ? null : JSON.stringify(pkg.metrics)}::jsonb`,
     inArray(contentPackages.status, ["pending_review", "approved", "rejected", "failed"]), sql`${contentPackages.metrics}->>'publishAttemptAt' IS NULL`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`,
   )).returning({ id: contentPackages.id });
   return changed ? { success: true } : { error: "Package changed or is publishing. Refresh before editing." };
