@@ -12,7 +12,7 @@ import { draftStatusFromZernio, getZernioClientForTenant } from "@/lib/publisher
 import { adaptPackageForPlatform } from "./variant-adapter";
 import { reconcileThemePackagePostEvent } from "./reconcile-post-event";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
-import { agencyDestinationIds } from "@/lib/agency/destinations";
+import { matchingPackageAccounts, packageDestinationIds, zernioPlatform } from "./destinations";
 
 export interface PublishContentPackageResult {
   success: boolean;
@@ -20,10 +20,6 @@ export interface PublishContentPackageResult {
   zernioPostId?: string;
   publishedUrl?: string;
   error?: string;
-}
-
-function zernioPlatform(platform: string): string {
-  return platform === "x" ? "twitter" : platform;
 }
 
 function isPublicHttpsUrl(value: string): boolean {
@@ -106,16 +102,10 @@ export async function publishContentPackage(
     return failPackage(packageId, tenantId, "Theme page or content format not found");
   }
 
-  const pageAccountIds = Array.isArray(page.connectedAccounts)
-    ? page.connectedAccounts.filter((id): id is string => typeof id === "string")
-    : [];
-  const selectedAccountIds = agencyDestinationIds(pkg.provenance, pageAccountIds);
   const priorMetrics = pkg.metrics && typeof pkg.metrics === "object"
     ? pkg.metrics as Record<string, unknown>
     : {};
-  const priorAccountId = typeof priorMetrics.publishAccountId === "string" && (!((pkg.provenance as Record<string, unknown>)?.customAgentId) || selectedAccountIds.includes(priorMetrics.publishAccountId))
-    ? priorMetrics.publishAccountId
-    : undefined;
+  const { selectedAccountIds, priorAccountId, lookupIds } = packageDestinationIds(pkg.provenance, page.connectedAccounts, priorMetrics);
   if (selectedAccountIds.length === 0 && !priorAccountId) {
     return failPackage(packageId, tenantId, "Select a connected social account before publishing");
   }
@@ -123,24 +113,11 @@ export async function publishContentPackage(
   const accounts = await db.query.socialAccounts.findMany({
     where: and(
       eq(socialAccounts.tenantId, tenantId),
-      inArray(socialAccounts.id, priorAccountId
-        ? [...new Set([...selectedAccountIds, priorAccountId])]
-        : selectedAccountIds),
+      inArray(socialAccounts.id, lookupIds),
     ),
   });
   const targetPlatform = zernioPlatform(format.platform);
-  const eligibleAccounts = (priorAccountId ? accounts.filter((candidate) => candidate.id === priorAccountId && candidate.isActive === true && zernioPlatform(candidate.platform) === targetPlatform) : [])
-    .concat(accounts.filter(
-      (candidate) => selectedAccountIds.includes(candidate.id)
-        && candidate.isActive !== false
-        && zernioPlatform(candidate.platform) === targetPlatform,
-    ));
-
-  const uniqueAccountsMap = new Map<string, typeof accounts[0]>();
-  for (const acc of eligibleAccounts) {
-    uniqueAccountsMap.set(acc.id, acc);
-  }
-  const matchingAccounts = Array.from(uniqueAccountsMap.values());
+  const matchingAccounts = matchingPackageAccounts(accounts, format.platform, selectedAccountIds, priorAccountId);
   if (matchingAccounts.length === 0) {
     return failPackage(
       packageId,
