@@ -314,7 +314,7 @@ export async function updateDraft(draftId: string, content: string) {
 
         const existingPackage = await db.query.contentPackages.findFirst({
             where: and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId)),
-            columns: { id: true, title: true, caption: true, metrics: true }
+            columns: { id: true, title: true, caption: true, metrics: true, updatedAt: true }
         });
 
         if (existingPackage) {
@@ -334,10 +334,12 @@ export async function updateDraft(draftId: string, content: string) {
                 }
             }
 
+            const { component, format } = await (await import("@/lib/media-engine/theme-adapter")).themeRenderInput(tenantId, draftId);
+            const pixelsChanged = newTitle !== existingPackage.title || ((!(existingPackage.metrics as Record<string, unknown> | null)?.renderJobId || format.mediaType === "image" && Boolean(component.bodyTemplate)) && newCaption !== existingPackage.caption);
             const changed = await db.update(contentPackages)
-                .set({ title: newTitle, caption: newCaption, status: "pending_review", ...(newTitle !== existingPackage.title || (!(existingPackage.metrics as Record<string, unknown> | null)?.renderJobId && newCaption !== existingPackage.caption) ? { renderedAssetUrls: [] } : {}), updatedAt: new Date() })
-                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage(role))).returning({ id: contentPackages.id });
-            if (!changed.length) return { error: "This post has already been submitted for publishing. Review it in Theme Studio." };
+                .set({ title: newTitle, caption: newCaption, status: "pending_review", ...(pixelsChanged ? { renderedAssetUrls: [], metrics: sql`(coalesce(${contentPackages.metrics}, '{}'::jsonb) - 'renderJobId' - 'renderRevision' - 'legacyRenderRevision' - 'legacyRenderToken') || '{"failurePhase":"render_required"}'::jsonb` } : {}), updatedAt: new Date() })
+                .where(and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId), editablePackage(role), eq(contentPackages.title, existingPackage.title), sql`${contentPackages.caption} IS NOT DISTINCT FROM ${existingPackage.caption}`, sql`${contentPackages.metrics} IS NOT DISTINCT FROM ${existingPackage.metrics == null ? null : JSON.stringify(existingPackage.metrics)}::jsonb`, sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${existingPackage.updatedAt.toISOString()}::timestamp`)).returning({ id: contentPackages.id });
+            if (!changed.length) return { error: "This post changed or has been submitted for publishing. Refresh before editing." };
             return { success: true };
         }
 
