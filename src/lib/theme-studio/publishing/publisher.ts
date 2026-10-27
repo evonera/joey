@@ -42,6 +42,7 @@ export function packagePublicationSnapshot(observed: typeof contentPackages.$inf
     sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${observed.updatedAt.toISOString()}::timestamp`,
     eq(contentPackages.themePageId, observed.themePageId), eq(contentPackages.formatId, observed.formatId),
     sql`${contentPackages.templateId} IS NOT DISTINCT FROM ${observed.templateId}`,
+    sql`${contentPackages.clusterId} IS NOT DISTINCT FROM ${observed.clusterId}`,
     sql`${contentPackages.title} IS NOT DISTINCT FROM ${observed.title}`,
     sql`${contentPackages.caption} IS NOT DISTINCT FROM ${observed.caption}`,
     sql`to_jsonb(${contentPackages.hashtags}) IS NOT DISTINCT FROM ${observed.hashtags == null ? null : JSON.stringify(observed.hashtags)}::jsonb`,
@@ -61,7 +62,7 @@ export async function failPackage(
   const changed = await db
     .update(contentPackages)
     .set({ status: "failed", error: message, updatedAt: new Date() })
-    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), ne(contentPackages.status, "published"), eq(contentPackages.status, observed.status), sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${observed.updatedAt.toISOString()}::timestamp`, sql`${contentPackages.metrics} IS NOT DISTINCT FROM ${observed.metrics == null ? null : JSON.stringify(observed.metrics)}::jsonb`, eq(contentPackages.themePageId, observed.themePageId), eq(contentPackages.formatId, observed.formatId), sql`${contentPackages.templateId} IS NOT DISTINCT FROM ${observed.templateId}`, sql`${contentPackages.title} IS NOT DISTINCT FROM ${observed.title}`, sql`${contentPackages.caption} IS NOT DISTINCT FROM ${observed.caption}`, sql`to_jsonb(${contentPackages.hashtags}) IS NOT DISTINCT FROM ${observed.hashtags == null ? null : JSON.stringify(observed.hashtags)}::jsonb`, sql`date_trunc('milliseconds', ${contentPackages.scheduledFor}) IS NOT DISTINCT FROM ${observed.scheduledFor?.toISOString() ?? null}::timestamp`, sql`${contentPackages.renderedAssetUrls} IS NOT DISTINCT FROM ${observed.renderedAssetUrls == null ? null : JSON.stringify(observed.renderedAssetUrls)}::jsonb`, sql`${contentPackages.provenance} IS NOT DISTINCT FROM ${observed.provenance == null ? null : JSON.stringify(observed.provenance)}::jsonb`, sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`))
+    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), ne(contentPackages.status, "published"), packagePublicationSnapshot(observed), sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`))
     .returning({ id: contentPackages.id });
   if (!changed.length) {
     const current = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
