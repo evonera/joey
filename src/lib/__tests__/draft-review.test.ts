@@ -84,4 +84,16 @@ describe("reviewDraft missing-row handling", () => {
       selectedVariantId: "Selected",
     }));
   });
+
+  it("approves a draft with valid media and no text", async () => {
+    mocks.findFirst.mockResolvedValueOnce({ id: "draft-1", content: "", variants: null, platformOptions: { mediaUrls: ["https://example.com/image.png"] } });
+    mocks.update.mockReturnValueOnce({ set: () => ({ where: () => ({ returning: async () => [{ id: "draft-1" }] }) }) });
+    await expect(reviewDraft({ tenantId: "tenant-1", draftId: "draft-1", decision: "approve" })).resolves.toEqual({ success: true });
+  });
+
+  it.each([undefined, [], [""], ["file:///etc/passwd"]])("rejects an empty draft with invalid media %s", async (mediaUrls) => {
+    mocks.findFirst.mockResolvedValueOnce({ id: "draft-1", content: "", variants: null, platformOptions: { mediaUrls } });
+    await expect(reviewDraft({ tenantId: "tenant-1", draftId: "draft-1", decision: "approve" })).resolves.toEqual({ error: "Cannot approve a draft without content or valid media. Please select a variant or add media." });
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
 });

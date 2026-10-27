@@ -4,8 +4,12 @@ export const manualPostSchema = z.object({
   draftId: z.string().min(1).max(128).optional(),
   content: z.string().max(50_000),
   mediaUrls: z.array(z.url().refine(value => {
-    const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+    try {
+      const url = new URL(value);
+      return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+    } catch {
+      return false;
+    }
   }, "Use an HTTP or HTTPS media URL without credentials.")).max(10),
   accountIds: z.array(z.string().min(1).max(128)).max(30)
     .refine(ids => new Set(ids).size === ids.length, "Select each account only once."),

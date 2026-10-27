@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { drafts } from "@/lib/db/schema";
 import { assertAvailableSchedule, lockSchedulingAccount } from "./editorial-scheduling";
+import { manualPostSchema } from "./compose-validation";
 
 const REVIEWABLE_STATUSES = ["draft", "pending_review", "approved", "scheduled", "rejected", "failed"];
 
@@ -73,7 +74,13 @@ export async function reviewDraft(input: DraftReviewInput): Promise<{ success?: 
         content = variant.content;
       }
     }
-    if (!content?.trim()) return { error: "Cannot approve a draft without content. Please select a variant." };
+    if (!content?.trim()) {
+      const options = existing.platformOptions as { mediaUrls?: unknown } | null;
+      const media = manualPostSchema.shape.mediaUrls.safeParse(options?.mediaUrls);
+      if (!media.success || media.data.length === 0) {
+        return { error: "Cannot approve a draft without content or valid media. Please select a variant or add media." };
+      }
+    }
   }
 
   const set = input.decision === "approve"
