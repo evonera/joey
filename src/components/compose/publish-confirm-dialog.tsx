@@ -33,6 +33,7 @@ interface PublishConfirmDialogProps {
   content: string;
   mediaCount?: number;
   actionLabel?: string;
+  scheduledFor?: string | null;
 }
 
 export function PublishConfirmDialog({
@@ -44,6 +45,7 @@ export function PublishConfirmDialog({
   content,
   mediaCount = 0,
   actionLabel = "Publish Now",
+  scheduledFor,
 }: PublishConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -111,6 +113,7 @@ export function PublishConfirmDialog({
           )}
 
           {/* Live warning */}
+          {scheduledFor && <p className="text-xs text-muted-foreground">Scheduled for {new Date(scheduledFor).toLocaleString()}. Confirming publishes it early.</p>}
           <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
             <span>

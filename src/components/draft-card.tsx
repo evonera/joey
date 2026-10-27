@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { updateDraft, approveDraft, rejectDraft, deleteDraft } from "@/app/actions/drafts";
-import { publishDraft } from "@/app/actions/publisher";
+import { prepareDraftPublication, publishConfirmedDraft, publishDraft } from "@/app/actions/publisher";
+import type { DraftPublicationConfirmation } from "@/lib/publication-confirmation";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -68,6 +69,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [isCommentsOpen, setIsCommentsOpen] = useState(false);
     const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
+    const [confirmation, setConfirmation] = useState<DraftPublicationConfirmation | null>(null);
 
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
@@ -96,14 +98,20 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
         toast.success("Draft approved"); broadcastApproval(variantName); onActionComplete();
     });
     const executePublish = () => runAction(async () => {
-        const res = await publishDraft(draft.id, isScheduled);
+        const res = platformOpts?.isThemePackage ? await publishDraft(draft.id, isScheduled)
+            : confirmation ? await publishConfirmedDraft(draft.id, Boolean(confirmation.scheduledFor) && ["scheduled", "approved"].includes(confirmation.status), confirmation)
+            : { error: "Refresh and confirm publication again." };
         if (res.error) throw new Error(res.error);
         toast.success(res.status === "published" ? "Post published" : "Post submitted. Publishing is in progress.");
         onActionComplete();
     });
-    const handlePublish = () => {
+    const handlePublish = () => runAction(async () => {
+        if (platformOpts?.isThemePackage) { setConfirmation(null); setPublishConfirmOpen(true); return; }
+        const result = await prepareDraftPublication(draft.id);
+        if (!result.confirmation) throw new Error(result.error || "Could not prepare publication.");
+        setConfirmation(result.confirmation);
         setPublishConfirmOpen(true);
-    };
+    });
     const handleReject = () => runAction(async () => {
         if (!feedback.trim()) return;
         const res = await rejectDraft(draft.id, feedback);
@@ -451,14 +459,11 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                     await executePublish();
                 }}
                 isPublishing={loading}
-                accounts={[{
-                    id: platformOpts?.accountId || draft.id,
-                    accountName: platformOpts?.accountName || platform,
-                    platform: platform,
-                }]}
-                content={draft.content || ""}
-                mediaCount={mediaUrls.length}
-                actionLabel={isScheduled ? "Publish Early" : "Publish Now"}
+                accounts={confirmation ? [{ id: confirmation.account.id, accountName: confirmation.account.accountName || confirmation.account.id, platform: confirmation.account.platform }] : [{ id: platformOpts?.accountId || draft.id, accountName: platformOpts?.accountName || platform, platform }]}
+                content={confirmation ? confirmation.content || "" : draft.content || ""}
+                mediaCount={confirmation ? (Array.isArray((confirmation.platformOptions as { mediaUrls?: unknown } | null)?.mediaUrls) ? ((confirmation.platformOptions as { mediaUrls: unknown[] }).mediaUrls.length) : 0) : mediaUrls.length}
+                actionLabel={(confirmation ? Boolean(confirmation.scheduledFor) && ["scheduled", "approved"].includes(confirmation.status) : isScheduled) ? "Publish Early" : "Publish Now"}
+                scheduledFor={confirmation && ["scheduled", "approved"].includes(confirmation.status) ? confirmation.scheduledFor : null}
             />
         </div>
     );

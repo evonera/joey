@@ -45,6 +45,31 @@ try {
   const results = await Promise.all([executePublishDraft(concurrent.id, tenantId, fake as any), executePublishDraft(concurrent.id, tenantId, fake as any)]);
   assert.equal(results.filter(result => result.success).length, 1);
   assert.equal(calls, before + 2, "concurrent requests must claim once");
+
+  const confirmedDraft = await draft();
+  const confirmation = { content: confirmedDraft.content, platformOptions: confirmedDraft.platformOptions, status: confirmedDraft.status, scheduledFor: null, account: { id: account.id, accountName: account.accountName, platform: account.platform, platformAccountId: account.platformAccountId } };
+  let confirmationCalls = 0;
+  const confirmedProvider = { posts: { createPost: async (request: any) => {
+    confirmationCalls++;
+    assert.equal(request.body.content, confirmedDraft.content);
+    assert.equal(request.body.platforms[0].accountId, account.platformAccountId);
+    return { data: { post: { _id: "confirmed-post", status: "published" } } };
+  } } };
+  await db.update(drafts).set({ content: "Changed after preview" }).where(eq(drafts.id, confirmedDraft.id));
+  assert.ok((await executePublishDraft(confirmedDraft.id, tenantId, confirmedProvider as any, false, confirmation)).error);
+  assert.equal(confirmationCalls, 0, "changed content must not be sent");
+  await db.update(drafts).set({ content: confirmedDraft.content }).where(eq(drafts.id, confirmedDraft.id));
+  await db.update(drafts).set({ platformOptions: { platform: "x", accountId: account.id, mediaUrls: ["https://example.com/changed.png"] } }).where(eq(drafts.id, confirmedDraft.id));
+  assert.ok((await executePublishDraft(confirmedDraft.id, tenantId, confirmedProvider as any, false, confirmation)).error);
+  await db.update(drafts).set({ platformOptions: confirmedDraft.platformOptions, scheduledFor: new Date(Date.now() + 60_000) }).where(eq(drafts.id, confirmedDraft.id));
+  assert.ok((await executePublishDraft(confirmedDraft.id, tenantId, confirmedProvider as any, false, confirmation)).error);
+  await db.update(drafts).set({ scheduledFor: null }).where(eq(drafts.id, confirmedDraft.id));
+  await db.update(socialAccounts).set({ accountName: "Changed name" }).where(eq(socialAccounts.id, account.id));
+  assert.ok((await executePublishDraft(confirmedDraft.id, tenantId, confirmedProvider as any, false, confirmation)).error);
+  assert.equal(confirmationCalls, 0, "changed account identity must not be sent");
+  await db.update(socialAccounts).set({ accountName: account.accountName }).where(eq(socialAccounts.id, account.id));
+  assert.equal((await executePublishDraft(confirmedDraft.id, tenantId, confirmedProvider as any, false, confirmation)).status, "published");
+  assert.equal(confirmationCalls, 1);
   const invalid = await draft();
   const rejected = await executePublishDraft(invalid.id, tenantId, { posts: { createPost: async () => ({ error: { error: "Bad media" }, response: { status: 400 } }) } } as any);
   assert.ok(rejected.error);
