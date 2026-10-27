@@ -13,6 +13,7 @@ import { adaptPackageForPlatform } from "./variant-adapter";
 import { reconcileThemePackagePostEvent } from "./reconcile-post-event";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 import { matchingPackageAccounts, packageDestinationIds, zernioPlatform } from "./destinations";
+import { buildThemePublicationPayload } from "./payload";
 
 export interface PublishContentPackageResult {
   success: boolean;
@@ -179,32 +180,7 @@ export async function publishContentPackage(
     const { zernio } = await getZernioClientForTenant(tenantId);
     const response = await zernio.posts.createPost({
       headers: { "x-request-id": pkg.id },
-      body: {
-        title: pkg.title,
-        content: variant.adaptedCaption,
-        mediaItems: variant.mediaUrls.map((url) => ({
-          type: variant.mediaType === "video" ? "video" as const : "image" as const,
-          url,
-          altText: variant.mediaType === "video" ? undefined : pkg.title,
-        })),
-        platforms: matchingAccounts.map((acc) => ({
-          platform: zernioPlatform(acc.platform),
-          accountId: acc.platformAccountId,
-          customContent: adaptPackageForPlatform(
-            pkg,
-            acc.platform as "instagram" | "tiktok" | "x",
-            format.mediaType as "image" | "carousel" | "video",
-          ).adaptedCaption,
-        })),
-        hashtags: variant.adaptedHashtags,
-        ...(!publishEarly && pkg.scheduledFor && pkg.scheduledFor > new Date()
-          ? { scheduledFor: pkg.scheduledFor.toISOString() }
-          : { publishNow: true }),
-        metadata: {
-          themePageId: pkg.themePageId,
-          themePackageId: pkg.id,
-        },
-      },
+      body: buildThemePublicationPayload(pkg, format, matchingAccounts, publishEarly, new Date()),
     });
 
     const responseData = response.data as (typeof response.data & { existingPost?: NonNullable<typeof response.data>["post"] }) | undefined;
