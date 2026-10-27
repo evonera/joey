@@ -85,7 +85,8 @@ export function BillingPanel() {
               <Button variant="ghost" disabled={busy} onClick={refresh}>Refresh plan</Button>
             </div>}
         {summary.configured && summary.testMode && <p className="text-sm text-amber-600 dark:text-amber-400">Test checkout is enabled. No live payment will be collected.</p>}
-        <p className="text-xs text-muted-foreground">Prices are USD per workspace per month; taxes and local currency conversion are shown at checkout. Other workspaces are billed separately. Model API usage with your own keys is billed by your provider.</p>
+        <p className="text-xs text-muted-foreground">Prices cover Joey workspace features and automation in USD per workspace per month; taxes and local currency conversion are shown at checkout. Other workspaces are billed separately.</p>
+        <p className="text-xs text-muted-foreground">Publishing requires your own Zernio account and API key. Zernio connection and API charges, and AI usage with your own model keys, are billed separately by those providers. Connected account limits are Joey allowances. <a href="https://zernio.com/pricing" target="_blank" rel="noreferrer" className="underline">See Zernio pricing</a>.</p>
         <p className="text-xs text-muted-foreground">After checkout, your plan updates when payment is confirmed. Use Manage billing for invoices, payment methods and cancellation.</p>
         <p className="text-xs text-muted-foreground">Plans renew automatically until cancelled. <Link href="/cancellation" className="underline">Cancellation</Link> · <Link href="/refunds" className="underline">7-day first-payment refunds</Link> · <Link href="/terms" className="underline">Terms</Link> · <a href="mailto:joey@evonera.net" className="underline">Billing support</a></p>
       </CardContent>

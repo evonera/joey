@@ -62,7 +62,7 @@ export const PUBLIC_PLAN_IDS = ["free", "creator", "pro", "agency"] as const;
 export function planFeatures(plan: (typeof PUBLIC_PLAN_IDS)[number]): string[] {
   const p = PLAN_CATALOG[plan];
   return [
-    `${p.maxConnectedAccounts} connected account${p.maxConnectedAccounts === 1 ? "" : "s"}`,
+    `Up to ${p.maxConnectedAccounts} connected account${p.maxConnectedAccounts === 1 ? "" : "s"}`,
     `${p.themePageLimit} theme page${p.themePageLimit === 1 ? "" : "s"}`,
     `${p.slotLimitPerPage} content slots per page`,
     `Own up to ${p.maxWorkspaces} workspace${p.maxWorkspaces === 1 ? "" : "s"} (billed separately)`,
