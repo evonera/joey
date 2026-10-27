@@ -38,31 +38,11 @@ export async function publishConfirmedDraft(draftId: string, publishEarly: boole
     } catch { return { error: "Could not publish the draft. Please try again." }; }
 }
 
-// Server Action for UI
+// Legacy callers must obtain and submit a reviewed snapshot.
 export async function publishDraft(draftId: string, publishEarly = false): Promise<{ success?: boolean; error?: string; status?: string }> {
     try {
-        const tenantId = await requireRole(["owner", "admin"]);
-        // Check if draftId is a Theme Studio content package
-        const { db } = await import("@/lib/db");
-        const { contentPackages } = await import("@/lib/db/schema");
-        const { eq, and } = await import("drizzle-orm");
-
-        const pkg = await db.query.contentPackages.findFirst({
-            where: and(eq(contentPackages.id, draftId), eq(contentPackages.tenantId, tenantId)),
-        });
-
-        if (pkg) {
-            const { publishContentPackage } = await import("@/lib/theme-studio/publishing/publisher");
-            const res = await publishContentPackage(draftId, tenantId, publishEarly === true);
-            if (!res.success) {
-                return { error: res.error || "Failed to publish content package" };
-            }
-            return { success: true, status: res.status };
-        }
-
+        await requireRole(["owner", "admin"]);
+        void draftId; void publishEarly;
         return { error: "Refresh and confirm the draft before publishing." };
-    } catch (error: any) {
-        console.error("Failed to publish draft:", error);
-        return { error: error.message || "An unexpected error occurred." };
-    }
+    } catch { return { error: "Could not publish the draft." }; }
 }

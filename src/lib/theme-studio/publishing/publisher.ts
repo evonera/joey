@@ -14,6 +14,8 @@ import { reconcileThemePackagePostEvent } from "./reconcile-post-event";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 import { matchingPackageAccounts, packageDestinationIds, zernioPlatform } from "./destinations";
 import { buildThemePublicationPayload } from "./payload";
+import { lockedThemePreview } from "./locked-preview";
+import type Zernio from "@zernio/node";
 
 export interface PublishContentPackageResult {
   success: boolean;
@@ -84,6 +86,8 @@ export async function publishContentPackage(
   packageId: string,
   tenantId: string,
   publishEarly = false,
+  expectedFingerprint?: string,
+  provider?: Zernio,
 ): Promise<PublishContentPackageResult> {
   const pkg = await db.query.contentPackages.findFirst({
     where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)),
@@ -140,12 +144,12 @@ export async function publishContentPackage(
       inArray(socialAccounts.id, lookupIds),
     ),
   });
-  const targetPlatform = zernioPlatform(format.platform);
-  const matchingAccounts = matchingPackageAccounts(accounts, format.platform, selectedAccountIds, priorAccountId);
+  let targetPlatform = zernioPlatform(format.platform);
+  let matchingAccounts = matchingPackageAccounts(accounts, format.platform, selectedAccountIds, priorAccountId);
   if (matchingAccounts.length === 0) {
     return validationFailure(`No selected, active ${format.platform} account is connected`);
   }
-  const primaryAccount = matchingAccounts[0];
+  let primaryAccount = matchingAccounts[0];
 
   const variant = adaptPackageForPlatform(
     pkg,
@@ -161,7 +165,7 @@ export async function publishContentPackage(
 
   const claimTime = new Date();
   const stalePublishingCutoff = new Date(claimTime.getTime() - 2 * 60_000);
-  const claimed = await db
+  const applyClaim = (client: Pick<typeof db, "update">) => client
     .update(contentPackages)
     .set({
       status: "publishing",
@@ -187,6 +191,25 @@ export async function publishContentPackage(
       ),
     )
     .returning();
+  let confirmedPayload: ReturnType<typeof buildThemePublicationPayload> | undefined;
+  let claimed: (typeof contentPackages.$inferSelect)[];
+  if (expectedFingerprint) {
+    try {
+      claimed = await db.transaction(async tx => {
+        const current = await lockedThemePreview(tx, tenantId, packageId, publishEarly);
+        if (current.fingerprint !== expectedFingerprint) return [];
+        const currentMetrics = current.pkg.metrics as Record<string, unknown> | null;
+        if (!["approved", "failed"].includes(current.pkg.status) || currentMetrics?.zernioPostId || (currentMetrics?.publishAttemptAt && Date.now() - Date.parse(String(currentMetrics.publishAttemptAt)) > 240_000)) return [];
+        matchingAccounts = current.accounts;
+        primaryAccount = current.accounts[0];
+        targetPlatform = zernioPlatform(current.format.platform);
+        confirmedPayload = current.payload;
+        return applyClaim(tx);
+      });
+    } catch {
+      return { success: false, status: "failed", error: "Publication details changed or are unavailable. Refresh and review them again." };
+    }
+  } else claimed = await applyClaim(db);
   if (claimed.length === 0) {
     return {
       success: false,
@@ -196,10 +219,10 @@ export async function publishContentPackage(
   }
 
   try {
-    const { zernio } = await getZernioClientForTenant(tenantId);
+    const zernio = provider ?? (await getZernioClientForTenant(tenantId)).zernio;
     const response = await zernio.posts.createPost({
       headers: { "x-request-id": pkg.id },
-      body: buildThemePublicationPayload(pkg, format, matchingAccounts, publishEarly, new Date()),
+      body: confirmedPayload ?? buildThemePublicationPayload(pkg, format, matchingAccounts, publishEarly, new Date()),
     });
 
     const responseData = response.data as (typeof response.data & { existingPost?: NonNullable<typeof response.data>["post"] }) | undefined;

@@ -12,7 +12,6 @@ import { db } from "@/lib/db";
 import { assets, contentPackages, themePages } from "@/lib/db/schema";
 import { assertAvailableSchedule, assertSchedulingRole, lockSchedulingAccount } from "@/lib/editorial-scheduling";
 import { assertThemeRenderCurrent, queueThemeRender } from "@/lib/media-engine/theme-adapter";
-import { publishContentPackage } from "@/lib/theme-studio/publishing/publisher";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 import { timelineSchema } from "@/lib/media-engine/timeline";
 import { soundCuesSchema } from "@/lib/media-engine/sound";
@@ -84,8 +83,9 @@ export async function reviewThemePackage(
 }
 
 export async function publishThemePackage(packageId: string) {
-  const tenantId = await requireRole(["owner", "admin"]);
-  return publishContentPackage(packageId, tenantId);
+  await requireRole(["owner", "admin"]);
+  void packageId;
+  return { success: false, error: "Refresh and confirm the package before publishing." };
 }
 
 export async function renderThemePackage(packageId: string, input?: unknown) {
