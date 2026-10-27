@@ -127,7 +127,7 @@ export async function publishContentPackage(
   ]);
 
   if (!page || !format) {
-    return failPackage(packageId, tenantId, "Theme page or content format not found", pkg);
+    return expectedFingerprint ? validationFailure("Theme page or content format not found") : failPackage(packageId, tenantId, "Theme page or content format not found", pkg);
   }
 
   const priorMetrics = pkg.metrics && typeof pkg.metrics === "object"
@@ -157,10 +157,10 @@ export async function publishContentPackage(
     format.mediaType as "image" | "carousel" | "video",
   );
   if (variant.mediaUrls.length === 0 || variant.mediaUrls.some((url) => !isPublicHttpsUrl(url))) {
-    return failPackage(packageId, tenantId, "Publishing requires publicly reachable HTTPS media", pkg);
+    return expectedFingerprint ? validationFailure("Publishing requires publicly reachable HTTPS media") : failPackage(packageId, tenantId, "Publishing requires publicly reachable HTTPS media", pkg);
   }
   if (format.platform === "tiktok" && variant.mediaType !== "video") {
-    return failPackage(packageId, tenantId, "TikTok publishing requires a rendered video asset", pkg);
+    return expectedFingerprint ? validationFailure("TikTok publishing requires a rendered video asset") : failPackage(packageId, tenantId, "TikTok publishing requires a rendered video asset", pkg);
   }
 
   const claimTime = new Date();

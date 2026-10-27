@@ -59,6 +59,10 @@ try {
   assert.equal(firstPreview.payload.content, "Confirmed content");
   assert.equal(firstPreview.identity[0].id, account.id);
   assert.equal((await prepare()).fingerprint, firstPreview.fingerprint);
+  await db.update(themeContentFormats).set({ platform: "tiktok" }).where(eq(themeContentFormats.id, themeFormat.id));
+  assert.equal((await publishContentPackage(previewPackage.id, tenantId, true, firstPreview.fingerprint)).success, false);
+  assert.equal((await db.query.contentPackages.findFirst({ where: eq(contentPackages.id, previewPackage.id) }))?.status, "approved", "a stale format validation must not change the package");
+  await db.update(themeContentFormats).set({ platform: themeFormat.platform }).where(eq(themeContentFormats.id, themeFormat.id));
   await db.update(socialAccounts).set({ accountName: "Changed" }).where(eq(socialAccounts.id, account.id));
   assert.notEqual((await prepare()).fingerprint, firstPreview.fingerprint, "account changes invalidate a preview");
   await db.update(socialAccounts).set({ accountName: account.accountName }).where(eq(socialAccounts.id, account.id));
