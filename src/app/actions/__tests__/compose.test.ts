@@ -76,6 +76,9 @@ describe("Compose merge safety", () => {
     mocks.findFirst.mockResolvedValueOnce({ id: "draft-1", platformOptions: null });
     await createManualPost({ ...input, draftId: "draft-1" });
     expect(mocks.inArray).toHaveBeenCalledWith(expect.anything(), ["draft", "pending_review", "rejected"]);
+    const query = new PgDialect().sqlToQuery(mocks.where.mock.calls[0][0]);
+    expect(query.sql).toContain("NOT LIKE 'verify:%'");
+    expect(query.sql).toContain("NOT EXISTS (SELECT 1 FROM posts");
   });
 
   it("retains the render metadata merge when editing Chat videos", async () => {

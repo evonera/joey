@@ -103,6 +103,9 @@ export async function createManualPost(data: {
                         inArray(drafts.status, role === "owner" || role === "admin"
                             ? ["draft", "pending_review", "approved", "rejected", "scheduled"]
                             : ["draft", "pending_review", "rejected"]),
+                        sql`(${drafts.errorMessage} IS NULL OR ${drafts.errorMessage} NOT LIKE 'verify:%')`,
+                        sql`NOT EXISTS (SELECT 1 FROM posts p WHERE p.draft_id = ${drafts.id} AND p.tenant_id = ${drafts.tenantId})`,
+                        sql`${drafts.platformOptions} IS NOT DISTINCT FROM ${existing.platformOptions == null ? null : JSON.stringify(existing.platformOptions)}::jsonb`,
                     )).returning();
                     if (!updated) throw new Error("This draft cannot be edited. It may already be publishing or published.");
                     rows.push(updated);
