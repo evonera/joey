@@ -5,6 +5,7 @@ const { db } = await import("../../src/lib/db");
 const { tenants, socialAccounts, drafts, posts, usageTracking, usageReservations, agentUsageEvents, webhookEvents, flows, flowRuns } = await import("../../src/lib/db/schema");
 const { eq, sql } = await import("drizzle-orm");
 const { executePublishDraft } = await import("../../src/lib/publisher-core");
+const { reviewDraft } = await import("../../src/lib/draft-review");
 const { recordAgentUsage } = await import("../../src/lib/agent-usage");
 const { releaseUsageReservation, reserveUsageBudget, UsageBudgetExceededError } = await import("../../src/lib/usage");
 const { storeWebhookEvent } = await import("../../src/lib/webhooks");
@@ -60,6 +61,24 @@ try {
 
   const uncertain = await draft("failed", { errorMessage: "verify: Check Zernio first" });
   assert.ok((await executePublishDraft(uncertain.id, tenantId, fake as any)).error);
+  for (const decision of ["approve", "reject"] as const) {
+    const result = await reviewDraft({ tenantId, draftId: uncertain.id, decision });
+    assert.ok(result.error, `${decision} must not clear an uncertain publication`);
+    const unchanged = await db.query.drafts.findFirst({ where: eq(drafts.id, uncertain.id) });
+    assert.equal(unchanged?.status, "failed");
+    assert.equal(unchanged?.errorMessage, "verify: Check Zernio first");
+  }
+  const reviewable = await draft("pending_review");
+  assert.equal((await reviewDraft({ tenantId, draftId: reviewable.id, decision: "approve" })).success, true);
+  assert.ok((await reviewDraft({ tenantId, draftId: asyncDraft.id, decision: "reject" })).error, "a published draft must not be reset by review");
+  const withReceipt = await draft("failed");
+  await db.insert(posts).values({ tenantId, draftId: withReceipt.id, content: "Already submitted", status: "published" });
+  for (const decision of ["approve", "reject"] as const) {
+    assert.ok((await reviewDraft({ tenantId, draftId: withReceipt.id, decision })).error, "a receipt must fence review even if the draft has a reviewable status");
+  }
+  assert.equal((await db.query.drafts.findFirst({ where: eq(drafts.id, withReceipt.id) }))?.status, "failed");
+  const ordinaryFailure = await draft("failed", { errorMessage: "Provider rejected the post" });
+  assert.equal((await reviewDraft({ tenantId, draftId: ordinaryFailure.id, decision: "approve" })).success, true);
   assert.equal(calls, before + 2);
 
   for (const canonicalStatus of ["published", "failed"]) {
