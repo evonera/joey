@@ -66,20 +66,19 @@ export async function reviewDraft(input: DraftReviewInput): Promise<{ success?: 
   let selectedVariant = input.variantName;
   let content = input.content;
   if (input.decision === "approve") {
+    const options = existing.platformOptions as { mediaUrls?: unknown } | null;
+    const media = manualPostSchema.shape.mediaUrls.safeParse(options?.mediaUrls);
+    const hasValidMedia = media.success && media.data.length > 0;
     if (!content?.trim() && existing.content?.trim()) content = existing.content;
-    if (!content?.trim()) {
+    if (!content?.trim() && !hasValidMedia) {
       const variant = firstVariant(existing.variants);
       if (variant) {
         selectedVariant ??= variant.name;
         content = variant.content;
       }
     }
-    if (!content?.trim()) {
-      const options = existing.platformOptions as { mediaUrls?: unknown } | null;
-      const media = manualPostSchema.shape.mediaUrls.safeParse(options?.mediaUrls);
-      if (!media.success || media.data.length === 0) {
-        return { error: "Cannot approve a draft without content or valid media. Please select a variant or add media." };
-      }
+    if (!content?.trim() && !hasValidMedia) {
+      return { error: "Cannot approve a draft without content or valid media. Please select a variant or add media." };
     }
   }
 

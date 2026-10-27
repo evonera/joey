@@ -81,7 +81,7 @@ try {
   assert.equal((await reviewDraft({ tenantId, draftId: ordinaryFailure.id, decision: "approve" })).success, true);
   assert.equal(calls, before + 2);
 
-  const mediaOnly = await draft("pending_review", { content: "", platformOptions: { platform: "x", accountId: account.id, mediaUrls: ["https://example.com/image.png"] } });
+  const mediaOnly = await draft("pending_review", { content: "", variants: [{ name: "old", content: "Discarded text" }], platformOptions: { platform: "x", accountId: account.id, mediaUrls: ["https://example.com/image.png"] } });
   assert.equal((await reviewDraft({ tenantId, draftId: mediaOnly.id, decision: "approve" })).success, true);
   const mediaPublish = await executePublishDraft(mediaOnly.id, tenantId, { posts: { createPost: async (request: any) => {
     assert.equal(request.body.content, "");

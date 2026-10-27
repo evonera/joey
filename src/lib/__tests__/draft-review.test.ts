@@ -86,9 +86,12 @@ describe("reviewDraft missing-row handling", () => {
   });
 
   it("approves a draft with valid media and no text", async () => {
-    mocks.findFirst.mockResolvedValueOnce({ id: "draft-1", content: "", variants: null, platformOptions: { mediaUrls: ["https://example.com/image.png"] } });
-    mocks.update.mockReturnValueOnce({ set: () => ({ where: () => ({ returning: async () => [{ id: "draft-1" }] }) }) });
+    mocks.findFirst.mockResolvedValueOnce({ id: "draft-1", content: "", variants: [{ name: "old", content: "Discarded text" }], platformOptions: { mediaUrls: ["https://example.com/image.png"] } });
+    const set = vi.fn(() => ({ where: () => ({ returning: async () => [{ id: "draft-1" }] }) }));
+    mocks.update.mockReturnValueOnce({ set });
     await expect(reviewDraft({ tenantId: "tenant-1", draftId: "draft-1", decision: "approve" })).resolves.toEqual({ success: true });
+    expect(set).not.toHaveBeenCalledWith(expect.objectContaining({ content: "Discarded text" }));
+    expect(set).not.toHaveBeenCalledWith(expect.objectContaining({ selectedVariantId: "old" }));
   });
 
   it.each([undefined, [], [""], ["file:///etc/passwd"]])("rejects an empty draft with invalid media %s", async (mediaUrls) => {
