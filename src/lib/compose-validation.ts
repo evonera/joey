@@ -19,6 +19,7 @@ export const manualPostSchema = z.object({
   // Required when scheduleType === "now" so no client-side bypass,
   // double-fire, or stale ref can dispatch without the confirm dialog.
   confirmedAt: z.iso.datetime({ offset: true }).optional(),
+  confirmedAccounts: z.array(z.object({ id: z.string().min(1).max(128), accountName: z.string().nullable(), platform: z.string().max(50), platformAccountId: z.string().min(1).max(256) }).strict()).max(30).optional(),
 }).superRefine((data, ctx) => {
   if (!data.content.trim() && !data.mediaUrls.length) ctx.addIssue({ code: "custom", message: "Add post content or media." });
   if (data.scheduleType !== "draft" && data.accountIds.length === 0) {
