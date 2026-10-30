@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mock = vi.hoisted(() => ({ cleanup: vi.fn(), webhooks: vi.fn(), renders: vi.fn(), zernio: vi.fn(), dms: vi.fn(), analytics: vi.fn(), optimize: vi.fn(), event: vi.fn(), flows: vi.fn(), execute: vi.fn(), admit: vi.fn(), node: vi.fn() }));
-vi.mock("@/lib/db", () => ({ db: { query: { flowRuns: { findMany: async () => [], findFirst: async () => undefined }, flows: { findMany: mock.flows } }, update: () => ({ set: () => ({ where: async () => [] }) }) } }));
+vi.mock("@/lib/db", () => ({ db: { insert: () => ({ values: (rows: Array<{ tokenId: string }>) => ({ onConflictDoNothing: () => ({ returning: async () => rows }) }) }), delete: () => ({ where: async () => [] }), query: { flowRuns: { findMany: async () => [], findFirst: async () => undefined }, flows: { findMany: mock.flows } }, update: () => ({ set: () => ({ where: async () => [] }) }) } }));
 vi.mock("@/lib/storage-cleanup", () => ({ processR2CleanupTasks: mock.cleanup }));
 vi.mock("@/lib/flows/incoming-webhooks", () => ({ recoverStaleWebhookDeliveries: mock.webhooks }));
 vi.mock("@/lib/media-engine/theme-adapter", () => ({ settleCompletedThemeRenders: mock.renders }));
@@ -28,7 +28,7 @@ describe("Flow maintenance failure reporting", () => {
     expect(result.failed).toBe(1);
     expect(result.subProcessors.find(task => task.task === "media-render-settlement")).toEqual({ task: "media-render-settlement", status: "failed" });
     for (const task of [mock.cleanup, mock.webhooks, mock.renders, mock.zernio, mock.dms, mock.analytics, mock.optimize]) expect(task).toHaveBeenCalledOnce();
-    expect(mock.event).toHaveBeenCalledWith("error", "flows_tick.subprocessor_failed", expect.objectContaining({ task: "media-render-settlement" }));
+    expect(mock.event).toHaveBeenCalledWith("error", "maintenance.task_failed", expect.objectContaining({ task: "media-render-settlement" }));
   });
   it("does not call a structured subprocessor failure successful", async () => {
     mock.zernio.mockResolvedValue({ failed: 2 });
@@ -48,7 +48,7 @@ describe("Flow maintenance failure reporting", () => {
   it("reports a clean tick only when all processors complete", async () => {
     const result = await runFlowsTick();
     expect(result.failed).toBe(0);
-    expect(result.subProcessors).toHaveLength(7);
+    expect(result.subProcessors).toHaveLength(8);
     expect(result.subProcessors.every(task => task.status === "fulfilled")).toBe(true);
   });
 });

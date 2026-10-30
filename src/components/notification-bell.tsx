@@ -1,48 +1,124 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { IconBell, IconCheck, IconAlertTriangle, IconEdit, IconMessageDots, IconBroadcast } from '@tabler/icons-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useRouter } from 'next/navigation';
-import { getNotifications, markAsRead, markAllAsRead } from '@/app/actions/notifications';
+import { getNotifications, getUnreadNotificationCount, markAsRead, markAllAsRead } from '@/app/actions/notifications';
+import { useVisiblePolling } from '@/hooks/use-visible-polling';
 import Link from 'next/link';
 import { useLiveblocksConfig } from '@/components/collaboration/liveblocks-provider';
 import { LiveblocksInboxList, LiveblocksInboxCount, LiveblocksUnreadDot } from '@/components/collaboration/liveblocks-inbox';
+
+function useNotificationPolling(initialUnreadCount: number, isOpen: boolean, showSystemList: boolean) {
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const fetchNotifications = useCallback(async (signal: AbortSignal) => {
+    try {
+      if (showSystemList) {
+        const res = await getNotifications({ limit: 5 });
+        if (res.error) throw new Error(res.error);
+        if (signal.aborted) return;
+        setNotifications(res.notifications ?? []);
+        if (res.unreadCount !== undefined) setUnreadCount(res.unreadCount);
+      } else {
+        const res = await getUnreadNotificationCount();
+        if (res.error) throw new Error(res.error);
+        if (signal.aborted) return;
+        if (res.count !== undefined) setUnreadCount(res.count);
+      }
+      setLoadError(null);
+    } catch (err) {
+      if (!signal.aborted) setLoadError('Couldn’t refresh notifications. Retrying automatically.');
+      throw err;
+    }
+  }, [showSystemList]);
+  // The server already supplies the initial badge. Fetch full rows only when opened.
+  useVisiblePolling(fetchNotifications, showSystemList ? 30_000 : 120_000, { immediate: isOpen });
+
+  return { unreadCount, setUnreadCount, notifications, setNotifications, loadError };
+}
+
+function getIcon(type: string) {
+    switch (type) {
+      case 'draft_ready': return <IconEdit className="h-5 w-5 text-amber-500 dark:text-amber-400" />;
+      case 'engagement_reply_needed': return <IconMessageDots className="h-5 w-5 text-amber-500 dark:text-amber-400" />;
+      case 'api_failure': return <IconAlertTriangle className="h-5 w-5 text-amber-500" />;
+      case 'publish_success': return <IconBroadcast className="h-5 w-5 text-green-500" />;
+      case 'publish_failed': return <IconAlertTriangle className="h-5 w-5 text-red-500" />;
+      default: return <IconBell className="h-5 w-5 text-zinc-500" />;
+    }
+  }
+
+type NotificationItem = NonNullable<Awaited<ReturnType<typeof getNotifications>>["notifications"]>[number];
+
+function SystemNotifications({ notifications, unreadCount, isConfigured, loadError, onMarkAll, onSelect }: {
+  notifications: NotificationItem[]; unreadCount: number; isConfigured: boolean; loadError: string | null;
+  onMarkAll: (event: React.MouseEvent) => Promise<void>; onSelect: (notification: NotificationItem) => Promise<void>;
+}) {
+  return (
+            <div className="max-h-[60vh] overflow-y-auto">
+              {unreadCount > 0 && isConfigured && (
+                <div className="p-2 px-4 bg-muted/20 border-b border-border flex justify-end">
+                  <button
+                    onClick={onMarkAll}
+                    className="text-[11px] text-muted-foreground hover:text-foreground font-medium flex items-center transition-colors cursor-pointer"
+                  >
+                    <IconCheck className="h-3 w-3 mr-1" />
+                    Mark all read
+                  </button>
+                </div>
+              )}
+              {loadError && <p role="status" className="p-4 text-sm text-amber-600 dark:text-amber-400">{loadError}</p>}
+              {notifications.length === 0 && !loadError ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">
+                  No notifications yet.
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      onClick={() => onSelect(notif)}
+                      className={`p-4 flex gap-3 cursor-pointer hover:bg-muted/50 transition-colors ${!notif.isRead ? 'bg-amber-500/5' : ''}`}
+                    >
+                      <div className="flex-shrink-0 mt-1">
+                        {getIcon(notif.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium ${!notif.isRead ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+                          {notif.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {notif.body}
+                        </p>
+                        <p className="text-xs text-muted-foreground/70 mt-1.5">
+                          {formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true })}
+                        </p>
+                      </div>
+                      {!notif.isRead && (
+                        <div className="flex-shrink-0 flex items-center">
+                          <div className="h-2 w-2 rounded-full bg-amber-500 dark:bg-amber-400"></div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+  );
+}
 
 export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCount?: number }) {
   const { isConfigured } = useLiveblocksConfig();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'system' | 'team'>('system');
-  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  const fetchNotifications = async () => {
-    try {
-      const res = await getNotifications({ limit: 5 });
-      if (res.notifications) {
-        setNotifications(res.notifications);
-        if (res.unreadCount !== undefined) {
-          setUnreadCount(res.unreadCount);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    // Initial fetch if opened or just periodically
-    fetchNotifications();
-
-    const interval = setInterval(() => {
-      fetchNotifications();
-    }, 30000); // 30s auto-refresh
-
-    return () => clearInterval(interval);
-  }, []);
+  const showSystemList = isOpen && (!isConfigured || activeTab === 'system');
+  const { unreadCount, setUnreadCount, notifications, setNotifications, loadError } = useNotificationPolling(initialUnreadCount, isOpen, showSystemList);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -59,12 +135,9 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
 
   const handleToggle = () => {
     setIsOpen(!isOpen);
-    if (!isOpen) {
-      fetchNotifications();
-    }
   };
 
-  const handleNotificationClick = async (notif: any) => {
+  const handleNotificationClick = async (notif: NotificationItem) => {
     setIsOpen(false);
     
     if (!notif.isRead) {
@@ -90,16 +163,6 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
     await markAllAsRead();
   };
 
-  const getIcon = (type: string) => {
-    switch (type) {
-      case 'draft_ready': return <IconEdit className="h-5 w-5 text-amber-500 dark:text-amber-400" />;
-      case 'engagement_reply_needed': return <IconMessageDots className="h-5 w-5 text-amber-500 dark:text-amber-400" />;
-      case 'api_failure': return <IconAlertTriangle className="h-5 w-5 text-amber-500" />;
-      case 'publish_success': return <IconBroadcast className="h-5 w-5 text-green-500" />;
-      case 'publish_failed': return <IconAlertTriangle className="h-5 w-5 text-red-500" />;
-      default: return <IconBell className="h-5 w-5 text-zinc-500" />;
-    }
-  };
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -170,54 +233,7 @@ export function NotificationBell({ initialUnreadCount = 0 }: { initialUnreadCoun
           {isConfigured && activeTab === 'team' ? (
             <LiveblocksInboxList onNotificationClick={() => setIsOpen(false)} />
           ) : (
-            <div className="max-h-[60vh] overflow-y-auto">
-              {unreadCount > 0 && isConfigured && (
-                <div className="p-2 px-4 bg-muted/20 border-b border-border flex justify-end">
-                  <button 
-                    onClick={handleMarkAllAsRead}
-                    className="text-[11px] text-muted-foreground hover:text-foreground font-medium flex items-center transition-colors cursor-pointer"
-                  >
-                    <IconCheck className="h-3 w-3 mr-1" />
-                    Mark all read
-                  </button>
-                </div>
-              )}
-              {notifications.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground text-sm">
-                  No notifications yet.
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {notifications.map((notif) => (
-                    <div 
-                      key={notif.id}
-                      onClick={() => handleNotificationClick(notif)}
-                      className={`p-4 flex gap-3 cursor-pointer hover:bg-muted/50 transition-colors ${!notif.isRead ? 'bg-amber-500/5' : ''}`}
-                    >
-                      <div className="flex-shrink-0 mt-1">
-                        {getIcon(notif.type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium ${!notif.isRead ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
-                          {notif.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {notif.body}
-                        </p>
-                        <p className="text-xs text-muted-foreground/70 mt-1.5">
-                          {formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true })}
-                        </p>
-                      </div>
-                      {!notif.isRead && (
-                        <div className="flex-shrink-0 flex items-center">
-                          <div className="h-2 w-2 rounded-full bg-amber-500 dark:bg-amber-400"></div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <SystemNotifications notifications={notifications} unreadCount={unreadCount} isConfigured={isConfigured} loadError={loadError} onMarkAll={handleMarkAllAsRead} onSelect={handleNotificationClick} />
           )}
           
           <div className="p-3 border-t border-border bg-muted/40 text-center">

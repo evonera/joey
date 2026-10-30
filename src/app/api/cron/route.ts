@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withTimeout } from "@/lib/dispatch-claim";
 import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
+import { runPeriodicMaintenance } from "@/lib/periodic-maintenance";
 import { rateLimitCounters } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
     // Scout collection/judging runs in Workflow steps after this bounded handoff.
     withTimeout(runScoutsTick(), CRON_TASK_TIMEOUT_MS, "scoutsTick"),
     withTimeout(processTelegramOutbox(), CRON_TASK_TIMEOUT_MS, "telegramOutbox"),
-    withTimeout(pruneExpiredRateLimits(), CRON_TASK_TIMEOUT_MS, "pruneRateLimits"),
+    withTimeout(runPeriodicMaintenance([{ name: "rate-limit-pruning", minutes: 60, run: pruneExpiredRateLimits }]).then(results => ({ failed: results.filter(result => result.status === "failed").length })), CRON_TASK_TIMEOUT_MS, "pruneRateLimits"),
   ]);
 
   const summary = results.map((r, i) => ({

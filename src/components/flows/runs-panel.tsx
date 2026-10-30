@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { toast } from "sonner";
 import { CheckmarkCircle02Icon as CheckCircle2, CancelCircleIcon as XCircle, RefreshIcon as RotateCcw, Clock01Icon as Clock3, Cancel01Icon } from "hugeicons-react";
 import { Button } from "@/components/ui/button";
@@ -28,33 +29,32 @@ export function RunsPanel({
   const [runs, setRuns] = useState<FlowRunRow[]>([]);
   const [selectedRun, setSelectedRun] = useState<FlowRunRow | null>(null);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     if (!open) return;
-    const res = await listRuns(flowId);
-    setRuns(res.runs);
-    setSelectedRun((prev) => (prev ? res.runs.find((r) => r.id === prev.id) ?? res.runs[0] ?? null : res.runs[0] ?? null));
+    try {
+      const res = await listRuns(flowId);
+      if (signal?.aborted) return;
+      setRuns(res.runs);
+      setSelectedRun((prev) => (prev ? res.runs.find((r) => r.id === prev.id) ?? res.runs[0] ?? null : res.runs[0] ?? null));
+      setLoadError(null);
+    } catch (error) {
+      if (!signal?.aborted) setLoadError("Couldn’t refresh runs. Retrying automatically.");
+      throw error;
+    }
   }, [open, flowId]);
 
-  useEffect(() => { void load(); }, [load]);
-
-  useEffect(() => {
-    if (!open) return;
-    const hasActiveRun = runs.some((r) => r.status === "working" || r.status === "waiting_approval");
-    if (!hasActiveRun) return;
-
-    const interval = setInterval(() => {
-      void load();
-    }, 2500);
-    return () => clearInterval(interval);
-  }, [open, load, runs]);
+  const executing = runs.some(r => r.status === "working" || r.status === "running");
+  const awaitingApproval = runs.some(r => r.status === "waiting_approval");
+  useVisiblePolling(load, executing ? 5_000 : awaitingApproval ? 30_000 : null, { enabled: open });
 
   async function handleResume(approve: boolean) {
     if (!selectedRun) return;
     const res = await resumeRun(selectedRun.id, approve);
     if (res.error) toast.error(res.error);
     else toast.success(approve ? "Approved — run resumed" : "Rejected");
-    await load();
+    await load().catch(() => {});
   }
 
   async function handleRestart() {
@@ -62,7 +62,7 @@ export function RunsPanel({
     const res = await restartRun(selectedRun.id);
     if (res.runId) toast.success("Re-run started");
     else toast.error(res.error ?? "Failed");
-    await load();
+    await load().catch(() => {});
   }
 
   if (!open) return null;
@@ -83,7 +83,8 @@ export function RunsPanel({
         </div>
 
         <div className="space-y-1">
-          {runs.length === 0 && <p className="text-xs text-muted-foreground py-2">No runs yet. Hit “Test run”.</p>}
+          {loadError && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{loadError}</p>}
+          {runs.length === 0 && !loadError && <p className="text-xs text-muted-foreground py-2">No runs yet. Hit “Test run”.</p>}
           {runs.map((run) => (
             <button
               key={run.id}
