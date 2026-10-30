@@ -16,6 +16,11 @@ tests/
 __tests__/
 *.test.*
 *.spec.*
+**/__tests__/
+**/*.test.*
+**/*.spec.*
+.agents/
+.codex/
 .vscode
 .idea
 .DS_Store

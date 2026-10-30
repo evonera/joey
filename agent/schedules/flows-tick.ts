@@ -23,6 +23,7 @@ import { and, asc, eq, lt, or, sql } from "drizzle-orm";
 import { getNode } from "@/lib/flows/registry";
 import { executeAdmittedFlowRun } from "@/lib/flows/run-flow-server";
 import { operationalEvent } from "@/lib/operations-log";
+import { runPeriodicMaintenance } from "@/lib/periodic-maintenance";
 
 /**
  * Runs the admission scan: starts any ACTIVE flow whose trigger is a due
@@ -31,128 +32,24 @@ import { operationalEvent } from "@/lib/operations-log";
  * above); the due check makes each fire idempotent.
  */
 export async function runFlowsTick() {
-    const subProcessorResults: Array<{ task: string; status: "fulfilled" | "failed" }> = [];
     let flowFailures = 0;
-    // Global backstop FIRST: any run stuck as running with NO heartbeat/update
-    // for >30 min (from any trigger, including approval resumes or crashed flows)
-    // is reconciled based on its accumulated step execution state. Active runs
-    // continuously touch updatedAt every 10s via executor heartbeats and step
-    // updates, so legitimate long-running work is never timed out.
-    const staleCutoff = new Date(Date.now() - 30 * 60_000);
-    const staleRuns = await db.query.flowRuns.findMany({
-      where: and(
-        eq(flowRuns.status, "running"),
-        lt(flowRuns.updatedAt, staleCutoff),
-      ),
-      columns: { id: true, flowId: true, steps: true, fanoutProgress: true },
-    });
-
-    for (const stale of staleRuns) {
-      const steps = ((stale.steps as unknown[]) ?? []) as {
-        nodeId: string;
-        status: string;
-        branch?: string;
-        input?: unknown;
-        output?: unknown;
-        error?: string;
-      }[];
-      const hasWaitingApproval = steps.some((s) => s.status === "waiting_approval");
-
-      let resolvedStatus: "failed" | "waiting_approval" | "succeeded" = "failed";
-      let errorMsg: string | null = "Run timed out (no heartbeat activity for 30 minutes).";
-
-      if (hasWaitingApproval) {
-        resolvedStatus = "waiting_approval";
-        errorMsg = null;
-      } else {
-        const failedStep = steps.find((s) => s.status === "failed");
-        if (failedStep?.error) {
-          errorMsg = `Step failed: ${failedStep.error}`;
-        } else {
-          const flow = await db.query.flows.findFirst({
-            where: eq(flows.id, stale.flowId),
-            columns: { graph: true },
-          });
-          if (
-            flow?.graph &&
-            isGraphFullyCompleted(
-              flow.graph,
-              steps,
-              stale.fanoutProgress as Record<string, Record<string, unknown>>,
-            )
-          ) {
-            resolvedStatus = "succeeded";
-            errorMsg = null;
-          }
-        }
-      }
-
-      const reconciled = await db
-        .update(flowRuns)
-        .set({
-          status: resolvedStatus,
-          error: errorMsg,
-          finishedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(flowRuns.id, stale.id),
-            eq(flowRuns.status, "running"),
-            lt(flowRuns.updatedAt, staleCutoff),
-          ),
-        )
-        .returning({ id: flowRuns.id, tenantId: flowRuns.tenantId });
-      if (reconciled[0]) {
-        operationalEvent(resolvedStatus === "failed" ? "error" : "warn", "flow_run.stale_reconciled", {
-          tenantId: reconciled[0].tenantId,
-          flowId: stale.flowId,
-          runId: stale.id,
-          status: resolvedStatus,
-          error: errorMsg,
-        });
-      }
-    }
-
-    // Run cleanup only after stale reconciliation. Reservations owned by a
-    // live run remain protected; abandoned runs have now become terminal.
-    // Each sub-processor is isolated: one throwing service must never abort
-    // the shared tick for every other tenant's scheduled flows.
-    const subProcessors: Array<[string, () => Promise<unknown>]> = [
-      ["r2-cleanup", async () => { const { processR2CleanupTasks } = await import("@/lib/storage-cleanup"); return processR2CleanupTasks(); }],
-      ["webhook-recovery", async () => { const { recoverStaleWebhookDeliveries } = await import("@/lib/flows/incoming-webhooks"); return recoverStaleWebhookDeliveries(); }],
-      ["media-render-settlement", async () => { const { settleCompletedThemeRenders } = await import("@/lib/media-engine/theme-adapter"); return settleCompletedThemeRenders(); }],
-      ["zernio-webhook-recovery", async () => { const { recoverZernioWebhookEvents } = await import("@/lib/zernio-webhook-processing"); return recoverZernioWebhookEvents(); }],
-      ["theme-dm-retries", async () => { const { processThemeStudioDmRetries } = await import("@/lib/engagement-inbox"); return processThemeStudioDmRetries(); }],
-      ["theme-analytics-sync", async () => { const { processThemeStudioAnalyticsSync } = await import("@/lib/theme-studio/learning/analytics-sync"); return processThemeStudioAnalyticsSync(); }],
-      ["theme-optimization", async () => { const { processThemeStudioOptimization } = await import("@/lib/theme-studio/learning/recipe-optimizer"); return processThemeStudioOptimization(); }],
-    ];
-    for (const [label, task] of subProcessors) {
-      try {
-        const result = await task();
-        const reportedFailure = result && typeof result === "object" && (
-          ("failed" in result && typeof result.failed === "number" && result.failed > 0) ||
-          ("error" in result && Boolean(result.error))
-        );
-        subProcessorResults.push({ task: label, status: reportedFailure ? "failed" : "fulfilled" });
-      } catch (err) {
-        subProcessorResults.push({ task: label, status: "failed" });
-        operationalEvent("error", "flows_tick.subprocessor_failed", {
-          task: label,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    // Bounded admission scan with guaranteed rotation: flows are ordered by
-    // lastTickedAt (never-examined first) and EVERY examined flow gets its
-    // tick stamp advanced — including skip paths — so no row can monopolize
-    // the window and starve flows past the cutoff.
-    const activeFlows = await db.query.flows.findMany({
+    const [subProcessorResults, activeFlows] = await Promise.all([runPeriodicMaintenance([
+      { name: "stale-flow-runs", minutes: 5, run: reconcileStaleFlowRuns },
+      { name: "r2-cleanup", minutes: 15, run: async () => { const { processR2CleanupTasks } = await import("@/lib/storage-cleanup"); return processR2CleanupTasks(); } },
+      { name: "webhook-recovery", minutes: 5, run: async () => { const { recoverStaleWebhookDeliveries } = await import("@/lib/flows/incoming-webhooks"); return recoverStaleWebhookDeliveries(); } },
+      { name: "media-render-settlement", minutes: 1, run: async () => { const { settleCompletedThemeRenders } = await import("@/lib/media-engine/theme-adapter"); return settleCompletedThemeRenders(); } },
+      { name: "zernio-webhook-recovery", minutes: 5, run: async () => { const { recoverZernioWebhookEvents } = await import("@/lib/zernio-webhook-processing"); return recoverZernioWebhookEvents(); } },
+      { name: "theme-dm-retries", minutes: 1, run: async () => { const { processThemeStudioDmRetries } = await import("@/lib/engagement-inbox"); return processThemeStudioDmRetries(); } },
+      { name: "theme-analytics-sync", minutes: 15, run: async () => { const { processThemeStudioAnalyticsSync } = await import("@/lib/theme-studio/learning/analytics-sync"); return processThemeStudioAnalyticsSync(); } },
+      { name: "theme-optimization", minutes: 60, run: async () => { const { processThemeStudioOptimization } = await import("@/lib/theme-studio/learning/recipe-optimizer"); return processThemeStudioOptimization(); } },
+    ]),
+      // Read the candidate list alongside maintenance; admission waits for both.
+      db.query.flows.findMany({
       where: eq(flows.status, "active"),
       orderBy: [sql`${flows.lastTickedAt} ASC NULLS FIRST`, asc(flows.id)],
       limit: FLOWS_TICK_BATCH_LIMIT,
-    });
+    })
+    ]);
 
     await runWithConcurrencyLimit(activeFlows, FLOWS_TICK_CONCURRENCY, async (flow) => {
         try {
@@ -245,6 +142,90 @@ export async function runFlowsTick() {
       flowFailures,
       subProcessors: subProcessorResults,
     };
+}
+
+async function reconcileStaleFlowRuns() {
+    // Global backstop FIRST: any run stuck as running with NO heartbeat/update
+    // for >30 min (from any trigger, including approval resumes or crashed flows)
+    // is reconciled based on its accumulated step execution state. Active runs
+    // continuously touch updatedAt every 10s via executor heartbeats and step
+    // updates, so legitimate long-running work is never timed out.
+    const staleCutoff = new Date(Date.now() - 30 * 60_000);
+    const staleRuns = await db.query.flowRuns.findMany({
+      where: and(
+        eq(flowRuns.status, "running"),
+        lt(flowRuns.updatedAt, staleCutoff),
+      ),
+      columns: { id: true, flowId: true, steps: true, fanoutProgress: true },
+    });
+
+    for (const stale of staleRuns) {
+      const steps = ((stale.steps as unknown[]) ?? []) as {
+        nodeId: string;
+        status: string;
+        branch?: string;
+        input?: unknown;
+        output?: unknown;
+        error?: string;
+      }[];
+      const hasWaitingApproval = steps.some((s) => s.status === "waiting_approval");
+
+      let resolvedStatus: "failed" | "waiting_approval" | "succeeded" = "failed";
+      let errorMsg: string | null = "Run timed out (no heartbeat activity for 30 minutes).";
+
+      if (hasWaitingApproval) {
+        resolvedStatus = "waiting_approval";
+        errorMsg = null;
+      } else {
+        const failedStep = steps.find((s) => s.status === "failed");
+        if (failedStep?.error) {
+          errorMsg = `Step failed: ${failedStep.error}`;
+        } else {
+          const flow = await db.query.flows.findFirst({
+            where: eq(flows.id, stale.flowId),
+            columns: { graph: true },
+          });
+          if (
+            flow?.graph &&
+            isGraphFullyCompleted(
+              flow.graph,
+              steps,
+              stale.fanoutProgress as Record<string, Record<string, unknown>>,
+            )
+          ) {
+            resolvedStatus = "succeeded";
+            errorMsg = null;
+          }
+        }
+      }
+
+      const reconciled = await db
+        .update(flowRuns)
+        .set({
+          status: resolvedStatus,
+          error: errorMsg,
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(flowRuns.id, stale.id),
+            eq(flowRuns.status, "running"),
+            lt(flowRuns.updatedAt, staleCutoff),
+          ),
+        )
+        .returning({ id: flowRuns.id, tenantId: flowRuns.tenantId });
+      if (reconciled[0]) {
+        operationalEvent(resolvedStatus === "failed" ? "error" : "warn", "flow_run.stale_reconciled", {
+          tenantId: reconciled[0].tenantId,
+          flowId: stale.flowId,
+          runId: stale.id,
+          status: resolvedStatus,
+          error: errorMsg,
+        });
+      }
+    }
+
 }
 
 export const FLOWS_TICK_BATCH_LIMIT = 50;
