@@ -494,18 +494,19 @@ export default function LandingPage() {
           <div className="mb-12 space-y-2">
             <h2 className="heading-section text-3xl sm:text-4xl font-semibold text-white tracking-tight">
               Simple, transparent pricing. <br />
-              <span className="text-white/40">No hidden subscription traps.</span>
+              <span className="text-white/40">Your workspace, your provider keys.</span>
             </h2>
           </div>
 
-          <p className="mb-6 text-sm text-white/60">Hosted plans are billed monthly per workspace in USD. Taxes and any local currency conversion are shown at checkout. Model API usage with your own keys is billed by your model provider.</p>
+          <p className="mb-3 text-sm text-white/60">Hosted plans cover Joey workspace features and automation, billed monthly per workspace in USD. Taxes and any local currency conversion are shown at checkout.</p>
+          <p className="mb-6 text-sm text-white/60">Publishing requires your own Zernio account and API key. Zernio connection and API charges, and AI usage with your own model keys, are billed separately by those providers. Account limits below are Joey connection allowances. <a href="https://zernio.com/pricing" target="_blank" rel="noreferrer" className="underline">See Zernio pricing</a>.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
             {PUBLIC_PLAN_IDS.map((id) => {
               const plan = PLAN_CATALOG[id];
               return <div key={id} className="rounded-2xl bg-[#121110] border border-white/[0.08] p-6 space-y-6 flex flex-col justify-between">
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">{plan.name}</h3>
-                  <p><span className="text-4xl font-bold">${plan.monthlyPrice}</span><span className="text-xs text-white/40"> / month</span></p>
+                  <p><span className="text-4xl font-bold">${plan.monthlyPrice}</span><span className="text-xs text-white/40"> / workspace / month</span></p>
                   <ul className="space-y-3 text-xs text-white/80">
                     {planFeatures(id).map((feature) => <li key={feature} className="flex items-start gap-2"><CheckCircle className="size-4 text-emerald-400 shrink-0" /><span>{feature}</span></li>)}
                   </ul>

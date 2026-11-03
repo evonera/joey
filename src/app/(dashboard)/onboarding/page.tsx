@@ -424,7 +424,10 @@ export default function OnboardingPage() {
             <div className="space-y-1.5">
               <h2 className="text-xl font-bold tracking-tight">Connect Social Channels</h2>
               <p className="text-xs sm:text-sm text-muted-foreground">
-                Joey connects to Twitter/X, LinkedIn, and Facebook via Zernio. Enter your key or skip to test in sandbox.
+                Connect social channels through your own Zernio account. Enter your API key, or skip and create drafts first.
+              </p>
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                Zernio connection and API charges are billed separately from your Joey plan. Your Joey account limit does not include Zernio fees. <a href="https://zernio.com/pricing" target="_blank" rel="noreferrer" className="underline">See Zernio pricing</a>.
               </p>
             </div>
 
