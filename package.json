@@ -176,6 +176,9 @@
     "undici@^8": "8.12.3",
     "@vercel/cli-config": {
       "zod": "$zod"
+    },
+    "@sentry/bundler-plugins": {
+      "glob": "14.0.3"
     }
   },
   "engines": {

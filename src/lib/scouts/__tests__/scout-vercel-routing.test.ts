@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { addScoutServiceRoute } from "../../../../scripts/eve-scout-routing";
+import { addScoutServiceRoute, withScoutWorkflowRouting } from "../../../../scripts/eve-scout-routing";
 const require = createRequire(import.meta.url);
 
 describe("Generated Vercel Scout dispatch routing", () => {
@@ -23,5 +23,20 @@ describe("Generated Vercel Scout dispatch routing", () => {
       await addScoutServiceRoute(temporaryRoot);
       expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual(first);
     } finally { vi.unstubAllEnvs(); await rm(temporaryRoot, { recursive: true, force: true }); }
+  });
+});
+
+describe("Self-hosted Workflow callback routing", () => {
+  it.each(["http://127.0.0.1:4274", "http://127.0.0.1:55221", "https://runtime.example/_eve_internal/eve"])("preserves callback paths at %s alongside existing rewrites", async origin => {
+    vi.stubEnv("VERCEL", "");
+    try {
+      const protocol = { source: "/eve/v1/:path+", destination: `${origin}/eve/v1/:path+` };
+      const after = { source: "/legacy", destination: "/new" };
+      const config = await withScoutWorkflowRouting(async () => ({ rewrites: async () => ({ beforeFiles: [protocol], afterFiles: [after], fallback: [] }) }))("phase-production-build", { defaultConfig: {} });
+      expect(await config.rewrites?.()).toEqual({
+        beforeFiles: [{ source: "/.well-known/workflow/:path+", destination: `${origin}/.well-known/workflow/:path+` }, protocol],
+        afterFiles: [after], fallback: [],
+      });
+    } finally { vi.unstubAllEnvs(); }
   });
 });

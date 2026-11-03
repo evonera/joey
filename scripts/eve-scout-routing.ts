@@ -28,7 +28,26 @@ export async function addScoutServiceRoute(nextRoot = process.cwd()) {
 export function withScoutWorkflowRouting(config: EveNextConfigFunction): EveNextConfigFunction {
   return async (phase, context) => {
     const resolved = await config(phase, context);
-    if (process.env.VERCEL) await addScoutServiceRoute();
-    return resolved;
+    if (process.env.VERCEL) {
+      await addScoutServiceRoute();
+      return resolved;
+    }
+    const existingRewrites = resolved.rewrites;
+    return {
+      ...resolved,
+      async rewrites() {
+        const existing = await existingRewrites?.();
+        const sections = Array.isArray(existing) ? { afterFiles: existing } : existing;
+        // Follow Eve's resolved destination, including its development port or
+        // configured external runtime, rather than constructing another origin.
+        const eve = sections?.beforeFiles?.find(rule => rule.source === "/eve/v1/:path+");
+        if (!eve?.destination.endsWith("/eve/v1/:path+")) throw new Error("Eve callback routing requires its protocol rewrite.");
+        const callback = {
+          source: "/.well-known/workflow/:path+",
+          destination: `${eve.destination.slice(0, -"/eve/v1/:path+".length)}/.well-known/workflow/:path+`,
+        };
+        return { ...sections, beforeFiles: [callback, ...(sections?.beforeFiles ?? [])] };
+      },
+    };
   };
 }
