@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { LinkSquare02Icon as Plug, FlashIcon as PlugZap, Loading03Icon as Loader2, LinkSquare01Icon as ExternalLink, Delete02Icon as Trash2, PlusSignIcon as Plus } from "hugeicons-react";
 import { toast } from "sonner";
 
@@ -19,6 +19,8 @@ export function ConnectionsPanel() {
   const [available, setAvailable] = useState<string[]>([]);
   const [failed, setFailed] = useState(false);
   const [pendingToolkit, setPendingToolkit] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const disconnectingRef = useRef(false);
 
   const load = useCallback(() => {
     fetch("/api/connections")
@@ -30,6 +32,7 @@ export function ConnectionsPanel() {
           return;
         }
         const connected = new Set((body.connections ?? []).map((entry) => entry.toolkit));
+        setFailed(false);
         setConnections(body.connections ?? []);
         setAvailable((body.checked ?? []).filter((toolkit) => !connected.has(toolkit)));
       })
@@ -61,20 +64,25 @@ export function ConnectionsPanel() {
       .finally(() => setPendingToolkit(null));
   }
 
-  function disconnect(toolkit: string, accountId: string) {
-    setConnections(
-      (prev) =>
-        prev?.map((entry) =>
-          entry.toolkit === toolkit
-            ? { ...entry, accounts: entry.accounts.filter((account) => account.id !== accountId) }
-            : entry,
-        ) ?? null,
-    );
-    fetch("/api/connections", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ toolkit, accountId }),
-    });
+  async function disconnect(toolkit: string, accountId: string) {
+    if (disconnectingRef.current) return;
+    disconnectingRef.current = true;
+    setDisconnecting(accountId);
+    try {
+      const response = await fetch("/api/connections", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolkit, accountId }),
+      });
+      if (!response.ok) throw new Error("Disconnect failed. Please try again.");
+      setConnections(prev => prev?.map(entry => entry.toolkit === toolkit
+        ? { ...entry, accounts: entry.accounts.filter(account => account.id !== accountId) } : entry) ?? null);
+      if (connections?.find(entry => entry.toolkit === toolkit)?.accounts.length === 1) {
+        setAvailable(prev => prev.includes(toolkit) ? prev : [...prev, toolkit]);
+      }
+      toast.success("Account disconnected.");
+    } catch { toast.error("Disconnect failed. Please try again."); }
+    finally { disconnectingRef.current = false; setDisconnecting(null); }
   }
 
   return (
@@ -127,8 +135,10 @@ export function ConnectionsPanel() {
                     <button
                       type="button"
                       onClick={() => disconnect(entry.toolkit, account.id)}
+                      disabled={disconnecting !== null}
                       className="rounded p-1 text-zinc-400 hover:text-red-500"
                       title={`Disconnect ${entry.toolkit}`}
+                      aria-label={`Disconnect ${entry.toolkit} ${account.alias ?? account.label ?? account.id}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

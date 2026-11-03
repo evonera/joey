@@ -8,6 +8,7 @@ describe("read-only runtime probe", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CRON_SECRET = "test-cron-secret";
+    process.env.MEDIA_ENGINE_ENABLED = "true";
     process.env.MEDIA_WORKER_SECRET = "x".repeat(64);
     process.env.MEDIA_WORKER_DISPATCH_URL = "https://worker.modal.run";
     mocks.execute.mockResolvedValue({ rows: [{ columns: 4, indexes: 4 }] });
@@ -17,6 +18,21 @@ describe("read-only runtime probe", () => {
   it("does not expose readiness without scheduler authentication", async () => {
     expect((await GET(new Request("https://joey.example/api/internal/runtime"))).status).toBe(401);
     expect(mocks.execute).not.toHaveBeenCalled();
+  });
+  it("allows scheduler work without optional media configuration when media is disabled", async () => {
+    process.env.MEDIA_ENGINE_ENABLED = "false";
+    delete process.env.MEDIA_WORKER_SECRET;
+    delete process.env.MEDIA_WORKER_DISPATCH_URL;
+    mocks.storage.mockReturnValue(false);
+    const result = await GET(request());
+    expect(result.status).toBe(200);
+  });
+  it("reports media failures without blocking unrelated scheduled work", async () => {
+    mocks.storage.mockReturnValue(false);
+    delete process.env.MEDIA_WORKER_SECRET;
+    const result = await GET(request());
+    expect(result.status).toBe(200);
+    expect((await result.json()).mediaReady).toBe(false);
   });
   it("blocks rollout when the source health migration is absent", async () => {
     mocks.execute.mockResolvedValueOnce({ rows: [{ columns: 0, indexes: 3 }] });

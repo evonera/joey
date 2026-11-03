@@ -409,7 +409,7 @@ export const engagementItems = pgTable("engagement_items", {
   text: text("text").notNull(),
   type: varchar("type", { length: 20 }).notNull().default("comment"), // 'comment' | 'mention'
   status: varchar("status", { length: 50 }).default("pending").notNull(), // 'pending', 'replied', 'skipped'
-  dmDispatchStatus: varchar("dm_dispatch_status", { length: 20 }), // 'sending' | 'sent' | 'failed' | 'skipped'
+  dmDispatchStatus: varchar("dm_dispatch_status", { length: 20 }), // 'sending' | 'sent' | 'failed' | 'skipped' | 'uncertain'
   dmDispatchAttempts: integer("dm_dispatch_attempts").default(0).notNull(),
   dmDispatchLeaseExpiresAt: timestamp("dm_dispatch_lease_expires_at"),
   dmDispatchError: text("dm_dispatch_error"),

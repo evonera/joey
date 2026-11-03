@@ -9,6 +9,10 @@ vi.mock("../../../../agent/schedules/flows-tick", () => ({ runFlowsTick: mocks.f
 vi.mock("@/lib/scouts/evaluator", () => ({ runScoutsTick: mocks.scouts }));
 vi.mock("@/lib/telegram-outbox", () => ({ processTelegramOutbox: mocks.telegram }));
 vi.mock("@/lib/rate-limit", () => ({ pruneExpiredRateLimits: mocks.prune }));
+vi.mock("@/lib/periodic-maintenance", () => ({ runPeriodicMaintenance: async (tasks: Array<{ name: string; run: () => Promise<unknown> }>) => {
+  await Promise.all(tasks.map(task => task.run()));
+  return tasks.map(task => ({ task: task.name, status: "fulfilled" }));
+} }));
 vi.mock("@/lib/dispatch-claim", () => ({ withTimeout: (task: Promise<unknown>) => task }));
 import { GET } from "./route";
 

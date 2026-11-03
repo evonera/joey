@@ -6,7 +6,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { publishThemePackage, reviewThemePackage } from "@/app/actions/theme-packages";
+import { reviewThemePackage } from "@/app/actions/theme-packages";
+import { ThemePublishButton } from "./ThemePublishButton";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
 
 interface ThemePackageSummary {
@@ -43,20 +44,6 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Review failed");
-    } finally {
-      setBusyId(undefined);
-    }
-  }
-
-  async function publish(packageId: string) {
-    setBusyId(packageId);
-    try {
-      const result = await publishThemePackage(packageId);
-      if (!result.success) throw new Error(result.error || "Publishing failed");
-      toast.success(result.status === "published" ? "Package published" : "Package queued with Zernio");
-      router.refresh();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Publishing failed");
     } finally {
       setBusyId(undefined);
     }
@@ -111,8 +98,9 @@ export function ThemePackageQueue({ packages }: { packages: ThemePackageSummary[
                   </>
                 ) : null}
                 {pkg.status === "approved" ? (
-                  <button type="button" disabled={busy} onClick={() => publish(pkg.id)} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">Publish with Zernio</button>
+                  <ThemePublishButton packageId={pkg.id} disabled={busy} onComplete={() => router.refresh()} />
                 ) : null}
+                {pkg.status === "publishing" ? <ThemePublishButton packageId={pkg.id} disabled={busy} reconcileOnly onComplete={() => router.refresh()} /> : null}
               </div>
             </div>
           </article>

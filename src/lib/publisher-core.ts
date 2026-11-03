@@ -4,6 +4,7 @@ import { eq, and, or, inArray, isNotNull, isNull, lte, asc, sql } from "drizzle-
 import { createNotification } from "@/lib/notifications";
 import { decrypt } from "@/lib/crypto";
 import Zernio from "@zernio/node";
+import type { DraftPublicationConfirmation } from "@/lib/publication-confirmation";
 
 export function draftStatusFromZernio(status: string | undefined): "published" | "publishing" | "failed" {
     if (status === "published") return "published";
@@ -32,7 +33,7 @@ export async function getZernioClientForTenant(tenantId: string) {
 }
 
 // Reusable core logic for publishing a draft
-export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio, publishEarly = false): Promise<{ success?: boolean; error?: string; status?: string }> {
+export async function executePublishDraft(draftId: string, tenantId: string, zernio: Zernio, publishEarly = false, confirmation?: DraftPublicationConfirmation): Promise<{ success?: boolean; error?: string; status?: string }> {
     // 0. Idempotency check: reconcile if this draft was already recorded in posts
     const alreadyPublished = await db.query.posts.findFirst({
         where: and(eq(posts.tenantId, tenantId), eq(posts.draftId, draftId))
@@ -42,7 +43,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     }
 
     // 1. Atomically claim the draft for publishing
-    const updateResult = await db.update(drafts)
+    const claim = (client: Pick<typeof db, "update">) => client.update(drafts)
         .set({ 
             status: "publishing",
             errorMessage: `claimed:${Date.now()}`,
@@ -52,6 +53,10 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
             and(
                 eq(drafts.id, draftId), 
                 eq(drafts.tenantId, tenantId),
+                confirmation ? sql`${drafts.content} IS NOT DISTINCT FROM ${confirmation.content}` : undefined,
+                confirmation ? sql`${drafts.platformOptions} IS NOT DISTINCT FROM ${JSON.stringify(confirmation.platformOptions ?? null)}::jsonb` : undefined,
+                confirmation ? eq(drafts.status, confirmation.status) : undefined,
+                confirmation ? sql`${drafts.scheduledFor} IS NOT DISTINCT FROM ${confirmation.scheduledFor}::timestamp` : undefined,
                 or(isNull(drafts.errorMessage), sql`${drafts.errorMessage} NOT LIKE 'verify:%'`),
                 or(
                     inArray(drafts.status, ["approved", "failed"]),
@@ -61,8 +66,21 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
         )
         .returning();
 
+    const confirmedOptions = confirmation?.platformOptions as { accountId?: unknown; accountIds?: unknown } | null | undefined;
+    const confirmedTarget = typeof confirmedOptions?.accountId === "string" ? confirmedOptions.accountId
+        : Array.isArray(confirmedOptions?.accountIds) && confirmedOptions.accountIds.length === 1 && typeof confirmedOptions.accountIds[0] === "string" ? confirmedOptions.accountIds[0] : undefined;
+    if (confirmation && confirmedTarget !== confirmation.account.id) return { error: "Choose a specific destination before publishing." };
+    const updateResult = confirmation ? await db.transaction(async tx => {
+        const [account] = await tx.select().from(socialAccounts).where(and(
+            eq(socialAccounts.id, confirmation.account.id), eq(socialAccounts.tenantId, tenantId),
+        )).for("update");
+        if (!account || !account.isActive || account.platform !== confirmation.account.platform ||
+            account.platformAccountId !== confirmation.account.platformAccountId || account.accountName !== confirmation.account.accountName) return [];
+        return claim(tx);
+    }) : await claim(db);
+
     if (updateResult.length === 0) {
-        return { error: "Draft not found, not ready to publish, or already being published." };
+        return { error: confirmation ? "The draft or destination changed. Refresh and confirm again." : "Draft not found, not ready to publish, or already being published." };
     }
     
     const draft = updateResult[0];
@@ -77,6 +95,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     // Type casting to ensure TypeScript knows it's a string from here on
     const postContent = draft.content || "";
 
+    let providerAccepted = false;
     try {
 
     const platformOpts = draft.platformOptions as any;
@@ -85,7 +104,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     if (platformOpts?.accountIds?.length > 1) throw new Error("This legacy draft has multiple targets. Use Compose to create one draft per account.");
 
     // 2. Look up the corresponding Zernio account ID from socialAccounts
-    const matchingAccounts = await db.query.socialAccounts.findMany({
+    const matchingAccounts = confirmation ? [{ ...confirmation.account, isActive: true }] : await db.query.socialAccounts.findMany({
         where: and(
             eq(socialAccounts.tenantId, tenantId),
             eq(socialAccounts.isActive, true),
@@ -214,6 +233,7 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
 
     const remotePost = response?.data?.post || response?.data?.existingPost;
     if (!remotePost?._id) throw new Error("verify: Zernio did not return a post identifier. Check Zernio before creating another post.");
+    providerAccepted = true;
     const result = await db.transaction(async (tx) => {
         await tx.execute(sql`SELECT id FROM ${drafts} WHERE id = ${draftId} AND tenant_id = ${tenantId} FOR UPDATE`);
         const current = await tx.query.drafts.findFirst({ where: and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId)) });
@@ -243,11 +263,14 @@ export async function executePublishDraft(draftId: string, tenantId: string, zer
     } catch (unexpectedError: any) {
         console.error("Unexpected error during publish:", unexpectedError);
         // Reset status to failed on unexpected errors (e.g. DB transaction failure)
+        const message = providerAccepted
+            ? "verify: Zernio accepted the post but Joey could not save its receipt. Check Zernio before creating another post."
+            : unexpectedError.message || "An unexpected system error occurred.";
         await db.update(drafts)
-            .set({ status: "failed", errorMessage: unexpectedError.message || "An unexpected system error occurred." })
+            .set({ status: "failed", errorMessage: message })
             .where(and(eq(drafts.id, draftId), eq(drafts.tenantId, tenantId), eq(drafts.errorMessage, draft.errorMessage!)));
             
-        return { error: unexpectedError.message || "An unexpected system error occurred." };
+        return { error: message };
     }
 }
 

@@ -18,7 +18,7 @@ describe("operational health coverage", () => {
     const health = await getOperationalHealth("workspace-a", new Date("2026-10-19T00:00:00Z"));
     expect(health).toMatchObject({ scoutFailures24h: 9, scoutUncertain: 10, overdueScouts: 11, renderFailures24h: 12, stalledRenders: 13, publicationFailures: 29, pendingPublications: 33, agencyFailures24h: 18 });
     const queries = mock.where.mock.calls.map(([condition]) => new PgDialect().sqlToQuery(condition));
-    expect(queries).toHaveLength(19);
+    expect(queries).toHaveLength(20);
     for (const query of queries) {
       expect(query.sql).toContain('"tenant_id" =');
       expect(query.params).toContain("workspace-a");

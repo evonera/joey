@@ -9,7 +9,7 @@ import { CheckmarkCircle02Icon as CheckCircle2, Loading03Icon as Loader2, Delete
 import { toast } from "sonner";
 
 const INTEGRATIONS = [
-  { provider: "zernio", label: "Zernio", placeholder: "sk_…", url: "https://zernio.com/dashboard/api-keys", hint: "Social account connections, publishing, analytics, and inbox" },
+  { provider: "zernio", label: "Zernio", placeholder: "sk_…", url: "https://zernio.com/dashboard/api-keys", hint: "Social account connections, publishing, analytics, and inbox. Use your own Zernio account; its connection and API charges are billed separately from Joey." },
   { provider: "openrouter", label: "OpenRouter", placeholder: "sk-or-v1-…", url: "https://openrouter.ai/settings/keys", hint: "Multiple LLM providers through one key" },
   { provider: "supadata", label: "Supadata", placeholder: "Supadata API key", url: "https://supadata.ai/dashboard", hint: "YouTube transcript extraction" },
   { provider: "youtube", label: "YouTube Data API", placeholder: "Restricted YouTube API key", url: "https://console.cloud.google.com/apis/credentials", hint: "Official channel uploads and video statistics for Scouts. Enable YouTube Data API v3 and restrict this key to that API. Separate from Google AI and transcripts." },

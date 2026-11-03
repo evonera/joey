@@ -17,7 +17,7 @@ import {
   IconChevronUp,
   IconChevronDown,
 } from "@tabler/icons-react";
-import { createThemeSlot, updateThemeSlot, deleteThemeSlot, reorderThemeSlots } from "@/app/actions/theme-slots";
+import { createThemeSlot, updateThemeSlot, deleteThemeSlot, reorderThemeSlots, getThemeSlots } from "@/app/actions/theme-slots";
 import {
   getMixRecommendations,
   acceptRecommendation,
@@ -70,6 +70,165 @@ interface DailyMixSchedulerProps {
   availableTemplates: Array<{ id: string; name: string; formatId: string }>;
 }
 
+type Recommendation = { id: string; formatScores: Record<string, { averageScore: number; sampleCount: number }>; adjustments: Array<{ slotId: string; formatId: string; previousPriority: number; newPriority: number; formatName: string; score: number }> };
+
+function renderMediaIcon(type?: string) {
+  if (type === "video") return <IconVideo className="w-4 h-4 text-purple-500" />;
+  if (type === "carousel") return <IconCards className="w-4 h-4 text-blue-500" />;
+  return <IconPhoto className="w-4 h-4 text-emerald-500" />;
+}
+
+function renderPlatformIcon(platform?: string) {
+  if (platform === "tiktok") return <IconBrandTiktok className="w-4 h-4 text-pink-500" />;
+  if (platform === "x") return <IconBrandX className="w-4 h-4 text-foreground" />;
+  return <IconBrandInstagram className="w-4 h-4 text-rose-500" />;
+}
+
+function MixSlotCard({ slot, index, count, disabled, templateBusy, templates, onMove, onDelete, onTemplateChange }: {
+  slot: SlotItem; index: number; count: number; disabled: boolean; templateBusy: boolean;
+  templates: DailyMixSchedulerProps["availableTemplates"];
+  onMove: (index: number, direction: "up" | "down") => void;
+  onDelete: (slot: SlotItem) => void;
+  onTemplateChange: (slot: SlotItem, templateId: string) => void;
+}) {
+  return (
+    <div
+      className="p-4 border rounded-xl bg-card hover:border-primary/30 transition-all flex flex-col justify-between group shadow-sm"
+    >
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-md bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
+              #{index + 1}
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
+              {renderPlatformIcon(slot.format?.platform)}
+              <span className="capitalize">{slot.format?.platform || "Universal"}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={disabled || index === 0}
+              onClick={() => onMove(index, "up")}
+              className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
+              title="Move earlier in rotation"
+            >
+              <IconChevronUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={disabled || index === count - 1}
+              onClick={() => onMove(index, "down")}
+              className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
+              title="Move later in rotation"
+            >
+              <IconChevronDown className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(slot)}
+              className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+              title="Remove slot"
+            >
+              <IconTrash className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <h4 className="font-semibold text-sm leading-tight text-foreground">
+          {slot.label || slot.format?.name || "Content Slot"}
+        </h4>
+        <p className="text-xs text-muted-foreground mt-1">
+          Format: {slot.format?.name} ({slot.format?.aspectRatio || "1:1"})
+        </p>
+        <label className="mt-3 block text-xs font-medium text-muted-foreground">
+          Visual template
+          <select
+            value={slot.overrideTemplateId || ""}
+            disabled={disabled || templateBusy}
+            onChange={(event) => void onTemplateChange(slot, event.target.value)}
+            className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-xs"
+          >
+            <option value="">Default style</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>{template.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5 font-medium capitalize">
+          {renderMediaIcon(slot.format?.mediaType)}
+          {slot.format?.mediaType}
+        </span>
+        <span className="px-2 py-0.5 bg-muted rounded text-[11px] font-medium">
+          {slot.cadence}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MixRecommendationCard({ recommendation, loading, disabled, onAccept, onDiscard }: {
+  recommendation: Recommendation; loading: boolean; disabled: boolean;
+  onAccept: () => void; onDiscard: () => void;
+}) {
+  return (
+    <div className="p-5 border rounded-xl bg-amber-500/5 border-amber-500/20 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600">
+          <IconBulb className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+            Mix Optimization Ready
+          </h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Joey analyzed your recent post performance and suggests reordering your daily mix slots.
+            Higher-performing formats are moved earlier in the rotation.
+          </p>
+          <div className="mt-3 space-y-1.5">
+            {recommendation.adjustments
+              .filter((a) => a.previousPriority !== a.newPriority)
+              .map((adj) => (
+                <div key={adj.slotId} className="text-xs text-muted-foreground">
+                  <span className="font-medium">{adj.formatName}</span>
+                  {" "}— {adj.previousPriority < adj.newPriority ? "moved down" : "moved up"}
+                  {" "}to position #{adj.newPriority + 1}
+                  <span className="ml-1.5 px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">
+                    score {adj.score}
+                  </span>
+                </div>
+              ))}
+          </div>
+          <div className="flex gap-2 mt-4">
+            <button
+              type="button"
+              onClick={onAccept}
+              disabled={disabled}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+            >
+              {loading ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconCheck className="w-3.5 h-3.5" />}
+              Apply Reorder
+            </button>
+            <button
+              type="button"
+              onClick={onDiscard}
+              disabled={disabled}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted disabled:opacity-50"
+            >
+              <IconX className="w-3.5 h-3.5" />
+              Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DailyMixScheduler({ themePageId, initialSlots, availableFormats, availableTemplates }: DailyMixSchedulerProps) {
   // Video formats are queued through the production MP4 worker and are
   // reviewed before publishing, just like image and carousel slots.
@@ -84,30 +243,49 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
   const [loading, setLoading] = React.useState(false);
   const [slotToDelete, setSlotToDelete] = React.useState<SlotItem | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
-  const [recommendation, setRecommendation] = React.useState<{ id: string; formatScores: Record<string, { averageScore: number; sampleCount: number }>; adjustments: Array<{ slotId: string; formatId: string; previousPriority: number; newPriority: number; formatName: string; score: number }> } | null>(null);
+  const [recommendation, setRecommendation] = React.useState<Recommendation | null>(null);
   const [recLoading, setRecLoading] = React.useState(false);
+  const [refreshRequired, setRefreshRequired] = React.useState(false);
+  const mutationLock = React.useRef(false);
+  const [mutationBusy, setMutationBusy] = React.useState(false);
+  function beginMutation() {
+    if (mutationLock.current || refreshRequired) return false;
+    mutationLock.current = true; setMutationBusy(true); return true;
+  }
+  function endMutation() { mutationLock.current = false; setMutationBusy(false); }
 
   React.useEffect(() => {
-    getMixRecommendations(themePageId).then((res) => setRecommendation(res.recommendation));
+    let active = true;
+    getMixRecommendations(themePageId).then((res) => {
+      if (active) setRecommendation(res.recommendation);
+    }).catch(() => {
+      if (active) toast.error("Could not load mix recommendations. Refresh to try again.");
+    });
+    return () => { active = false; };
   }, [themePageId]);
 
   async function handleAcceptRecommendation() {
-    if (!recommendation) return;
+    if (!recommendation || !beginMutation()) return;
     setRecLoading(true);
     try {
       const res = await acceptRecommendation(recommendation.id);
       if (res.error) throw new Error(res.error);
+      let refreshed;
+      try { refreshed = await getThemeSlots(themePageId); } catch { setRefreshRequired(true); throw new Error("Recommendation applied, but the updated slots could not be loaded. Refresh this page before reordering."); }
+      if (!refreshed.slots) { setRefreshRequired(true); throw new Error("Recommendation applied, but the updated slots could not be loaded. Refresh this page before reordering."); }
+      setSlots(refreshed.slots as SlotItem[]);
       setRecommendation(null);
       toast.success(`Applied ${res.applied} slot reorder${res.applied === 1 ? "" : "s"}`);
     } catch (err: any) {
       toast.error(err.message || "Failed to apply recommendation");
     } finally {
       setRecLoading(false);
+      endMutation();
     }
   }
 
   async function handleDiscardRecommendation() {
-    if (!recommendation) return;
+    if (!recommendation || !beginMutation()) return;
     setRecLoading(true);
     try {
       const res = await discardRecommendation(recommendation.id);
@@ -118,12 +296,13 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
       toast.error(err.message || "Failed to dismiss recommendation");
     } finally {
       setRecLoading(false);
+      endMutation();
     }
   }
 
   async function handleAddSlot(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedFormatId) return;
+    if (!selectedFormatId || !beginMutation()) return;
 
     setLoading(true);
     try {
@@ -147,11 +326,12 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
       toast.error(err.message || "Failed to add slot");
     } finally {
       setLoading(false);
+      endMutation();
     }
   }
 
   async function handleTemplateChange(slot: SlotItem, templateId: string) {
-    if (updatingTemplateSlots.current.has(slot.id)) return;
+    if (!beginMutation()) return;
     updatingTemplateSlots.current.add(slot.id);
     setUpdatingTemplateSlotIds(new Set(updatingTemplateSlots.current));
     try {
@@ -164,11 +344,12 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
     } finally {
       updatingTemplateSlots.current.delete(slot.id);
       setUpdatingTemplateSlotIds(new Set(updatingTemplateSlots.current));
+      endMutation();
     }
   }
 
   async function confirmDeleteSlot() {
-    if (!slotToDelete) return;
+    if (!slotToDelete || !beginMutation()) return;
     setIsDeleting(true);
     try {
       const res = await deleteThemeSlot(slotToDelete.id);
@@ -180,12 +361,13 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
       toast.error(err.message || "Failed to delete slot");
     } finally {
       setIsDeleting(false);
+      endMutation();
     }
   }
 
   async function handleMoveSlot(index: number, direction: "up" | "down") {
     const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= slots.length) return;
+    if (targetIndex < 0 || targetIndex >= slots.length || !beginMutation()) return;
 
     const newSlots = [...slots];
     const [moved] = newSlots.splice(index, 1);
@@ -199,21 +381,10 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
     } catch (err: any) {
       toast.error(err.message || "Failed to reorder slots");
       setSlots(slots);
-    }
+    } finally { endMutation(); }
   }
 
 
-  function renderMediaIcon(type?: string) {
-    if (type === "video") return <IconVideo className="w-4 h-4 text-purple-500" />;
-    if (type === "carousel") return <IconCards className="w-4 h-4 text-blue-500" />;
-    return <IconPhoto className="w-4 h-4 text-emerald-500" />;
-  }
-
-  function renderPlatformIcon(platform?: string) {
-    if (platform === "tiktok") return <IconBrandTiktok className="w-4 h-4 text-pink-500" />;
-    if (platform === "x") return <IconBrandX className="w-4 h-4 text-foreground" />;
-    return <IconBrandInstagram className="w-4 h-4 text-rose-500" />;
-  }
 
   return (
     <div className="space-y-6">
@@ -290,7 +461,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || mutationBusy || refreshRequired}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               {loading && <IconLoader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -320,138 +491,18 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {slots.map((slot, index) => (
-            <div
-              key={slot.id}
-              className="p-4 border rounded-xl bg-card hover:border-primary/30 transition-all flex flex-col justify-between group shadow-sm"
-            >
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-md bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
-                      #{index + 1}
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
-                      {renderPlatformIcon(slot.format?.platform)}
-                      <span className="capitalize">{slot.format?.platform || "Universal"}</span>
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={index === 0}
-                      onClick={() => handleMoveSlot(index, "up")}
-                      className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
-                      title="Move earlier in rotation"
-                    >
-                      <IconChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === slots.length - 1}
-                      onClick={() => handleMoveSlot(index, "down")}
-                      className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
-                      title="Move later in rotation"
-                    >
-                      <IconChevronDown className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSlotToDelete(slot)}
-                      className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-                      title="Remove slot"
-                    >
-                      <IconTrash className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <h4 className="font-semibold text-sm leading-tight text-foreground">
-                  {slot.label || slot.format?.name || "Content Slot"}
-                </h4>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Format: {slot.format?.name} ({slot.format?.aspectRatio || "1:1"})
-                </p>
-                <label className="mt-3 block text-xs font-medium text-muted-foreground">
-                  Visual template
-                  <select
-                    value={slot.overrideTemplateId || ""}
-                    disabled={updatingTemplateSlotIds.has(slot.id)}
-                    onChange={(event) => void handleTemplateChange(slot, event.target.value)}
-                    className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-xs"
-                  >
-                    <option value="">Default style</option>
-                    {availableTemplates.filter((template) => template.formatId === slot.formatId).map((template) => (
-                      <option key={template.id} value={template.id}>{template.name}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5 font-medium capitalize">
-                  {renderMediaIcon(slot.format?.mediaType)}
-                  {slot.format?.mediaType}
-                </span>
-                <span className="px-2 py-0.5 bg-muted rounded text-[11px] font-medium">
-                  {slot.cadence}
-                </span>
-              </div>
-            </div>
+            <MixSlotCard key={slot.id} slot={slot} index={index} count={slots.length}
+              disabled={mutationBusy || refreshRequired} templateBusy={updatingTemplateSlotIds.has(slot.id)}
+              templates={availableTemplates.filter(template => template.formatId === slot.formatId)}
+              onMove={handleMoveSlot} onDelete={setSlotToDelete} onTemplateChange={handleTemplateChange} />
           ))}
         </div>
       )}
 
       {recommendation && (
-        <div className="p-5 border rounded-xl bg-amber-500/5 border-amber-500/20 shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600">
-              <IconBulb className="w-5 h-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                Mix Optimization Ready
-              </h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Joey analyzed your recent post performance and suggests reordering your daily mix slots.
-                Higher-performing formats are moved earlier in the rotation.
-              </p>
-              <div className="mt-3 space-y-1.5">
-                {recommendation.adjustments
-                  .filter((a) => a.previousPriority !== a.newPriority)
-                  .map((adj) => (
-                    <div key={adj.slotId} className="text-xs text-muted-foreground">
-                      <span className="font-medium">{adj.formatName}</span>
-                      {" "}— {adj.previousPriority < adj.newPriority ? "moved down" : "moved up"}
-                      {" "}to position #{adj.newPriority + 1}
-                      <span className="ml-1.5 px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">
-                        score {adj.score}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-              <div className="flex gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={handleAcceptRecommendation}
-                  disabled={recLoading}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
-                >
-                  {recLoading ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconCheck className="w-3.5 h-3.5" />}
-                  Apply Reorder
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDiscardRecommendation}
-                  disabled={recLoading}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted disabled:opacity-50"
-                >
-                  <IconX className="w-3.5 h-3.5" />
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <MixRecommendationCard recommendation={recommendation} loading={recLoading}
+          disabled={recLoading || mutationBusy || refreshRequired}
+          onAccept={handleAcceptRecommendation} onDiscard={handleDiscardRecommendation} />
       )}
 
       {/* Delete Slot Confirmation Dialog */}
@@ -467,7 +518,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
             <Button variant="outline" onClick={() => setSlotToDelete(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDeleteSlot} disabled={isDeleting}>
+            <Button variant="destructive" onClick={confirmDeleteSlot} disabled={isDeleting || mutationBusy || refreshRequired}>
               {isDeleting ? "Removing..." : "Remove Slot"}
             </Button>
           </DialogFooter>

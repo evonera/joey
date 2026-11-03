@@ -2,7 +2,7 @@ import { and, count, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { checkUsageLimits } from "@/lib/billing";
 import { getScoutProviderSetup } from "@/lib/scouts/data-provider";
 import { db } from "@/lib/db";
-import { flowRuns, flowWebhookDeliveries, r2CleanupTasks, telegramOutbox, scouts, scoutEvaluations, mediaRenderJobs, drafts, posts, contentPackages, customAgentRuns } from "@/lib/db/schema";
+import { flowRuns, flowWebhookDeliveries, r2CleanupTasks, telegramOutbox, scouts, scoutEvaluations, mediaRenderJobs, drafts, posts, contentPackages, customAgentRuns, engagementItems } from "@/lib/db/schema";
 
 export type OperationalHealth = {
   generatedAt: string;
@@ -14,6 +14,7 @@ export type OperationalHealth = {
   cleanupRepeatedFailures: number;
   telegramPending: number;
   telegramUncertain: number;
+  privateRepliesUncertain: number;
   scoutFailures24h: number;
   scoutUncertain: number;
   overdueScouts: number;
@@ -64,6 +65,7 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
     agencyFailures24h,
     activeScoutCount,
     activeScouts,
+    privateRepliesUncertain,
   ] = await Promise.all([
     db.select({ value: count() }).from(flowRuns).where(and(eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "failed"), gte(flowRuns.updatedAt, dayAgo))),
     db.select({ value: count() }).from(flowRuns).where(and(eq(flowRuns.tenantId, tenantId), eq(flowRuns.status, "running"), lt(flowRuns.updatedAt, staleRunCutoff))),
@@ -113,6 +115,7 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
       orderBy: scouts.id,
       limit: 100,
     }),
+    db.select({ value: count() }).from(engagementItems).where(and(eq(engagementItems.tenantId, tenantId), eq(engagementItems.dmDispatchStatus, "uncertain"))),
   ]);
 
   // Readiness-only scheduler backoff advances lastPolledAt. Independently
@@ -140,6 +143,7 @@ export async function getOperationalHealth(tenantId: string, now = new Date()): 
     cleanupRepeatedFailures: Number(cleanupRepeatedFailures[0]?.value ?? 0),
     telegramPending: Number(telegramPending[0]?.value ?? 0),
     telegramUncertain: Number(telegramUncertain[0]?.value ?? 0),
+    privateRepliesUncertain: Number(privateRepliesUncertain[0]?.value ?? 0),
     scoutFailures24h: Number(scoutFailures24h[0]?.value ?? 0),
     scoutUncertain: Number(scoutUncertain[0]?.value ?? 0),
     overdueScouts: Number(overdueScouts[0]?.value ?? 0),

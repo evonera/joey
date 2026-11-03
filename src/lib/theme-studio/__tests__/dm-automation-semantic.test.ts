@@ -286,6 +286,23 @@ describe("TypeSafe Jev DM Automation Semantic Matcher", () => {
       expect(result.dispatchedMessage).toContain("https://example.com/recipe");
     });
 
+    it("does not retry a private reply after an ambiguous provider failure", async () => {
+      const { db } = await import("@/lib/db");
+      const { getZernioClientForTenant } = await import("@/lib/publisher-core");
+      vi.mocked(db.query.dmAutomationRules.findMany).mockResolvedValue(sampleRules as any);
+      vi.mocked(getZernioClientForTenant).mockResolvedValueOnce({ zernio: { comments: { sendPrivateReplyToComment: vi.fn().mockRejectedValue(new Error("connection lost")) } } } as any);
+      const result = await handleCommentWebhook({ tenantId: "tenant-1", themePageId: "page-1", accountId: "acc", platform: "instagram", postId: "post", commentId: "comment", authorUsername: "alex", authorId: "1", commentText: "RECIPE" });
+      expect(result).toMatchObject({ success: false, uncertain: true, retryable: false });
+    });
+
+    it("preserves a confirmed send when the statistics update fails", async () => {
+      const { db } = await import("@/lib/db");
+      vi.mocked(db.query.dmAutomationRules.findMany).mockResolvedValue(sampleRules as any);
+      vi.mocked(db.update).mockReturnValueOnce({ set: () => ({ where: vi.fn().mockRejectedValue(new Error("database unavailable")) }) } as any);
+      const result = await handleCommentWebhook({ tenantId: "tenant-1", themePageId: "page-1", accountId: "acc", platform: "instagram", postId: "post", commentId: "comment", authorUsername: "alex", authorId: "1", commentText: "RECIPE" });
+      expect(result).toMatchObject({ success: true, providerMessageId: "msg_test_123" });
+    });
+
     it("falls back to semantic Jev matching when keyword is absent but intent is clear", async () => {
       const { db } = await import("@/lib/db");
       vi.mocked(db.query.dmAutomationRules.findMany).mockResolvedValue(sampleRules as any);
