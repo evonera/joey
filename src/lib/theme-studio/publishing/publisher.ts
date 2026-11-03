@@ -12,7 +12,10 @@ import { draftStatusFromZernio, getZernioClientForTenant } from "@/lib/publisher
 import { adaptPackageForPlatform } from "./variant-adapter";
 import { reconcileThemePackagePostEvent } from "./reconcile-post-event";
 import { scoutFactReviewRequired } from "@/lib/scouts/fact-review";
-import { agencyDestinationIds } from "@/lib/agency/destinations";
+import { matchingPackageAccounts, packageDestinationIds, zernioPlatform } from "./destinations";
+import { buildThemePublicationPayload } from "./payload";
+import { lockedThemePreview } from "./locked-preview";
+import type Zernio from "@zernio/node";
 
 export interface PublishContentPackageResult {
   success: boolean;
@@ -20,10 +23,6 @@ export interface PublishContentPackageResult {
   zernioPostId?: string;
   publishedUrl?: string;
   error?: string;
-}
-
-function zernioPlatform(platform: string): string {
-  return platform === "x" ? "twitter" : platform;
 }
 
 function isPublicHttpsUrl(value: string): boolean {
@@ -34,21 +33,44 @@ function isPublicHttpsUrl(value: string): boolean {
   }
 }
 
-async function failPackage(
+function validationFailure(message: string): PublishContentPackageResult {
+  return { success: false, status: "failed", error: message };
+}
+
+/** Compare the fields used to decide and construct a publication at JS timestamp precision. */
+export function packagePublicationSnapshot(observed: typeof contentPackages.$inferSelect) {
+  return and(
+    eq(contentPackages.status, observed.status),
+    sql`date_trunc('milliseconds', ${contentPackages.updatedAt}) = ${observed.updatedAt.toISOString()}::timestamp`,
+    eq(contentPackages.themePageId, observed.themePageId), eq(contentPackages.formatId, observed.formatId),
+    sql`${contentPackages.templateId} IS NOT DISTINCT FROM ${observed.templateId}`,
+    sql`${contentPackages.clusterId} IS NOT DISTINCT FROM ${observed.clusterId}`,
+    sql`${contentPackages.title} IS NOT DISTINCT FROM ${observed.title}`,
+    sql`${contentPackages.caption} IS NOT DISTINCT FROM ${observed.caption}`,
+    sql`to_jsonb(${contentPackages.hashtags}) IS NOT DISTINCT FROM ${observed.hashtags == null ? null : JSON.stringify(observed.hashtags)}::jsonb`,
+    sql`date_trunc('milliseconds', ${contentPackages.scheduledFor}) IS NOT DISTINCT FROM ${observed.scheduledFor?.toISOString() ?? null}::timestamp`,
+    sql`${contentPackages.metrics} IS NOT DISTINCT FROM ${observed.metrics == null ? null : JSON.stringify(observed.metrics)}::jsonb`,
+    sql`${contentPackages.renderedAssetUrls} IS NOT DISTINCT FROM ${observed.renderedAssetUrls == null ? null : JSON.stringify(observed.renderedAssetUrls)}::jsonb`,
+    sql`${contentPackages.provenance} IS NOT DISTINCT FROM ${observed.provenance == null ? null : JSON.stringify(observed.provenance)}::jsonb`,
+  );
+}
+
+export async function failPackage(
   packageId: string,
   tenantId: string,
   message: string,
+  observed: typeof contentPackages.$inferSelect,
 ): Promise<PublishContentPackageResult> {
   const changed = await db
     .update(contentPackages)
     .set({ status: "failed", error: message, updatedAt: new Date() })
-    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), ne(contentPackages.status, "published"), sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`))
+    .where(and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId), ne(contentPackages.status, "published"), packagePublicationSnapshot(observed), sql`${contentPackages.metrics}->>'zernioPostId' IS NULL`))
     .returning({ id: contentPackages.id });
   if (!changed.length) {
     const current = await db.query.contentPackages.findFirst({ where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)) });
     if (current) {
       const status = draftStatusFromZernio(current.status);
-      return { success: status !== "failed", status, ...(status === "failed" ? { error: current.error || message } : {}) };
+      return { success: status !== "failed", status, ...(status === "failed" ? { error: "Package changed while publishing was being prepared. Refresh and review it." } : {}) };
     }
   }
 
@@ -64,6 +86,8 @@ export async function publishContentPackage(
   packageId: string,
   tenantId: string,
   publishEarly = false,
+  expectedFingerprint?: string,
+  provider?: Zernio,
 ): Promise<PublishContentPackageResult> {
   const pkg = await db.query.contentPackages.findFirst({
     where: and(eq(contentPackages.id, packageId), eq(contentPackages.tenantId, tenantId)),
@@ -82,7 +106,7 @@ export async function publishContentPackage(
     return { success: status !== "failed", status, zernioPostId: savedMetrics.zernioPostId, ...(status === "failed" ? { error: "Review the existing post in Zernio before retrying." } : {}) };
   }
   if (savedMetrics?.publishAttemptAt && Date.now() - Date.parse(String(savedMetrics.publishAttemptAt)) > 4 * 60_000) {
-    return failPackage(packageId, tenantId, "Publication was interrupted beyond the deduplication window. Check Zernio before creating another package.");
+    return failPackage(packageId, tenantId, "Publication was interrupted beyond the deduplication window. Check Zernio before creating another package.", pkg);
   }
   if (scoutFactReviewRequired(pkg.provenance)) {
     return { success: false, status: "failed", error: "Source claims need human fact review in Theme Studio before publication." };
@@ -103,52 +127,29 @@ export async function publishContentPackage(
   ]);
 
   if (!page || !format) {
-    return failPackage(packageId, tenantId, "Theme page or content format not found");
+    return expectedFingerprint ? validationFailure("Theme page or content format not found") : failPackage(packageId, tenantId, "Theme page or content format not found", pkg);
   }
 
-  const pageAccountIds = Array.isArray(page.connectedAccounts)
-    ? page.connectedAccounts.filter((id): id is string => typeof id === "string")
-    : [];
-  const selectedAccountIds = agencyDestinationIds(pkg.provenance, pageAccountIds);
   const priorMetrics = pkg.metrics && typeof pkg.metrics === "object"
     ? pkg.metrics as Record<string, unknown>
     : {};
-  const priorAccountId = typeof priorMetrics.publishAccountId === "string" && (!((pkg.provenance as Record<string, unknown>)?.customAgentId) || selectedAccountIds.includes(priorMetrics.publishAccountId))
-    ? priorMetrics.publishAccountId
-    : undefined;
+  const { selectedAccountIds, priorAccountId, lookupIds } = packageDestinationIds(pkg.provenance, page.connectedAccounts, priorMetrics);
   if (selectedAccountIds.length === 0 && !priorAccountId) {
-    return failPackage(packageId, tenantId, "Select a connected social account before publishing");
+    return validationFailure("Select a connected social account before publishing");
   }
 
   const accounts = await db.query.socialAccounts.findMany({
     where: and(
       eq(socialAccounts.tenantId, tenantId),
-      inArray(socialAccounts.id, priorAccountId
-        ? [...new Set([...selectedAccountIds, priorAccountId])]
-        : selectedAccountIds),
+      inArray(socialAccounts.id, lookupIds),
     ),
   });
-  const targetPlatform = zernioPlatform(format.platform);
-  const eligibleAccounts = (priorAccountId ? accounts.filter((candidate) => candidate.id === priorAccountId && candidate.isActive === true && zernioPlatform(candidate.platform) === targetPlatform) : [])
-    .concat(accounts.filter(
-      (candidate) => selectedAccountIds.includes(candidate.id)
-        && candidate.isActive !== false
-        && zernioPlatform(candidate.platform) === targetPlatform,
-    ));
-
-  const uniqueAccountsMap = new Map<string, typeof accounts[0]>();
-  for (const acc of eligibleAccounts) {
-    uniqueAccountsMap.set(acc.id, acc);
-  }
-  const matchingAccounts = Array.from(uniqueAccountsMap.values());
+  let targetPlatform = zernioPlatform(format.platform);
+  let matchingAccounts = matchingPackageAccounts(accounts, format.platform, selectedAccountIds, priorAccountId);
   if (matchingAccounts.length === 0) {
-    return failPackage(
-      packageId,
-      tenantId,
-      `No selected, active ${format.platform} account is connected`,
-    );
+    return validationFailure(`No selected, active ${format.platform} account is connected`);
   }
-  const primaryAccount = matchingAccounts[0];
+  let primaryAccount = matchingAccounts[0];
 
   const variant = adaptPackageForPlatform(
     pkg,
@@ -156,15 +157,15 @@ export async function publishContentPackage(
     format.mediaType as "image" | "carousel" | "video",
   );
   if (variant.mediaUrls.length === 0 || variant.mediaUrls.some((url) => !isPublicHttpsUrl(url))) {
-    return failPackage(packageId, tenantId, "Publishing requires publicly reachable HTTPS media");
+    return expectedFingerprint ? validationFailure("Publishing requires publicly reachable HTTPS media") : failPackage(packageId, tenantId, "Publishing requires publicly reachable HTTPS media", pkg);
   }
   if (format.platform === "tiktok" && variant.mediaType !== "video") {
-    return failPackage(packageId, tenantId, "TikTok publishing requires a rendered video asset");
+    return expectedFingerprint ? validationFailure("TikTok publishing requires a rendered video asset") : failPackage(packageId, tenantId, "TikTok publishing requires a rendered video asset", pkg);
   }
 
   const claimTime = new Date();
   const stalePublishingCutoff = new Date(claimTime.getTime() - 2 * 60_000);
-  const claimed = await db
+  const applyClaim = (client: Pick<typeof db, "update">) => client
     .update(contentPackages)
     .set({
       status: "publishing",
@@ -182,14 +183,33 @@ export async function publishContentPackage(
       and(
         eq(contentPackages.id, packageId),
         eq(contentPackages.tenantId, tenantId),
-        eq(contentPackages.updatedAt, pkg.updatedAt),
+        packagePublicationSnapshot(pkg),
         or(
           inArray(contentPackages.status, ["approved", "failed"]),
           and(eq(contentPackages.status, "publishing"), lt(contentPackages.updatedAt, stalePublishingCutoff)),
         ),
       ),
     )
-    .returning({ id: contentPackages.id });
+    .returning();
+  let confirmedPayload: ReturnType<typeof buildThemePublicationPayload> | undefined;
+  let claimed: (typeof contentPackages.$inferSelect)[];
+  if (expectedFingerprint) {
+    try {
+      claimed = await db.transaction(async tx => {
+        const current = await lockedThemePreview(tx, tenantId, packageId, publishEarly);
+        if (current.fingerprint !== expectedFingerprint) return [];
+        const currentMetrics = current.pkg.metrics as Record<string, unknown> | null;
+        if (!["approved", "failed"].includes(current.pkg.status) || currentMetrics?.zernioPostId || (currentMetrics?.publishAttemptAt && Date.now() - Date.parse(String(currentMetrics.publishAttemptAt)) > 240_000)) return [];
+        matchingAccounts = current.accounts;
+        primaryAccount = current.accounts[0];
+        targetPlatform = zernioPlatform(current.format.platform);
+        confirmedPayload = current.payload;
+        return applyClaim(tx);
+      });
+    } catch {
+      return { success: false, status: "failed", error: "Publication details changed or are unavailable. Refresh and review them again." };
+    }
+  } else claimed = await applyClaim(db);
   if (claimed.length === 0) {
     return {
       success: false,
@@ -199,35 +219,10 @@ export async function publishContentPackage(
   }
 
   try {
-    const { zernio } = await getZernioClientForTenant(tenantId);
+    const zernio = provider ?? (await getZernioClientForTenant(tenantId)).zernio;
     const response = await zernio.posts.createPost({
       headers: { "x-request-id": pkg.id },
-      body: {
-        title: pkg.title,
-        content: variant.adaptedCaption,
-        mediaItems: variant.mediaUrls.map((url) => ({
-          type: variant.mediaType === "video" ? "video" as const : "image" as const,
-          url,
-          altText: variant.mediaType === "video" ? undefined : pkg.title,
-        })),
-        platforms: matchingAccounts.map((acc) => ({
-          platform: zernioPlatform(acc.platform),
-          accountId: acc.platformAccountId,
-          customContent: adaptPackageForPlatform(
-            pkg,
-            acc.platform as "instagram" | "tiktok" | "x",
-            format.mediaType as "image" | "carousel" | "video",
-          ).adaptedCaption,
-        })),
-        hashtags: variant.adaptedHashtags,
-        ...(!publishEarly && pkg.scheduledFor && pkg.scheduledFor > new Date()
-          ? { scheduledFor: pkg.scheduledFor.toISOString() }
-          : { publishNow: true }),
-        metadata: {
-          themePageId: pkg.themePageId,
-          themePackageId: pkg.id,
-        },
-      },
+      body: confirmedPayload ?? buildThemePublicationPayload(pkg, format, matchingAccounts, publishEarly, new Date()),
     });
 
     const responseData = response.data as (typeof response.data & { existingPost?: NonNullable<typeof response.data>["post"] }) | undefined;
@@ -290,6 +285,6 @@ export async function publishContentPackage(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Zernio publishing failed";
-    return failPackage(packageId, tenantId, message);
+    return failPackage(packageId, tenantId, message, claimed[0]);
   }
 }

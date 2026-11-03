@@ -12,6 +12,8 @@ import {
 import { eq, and, desc } from "drizzle-orm";
 import { parseGraphDoc, validateGraph } from "@/lib/flows/validation";
 import { reviewDraft } from "@/lib/draft-review";
+import { manualPostSchema } from "@/lib/compose-validation";
+import { validateSafeUrl } from "@/lib/flows/nodes/ai/transcribe";
 
 export interface McpAuth {
   tenantId: string;
@@ -77,13 +79,20 @@ export function createJoeyMcpServer(auth: McpAuth): McpServer {
     "joey_create_draft",
     "Create a new draft in pending_review. A human must approve it in the Joey UI before it publishes.",
     {
-      content: z.string().min(1).max(10000),
+      content: z.string().max(10000),
       mediaUrls: z.array(z.string().url().max(2048)).max(10).optional(),
       accountIds: z.array(z.string().min(1).max(128)).max(20).optional(),
       scheduledFor: z.string().datetime().optional(),
     },
     async ({ content, mediaUrls, accountIds, scheduledFor }) => {
       assertScope(auth, "write");
+      const media = manualPostSchema.shape.mediaUrls.safeParse(mediaUrls ?? []);
+      if (!media.success) throw new Error("Media URLs must use HTTP or HTTPS without credentials.");
+      if (!content.trim() && media.data.length === 0) throw new Error("Add draft content or media.");
+      for (const url of media.data) {
+        try { await validateSafeUrl(url); }
+        catch { throw new Error("Unsafe media URL rejected."); }
+      }
       const [draft] = await db
         .insert(drafts)
         .values({

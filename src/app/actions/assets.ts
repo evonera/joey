@@ -1,6 +1,6 @@
 'use server';
 
-import { auth, getActiveTenantId } from "@/lib/auth";
+import { auth, getActiveTenantId, requireRole } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { assets, tenants } from "@/lib/db/schema";
@@ -14,7 +14,7 @@ export async function checkR2Status() {
 }
 
 export async function requestUploadUrl(filename: string, mimeType: string) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
   const result = await generateUploadUrl(filename, mimeType, tenantId);
   return result;
 }
@@ -29,7 +29,7 @@ export async function registerAsset(data: {
   tags?: string[];
   altText?: string;
 }) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
 
   if (!data.key.startsWith(tenantId + "/") || data.key.includes("..")) {
     throw new Error("Invalid asset key: namespace mismatch");
@@ -96,7 +96,7 @@ export async function getAssetForCreation(assetId: string) {
 }
 
 export async function deleteAsset(id: string) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
 
   const asset = await db.query.assets.findFirst({
     where: and(eq(assets.id, id), eq(assets.tenantId, tenantId)),
@@ -119,12 +119,11 @@ export async function deleteAsset(id: string) {
       .where(and(eq(assets.id, id), eq(assets.tenantId, tenantId)))
       .returning({ id: assets.id });
   } catch (err) {
-    await cancelR2Cleanup(asset.key);
+    // Leave the reservation for the reference guard or a concurrent winner.
     throw err;
   }
   if (!deleted) {
     // Lost a concurrent delete race: the winner owns R2 teardown.
-    await cancelR2Cleanup(asset.key);
     throw new Error("Asset not found");
   }
 
@@ -140,7 +139,7 @@ export async function deleteAsset(id: string) {
 }
 
 export async function updateAssetTags(id: string, tags: string[]) {
-  const tenantId = await getActiveTenantId();
+  const tenantId = await requireRole(["owner", "admin", "editor", "member"]);
 
   const [asset] = await db.update(assets)
     .set({ tags })

@@ -102,10 +102,20 @@ def run_tick(readiness_cache=None, now=None):
             health = client.get(f"{base}/api/internal/runtime", timeout=15)
             if health.status_code == 404:
                 return {"status": "waiting_for_web_deployment"}
-            if health.status_code != 200 or health.json().get("ready") is not True:
+            health_data = health.json()
+            if health.status_code != 200 or health_data.get("ready") is not True:
                 if readiness_cache is not None:
                     readiness_cache["ready"] = {}
                 raise RuntimeError(f"Joey readiness check failed (HTTP {health.status_code})")
+            if health_data.get("mediaReady") is False:
+                try:
+                    import sentry_sdk
+                    alert_key = "media_alert:" + str(int(now // 3600))
+                    if readiness_cache is None or readiness_cache.put(alert_key, True, skip_if_exists=True):
+                        sentry_sdk.capture_message("Joey media worker or storage readiness failed", level="error")
+                except Exception:
+                    # Monitoring failure must not prevent unrelated scheduled work.
+                    pass
             if readiness_cache is not None:
                 readiness_cache["ready"] = {"origin": base, "checkedAt": now}
         response = client.get(f"{base}/api/cron", timeout=65)

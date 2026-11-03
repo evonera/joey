@@ -113,9 +113,11 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Unsupported toolkit" }, { status: 400 });
     }
 
-    await manageConnections(tenantId, [
+    const data = await manageConnections(tenantId, [
       { name: body.toolkit, action: "remove", account_id: body.accountId },
     ]);
+    const results = (data.results ?? {}) as Record<string, ToolkitResult>;
+    if (results[body.toolkit]?.error_message) return NextResponse.json({ error: "Disconnect failed" }, { status: 502 });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof Error && (error.message === "Unauthorized" || error.message.startsWith("Forbidden:"))) {

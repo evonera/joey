@@ -167,18 +167,13 @@ async function claimThemeStudioDm(itemId: string, tenantId: string) {
       isNull(engagementItems.dmDispatchStatus),
       and(
         eq(engagementItems.dmDispatchStatus, "failed"),
+        sql`${engagementItems.dmDispatchError} LIKE 'pre_dispatch:%'`,
         or(
           isNull(engagementItems.dmDispatchLeaseExpiresAt),
           lt(engagementItems.dmDispatchLeaseExpiresAt, now),
         ),
       ),
-      and(
-        eq(engagementItems.dmDispatchStatus, "sending"),
-        or(
-          isNull(engagementItems.dmDispatchLeaseExpiresAt),
-          lt(engagementItems.dmDispatchLeaseExpiresAt, now),
-        ),
-      ),
+
     ),
   )).returning({ attempts: engagementItems.dmDispatchAttempts });
   return claim?.attempts ?? null;
@@ -192,13 +187,13 @@ async function finishThemeStudioDm(
 ) {
   const status = result.success
     ? (result.matched ? "sent" : "skipped")
-    : (result.retryable === false || attempt >= DM_DISPATCH_MAX_ATTEMPTS ? "skipped" : "failed");
+    : (result.uncertain ? "uncertain" : result.retryable === false || attempt >= DM_DISPATCH_MAX_ATTEMPTS ? "skipped" : "failed");
   await db.update(engagementItems).set({
     dmDispatchStatus: status,
     dmDispatchLeaseExpiresAt: status === "failed"
       ? new Date(Date.now() + themeStudioDmRetryDelayMs(attempt))
       : null,
-    dmDispatchError: result.success ? null : (result.error || "Private reply failed").slice(0, 1_000),
+    dmDispatchError: result.success ? null : (status === "failed" ? `pre_dispatch: ${result.error || "Private reply failed"}` : result.error || "Private reply failed").slice(0, 1_000),
     dmDispatchMessageId: result.providerMessageId || null,
   }).where(and(
     eq(engagementItems.id, itemId),
@@ -208,7 +203,7 @@ async function finishThemeStudioDm(
   ));
 }
 
-async function dispatchThemeStudioDm(item: typeof engagementItems.$inferSelect): Promise<boolean> {
+async function dispatchThemeStudioDm(item: typeof engagementItems.$inferSelect, handle = handleCommentWebhook): Promise<boolean> {
   if (!item.platformPostId || !item.platformCommentId || !item.socialAccountId) return false;
   const [socialAccount, pkg] = await Promise.all([
     db.query.socialAccounts.findFirst({
@@ -235,7 +230,7 @@ async function dispatchThemeStudioDm(item: typeof engagementItems.$inferSelect):
   const author = record(comment.author);
   let result: Awaited<ReturnType<typeof handleCommentWebhook>>;
   try {
-    result = await handleCommentWebhook({
+    result = await handle({
       tenantId: item.tenantId,
       themePageId: pkg.themePageId,
       accountId: socialAccount.platformAccountId,
@@ -250,7 +245,8 @@ async function dispatchThemeStudioDm(item: typeof engagementItems.$inferSelect):
     result = {
       matched: true,
       success: false,
-      retryable: true,
+      retryable: false,
+      uncertain: true,
       error: error instanceof Error ? error.message : "Private reply dispatch failed",
     };
   }
@@ -265,31 +261,37 @@ async function dispatchThemeStudioDm(item: typeof engagementItems.$inferSelect):
  * Consumes due private-reply work independently of webhook redelivery. Claims
  * are tenant-scoped and attempt-fenced, so overlapping minute ticks are safe.
  */
-export async function processThemeStudioDmRetries(limit = 25): Promise<{ processed: number }> {
+export async function processThemeStudioDmRetries(limit = 25, handle = handleCommentWebhook): Promise<{ processed: number }> {
   const now = new Date();
+  await db.execute(sql`
+    WITH candidates AS (
+      SELECT id FROM engagement_items
+      WHERE (dm_dispatch_status = 'sending' AND (dm_dispatch_lease_expires_at IS NULL OR dm_dispatch_lease_expires_at < (now() AT TIME ZONE 'UTC')))
+         OR (dm_dispatch_status = 'failed' AND (dm_dispatch_error IS NULL OR dm_dispatch_error NOT LIKE 'pre_dispatch:%'))
+      ORDER BY id LIMIT 100 FOR UPDATE SKIP LOCKED
+    )
+    UPDATE engagement_items e SET dm_dispatch_status = 'uncertain', dm_dispatch_lease_expires_at = NULL,
+      dm_dispatch_error = 'Delivery could not be confirmed. Check the provider before sending another private reply.'
+    FROM candidates c WHERE e.id = c.id
+  `);
   const candidates = await db.query.engagementItems.findMany({
     where: and(
       lt(engagementItems.dmDispatchAttempts, DM_DISPATCH_MAX_ATTEMPTS),
       or(
         and(
           eq(engagementItems.dmDispatchStatus, "failed"),
+          sql`${engagementItems.dmDispatchError} LIKE 'pre_dispatch:%'`,
           or(
             isNull(engagementItems.dmDispatchLeaseExpiresAt),
             lt(engagementItems.dmDispatchLeaseExpiresAt, now),
           ),
         ),
-        and(
-          eq(engagementItems.dmDispatchStatus, "sending"),
-          or(
-            isNull(engagementItems.dmDispatchLeaseExpiresAt),
-            lt(engagementItems.dmDispatchLeaseExpiresAt, now),
-          ),
-        ),
+
       ),
     ),
     limit: Math.min(Math.max(limit, 1), 100),
   });
-  const outcomes = await Promise.allSettled(candidates.map(dispatchThemeStudioDm));
+  const outcomes = await Promise.allSettled(candidates.map(item => dispatchThemeStudioDm(item, handle)));
   return {
     processed: outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value).length,
   };

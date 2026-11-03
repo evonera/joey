@@ -60,6 +60,7 @@ export default function ComposePage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [mediaStudioOpen, setMediaStudioOpen] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [publishSnapshot, setPublishSnapshot] = useState<{ content: string; mediaUrls: string[]; accountIds: string[]; accounts: Array<{ id: string; accountName: string | null; platform: string; platformAccountId: string; avatarUrl?: string }> } | null>(null);
   const [packagingScore, setPackagingScore] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -254,7 +255,7 @@ export default function ComposePage() {
     await submitPost(draftIdParam && scheduleType === "scheduled" ? "scheduled" : "draft");
   };
 
-  const submitPost = async (mode: "now" | "scheduled" | "draft", opts?: { confirmedAt?: string }) => {
+  const submitPost = async (mode: "now" | "scheduled" | "draft", opts?: { confirmedAt?: string; snapshot?: NonNullable<typeof publishSnapshot> }) => {
     if (mode === "draft") setIsSavingDraft(true);
     else setIsSubmitting(true);
     try {
@@ -267,8 +268,9 @@ export default function ComposePage() {
       }
       const res = await createManualPost({
         draftId: draftIdParam || undefined,
-        content, mediaUrls, accountIds: selectedAccountIds, scheduleType: mode, scheduledFor,
+        content: opts?.snapshot?.content ?? content, mediaUrls: opts?.snapshot?.mediaUrls ?? mediaUrls, accountIds: opts?.snapshot?.accountIds ?? selectedAccountIds, scheduleType: mode, scheduledFor,
         confirmedAt: opts?.confirmedAt,
+        confirmedAccounts: opts?.snapshot?.accounts.map(({ id, accountName, platform, platformAccountId }) => ({ id, accountName, platform, platformAccountId })),
       });
       if (res.error) {
         toast.error(res.error);
@@ -294,6 +296,7 @@ export default function ComposePage() {
   const handleSubmit = async () => {
     if (!canSubmit) return;
     if (scheduleType === "now") {
+      setPublishSnapshot({ content, mediaUrls: [...mediaUrls], accountIds: [...selectedAccountIds], accounts: selectedAccounts.map(a => ({ id: a.id, accountName: a.accountName ?? null, platform: a.platform, platformAccountId: a.platformAccountId, avatarUrl: a.avatarUrl ?? undefined })) });
       setConfirmDialogOpen(true);
       return;
     }
@@ -641,19 +644,18 @@ export default function ComposePage() {
         onOpenChange={setConfirmDialogOpen}
         onConfirm={async () => {
           setConfirmDialogOpen(false);
-          await submitPost("now", { confirmedAt: new Date().toISOString() });
+          if (publishSnapshot) await submitPost("now", { confirmedAt: new Date().toISOString(), snapshot: publishSnapshot });
         }}
         isPublishing={isSubmitting}
-        accounts={accounts
-          .filter((a) => selectedAccountIds.includes(a.id))
+        accounts={(publishSnapshot?.accounts ?? [])
           .map((a) => ({
             id: a.id,
-            accountName: a.accountName,
+            accountName: a.accountName || a.id,
             platform: a.platform,
             avatarUrl: a.avatarUrl,
           }))}
-        content={content}
-        mediaCount={mediaUrls.length}
+        content={publishSnapshot?.content ?? ""}
+        mediaCount={publishSnapshot?.mediaUrls.length ?? 0}
         actionLabel="Publish Now"
       />
     </div>

@@ -2,8 +2,8 @@
 
 import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { themeSlots, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { themeSlots, themePages, themeContentFormats, themeVisualTemplates } from "@/lib/db/schema";
+import { eq, and, asc, sql } from "drizzle-orm";
 
 import { SlotQuotaError } from "@/lib/billing";
 import { insertThemeSlot } from "@/lib/theme-studio/slots";
@@ -133,11 +133,20 @@ export async function reorderThemeSlots(themePageId: string, orderedSlotIds: str
   try {
     const tenantId = await requireRole(["owner", "admin"]);
 
-    for (let i = 0; i < orderedSlotIds.length; i++) {
-      await db.update(themeSlots)
-        .set({ priority: i, updatedAt: new Date() })
-        .where(and(eq(themeSlots.id, orderedSlotIds[i]), eq(themeSlots.themePageId, themePageId), eq(themeSlots.tenantId, tenantId)));
-    }
+    await db.transaction(async tx => {
+      const page = await tx.execute(sql`SELECT id FROM ${themePages} WHERE id = ${themePageId} AND tenant_id = ${tenantId} FOR UPDATE`);
+      const rows = Array.isArray(page) ? page : (page as unknown as { rows: unknown[] }).rows;
+      if (!rows.length) throw new Error("Theme page not found.");
+      const slots = await tx.select({ id: themeSlots.id }).from(themeSlots)
+        .where(and(eq(themeSlots.themePageId, themePageId), eq(themeSlots.tenantId, tenantId))).for("update");
+      if (new Set(orderedSlotIds).size !== orderedSlotIds.length || slots.length !== orderedSlotIds.length || slots.some(slot => !orderedSlotIds.includes(slot.id))) {
+        throw new Error("The content mix changed. Refresh before reordering.");
+      }
+      for (let i = 0; i < orderedSlotIds.length; i++) {
+        await tx.update(themeSlots).set({ priority: i, updatedAt: new Date() })
+          .where(and(eq(themeSlots.id, orderedSlotIds[i]), eq(themeSlots.themePageId, themePageId), eq(themeSlots.tenantId, tenantId)));
+      }
+    });
 
     return { success: true };
   } catch (error: any) {

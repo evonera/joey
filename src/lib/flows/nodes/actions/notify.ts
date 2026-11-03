@@ -99,7 +99,7 @@ export const notifyNode = defineNode({
           type: "draft_ready",
           title: config.title,
           body,
-          link: `/flows/runs?runId=${ctx.runId}`,
+          link: `/flows/${encodeURIComponent(ctx.flowId)}`,
           isRead: !shouldCreateInApp,
           metadata: {
             flowRunId: ctx.runId,
@@ -149,7 +149,7 @@ export const notifyNode = defineNode({
 
       const { sendNotificationEmail } = await import("@/lib/email");
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const fullLink = `${appUrl}/flows/runs?runId=${ctx.runId}`;
+      const fullLink = `${appUrl}/flows/${encodeURIComponent(ctx.flowId)}`;
       const emailIdempotencyKey = `${ctx.tenantId}:${ctx.runId || "direct"}:${ctx.nodeId || "notify"}:${ctx.itemKey ?? "root"}`;
       await sendNotificationEmail({
         to: emailRecipient,

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   where: vi.fn(),
   returning: vi.fn(),
   inArray: vi.fn(),
+  publish: vi.fn(), getProvider: vi.fn(),
 }));
 
 vi.mock("drizzle-orm", async (importOriginal) => {
@@ -27,7 +29,7 @@ vi.mock("@/lib/auth", () => ({
   getActiveTenantMembership: mocks.membership,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/app/actions/publisher", () => ({ publishDraft: vi.fn() }));
+vi.mock("@/lib/publisher-core", () => ({ executePublishDraft: mocks.publish, getZernioClientForTenant: mocks.getProvider }));
 
 import { createManualPost, getDraftForCompose } from "@/app/actions/compose";
 
@@ -74,6 +76,9 @@ describe("Compose merge safety", () => {
     mocks.findFirst.mockResolvedValueOnce({ id: "draft-1", platformOptions: null });
     await createManualPost({ ...input, draftId: "draft-1" });
     expect(mocks.inArray).toHaveBeenCalledWith(expect.anything(), ["draft", "pending_review", "rejected"]);
+    const query = new PgDialect().sqlToQuery(mocks.where.mock.calls[0][0]);
+    expect(query.sql).toContain("NOT LIKE 'verify:%'");
+    expect(query.sql).toContain("NOT EXISTS (SELECT 1 FROM posts");
   });
 
   it("retains the render metadata merge when editing Chat videos", async () => {
@@ -81,6 +86,34 @@ describe("Compose merge safety", () => {
     mocks.findFirst.mockResolvedValueOnce({ id: "draft-1", platformOptions: { source: "chat_video", renderJobId: "job-1", renderStatus: "pending" } });
     await createManualPost({ ...input, draftId: "draft-1" });
     expect(mocks.set).toHaveBeenCalledWith(expect.objectContaining({ platformOptions: expect.objectContaining({ queryChunks: expect.any(Array) }) }));
+    const query = new PgDialect().sqlToQuery(mocks.set.mock.calls[0][0].platformOptions);
+    expect(query.params.some((value) => typeof value === "string" && value.includes('"mediaUrls":[]'))).toBe(true);
     expect(mocks.inArray).toHaveBeenCalledWith(expect.anything(), ["draft", "pending_review", "approved", "rejected", "scheduled"]);
+  });
+});
+
+describe("Compose immediate publication", () => {
+  const accounts = [
+    { id: "a", accountName: "First", platform: "x", platformAccountId: "remote-a" },
+    { id: "b", accountName: "Second", platform: "x", platformAccountId: "remote-b" },
+  ];
+  const input = { content: "Confirmed text", mediaUrls: [], accountIds: ["a", "b"], scheduleType: "now" as const, confirmedAt: new Date().toISOString(), confirmedAccounts: accounts };
+  beforeEach(() => {
+    mocks.membership.mockResolvedValue({ tenantId: "tenant-1", role: "owner" });
+    mocks.findAccounts.mockResolvedValue(accounts);
+    mocks.values.mockImplementation((values) => ({ returning: async () => [{ id: `draft-${values.platformOptions.accountId}`, ...values }] }));
+    mocks.getProvider.mockResolvedValue({ zernio: {} });
+  });
+  it("publishes each exact saved row and preserves partial results", async () => {
+    mocks.publish.mockResolvedValueOnce({ status: "published" }).mockResolvedValueOnce({ error: "Provider rejected post" });
+    const result = await createManualPost(input);
+    expect(result).toMatchObject({ draftsCreated: 2, publicationResults: [{ draftId: "draft-a", status: "published" }, { draftId: "draft-b", status: "failed" }] });
+    expect(mocks.publish).toHaveBeenCalledTimes(2);
+    expect(mocks.publish.mock.calls[0][4]).toMatchObject({ content: "Confirmed text", account: accounts[0], platformOptions: { accountId: "a", mediaUrls: [] } });
+  });
+  it("refuses publication when an account changed since confirmation", async () => {
+    mocks.findAccounts.mockResolvedValue([{ ...accounts[0], platformAccountId: "different" }, accounts[1]]);
+    expect(await createManualPost(input)).toMatchObject({ error: "The selected accounts changed. Refresh and confirm again." });
+    expect(mocks.insert).not.toHaveBeenCalled();
   });
 });

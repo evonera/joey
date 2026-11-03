@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { drafts, socialAccounts } from "@/lib/db/schema";
 import { manualPostSchema, validatePostForPlatforms } from "@/lib/compose-validation";
 import { revalidatePath } from "next/cache";
-import { publishDraft } from "./publisher";
+import { executePublishDraft, getZernioClientForTenant } from "@/lib/publisher-core";
 import { getActiveTenantId, getActiveTenantMembership } from "@/lib/auth";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { assertAvailableSchedule, assertSchedulingRole, lockSchedulingAccount } from "@/lib/editorial-scheduling";
@@ -22,6 +22,7 @@ export async function createManualPost(data: {
     scheduleType: "now" | "scheduled" | "draft";
     scheduledFor?: string; // ISO date string
     confirmedAt?: string; // ISO date string; required for immediate publish (confirm dialog)
+    confirmedAccounts?: Array<{ id: string; accountName: string | null; platform: string; platformAccountId: string }>;
 }) {
     try {
         const parsed = manualPostSchema.safeParse(data);
@@ -44,6 +45,13 @@ export async function createManualPost(data: {
         if (selectedAccounts.length !== data.accountIds.length) {
             return { error: "One or more selected accounts are unavailable. Refresh your accounts and try again." };
         }
+        if (data.scheduleType === "now") {
+            const confirmed = data.confirmedAccounts;
+            if (!confirmed || confirmed.length !== selectedAccounts.length || selectedAccounts.some(account => {
+                const snapshot = confirmed.find(item => item.id === account.id);
+                return !snapshot || snapshot.accountName !== account.accountName || snapshot.platform !== account.platform || snapshot.platformAccountId !== account.platformAccountId;
+            })) return { error: "The selected accounts changed. Refresh and confirm again." };
+        }
 
         if (data.scheduleType !== "draft") {
             const error = validatePostForPlatforms(data.content, data.mediaUrls, selectedAccounts.map(a => a.platform));
@@ -59,7 +67,7 @@ export async function createManualPost(data: {
                 }
                 await assertSchedulingRole(tx, tenantId, userId);
             }
-            const ids: string[] = [];
+            const rows: Array<typeof drafts.$inferSelect> = [];
             const targets: Array<typeof selectedAccounts[number] | null> = selectedAccounts.length > 0 ? selectedAccounts : [null];
             for (const account of targets) {
                 const values = {
@@ -84,7 +92,7 @@ export async function createManualPost(data: {
                     }
                     const videoOptions = {
                         ...(account ? { accountId: account.id, platform: account.platform } : {}),
-                        ...(data.mediaUrls.length ? { mediaUrls: data.mediaUrls } : {}),
+                        mediaUrls: data.mediaUrls,
                         source: "chat_video",
                     };
                     const updatedValues = existingOptions?.source === "chat_video"
@@ -95,22 +103,36 @@ export async function createManualPost(data: {
                         inArray(drafts.status, role === "owner" || role === "admin"
                             ? ["draft", "pending_review", "approved", "rejected", "scheduled"]
                             : ["draft", "pending_review", "rejected"]),
-                    )).returning({ id: drafts.id });
+                        sql`(${drafts.errorMessage} IS NULL OR ${drafts.errorMessage} NOT LIKE 'verify:%')`,
+                        sql`NOT EXISTS (SELECT 1 FROM posts p WHERE p.draft_id = ${drafts.id} AND p.tenant_id = ${drafts.tenantId})`,
+                        sql`${drafts.platformOptions} IS NOT DISTINCT FROM ${existing.platformOptions == null ? null : JSON.stringify(existing.platformOptions)}::jsonb`,
+                    )).returning();
                     if (!updated) throw new Error("This draft cannot be edited. It may already be publishing or published.");
-                    ids.push(updated.id);
+                    rows.push(updated);
                 } else {
-                    const [draft] = await tx.insert(drafts).values({ tenantId, ...values }).returning({ id: drafts.id });
-                    ids.push(draft.id);
+                    const [draft] = await tx.insert(drafts).values({ tenantId, ...values }).returning();
+                    rows.push(draft);
                 }
             }
-            return ids;
+            return rows;
         });
+        const draftIds = createdDraftIds.map(row => row.id);
         const publishFailures: string[] = [];
         const publicationResults: Array<{ draftId: string; accountId: string; platform: string; status: string; error?: string }> = [];
         let processing = false;
         if (data.scheduleType === "now") {
-            for (const [index, draftId] of createdDraftIds.entries()) {
-                const result = await publishDraft(draftId);
+            for (const [index, row] of createdDraftIds.entries()) {
+                const draftId = row.id;
+                const confirmedAccount = data.confirmedAccounts!.find(account => account.id === selectedAccounts[index].id)!;
+                let result: { error?: string; status?: string };
+                try {
+                    const options = row.platformOptions as { accountId?: unknown; mediaUrls?: unknown } | null;
+                    if (row.content !== data.content || options?.accountId !== confirmedAccount.id || JSON.stringify(options?.mediaUrls ?? []) !== JSON.stringify(data.mediaUrls)) {
+                        throw new Error("Saved draft differs from confirmation");
+                    }
+                    const { zernio } = await getZernioClientForTenant(tenantId);
+                    result = await executePublishDraft(draftId, tenantId, zernio, false, { content: row.content, platformOptions: row.platformOptions, status: row.status, scheduledFor: row.scheduledFor?.toISOString() ?? null, account: confirmedAccount });
+                } catch { result = { error: "Could not publish this draft. Review it in Drafts before retrying." }; }
                 if (result.error) publishFailures.push(result.error);
                 if (result.status === "publishing") processing = true;
                 publicationResults.push({
@@ -128,11 +150,11 @@ export async function createManualPost(data: {
         if (publishFailures.length > 0) {
             return {
                 error: `Published with errors: ${publishFailures.join("; ")}`,
-                draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, publicationResults
+                draftsCreated: draftIds.length, draftIds, publicationResults
             };
         }
 
-        return { success: true, draftsCreated: createdDraftIds.length, draftIds: createdDraftIds, processing, publicationResults };
+        return { success: true, draftsCreated: draftIds.length, draftIds, processing, publicationResults };
     } catch (error: any) {
         console.error("Failed to create manual post:", error);
         return { error: error.message || "Failed to create post" };

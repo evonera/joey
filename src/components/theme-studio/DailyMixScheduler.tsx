@@ -17,7 +17,7 @@ import {
   IconChevronUp,
   IconChevronDown,
 } from "@tabler/icons-react";
-import { createThemeSlot, updateThemeSlot, deleteThemeSlot, reorderThemeSlots } from "@/app/actions/theme-slots";
+import { createThemeSlot, updateThemeSlot, deleteThemeSlot, reorderThemeSlots, getThemeSlots } from "@/app/actions/theme-slots";
 import {
   getMixRecommendations,
   acceptRecommendation,
@@ -86,23 +86,36 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [recommendation, setRecommendation] = React.useState<{ id: string; formatScores: Record<string, { averageScore: number; sampleCount: number }>; adjustments: Array<{ slotId: string; formatId: string; previousPriority: number; newPriority: number; formatName: string; score: number }> } | null>(null);
   const [recLoading, setRecLoading] = React.useState(false);
+  const [refreshRequired, setRefreshRequired] = React.useState(false);
+  const mutationLock = React.useRef(false);
+  const [mutationBusy, setMutationBusy] = React.useState(false);
+  function beginMutation() {
+    if (mutationLock.current || refreshRequired) return false;
+    mutationLock.current = true; setMutationBusy(true); return true;
+  }
+  function endMutation() { mutationLock.current = false; setMutationBusy(false); }
 
   React.useEffect(() => {
     getMixRecommendations(themePageId).then((res) => setRecommendation(res.recommendation));
   }, [themePageId]);
 
   async function handleAcceptRecommendation() {
-    if (!recommendation) return;
+    if (!recommendation || !beginMutation()) return;
     setRecLoading(true);
     try {
       const res = await acceptRecommendation(recommendation.id);
       if (res.error) throw new Error(res.error);
+      let refreshed;
+      try { refreshed = await getThemeSlots(themePageId); } catch { setRefreshRequired(true); throw new Error("Recommendation applied, but the updated slots could not be loaded. Refresh this page before reordering."); }
+      if (!refreshed.slots) { setRefreshRequired(true); throw new Error("Recommendation applied, but the updated slots could not be loaded. Refresh this page before reordering."); }
+      setSlots(refreshed.slots as SlotItem[]);
       setRecommendation(null);
       toast.success(`Applied ${res.applied} slot reorder${res.applied === 1 ? "" : "s"}`);
     } catch (err: any) {
       toast.error(err.message || "Failed to apply recommendation");
     } finally {
       setRecLoading(false);
+      endMutation();
     }
   }
 
@@ -123,7 +136,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
 
   async function handleAddSlot(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedFormatId) return;
+    if (!selectedFormatId || !beginMutation()) return;
 
     setLoading(true);
     try {
@@ -147,11 +160,12 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
       toast.error(err.message || "Failed to add slot");
     } finally {
       setLoading(false);
+      endMutation();
     }
   }
 
   async function handleTemplateChange(slot: SlotItem, templateId: string) {
-    if (updatingTemplateSlots.current.has(slot.id)) return;
+    if (!beginMutation()) return;
     updatingTemplateSlots.current.add(slot.id);
     setUpdatingTemplateSlotIds(new Set(updatingTemplateSlots.current));
     try {
@@ -164,11 +178,12 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
     } finally {
       updatingTemplateSlots.current.delete(slot.id);
       setUpdatingTemplateSlotIds(new Set(updatingTemplateSlots.current));
+      endMutation();
     }
   }
 
   async function confirmDeleteSlot() {
-    if (!slotToDelete) return;
+    if (!slotToDelete || !beginMutation()) return;
     setIsDeleting(true);
     try {
       const res = await deleteThemeSlot(slotToDelete.id);
@@ -180,12 +195,13 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
       toast.error(err.message || "Failed to delete slot");
     } finally {
       setIsDeleting(false);
+      endMutation();
     }
   }
 
   async function handleMoveSlot(index: number, direction: "up" | "down") {
     const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= slots.length) return;
+    if (targetIndex < 0 || targetIndex >= slots.length || !beginMutation()) return;
 
     const newSlots = [...slots];
     const [moved] = newSlots.splice(index, 1);
@@ -199,7 +215,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
     } catch (err: any) {
       toast.error(err.message || "Failed to reorder slots");
       setSlots(slots);
-    }
+    } finally { endMutation(); }
   }
 
 
@@ -290,7 +306,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || mutationBusy || refreshRequired}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               {loading && <IconLoader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -338,7 +354,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      disabled={index === 0}
+                      disabled={mutationBusy || refreshRequired || index === 0}
                       onClick={() => handleMoveSlot(index, "up")}
                       className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
                       title="Move earlier in rotation"
@@ -347,7 +363,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
                     </button>
                     <button
                       type="button"
-                      disabled={index === slots.length - 1}
+                      disabled={mutationBusy || refreshRequired || index === slots.length - 1}
                       onClick={() => handleMoveSlot(index, "down")}
                       className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-20 rounded transition-colors"
                       title="Move later in rotation"
@@ -375,7 +391,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
                   Visual template
                   <select
                     value={slot.overrideTemplateId || ""}
-                    disabled={updatingTemplateSlotIds.has(slot.id)}
+                    disabled={mutationBusy || refreshRequired || updatingTemplateSlotIds.has(slot.id)}
                     onChange={(event) => void handleTemplateChange(slot, event.target.value)}
                     className="mt-1 w-full rounded-lg border bg-background px-2 py-2 text-xs"
                   >
@@ -433,7 +449,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
                 <button
                   type="button"
                   onClick={handleAcceptRecommendation}
-                  disabled={recLoading}
+                  disabled={recLoading || mutationBusy || refreshRequired}
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
                 >
                   {recLoading ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconCheck className="w-3.5 h-3.5" />}
@@ -442,7 +458,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
                 <button
                   type="button"
                   onClick={handleDiscardRecommendation}
-                  disabled={recLoading}
+                  disabled={recLoading || mutationBusy || refreshRequired}
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted disabled:opacity-50"
                 >
                   <IconX className="w-3.5 h-3.5" />
@@ -467,7 +483,7 @@ export function DailyMixScheduler({ themePageId, initialSlots, availableFormats,
             <Button variant="outline" onClick={() => setSlotToDelete(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDeleteSlot} disabled={isDeleting}>
+            <Button variant="destructive" onClick={confirmDeleteSlot} disabled={isDeleting || mutationBusy || refreshRequired}>
               {isDeleting ? "Removing..." : "Remove Slot"}
             </Button>
           </DialogFooter>

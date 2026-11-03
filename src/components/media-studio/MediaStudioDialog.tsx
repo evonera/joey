@@ -128,8 +128,8 @@ export function MediaStudioDialog({
       const res = await generateVisualHookSuggestions(postContent || config.text);
       setAiSuggestions(res.suggestions);
       toast.success("Generated viral hook suggestions!");
-    } catch {
-      toast.error("Couldn’t fetch AI suggestions. Using defaults.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn’t fetch AI suggestions.");
     } finally {
       setLoadingAi(false);
     }

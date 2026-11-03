@@ -88,4 +88,10 @@ describe("connection mutation authorization", () => {
       { name: "slack", action: "remove", account_id: "account-1" },
     ]);
   });
+  it("does not report success when the provider reports a toolkit error", async () => {
+    mocks.manageConnections.mockResolvedValueOnce({ results: { slack: { error_message: "Cannot remove account" } } });
+    const response = await DELETE(requestWithJson(vi.fn().mockResolvedValue({ toolkit: "slack", accountId: "account-1" })));
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "Disconnect failed" });
+  });
 });

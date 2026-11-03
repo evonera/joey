@@ -1,6 +1,6 @@
 import os
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 
 import httpx
 from scheduler import run_tick, acceptance_target, youtube_acceptance_target, project_acceptance_target, dispatch_acceptance, dispatch_capacity
@@ -87,6 +87,21 @@ class SchedulerTests(unittest.TestCase):
         result, seen = self.execute([httpx.Response(200, json={"ready": True}), httpx.Response(200, json={"ok": True})])
         self.assertEqual(result["status"], "ok")
         self.assertEqual([request.url.path for request in seen], ["/api/internal/runtime", "/api/cron"])
+
+    def test_media_failure_alerts_and_does_not_block_cron(self):
+        with patch("sentry_sdk.capture_message") as alert:
+            result, seen = self.execute([httpx.Response(200, json={"ready": True, "mediaReady": False}), httpx.Response(200, json={"ok": True})])
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([request.url.path for request in seen], ["/api/internal/runtime", "/api/cron"])
+        alert.assert_called_once()
+
+    def test_alert_failure_does_not_block_cron(self):
+        cache = MagicMock()
+        cache.get.return_value = {}
+        cache.put.side_effect = RuntimeError("alert storage unavailable")
+        result, seen = self.execute([httpx.Response(200, json={"ready": True, "mediaReady": False}), httpx.Response(200, json={"ok": True})], cache)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(seen[-1].url.path, "/api/cron")
 
     def test_does_not_run_cron_on_failed_readiness(self):
         with self.assertRaisesRegex(RuntimeError, "readiness"):

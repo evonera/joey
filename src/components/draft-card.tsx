@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { updateDraft, approveDraft, rejectDraft, deleteDraft } from "@/app/actions/drafts";
-import { publishDraft } from "@/app/actions/publisher";
+import { prepareDraftPublication, publishConfirmedDraft } from "@/app/actions/publisher";
+import type { DraftPublicationConfirmation } from "@/lib/publication-confirmation";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -27,6 +28,7 @@ import { PublishConfirmDialog } from "@/components/compose/publish-confirm-dialo
 import { useLiveblocksConfig } from "@/components/collaboration/liveblocks-provider";
 import { useThreads, useIsInsideRoom } from "@liveblocks/react";
 import { EditorialSuggestions } from "@/components/calendar/editorial-suggestions";
+import { ThemePublishButton } from "@/components/theme-studio/ThemePublishButton";
 
 interface DraftCardProps {
   draft: any;
@@ -68,6 +70,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [isCommentsOpen, setIsCommentsOpen] = useState(false);
     const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
+    const [confirmation, setConfirmation] = useState<DraftPublicationConfirmation | null>(null);
 
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const hasVariants = Array.isArray(draft.variants) && draft.variants.length > 0;
@@ -77,6 +80,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
     const platformOpts = draft.platformOptions as any;
     const platform = platformOpts?.platform || "Universal";
     const mediaUrls: string[] = platformOpts?.mediaUrls || [];
+    const mediaOnly = !draft.content?.trim() && mediaUrls.length > 0;
 
     const isScheduled = Boolean(draft.scheduledFor) && (draft.status === "scheduled" || draft.status === "approved");
 
@@ -95,14 +99,18 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
         toast.success("Draft approved"); broadcastApproval(variantName); onActionComplete();
     });
     const executePublish = () => runAction(async () => {
-        const res = await publishDraft(draft.id, isScheduled);
+        const res = confirmation ? await publishConfirmedDraft(draft.id, Boolean(confirmation.scheduledFor) && ["scheduled", "approved"].includes(confirmation.status), confirmation)
+            : { error: "Refresh and confirm publication again." };
         if (res.error) throw new Error(res.error);
         toast.success(res.status === "published" ? "Post published" : "Post submitted. Publishing is in progress.");
         onActionComplete();
     });
-    const handlePublish = () => {
+    const handlePublish = () => runAction(async () => {
+        const result = await prepareDraftPublication(draft.id);
+        if (!result.confirmation) throw new Error(result.error || "Could not prepare publication.");
+        setConfirmation(result.confirmation);
         setPublishConfirmOpen(true);
-    };
+    });
     const handleReject = () => runAction(async () => {
         if (!feedback.trim()) return;
         const res = await rejectDraft(draft.id, feedback);
@@ -213,14 +221,14 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                 </div>
             ) : (
                 <div className="text-foreground whitespace-pre-wrap text-sm leading-relaxed">
-                    {draft.content ? (
+                    {mediaOnly ? (
+                        <span className="italic text-muted-foreground">Media post (no caption)</span>
+                    ) : draft.content ? (
                         draft.content
                     ) : hasVariants ? (
                         <div className="italic text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed text-xs">
                             Multiple draft variations generated. Click <strong>Review & Edit Variants</strong> to select and adjust copy.
                         </div>
-                    ) : mediaUrls.length > 0 ? (
-                        <span className="italic text-muted-foreground">Media post (no caption)</span>
                     ) : (
                         <span className="italic text-muted-foreground">No text content available</span>
                     )}
@@ -255,14 +263,15 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
             )}
 
             {/* Approved Draft Actions */}
+            {platformOpts?.isThemePackage && draft.status === "publishing" && <ThemePublishButton packageId={draft.id} reconcileOnly onComplete={onActionComplete} />}
             {!isEditing && !isRejecting && (draft.status === 'approved' || draft.status === 'scheduled') && (
                 <div className="flex gap-2 pt-2 border-t border-border">
                     <Button onClick={() => setIsEditing(true)} variant="outline" size="sm" disabled={loading} className="gap-1 text-xs">
                         <Edit className="h-3.5 w-3.5" /> Edit
                     </Button>
-                    <Button onClick={handlePublish} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
+                    {platformOpts?.isThemePackage ? <ThemePublishButton packageId={draft.id} publishEarly={isScheduled} disabled={loading} onComplete={onActionComplete} /> : <Button onClick={handlePublish} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
                         {loading ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Publishing...</> : isScheduled ? "Publish Early" : "Publish Now"}
-                    </Button>
+                    </Button>}
                 </div>
             )}
 
@@ -273,9 +282,9 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                     <Button onClick={() => setIsEditing(true)} variant="outline" size="sm" disabled={loading} className="gap-1 text-xs">
                         <Edit className="h-3.5 w-3.5" /> Edit Post
                     </Button>
-                    <Button onClick={handlePublish} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
+                    {platformOpts?.isThemePackage ? <ThemePublishButton packageId={draft.id} disabled={loading} allowReconcile onComplete={onActionComplete} /> : <Button onClick={handlePublish} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
                         {loading ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Retrying...</> : "Retry Publish"}
-                    </Button>
+                    </Button>}
                 </div>
             )}
 
@@ -359,6 +368,11 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                         </Button>
                     )}
                     
+                    {hasVariants && mediaOnly && (
+                        <Button onClick={() => handleApprove()} disabled={loading} size="sm" className="flex-1 font-semibold text-xs">
+                            Approve without caption
+                        </Button>
+                    )}
                     <Button 
                         variant="outline" 
                         size="sm" 
@@ -371,7 +385,7 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                         Comments
                         <DraftCommentBadge draftId={draft.id} />
                     </Button>
-                    {(!hasVariants || draft.content) && (
+                    {(!hasVariants || draft.content || mediaOnly) && (
                         <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} disabled={loading} className="text-xs">
                             Edit
                         </Button>
@@ -445,14 +459,11 @@ function InnerDraftCard({ draft, onActionComplete, selectable, selected, onToggl
                     await executePublish();
                 }}
                 isPublishing={loading}
-                accounts={[{
-                    id: platformOpts?.accountId || draft.id,
-                    accountName: platformOpts?.accountName || platform,
-                    platform: platform,
-                }]}
-                content={draft.content || ""}
-                mediaCount={mediaUrls.length}
-                actionLabel={isScheduled ? "Publish Early" : "Publish Now"}
+                accounts={confirmation ? [{ id: confirmation.account.id, accountName: confirmation.account.accountName || confirmation.account.id, platform: confirmation.account.platform }] : [{ id: platformOpts?.accountId || draft.id, accountName: platformOpts?.accountName || platform, platform }]}
+                content={confirmation ? confirmation.content || "" : draft.content || ""}
+                mediaCount={confirmation ? (Array.isArray((confirmation.platformOptions as { mediaUrls?: unknown } | null)?.mediaUrls) ? ((confirmation.platformOptions as { mediaUrls: unknown[] }).mediaUrls.length) : 0) : mediaUrls.length}
+                actionLabel={(confirmation ? Boolean(confirmation.scheduledFor) && ["scheduled", "approved"].includes(confirmation.status) : isScheduled) ? "Publish Early" : "Publish Now"}
+                scheduledFor={confirmation && ["scheduled", "approved"].includes(confirmation.status) ? confirmation.scheduledFor : null}
             />
         </div>
     );

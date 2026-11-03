@@ -52,6 +52,22 @@ describe("Drafts API Input Validation & SSRF Guard", () => {
     expect(data.error).toContain("content");
   });
 
+  it("rejects whitespace-only drafts and accepts media-only drafts", async () => {
+    const { authenticateApiRequest } = await import("@/lib/api-auth");
+    const { db } = await import("@/lib/db");
+    (authenticateApiRequest as any).mockResolvedValue({ tenantId: "tenant-test", scopes: ["write"], rateLimit: {} });
+    const values = vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "media-draft" }]) });
+    (db.insert as any).mockReturnValue({ values });
+    const { POST } = await import("@/app/api/v1/drafts/route");
+    const request = (body: object) => new Request("http://localhost/api/v1/drafts", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect((await POST(request({ content: "  " }))).status).toBe(400);
+    expect(values).not.toHaveBeenCalled();
+    expect((await POST(request({ content: "", mediaUrls: ["https://example.com/image.png"] }))).status).toBe(200);
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({ content: "", platformOptions: expect.objectContaining({ mediaUrls: ["https://example.com/image.png"] }) }));
+  });
+
   it("rejects SSRF / private IP media URLs with 400", async () => {
     const { authenticateApiRequest } = await import("@/lib/api-auth");
     (authenticateApiRequest as any).mockResolvedValue({
