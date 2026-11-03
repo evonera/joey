@@ -8,8 +8,8 @@ import { toast } from "sonner";
 type Item = Awaited<ReturnType<typeof listUncertainPrivateReplies>>[number];
 export function UncertainPrivateReplies({ initial }: { initial: Item[] }) {
   const router = useRouter();
-  const [items, setItems] = React.useState(initial);
-  React.useEffect(() => setItems(initial), [initial]);
+  const [reviewedIds, setReviewedIds] = React.useState<Set<string>>(() => new Set());
+  const items = initial.filter(item => !reviewedIds.has(item.id));
   const [busy, setBusy] = React.useState<string | null>(null);
   if (!items.length) return null;
   return <section className="space-y-3 rounded-xl border p-4" aria-label="Unconfirmed private replies">
@@ -19,7 +19,7 @@ export function UncertainPrivateReplies({ initial }: { initial: Item[] }) {
       <span>{item.platform} · {item.commenterHandle || "Unknown account"} · post {item.platformPostId || "unknown"} · comment {item.platformCommentId || "unknown"}</span>
       <Button size="sm" variant="outline" disabled={busy !== null} onClick={async () => {
         setBusy(item.id);
-        try { await resolveUncertainPrivateReply(item.id); setItems(await listUncertainPrivateReplies()); router.refresh(); toast.success("Review recorded"); }
+        try { await resolveUncertainPrivateReply(item.id); setReviewedIds(ids => new Set(ids).add(item.id)); router.refresh(); toast.success("Review recorded"); }
         catch (error) { toast.error(error instanceof Error ? error.message : "Could not record review"); }
         finally { setBusy(null); }
       }}>Mark reviewed</Button>

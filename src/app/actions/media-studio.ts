@@ -169,12 +169,12 @@ Respond ONLY with valid JSON in this structure:
     }
 
     const cleaned = text.replace(/^```json\s*/i, "").replace(/\s*```$/, "").trim();
-    const parsed = z.object({ suggestions: z.array(z.object({
+    const parsed = z.strictObject({ suggestions: z.array(z.strictObject({
       text: z.string().trim().min(1).max(80),
       preset: z.enum(["mrbeast", "shock", "vs", "clean", "minimal", "cyber"]),
       sticker: z.enum(["arrow", "question", "circle", "vs", "badge_100", "none"]),
       explanation: z.string().trim().min(1).max(500),
-    }).strict()).min(1).max(4) }).strict().parse(JSON.parse(cleaned));
+    })).min(1).max(4) }).parse(JSON.parse(cleaned));
     return parsed;
   } catch (err) {
     console.error("[generateVisualHookSuggestions] generation failed:", err);

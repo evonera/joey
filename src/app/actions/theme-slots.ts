@@ -139,7 +139,8 @@ export async function reorderThemeSlots(themePageId: string, orderedSlotIds: str
       if (!rows.length) throw new Error("Theme page not found.");
       const slots = await tx.select({ id: themeSlots.id }).from(themeSlots)
         .where(and(eq(themeSlots.themePageId, themePageId), eq(themeSlots.tenantId, tenantId))).for("update");
-      if (new Set(orderedSlotIds).size !== orderedSlotIds.length || slots.length !== orderedSlotIds.length || slots.some(slot => !orderedSlotIds.includes(slot.id))) {
+      const orderedIds = new Set(orderedSlotIds);
+      if (orderedIds.size !== orderedSlotIds.length || slots.length !== orderedSlotIds.length || slots.some(slot => !orderedIds.has(slot.id))) {
         throw new Error("The content mix changed. Refresh before reordering.");
       }
       for (let i = 0; i < orderedSlotIds.length; i++) {

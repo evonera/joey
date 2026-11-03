@@ -89,10 +89,10 @@ export function createJoeyMcpServer(auth: McpAuth): McpServer {
       const media = manualPostSchema.shape.mediaUrls.safeParse(mediaUrls ?? []);
       if (!media.success) throw new Error("Media URLs must use HTTP or HTTPS without credentials.");
       if (!content.trim() && media.data.length === 0) throw new Error("Add draft content or media.");
-      for (const url of media.data) {
+      await Promise.all(media.data.map(async url => {
         try { await validateSafeUrl(url); }
         catch { throw new Error("Unsafe media URL rejected."); }
-      }
+      }));
       const [draft] = await db
         .insert(drafts)
         .values({

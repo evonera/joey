@@ -121,9 +121,10 @@ export async function createManualPost(data: {
         const publicationResults: Array<{ draftId: string; accountId: string; platform: string; status: string; error?: string }> = [];
         let processing = false;
         if (data.scheduleType === "now") {
+            const confirmedAccounts = new Map(data.confirmedAccounts!.map(account => [account.id, account]));
             for (const [index, row] of createdDraftIds.entries()) {
                 const draftId = row.id;
-                const confirmedAccount = data.confirmedAccounts!.find(account => account.id === selectedAccounts[index].id)!;
+                const confirmedAccount = confirmedAccounts.get(selectedAccounts[index].id)!;
                 let result: { error?: string; status?: string };
                 try {
                     const options = row.platformOptions as { accountId?: unknown; mediaUrls?: unknown } | null;

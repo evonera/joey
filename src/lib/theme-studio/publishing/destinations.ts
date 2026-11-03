@@ -18,7 +18,8 @@ export function matchingPackageAccounts<T extends { id: string; platform: string
   accounts: T[], platform: string, selectedAccountIds: string[], priorAccountId?: string,
 ): T[] {
   const target = zernioPlatform(platform);
+  const selectedIds = new Set(selectedAccountIds);
   const prior = priorAccountId ? accounts.filter(account => account.id === priorAccountId && account.isActive === true && zernioPlatform(account.platform) === target) : [];
-  const selected = accounts.filter(account => selectedAccountIds.includes(account.id) && account.isActive !== false && zernioPlatform(account.platform) === target);
+  const selected = accounts.filter(account => selectedIds.has(account.id) && account.isActive !== false && zernioPlatform(account.platform) === target);
   return [...new Map([...prior, ...selected].map(account => [account.id, account])).values()];
 }

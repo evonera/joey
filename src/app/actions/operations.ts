@@ -1,7 +1,10 @@
 "use server";
 
-import { getActiveTenantId } from "@/lib/auth";
+import { getActiveTenantId, requireRole } from "@/lib/auth";
 import { getOperationalHealth } from "@/lib/operations";
+import { db } from "@/lib/db";
+import { engagementItems } from "@/lib/db/schema";
+import { and, eq, desc } from "drizzle-orm";
 
 export async function getTenantOperationalHealth() {
   const tenantId = await getActiveTenantId();
@@ -9,9 +12,6 @@ export async function getTenantOperationalHealth() {
 }
 
 export async function listUncertainPrivateReplies() {
-  const { db } = await import("@/lib/db");
-  const { engagementItems } = await import("@/lib/db/schema");
-  const { and, eq, desc } = await import("drizzle-orm");
   const tenantId = await getActiveTenantId();
   return db.query.engagementItems.findMany({
     where: and(eq(engagementItems.tenantId, tenantId), eq(engagementItems.dmDispatchStatus, "uncertain")),
@@ -21,10 +21,6 @@ export async function listUncertainPrivateReplies() {
 }
 
 export async function resolveUncertainPrivateReply(id: string) {
-  const { requireRole } = await import("@/lib/auth");
-  const { db } = await import("@/lib/db");
-  const { engagementItems } = await import("@/lib/db/schema");
-  const { and, eq } = await import("drizzle-orm");
   const tenantId = await requireRole(["owner", "admin"]);
   const [resolved] = await db.update(engagementItems).set({ dmDispatchStatus: "skipped", dmDispatchError: "Reviewed by workspace operator; no automatic resend.", dmDispatchLeaseExpiresAt: null })
     .where(and(eq(engagementItems.id, id), eq(engagementItems.tenantId, tenantId), eq(engagementItems.dmDispatchStatus, "uncertain")))

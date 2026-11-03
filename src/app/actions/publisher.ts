@@ -8,11 +8,11 @@ import { drafts, socialAccounts } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-const confirmationSchema = z.object({
+const confirmationSchema = z.strictObject({
     content: z.string().max(50_000).nullable(), platformOptions: z.unknown(), status: z.string().max(50),
-    scheduledFor: z.string().datetime().nullable(),
-    account: z.object({ id: z.string().min(1).max(128), accountName: z.string().nullable(), platform: z.string(), platformAccountId: z.string() }).strict(),
-}).strict();
+    scheduledFor: z.iso.datetime().nullable(),
+    account: z.strictObject({ id: z.string().min(1).max(128), accountName: z.string().nullable(), platform: z.string(), platformAccountId: z.string() }),
+});
 
 export async function prepareDraftPublication(draftId: string): Promise<{ confirmation?: DraftPublicationConfirmation; error?: string }> {
     try {
